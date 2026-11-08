@@ -10,8 +10,6 @@ router = APIRouter()
 
 # Что появится в разделе и на каком шаге — для пустых экранов
 SECTIONS = {
-    "/timesheet": ("Табель", "clock", None, "Кто на месте, отметки по картам, часы за день и месяц.",
-                   ["attendance.view_all", "attendance.view_own"]),
 }
 
 
@@ -60,7 +58,11 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     from ..models import WoWorkSession
     paused = {s.work_order_id: s.pause_reason for s in db.scalars(select(WoWorkSession).where(
         WoWorkSession.branch_id == bid, WoWorkSession.kind == "pause", WoWorkSession.ended_at.is_(None)))}
+    from ..services.attendance import _aware, local_tz, on_site_now
+    presence = {uid: (e.direction, _aware(e.at).astimezone(local_tz()).strftime("%H:%M")) if e else None
+                for uid, e in on_site_now(db, bid, staff).items()}
     return ctx.render("pult.html", title="Пульт", lifts=lifts, vehicles=vehicles, people=people, staff=staff, paused=paused,
+                      presence=presence,
                       counts=counts, issue_new=issue_new, busy=busy, fmt_plate=fmt_plate)
 
 

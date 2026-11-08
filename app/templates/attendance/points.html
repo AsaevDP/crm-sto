@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Проходные</h1></div>
+</header>
+<p class="subhead" style="margin:0">Проходная — ПК или планшет на входе с USB-считывателем карт. Сотрудник прикладывает карту: «Пришёл» / «Ушёл» по очереди. Из этих отметок строится табель.</p>
+<div class="cl-grid">
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Точки</span>{% if here %}<span class="tag">это устройство: {{ here.name }}</span>{% endif %}</div>
+      {% for p in rows %}
+      <div class="kv"><span><b>{{ p.name }}</b> <span class="caption">{{ "проходная" if p.kind == "gate" else "вход в CRM" }}{% if not p.counts_presence %} · не считается в табель{% endif %}</span></span>
+        {% if user.role.code == "admin" and p.kind == "gate" %}<form method="post" action="/settings/points/{{ p.id }}/kiosk"><button class="btn btn-sm btn-tinted">Сделать это устройство проходной</button></form>{% endif %}</div>
+      {% endfor %}
+      {% if here %}<form method="post" action="/settings/points/unkiosk"><button class="btn btn-sm btn-gray">Это устройство — больше не проходная</button></form>{% endif %}
+    </div>
+  </section>
+  <section class="ov-col on">
+    <form class="card compact form dense" method="post" action="/settings/points">
+      <div class="card-h"><span class="headline">Новая точка</span></div>
+      <input class="field" name="name" placeholder="Например: Вход в цех, Склад" required>
+      <button class="btn btn-sm">Добавить</button>
+    </form>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Как запустить проходную</span></div>
+      <p class="ov-text">1. На ПК у входа подключите USB-считыватель карт (работает как клавиатура).<br>
+        2. Войдите в CRM под главным админом → здесь нажмите «Сделать это устройство проходной».<br>
+        3. Откроется экран «Приложите карту» — можно выйти из CRM, проходная продолжит работать.<br>
+        4. Карты сотрудникам привязываются в «Сотрудники → карточка → Карты».</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

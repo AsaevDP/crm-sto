@@ -49,11 +49,13 @@
       <div class="row">
         <span class="avatar" style="--accent:{{ color_css(s.role.color) }}">{{ s.initials }}</span>
         <span class="grow">{{ s.full_name }}<div class="caption">{{ s.role.name }}</div></span>
+        {% set pr = presence.get(s.id) %}
+        {% if pr and pr[0] == "in" %}<span class="tag tag-in">на месте с {{ pr[1] }}</span>{% elif pr %}<span class="tag">ушёл в {{ pr[1] }}</span>{% else %}<span class="tag muted-tag">нет отметки</span>{% endif %}
         {% if busy.get(s.id) %}<span class="tag">нарядов: {{ busy[s.id] }}</span>{% endif %}
       </div>
       {% endfor %}
     </div>
-    <p class="footnote" style="margin:0 16px">Кто на месте по картам и паузы появятся вместе с табелем.</p>
+    <a class="footnote" style="margin:0 16px;color:var(--accent)" href="/timesheet">Табель за месяц →</a>
   </section>
 </div>
 {% endblock %}

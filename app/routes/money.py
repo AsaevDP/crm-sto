@@ -219,7 +219,8 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = ""):
         d = date.fromisoformat(day) if day else date.today()
     except ValueError:
         d = date.today()
-    start = datetime.combine(d, datetime.min.time()).astimezone()
+    from ..services.attendance import day_bounds
+    start = day_bounds(d)[0]  # местный день → UTC
     pays = db.scalars(select(Payment).where(Payment.branch_id == ctx.branch.id, Payment.created_at >= start,
                                             Payment.created_at < start + timedelta(days=1)).order_by(Payment.created_at.desc())).all()
     from ..models import UsedSale
@@ -301,7 +302,11 @@ def payroll_settings(ctx: Ctx = Depends(get_ctx)):
     for u in staff:
         own = psvc.lines_for(db, u)
         schemes[u.id] = [(l, psvc.describe(l, gnames)) for l in own]
+    from ..services.attendance import days_present
+    t = date.today()
+    present = {u.id: days_present(db, ctx.branch.id, u.id, t.year, t.month) for u in staff}
     return ctx.render("money/payroll_settings.html", title="Зарплата: схемы", staff=staff, schemes=schemes, groups=groups,
+                      present=present,
                       group_items=group_items, defaults=st.get(db, ctx.branch.id, "payroll"), is_admin=_is_admin(ctx),
                       KINDS=psvc.KINDS, BASES=psvc.BASES, SOURCES=psvc.SOURCES, PERIODS=psvc.PERIODS,
                       default_desc={u.id: [psvc.describe(l, gnames) for l in psvc.default_lines(db, u)] for u in staff})

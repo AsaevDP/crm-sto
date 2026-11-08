@@ -1,0 +1,88 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="ru" style="{{ accent }}">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Проходная · {{ branding.name }}</title>
+<link rel="stylesheet" href="{{ asset('/static/css/app.css') }}"><link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
+<style>
+  /* Экран проходной: крупно, видно издалека, ничего лишнего */
+  body { min-height: 100dvh; display: grid; place-items: center; padding: 24px; text-align: center; overflow: hidden; }
+  .k { display: grid; justify-items: center; gap: 14px; width: 100%; max-width: 640px; }
+  .clock { font: 700 clamp(64px, 14vw, 140px)/1 var(--font-display); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+  .date { font-size: 20px; color: var(--text-2); text-transform: capitalize; }
+  .wait { margin-top: 24px; display: grid; justify-items: center; gap: 12px; }
+  .wait .pulse { width: 120px; height: 120px; border-radius: 32px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); animation: pulse 2s infinite; }
+  .wait .pulse .ic { width: 60px; height: 60px; }
+  @keyframes pulse { 50% { transform: scale(1.06); box-shadow: 0 0 0 16px color-mix(in srgb, var(--accent) 8%, transparent); } }
+  .hint { font-size: 22px; font-weight: 600; }
+  .kres { position: fixed; inset: 0; display: none; place-items: center; text-align: center; }
+  .kres.on { display: grid; animation: flash-in .25s var(--ease); }
+  .kres.in { background: var(--green); color: #fff; } .kres.out { background: var(--graphite); color: #fff; } .kres.err { background: var(--red); color: #fff; }
+  .kres .big { font: 700 clamp(48px, 9vw, 96px)/1.05 var(--font-display); letter-spacing: -.03em; }
+  .kres .name { font: 600 clamp(28px, 5vw, 48px)/1.1 var(--font-display); margin-top: 12px; }
+  .kres .sub { font-size: 22px; opacity: .85; margin-top: 8px; }
+  .manual { position: fixed; bottom: 16px; left: 50%; translate: -50%; display: flex; gap: 8px; opacity: .35; }
+  .manual:focus-within { opacity: 1; }
+  .manual input { width: 180px; }
+</style>
+</head>
+<body>
+{% if not point %}
+<div class="card empty" style="max-width:520px">
+  <div class="empty-icon">{{ icon("lock") }}</div>
+  <div class="title-2">Это устройство — не проходная</div>
+  <p class="subhead">Главный админ: войдите в CRM на этом устройстве → Настройки → Проходные → «Сделать это устройство проходной».</p>
+  <a class="btn" href="/login">Войти в CRM</a>
+</div>
+{% else %}
+<div class="k">
+  <div class="footnote">{{ branding.name }} · {{ point.name }}</div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="date" id="date"></div>
+  <div class="wait"><div class="pulse">{{ icon("card") }}</div><div class="hint">Приложите карту</div></div>
+</div>
+<div class="kres" id="res"><div><div class="big" id="r-big"></div><div class="name" id="r-name"></div><div class="sub" id="r-sub"></div></div></div>
+<form class="manual" id="manual"><input class="field" id="uid" placeholder="Номер карты" autocomplete="off" inputmode="numeric"><button class="btn btn-sm btn-gray">OK</button></form>
+<script>
+(function () {
+  const clock = document.getElementById('clock'), dt = document.getElementById('date');
+  function tick() {
+    const n = new Date();
+    clock.textContent = n.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    dt.textContent = n.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' });
+  }
+  tick(); setInterval(tick, 1000);
+
+  const res = document.getElementById('res');
+  let hide;
+  async function tap(uid) {
+    if (!uid) return;
+    const r = await fetch('/kiosk/tap', { method: 'POST', body: new URLSearchParams({ uid }) });
+    const j = await r.json().catch(() => ({ ok: false, error: 'Нет связи с сервером' }));
+    clearTimeout(hide);
+    res.className = 'kres on ' + (j.ok ? j.direction : 'err');
+    document.getElementById('r-big').textContent = j.ok ? (j.direction === 'in' ? 'Пришёл' : 'Ушёл') : 'Ошибка';
+    document.getElementById('r-name').textContent = j.ok ? j.name : j.error;
+    document.getElementById('r-sub').textContent = j.ok ? `${j.time} · ${j.role}` : 'Обратитесь к администратору';
+    try { navigator.vibrate && navigator.vibrate(j.ok ? 120 : [80, 60, 80]); } catch (e) {}
+    hide = setTimeout(() => { res.className = 'kres'; }, j.ok ? 3500 : 4500);
+  }
+  // Считыватель «печатает» номер и жмёт Enter — ловим быстрый ввод в любом месте страницы
+  let buf = '', last = 0;
+  document.addEventListener('keydown', e => {
+    if (document.activeElement && document.activeElement.id === 'uid') return;
+    const t = performance.now();
+    if (t - last > 80) buf = '';
+    last = t;
+    if (e.key === 'Enter' && buf.length >= 4) { tap(buf); buf = ''; }
+    else if (e.key.length === 1) buf += e.key;
+  });
+  document.getElementById('manual').addEventListener('submit', e => {
+    e.preventDefault(); const i = document.getElementById('uid'); tap(i.value.trim()); i.value = ''; i.blur();
+  });
+})();
+</script>
+{% endif %}
+</body>
+</html>

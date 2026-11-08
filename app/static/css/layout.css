@@ -521,3 +521,40 @@ tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red
 @media (max-width: 600px) { .kv { flex-wrap: wrap; } .kv b { max-width: none; margin-left: auto; } }
 .nowrap { white-space: nowrap; overflow-wrap: normal !important; }
 .razbor-grid { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+
+/* ===== Табель ===== */
+.onsite { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.onsite .footnote { margin-right: 6px; }
+.who-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 13px; text-decoration: none; color: var(--text); background: var(--fill); }
+.who-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
+.who-chip.in { background: color-mix(in srgb, var(--green) 14%, transparent); } .who-chip.in .dot { background: var(--green); }
+.who-chip.out .dot { background: var(--text-3); }
+.ts { font-size: 12px; }
+.ts th, .ts td { padding: 6px 4px; text-align: center; }
+.ts .ts-name { text-align: left; padding-left: 12px; min-width: 170px; position: sticky; left: 0; background: var(--surface); z-index: 1; }
+.ts .ts-name a { color: var(--text); text-decoration: none; font-weight: 500; }
+.ts .ts-d { min-width: 30px; font-variant-numeric: tabular-nums; }
+.ts .we { background: var(--fill-2); }
+.ts th.td { color: var(--accent); font-weight: 700; }
+.ts td.open { color: var(--red); font-weight: 700; }
+.ts-day { padding: 4px 0; border-bottom: 0.5px solid var(--separator); }
+.ts-day .kv { border: 0; }
+.ts-events { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 2px 0 4px; }
+.ts-ev { display: inline-flex; align-items: center; gap: 4px; }
+.ts-ev .btn { min-height: 22px; padding: 0 4px; }
+.tag-in { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
+.muted-tag { opacity: .6; }
+/* Каркас: основная колонка не растягивается широкими таблицами — они листаются внутри своего блока */
+@media (min-width: 900px) { .shell { grid-template-columns: 248px minmax(0, 1fr); } }
+.main, .content { min-width: 0; }
+.onsite { min-width: 0; }
+/* iPhone: двухколоночные страницы — в одну колонку; фильтры переносятся, а не вылезают */
+@media (max-width: 899px) {
+  .razbor-grid, .tools-grid, .donor-grid, .pay-grid, .cl-grid { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: auto !important; }
+  .donor-grid > *, .pay-grid > * { grid-column: auto !important; grid-row: auto !important; }
+  .toolbar-row { flex-wrap: wrap; }
+  .toolbar-row .segmented { max-width: 100%; overflow-x: auto; }
+  .page-head .ov-actions { flex-wrap: wrap; }
+}
+@media (max-width: 899px) { .toolbar-row > * { min-width: 0; } .toolbar-row .segmented { flex: 1 1 100%; } .segmented a, .segmented button { flex: none; } }
+.content { grid-template-columns: minmax(0, 1fr); }

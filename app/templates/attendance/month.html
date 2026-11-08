@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1 class="large-title">Табель</h1>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="?m={{ prev }}">‹</a><span class="headline" style="text-transform:capitalize">{{ month_name }} {{ y }}</span><a class="btn btn-sm btn-gray" href="?m={{ nxt }}">›</a></div>
+</header>
+{% set on = namespace(n=0) %}{% for s in staff %}{% if now_on[s.id] and now_on[s.id].direction == "in" %}{% set on.n = on.n + 1 %}{% endif %}{% endfor %}
+<div class="onsite">
+  <span class="footnote">Сейчас на месте · {{ on.n }} из {{ staff|length }}</span>
+  {% for s in staff %}{% set e = now_on[s.id] %}
+  <a class="who-chip {{ 'in' if e and e.direction == 'in' else ('out' if e else 'none') }}" href="?user={{ s.id }}&m={{ y }}-{{ '%02d'|format(mo) }}"
+     title="{{ s.full_name }}{% if e %} · {{ 'пришёл' if e.direction == 'in' else 'ушёл' }} {{ local(e).strftime('%H:%M') }}{% else %} · нет отметки{% endif %}">
+    <span class="dot"></span>{{ s.short_name }}{% if e %} <span class="caption">{{ local(e).strftime("%H:%M") }}</span>{% endif %}</a>
+  {% endfor %}
+</div>
+<div class="tablewrap fill scroll">
+  <table class="table ts">
+    <thead><tr><th class="ts-name">Сотрудник</th>{% for d in range(1, n_days + 1) %}<th class="ts-d {{ 'we' if d in weekends }} {{ 'td' if today.year == y and today.month == mo and today.day == d }}">{{ d }}</th>{% endfor %}<th class="num">Дней</th><th class="num">Часов</th></tr></thead>
+    <tbody>
+    {% for s in staff %}{% set g = grid[s.id] %}
+    <tr>
+      <td class="ts-name"><a href="?user={{ s.id }}&m={{ y }}-{{ '%02d'|format(mo) }}">{{ s.full_name }}</a><div class="caption">{{ s.role.name }}</div></td>
+      {% for d in range(1, n_days + 1) %}{% set day = g.get(d) %}
+      <td class="ts-d {{ 'we' if d in weekends }} {{ 'open' if day and day.open and not (today.year == y and today.month == mo and today.day == d) }}"
+          title="{% if day %}{{ day.first_in.strftime('%H:%M') if day.first_in else '' }}–{{ day.last_out.strftime('%H:%M') if day.last_out else '…' }}{% endif %}">
+        {% if day %}{{ day.hours|num if day.minutes else ("?" if day.open else "") }}{% endif %}</td>
+      {% endfor %}
+      <td class="num">{{ g.values()|selectattr("minutes")|list|length }}</td>
+      <td class="num"><b>{{ ((g.values()|sum(attribute="minutes")) / 60)|round(1)|num }}</b></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="hint" style="margin:0">Цифра — часы на месте за день. «?» — пришёл, но не отметил уход (админ поправит в табеле сотрудника). Выходные подсвечены.</p>
+{% endblock %}

@@ -54,10 +54,10 @@
       <div class="card-h"><span class="headline">Начислить оклад за период</span></div>
       <input class="field" name="note" placeholder="Например: «Оклад за ноябрь»">
       {% for u in staff %}{% if schemes[u.id]|selectattr("0.kind", "equalto", "salary")|list %}
-      <div class="kv"><span>{{ u.full_name }}</span><span class="pct"><input class="mini" name="days_{{ u.id }}" type="number" min="0" max="31" placeholder="дней"> дн.
+      <div class="kv"><span>{{ u.full_name }}</span><span class="pct"><input class="mini" name="days_{{ u.id }}" type="number" min="0" max="31" value="{{ present[u.id] or '' }}" placeholder="дней" title="Из табеля за этот месяц: {{ present[u.id] }}"> дн.
         <label class="caption"><input type="checkbox" name="month_{{ u.id }}" value="1"> месяц</label></span></div>
       {% endif %}{% else %}{% endfor %}
-      <p class="hint" style="margin:0">Показаны сотрудники, у которых в схеме есть строка «Оклад». Дневная ставка × дни, месячная — галочкой.</p>
+      <p class="hint" style="margin:0">Показаны сотрудники с окладом в схеме. Дни подставлены из табеля за этот месяц — можно поправить. Дневная ставка × дни, месячная — галочкой.</p>
       <button class="btn btn-sm">Начислить</button>
     </form>
     {% endif %}

@@ -418,6 +418,46 @@ def populate():
                     bn, bp, dl = reserve_plan[name]
                     rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price), bn, bp, dl)
 
+        # ---- Табель: отметки по картам за прошлый и текущий месяц ----
+        import random
+        from datetime import datetime as _dt, time as _t, timezone as _tz
+        from .models import AccessPoint, AttendanceEvent
+        from .services.attendance import local_tz
+        rnd = random.Random(7)
+        gate = db.scalar(select(AccessPoint).where(AccessPoint.kind == "gate"))
+        today = date.today()
+        start_day = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        tz = local_tz()
+
+        def mark(u, d, hh, mm, direction, method="card", comment=""):
+            at = _dt.combine(d, _t(hh, mm), tzinfo=tz).astimezone(_tz.utc)
+            db.add(AttendanceEvent(user_id=u.id, point_id=gate.id if gate else None, direction=direction, at=at,
+                                   method=method, comment=comment))
+
+        workers = [u for login, u in users.items() if login != "admin"]
+        d = start_day
+        while d < today:
+            for u in workers:
+                wd = d.weekday()
+                if wd == 6 or (wd == 5 and u.role.code not in ("mechanic", "manager")):
+                    continue                        # воскресенье — выходной, в субботу работают слесари и менеджер
+                if rnd.random() < 0.06:
+                    continue                        # иногда — отгул/больничный
+                mark(u, d, 7 + (rnd.random() < 0.7), rnd.randint(0, 59) if rnd.random() < 0.3 else rnd.randint(40, 59), "in")
+                if d == today - timedelta(days=1) and u.login == "sergey":
+                    continue                        # вчера забыл отметить уход — в табеле будет «?»
+                end_h = 14 if wd == 5 else 17 + (rnd.random() < 0.5)
+                mark(u, d, end_h, rnd.randint(0, 59), "out")
+            d += timedelta(days=1)
+        # Сегодня: кто-то уже на месте, кто-то ещё нет, один пришёл и ушёл (отпросился)
+        for login, hh, mm in (("irina", 7, 55), ("andrey", 7, 48), ("oleg", 8, 5), ("pavel", 7, 58), ("viktor", 8, 12), ("taras", 8, 20)):
+            mark(users[login], today, hh, mm, "in")
+        mark(users["taras"], today, 11, 30, "out")
+        # Ручная правка админом (видно в журнале)
+        as_user("admin")
+        mark(users["dmitro"], today - timedelta(days=2) if (today - timedelta(days=2)).weekday() < 5 else today - timedelta(days=4),
+             9, 0, "in", "manual", "Забыл карту дома")
+
         # Заметки в карты клиентов
         as_user("irina")
         for i, text in ((0, "Постоянный клиент, просит звонить после 18:00"),
