@@ -63,6 +63,8 @@ class PayrollAccrual(Entity):
     amount: Mapped[Decimal] = mapped_column(MONEY, default=0)
     on_date: Mapped[date] = mapped_column(Date, index=True)
     status: Mapped[str] = mapped_column(String(20), default="accrued")  # accrued / paid / cancelled
+    kind: Mapped[str] = mapped_column(String(20), default="percent")  # percent / per_unit / salary / deduction
+    note: Mapped[str] = mapped_column(String(300), default="")
 
 
 class PayrollPayout(Entity):

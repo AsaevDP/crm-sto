@@ -83,6 +83,15 @@ class WorkOrder(Entity):
     awaiting_prepay: Mapped[bool] = mapped_column(Boolean, default=False)
     cancel_reason: Mapped[str] = mapped_column(Text, default="")
     closed_with_debt_comment: Mapped[str] = mapped_column(Text, default="")
+    # Деньги
+    discount_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)  # скидка клиенту на весь наряд, %
+    payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Акт выдачи: ok — исправен, partial — не полностью исправен (handover_defects обязательно), advice — есть рекомендации
+    handover_state: Mapped[str] = mapped_column(String(10), default="")
+    handover_defects: Mapped[str] = mapped_column(Text, default="")
+    handover_advice: Mapped[str] = mapped_column(Text, default="")
     # Акт приёма
     fuel_level: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0, 25, 50, 75, 100 (%)
     intake_items: Mapped[list] = mapped_column(JSON, default=list)          # коды из INTAKE_ITEMS
@@ -121,11 +130,16 @@ class WoWork(Entity):
     work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id", ondelete="CASCADE"))
     finding_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_findings.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(200))
-    hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)  # нормо-часы или пусто (фикс)
+    # Цена работы — один из двух способов (выбирает менеджер):
+    #   hours — нормо-часы × цена часа (цена часа своя в каждой работе), fixed — фиксированная цена
+    pricing: Mapped[str] = mapped_column(String(10), default="hours")
+    hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)  # нормо-часы
+    rate: Mapped[Decimal] = mapped_column(MONEY, default=0)                    # цена нормо-часа, ₴
     qty: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=1)
-    price: Mapped[Decimal] = mapped_column(MONEY, default=0)
+    price: Mapped[Decimal] = mapped_column(MONEY, default=0)  # итог по работе (hours×rate×qty или фикс×qty)
     mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
-    status: Mapped[str] = mapped_column(String(10), default="todo")  # todo / doing / done
+    status: Mapped[str] = mapped_column(String(10), default="todo")  # todo / doing / paused / done
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class WoPart(Entity):

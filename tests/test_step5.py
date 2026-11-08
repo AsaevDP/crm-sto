@@ -128,10 +128,16 @@ def test_inventory_adjust_requires_reason(client):
 
 def test_partsman_pct_only_admin_and_capped(client):
     login(client, "admin", "admin123")
-    client.post("/settings/pricing", data={"default_markup": "40", "partsman_margin_pct": "45"})
+    client.post("/settings/pricing", data={"default_markup": "40", "hour_rate": "900"})
+    client.post("/settings/payroll/defaults", data={"mechanic_works_pct": "30", "partsman_margin_pct": "45"})
     with SessionLocal() as db:
         from app.models import Branch
         b = db.scalar(select(Branch))
         assert st.get(db, b.id, "payroll")["partsman_margin_pct"] == 30  # максимум 30 %
         assert st.get(db, b.id, "pricing")["default_markup"] == 40
-    client.post("/settings/pricing", data={"default_markup": "25", "partsman_margin_pct": "7"})
+        assert st.get(db, b.id, "pricing")["hour_rate"] == 900
+    client.post("/settings/pricing", data={"default_markup": "25", "hour_rate": "800"})
+    client.post("/settings/payroll/defaults", data={"mechanic_works_pct": "30", "partsman_margin_pct": "7"})
+    client.post("/logout")
+    login(client, "irina", "irina123")  # менеджер не может менять проценты
+    assert client.post("/settings/payroll/defaults", data={"partsman_margin_pct": "20"}).status_code == 403

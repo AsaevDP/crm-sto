@@ -39,7 +39,7 @@ def _to(url):
 
 
 def _can_pick(ctx: Ctx, wo: WorkOrder) -> bool:
-    return (ctx.can("parts.pick") and wo.status in ("picking", "waiting")
+    return (ctx.can("parts.pick") and wo.status in ("picking", "waiting") and not wo.awaiting_prepay
             and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
 
 
@@ -452,19 +452,15 @@ def pricing(ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/settings/pricing")
-def pricing_save(ctx: Ctx = Depends(get_ctx), default_markup: str = Form("25"), partsman_margin_pct: str = Form("")):
+def pricing_save(ctx: Ctx = Depends(get_ctx), default_markup: str = Form("25"), hour_rate: str = Form("")):
     ctx.need("settings.access")
     try:
-        st.put(ctx.db, ctx.branch.id, "pricing", {"default_markup": max(0, min(1000, int(default_markup)))})
+        value = {"default_markup": max(0, min(1000, int(default_markup)))}
+        if hour_rate.strip():
+            value["hour_rate"] = max(0, int(_dec(hour_rate)))
+        st.put(ctx.db, ctx.branch.id, "pricing", value)
     except ValueError:
         pass
-    # % запчастиста от наценки — только главный админ, 0–30
-    if partsman_margin_pct.strip() and ctx.user.role.code == "admin":
-        try:
-            pct = float(partsman_margin_pct.replace(",", "."))
-            st.put(ctx.db, ctx.branch.id, "payroll", {"partsman_margin_pct": max(0.0, min(30.0, pct))})
-        except ValueError:
-            pass
     ctx.db.commit()
     flash(ctx.request, "Сохранено")
     return _to("/settings/pricing")

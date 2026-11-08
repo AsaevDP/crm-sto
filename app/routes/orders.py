@@ -134,7 +134,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                          .order_by(WoStatusHistory.created_at)).all()
     findings = db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id).order_by(WoFinding.created_at)).all()
     people = _people(ctx, wo.manager_id, wo.partsman_id, wo.mechanic_id, *[h.created_by for h in history],
-                     *[f.created_by for f in findings])
+                     *[f.created_by for f in findings], *[w.mechanic_id for w in works])
     can_assign = ctx.can("orders.assign") and wo.status in WO_ACTIVE
     is_mech = ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all")
     # Запчасти наряда (артикул/закупка/наценка — только запчастисту и админу)
@@ -144,8 +144,15 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id).order_by(WoPart.created_at)).all()
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([p.catalog_id for p in parts if p.catalog_id])))}
     open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
-    can_pick = (ctx.can("parts.pick") and wo.status in ("picking", "waiting")
+    can_pick = (ctx.can("parts.pick") and wo.status in ("picking", "waiting") and not wo.awaiting_prepay
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
+    # Деньги и работы
+    from ..models import Payment, WoWorkSession
+    from ..models.money import PAY_METHODS, PAY_PURPOSES
+    from ..services import money as money_svc
+    payments = db.scalars(select(Payment).where(Payment.work_order_id == wo.id).order_by(Payment.created_at)).all()
+    pauses = {s.wo_work_id: s for s in db.scalars(select(WoWorkSession).where(
+        WoWorkSession.work_order_id == wo.id, WoWorkSession.kind == "pause", WoWorkSession.ended_at.is_(None)))}
     return ctx.render(
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
@@ -160,6 +167,14 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                            and any(p.status == "reserved" for p in parts)
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id)),
         parts_total=sum((p.price * p.qty for p in parts), 0),
+        t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES,
+        can_money=ctx.can("money.accept") and wo.status not in ("closed", "cancel"),
+        can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
+        can_work=(wo.status == "work" and (ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all"))
+                  and ctx.can("orders.view_own", "orders.view_all")),
+        is_admin=ctx.user.role.code == "admin", pauses=pauses,
+        all_mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic"),
+        hour_rate=st_.get(db, ctx.branch.id, "pricing")["hour_rate"],
         people=people, STATUSES=WO_STATUSES, INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
         fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, can_assign=can_assign,
         can_add_photo=(ctx.can("orders.create") or ctx.can("orders.diagnose")) and wo.status in WO_ACTIVE,

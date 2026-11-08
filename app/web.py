@@ -49,6 +49,18 @@ def accent_style(color: str) -> str:
     return f"--accent: #{hexv}; --on-accent: {'#1c1c1e' if lum > 170 else '#fff'};"
 
 
+def num(x) -> str:
+    """Число без лишних нулей и без «3E+1»: 30 → «30», 1.50 → «1,5», 5.0 → «5»."""
+    from decimal import Decimal
+    if x is None:
+        return ""
+    d = Decimal(str(x))
+    s = format(d.normalize(), "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s.replace(".", ",")
+
+
 def color_css(color: str) -> str:
     """Просто цвет для превью-кружка."""
     return f"var(--{color})" if color in SYSTEM_COLORS else color
@@ -66,6 +78,7 @@ def asset(path: str) -> str:
 
 from .models.orders import WO_STATUS_SHORT  # noqa: E402
 
+templates.env.filters["num"] = num
 templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO,
                              STATUS_SHORT=WO_STATUS_SHORT)
 

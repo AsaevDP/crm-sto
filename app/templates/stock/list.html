@@ -23,9 +23,9 @@
       <td>{{ r.c.name }}{% if r.c.kind == "used" %} <span class="tag">б/у</span>{% endif %}</td>
       <td class="mono footnote">{{ r.c.brand }} {{ r.c.article }}</td>
       <td class="footnote">{{ r.loc }}</td>
-      <td class="num">{{ r.on_hand|float }}</td>
-      <td class="num">{{ r.reserved|float if r.reserved else "—" }}</td>
-      <td class="num"><b>{{ r.free|float }}</b></td>
+      <td class="num">{{ r.on_hand|num }}</td>
+      <td class="num">{{ r.reserved|num if r.reserved else "—" }}</td>
+      <td class="num"><b>{{ r.free|num }}</b></td>
     </tr>
     {% else %}<tr><td colspan="6" class="footnote">{% if q %}Ничего не нашлось{% else %}Склад пуст — запчасти появятся после первого прихода{% endif %}</td></tr>{% endfor %}
     </tbody>

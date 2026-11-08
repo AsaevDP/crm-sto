@@ -1,0 +1,20 @@
+{% extends "money/_print_base.html" %}
+{% block doc_title %}АКТ ВЫДАЧИ АВТОМОБИЛЯ{% endblock %}
+{% block body %}
+<h2>Выполненные работы</h2>
+<div class="box">{% for w in works %}{{ loop.index }}. {{ w.name }}
+{% else %}—{% endfor %}</div>
+<h2>Состояние автомобиля при выдаче</h2>
+<p><span class="cb">{% if wo.handover_state == "ok" %}✓{% endif %}</span>Автомобиль полностью исправен</p>
+<p><span class="cb">{% if wo.handover_state == "partial" %}✓{% endif %}</span>Автомобиль выдан НЕ полностью исправным. Неисправно:</p>
+<div class="box">{{ wo.handover_defects }}</div>
+<p><span class="cb">{% if wo.handover_state == "advice" or wo.handover_advice %}✓{% endif %}</span>Рекомендации (детали ещё рабочие, но требуют внимания):</p>
+<div class="box">{{ wo.handover_advice }}</div>
+<p class="muted">Итого по заказ-наряду: {{ "%.2f"|format(t.total) }} ₴, оплачено {{ "%.2f"|format(t.paid) }} ₴.
+  Заказчик автомобиль осмотрел, претензий к объёму и качеству работ не имеет{% if wo.handover_state == "partial" %}, с перечнем неисправностей ознакомлен{% endif %}.</p>
+<div class="sign">
+  <div>Принял (заказчик): ____________ / {{ c.full_name }}</div>
+  <div>Выдал (СТО): ____________ / {{ manager.full_name if manager else "" }}</div>
+</div>
+<p class="muted" style="margin-top:8mm">Дата выдачи: {{ wo.closed_at.astimezone().strftime("%d.%m.%Y %H:%M") if wo.closed_at else "________" }}</p>
+{% endblock %}

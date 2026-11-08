@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% set KIND = {"percent": "%", "per_unit": "за шт", "salary": "оклад", "deduction": "удержание"} %}
+<header class="page-head">
+  <div>{% if see_all %}<a class="back" href="/payroll?f={{ d1 }}&t={{ d2 }}">{{ icon("back") }}Все сотрудники</a>{% endif %}
+    <h1 class="large-title">{{ "Моя зарплата" if u.id == user.id else u.full_name }}</h1></div>
+  <form class="ov-actions" method="get">{% if see_all %}<input type="hidden" name="user" value="{{ u.id }}">{% endif %}
+    <input class="field" type="date" name="f" value="{{ d1 }}" style="max-width:160px"><input class="field" type="date" name="t" value="{{ d2 }}" style="max-width:160px">
+    <button class="btn btn-sm btn-gray">Показать</button></form>
+</header>
+<div class="stats">
+  <div class="stat"><span class="footnote">Сегодня</span><b>{{ "{:,.2f}".format(today_sum).replace(",", " ") }} ₴</b></div>
+  <div class="stat"><span class="footnote">За период {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ "{:,.2f}".format(total).replace(",", " ") }} ₴</b></div>
+  <div class="stat"><span class="footnote">Ставка</span><span class="subhead" style="display:block;margin-top:4px">{{ lines|join(" · ") or "не задана" }}</span></div>
+</div>
+<div class="card compact fill scroll">
+  {% for day, rows in days.items() %}
+  <div class="card-h"><span class="headline">{{ day.strftime("%d.%m.%Y") }}</span><b>{{ "%.2f"|format(rows|sum(attribute="amount")) }} ₴</b></div>
+  {% for a in rows %}
+  {% set o = orders.get(a.work_order_id) %}
+  <div class="kv"><span>{% if o %}<a href="/orders/{{ o.id }}">{{ o.number[-6:] }}</a> · {% endif %}{{ a.note }}
+    <span class="caption">· {% if a.kind == "percent" %}{{ a.rate|num }} % от {{ "%.2f"|format(a.base_amount) }} ₴{% elif a.kind == "per_unit" %}{{ "%.2f"|format(a.rate) }} ₴ × {{ a.base_amount|num }}{% else %}{{ KIND.get(a.kind) }}{% endif %}</span></span>
+    <b>{{ "%.2f"|format(a.amount) }} ₴</b></div>
+  {% endfor %}
+  {% else %}<p class="footnote">Начислений за период нет. Начисление появляется, когда наряд оплачен.</p>{% endfor %}
+</div>
+{% endblock %}

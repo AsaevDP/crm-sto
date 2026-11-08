@@ -437,3 +437,33 @@ select.field { text-overflow: ellipsis; }
   .intake .group:has(label.row) { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .intake .group label.row { hyphens: manual; }
 }
+
+/* ===== Шаг 6: работы и деньги ===== */
+.work-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.work-btns form { margin: 0; }
+.work-edit > summary { cursor: pointer; color: var(--accent); list-style: none; }
+.work-edit > summary::-webkit-details-marker { display: none; }
+.work-edit[open] > summary { margin-bottom: 6px; }
+.price-mode { display: grid; gap: 6px; }
+.part.work[data-ws="done"] .part-name { color: var(--text-2); }
+.kv.total { border-top: 1px solid var(--separator); padding-top: 6px; }
+.kv.total b { font-size: 16px; font-weight: 700; }
+.kv.due b { color: var(--red); font-weight: 700; }
+.kv.due.zero b { color: var(--green); }
+.chip[data-s="paid"] { --c: var(--teal); }
+.pay-grid { grid-template-columns: 1.2fr 1fr !important; } .pay-grid > [data-t="diag"] { grid-column: 2 !important; grid-row: 1 !important; }
+
+/* Плашки статусов не сжимаются; причина паузы — отдельной строкой */
+.part-main .chip, .li .chip, .finding-top .chip, .card-h .chip { flex: none; }
+.pause-why { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--orange); }
+.radio-list { display: grid; gap: 6px; font-size: 14px; }
+.radio-list label { display: flex; gap: 8px; align-items: center; color: var(--text); cursor: pointer; }
+.radio-list input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
+#money .segmented button { padding: 6px 4px; font-size: 12px; }
+
+/* Суммы не переносятся посередине; длинный текст в «ключ — значение» — только где помечено .wrap */
+.kv b { white-space: nowrap; }
+.kv b.wrap, .issue .kv b, #money .kv b.wrap { white-space: normal; }
+.kv > span { flex: 1 1 auto; }
+/* Карточка-список на всю высоту: строки идут сверху, без растягивания */
+.card.compact.fill, .card.fill { align-content: start; }

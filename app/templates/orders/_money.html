@@ -1,0 +1,81 @@
+{# Блок «Деньги»: итог, скидка, оплаты, предоплата, выдача авто клиенту. #}
+{% if ctx.can("money.view") %}
+<div class="card compact" id="money">
+  <div class="card-h"><span class="headline">Деньги</span>
+    <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a>
+    {% if wo.status == "closed" %}<a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}/act/handover" target="_blank">Акт выдачи</a>{% endif %}</span></div>
+
+  {% if wo.awaiting_prepay %}<div class="flash error" style="margin:0">Ждёт предоплату {{ "%.2f"|format(wo.prepay_amount) }} ₴ — подбор и закупка заблокированы</div>{% endif %}
+
+  <div class="kv"><span>Работы</span><b>{{ "%.2f"|format(t.works) }} ₴</b></div>
+  <div class="kv"><span>Запчасти</span><b>{{ "%.2f"|format(t.parts) }} ₴</b></div>
+  {% if t.discount %}<div class="kv"><span>Скидка {{ wo.discount_pct|num }} %{% if wo.payroll_ignore_discount %} · зарплата без скидки{% endif %}</span><b>−{{ "%.2f"|format(t.discount) }} ₴</b></div>{% endif %}
+  <div class="kv total"><span>Итого</span><b>{{ "{:,.2f}".format(t.total).replace(",", " ") }} ₴</b></div>
+  <div class="kv"><span>Оплачено</span><b>{{ "%.2f"|format(t.paid) }} ₴</b></div>
+  <div class="kv due {{ 'zero' if t.due <= 0 else '' }}"><span>Остаток</span><b>{{ "%.2f"|format(t.due) }} ₴</b></div>
+
+  {% if payments %}
+  <details><summary class="caption">Оплаты · {{ payments|length }}</summary>
+    {% for p in payments %}<div class="kv"><span>{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}</span><b>{{ "%.2f"|format(p.amount) }}</b></div>{% endfor %}
+  </details>
+  {% endif %}
+
+  {% if can_money %}
+  <details class="add-finding" {% if wo.status == "ready" and t.due > 0 %}open{% endif %}>
+    <summary class="btn btn-block btn-sm">Принять оплату</summary>
+    <form class="form dense" method="post" action="/orders/{{ wo.id }}/payments" style="margin-top:8px">
+      <div class="form-row"><label>Сумма, ₴<input class="field" name="amount" inputmode="decimal" value="{{ '%.2f'|format(t.due if t.due > 0 else 0) }}" required></label>
+        <label>№ чека (ПРРО)<input class="field" name="receipt_no" placeholder="необязательно"></label></div>
+      <div class="segmented seg-wide pick" data-name="method">
+        {% for k, v in PAY_METHODS.items() %}<button type="button" data-v="{{ k }}" aria-pressed="{{ (loop.first)|lower }}" title="{{ v }}">{{ {"cash": "Нал", "card": "Безнал", "terminal": "Терминал"}[k] }}</button>{% endfor %}</div>
+      <input type="hidden" name="method" value="cash">
+      <label>Назначение<select class="field" name="purpose">
+        {% for k, v in PAY_PURPOSES.items() %}<option value="{{ k }}" {% if k == ('prepay' if wo.awaiting_prepay else 'full') %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      <button class="btn btn-sm">Провести оплату</button>
+    </form>
+  </details>
+
+  <details class="work-edit">
+    <summary class="caption">Предоплата и скидка</summary>
+    <form class="form dense" method="post" action="/orders/{{ wo.id }}/money">
+      <div class="segmented seg-wide pick" data-name="payment_type">
+        <button type="button" data-v="post" aria-pressed="{{ (wo.payment_type != 'prepay')|lower }}">По факту</button>
+        <button type="button" data-v="prepay" aria-pressed="{{ (wo.payment_type == 'prepay')|lower }}">С предоплатой</button></div>
+      <input type="hidden" name="payment_type" value="{{ wo.payment_type }}">
+      <div class="form-row"><label>Предоплата, ₴<input class="field" name="prepay_amount" inputmode="decimal" value="{{ '%.2f'|format(wo.prepay_amount or 0) }}"></label>
+        <label>Скидка, %<input class="field" name="discount_pct" type="number" min="0" max="100" step="0.5" value="{{ wo.discount_pct|num }}"></label></div>
+      <input class="field" name="prepay_for" value="{{ wo.prepay_for }}" placeholder="За что предоплата (работы, детали)">
+      {% if is_admin %}
+      <label class="row" style="padding:0"><span class="grow">Зарплата без учёта скидки</span>
+        <input type="hidden" name="payroll_ignore_discount" value="0">
+        <input type="checkbox" class="switch" name="payroll_ignore_discount" value="1" {% if wo.payroll_ignore_discount %}checked{% endif %}></label>
+      {% endif %}
+      <button class="btn btn-sm btn-tinted">Сохранить</button>
+    </form>
+  </details>
+
+  {% if wo.status == "paid" or (wo.status == "ready" and is_admin) %}
+  <details class="add-finding" {% if wo.status == "paid" %}open{% endif %}>
+    <summary class="btn btn-block btn-sm" style="background:var(--green);color:#fff">Выдать авто клиенту</summary>
+    <form class="form dense" method="post" action="/orders/{{ wo.id }}/close" style="margin-top:8px">
+      <div class="headline" style="font-size:14px">Акт выдачи: автомобиль…</div>
+      <div class="radio-list">
+        <label><input type="radio" name="state" value="ok" checked> Полностью исправен</label>
+        <label><input type="radio" name="state" value="partial"> Не полностью исправен</label>
+        <label><input type="radio" name="state" value="advice"> Исправен, есть рекомендации</label></div>
+      <textarea class="field st-partial" name="defects" rows="2" placeholder="Что неисправно (каждое с новой строки) *" hidden></textarea>
+      <textarea class="field st-advice" name="advice" rows="2" placeholder="Рекомендации: деталь ещё рабочая, но стоит обратить внимание" hidden></textarea>
+      {% if t.due > 0 or wo.status == "ready" %}<input class="field" name="debt_comment" placeholder="Закрытие с долгом {{ '%.2f'|format(t.due) }} ₴: комментарий *" required>{% endif %}
+      <button class="btn btn-sm">Выдать и закрыть наряд</button>
+      <p class="hint" style="margin:0">Рекомендации и неисправности попадут в карту клиента.</p>
+    </form>
+  </details>
+  {% endif %}
+  {% endif %}
+
+  {% if wo.status == "closed" and wo.handover_state %}
+  <div class="kv"><span>Акт выдачи</span><b>{{ {"ok": "исправен", "partial": "не полностью исправен", "advice": "есть рекомендации"}[wo.handover_state] }}</b></div>
+  {% if wo.closed_with_debt_comment %}<div class="kv"><span>Закрыт с долгом</span><b>{{ wo.closed_with_debt_comment }}</b></div>{% endif %}
+  {% endif %}
+</div>
+{% endif %}

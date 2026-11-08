@@ -212,6 +212,12 @@ def _int(v: str):
         return None
 
 
+def _hour_rate(db: Session, branch_id):
+    from decimal import Decimal
+    from . import settings as st
+    return Decimal(str(st.get(db, branch_id, "pricing")["hour_rate"]))
+
+
 def set_status(db: Session, wo: WorkOrder, new: str, comment: str = ""):
     db.add(WoStatusHistory(work_order_id=wo.id, from_status=wo.status if wo.status != new else "", to_status=new,
                            comment=comment))
@@ -271,8 +277,9 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     db.add(WoStatusHistory(work_order_id=wo.id, from_status="", to_status="created", comment="Приёмка"))
     event(db, wo, "order", f"Приёмка. {wo.complaint or ''}".strip())
     if wo.scenario == "A":
+        rate = _hour_rate(db, bid)
         for name in f.work_lines()[:50]:
-            db.add(WoWork(work_order_id=wo.id, name=name[:200], mechanic_id=wo.mechanic_id))
+            db.add(WoWork(work_order_id=wo.id, name=name[:200], mechanic_id=wo.mechanic_id, pricing="hours", rate=rate))
     return wo
 
 
@@ -327,9 +334,11 @@ def finish_approval(db: Session, wo: WorkOrder) -> str:
             event(db, wo, "recommendation", f.text, finding=f, urgency=f.urgency)
     # Согласованные проблемы становятся работами наряда (цены — на шаге 6)
     have = {w.finding_id for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))}
+    rate = _hour_rate(db, wo.branch_id)
     for f in yes:
         if f.id not in have:
-            db.add(WoWork(work_order_id=wo.id, finding_id=f.id, name=f.text[:200], mechanic_id=wo.mechanic_id))
+            db.add(WoWork(work_order_id=wo.id, finding_id=f.id, name=f.text[:200], mechanic_id=wo.mechanic_id,
+                          pricing="hours", rate=rate))
     summary = f"Согласовано: {len(yes)}, отказ: {len(findings) - len(yes)}"
     event(db, wo, "approval", summary)
     if yes:

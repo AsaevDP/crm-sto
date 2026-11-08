@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1 class="large-title">Зарплата</h1>
+  <form class="ov-actions" method="get">
+    <input class="field" type="date" name="f" value="{{ d1 }}" style="max-width:160px"><input class="field" type="date" name="t" value="{{ d2 }}" style="max-width:160px">
+    <button class="btn btn-sm btn-gray">Показать</button>
+    {% if user.role.code == "admin" %}<a class="btn btn-sm btn-tinted" href="/settings/payroll">Схемы и оклад</a>{% endif %}</form>
+</header>
+<div class="stats"><div class="stat"><span class="footnote">Начислено всем за {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ "{:,.2f}".format(total).replace(",", " ") }} ₴</b></div></div>
+<div class="group fill scroll">
+  {% for s in staff %}
+  <a class="row chevron" href="/payroll?user={{ s.id }}&f={{ d1 }}&t={{ d2 }}">
+    <span class="avatar" style="--accent:{{ color_css(s.role.color) }}">{{ s.initials }}</span>
+    <span class="grow">{{ s.full_name }}<div class="caption">{{ s.role.name }}</div></span>
+    <span class="value"><b style="color:var(--text)">{{ "%.2f"|format(sums.get(s.id, 0)) }} ₴</b></span></a>
+  {% endfor %}
+</div>
+{% endblock %}

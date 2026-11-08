@@ -15,6 +15,10 @@ class Payment(Entity):
     method: Mapped[str] = mapped_column(String(10))   # cash / card / terminal
     purpose: Mapped[str] = mapped_column(String(10))  # prepay / extra / full
     receipt_no: Mapped[str] = mapped_column(String(60), default="")
+    comment: Mapped[str] = mapped_column(String(300), default="")
+
+PAY_METHODS = {"cash": "Наличные", "card": "Безнал", "terminal": "Терминал"}
+PAY_PURPOSES = {"prepay": "Предоплата", "extra": "Доплата", "full": "Полная оплата"}
 
 
 class AuditLog(Entity):

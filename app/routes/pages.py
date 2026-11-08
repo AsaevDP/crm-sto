@@ -11,11 +11,8 @@ router = APIRouter()
 # Что появится в разделе и на каком шаге — для пустых экранов
 SECTIONS = {
     "/razbor": ("Разбор", "wrench", 7, "Б/у детали с донором и фото, экспорт для сайта.", ["razbor.view"]),
-    "/money": ("Деньги", "money", 6, "Работы и цены, предоплата, журнал оплат, закрытие наряда.", ["money.view"]),
     "/timesheet": ("Табель", "clock", None, "Кто на месте, отметки по картам, часы за день и месяц.",
                    ["attendance.view_all", "attendance.view_own"]),
-    "/payroll": ("Зарплата", "chart", None, "Начисления по дням: из каких нарядов и по какой ставке.",
-                 ["payroll.view_own", "payroll.view_all"]),
 }
 
 
@@ -61,7 +58,10 @@ def pult(ctx: Ctx = Depends(get_ctx)):
         for uid in (wo.mechanic_id, wo.partsman_id):
             if uid:
                 busy[uid] = busy.get(uid, 0) + 1
-    return ctx.render("pult.html", title="Пульт", lifts=lifts, vehicles=vehicles, people=people, staff=staff,
+    from ..models import WoWorkSession
+    paused = {s.work_order_id: s.pause_reason for s in db.scalars(select(WoWorkSession).where(
+        WoWorkSession.branch_id == bid, WoWorkSession.kind == "pause", WoWorkSession.ended_at.is_(None)))}
+    return ctx.render("pult.html", title="Пульт", lifts=lifts, vehicles=vehicles, people=people, staff=staff, paused=paused,
                       counts=counts, issue_new=issue_new, busy=busy, fmt_plate=fmt_plate)
 
 

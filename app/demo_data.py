@@ -16,6 +16,7 @@ from .db import SessionLocal, current_branch_id, current_user_id
 from .models import (Branch, Lift, Location, Purchase, Role, User, WoFinding, WoPart, WorkOrder)
 from .security import hash_secret
 from .services import orders as osvc
+from .services import money as msvc
 from .services import stock as ssvc
 
 PHOTOS = Path(__file__).parent / "demo" / "photos"
@@ -32,6 +33,7 @@ CLIENTS = [
     ("0996667788", "Сергей Бондар", "ВС 7777 АА", "Hyundai", "Tucson", 2021, 45100),
     ("0937778899", "Ирина Ткаченко", "КА 2468 ВВ", "Kia", "Sportage", 2020, 73400),
     ("0668889900", "Дмитрий Мороз", "АХ 1357 СЕ", "Mercedes-Benz", "E 220d W213", 2018, 199000),
+    ("0951234567", "Наталья Кравец", "КА 8080 НК", "Mazda", "CX-5", 2019, 88300),
 ]
 
 STOCK = [
@@ -247,6 +249,85 @@ def populate():
         osvc.set_status(db, wo, "diag", "Назначен слесарь")
         fs = find(wo, [("Ходовая в порядке. Задние колодки ~5 мм — заменить при следующем ТО", "advice", None)])
         approve(wo, fs, ["no"])
+
+        # ---- Деньги и работы (шаг 6) ----
+        from datetime import timedelta
+        from .db import now
+        from .models import PayScheme, PaySchemeLine, UserPayScheme, WoWork, WoWorkSession
+        from datetime import date
+
+        def price_works(wo, specs):
+            """specs: [(часы или None, цена часа или фикс)] по порядку работ."""
+            ws = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all()
+            for w, (hours, rate) in zip(ws, specs):
+                w.pricing = "fixed" if hours is None else "hours"
+                w.hours = None if hours is None else Decimal(str(hours))
+                w.rate = Decimal(str(rate))
+                w.price = msvc.work_price(w)
+            db.flush()
+            return ws
+
+        all_orders = db.scalars(select(WorkOrder).order_by(WorkOrder.created_at)).all()
+        by_plate = {}
+        from .models import Vehicle
+        for o in all_orders:
+            by_plate[db.get(Vehicle, o.vehicle_id).plate] = o
+        P = osvc.norm_plate
+        price_works(by_plate[P("АА 1234 ВС")], [(1.5, 800), (0.8, 800)])          # ТО Camry
+        price_works(by_plate[P("АА 0001 ХХ")], [(2.5, 900)])                       # BMW течь масла
+        price_works(by_plate[P("ВІ 3344 ОО")], [(1.2, 800), (None, 600)])          # Renault тормоза
+        hy = by_plate[P("ВС 7777 АА")]                                             # Hyundai — в работе
+        ws = price_works(hy, [(1.6, 800), (None, 450)])
+        t0 = now() - timedelta(minutes=95)
+        as_user("andrey")
+        db.add(WoWorkSession(work_order_id=hy.id, wo_work_id=ws[0].id, mechanic_id=users["andrey"].id, lift_id=hy.lift_id,
+                             started_at=t0, ended_at=t0 + timedelta(minutes=50)))
+        ws[0].status = "done"; ws[0].done_at = t0 + timedelta(minutes=50)
+        db.add(WoWorkSession(work_order_id=hy.id, wo_work_id=ws[1].id, mechanic_id=users["andrey"].id, lift_id=hy.lift_id,
+                             started_at=t0 + timedelta(minutes=55), ended_at=t0 + timedelta(minutes=70)))
+        db.add(WoWorkSession(work_order_id=hy.id, wo_work_id=ws[1].id, mechanic_id=users["andrey"].id, lift_id=hy.lift_id,
+                             started_at=t0 + timedelta(minutes=70), kind="pause", pause_reason="Ждём масло от кладовщика"))
+        ws[1].status = "paused"
+        # BMW — большой ремонт с предоплатой (внесена)
+        bmw = by_plate[P("АА 0001 ХХ")]
+        as_user("irina")
+        bmw.payment_type, bmw.prepay_amount, bmw.prepay_for = "prepay", Decimal("2000"), "Прокладка и масло"
+        msvc.add_payment(db, bmw, Decimal("2000"), "card", "prepay", "000117")
+
+        # Mazda: полностью сделан, оплачен со скидкой, выдан с рекомендацией
+        done_wo = intake(8, "A", None, works="Замена тормозных колодок задних\nЗамена щёток стеклоочистителя",
+                         fuel="75", items=("docs", "spare"), photos=("rear",))
+        as_user("irina")
+        done_wo.mechanic_id = users["viktor"].id
+        ws = price_works(done_wo, [(0.8, 800), (None, 150)])
+        for w in ws:
+            w.mechanic_id = users["viktor"].id
+        add_part(done_wo, "Колодки тормозные задние", markup=45)
+        add_part(done_wo, "Щётки стеклоочистителя (к-т)", markup=40)
+        as_user("oleg")
+        ssvc.finish_picking(db, done_wo)
+        as_user("viktor")
+        req = ssvc.request_issue(db, done_wo)
+        as_user("pavel")
+        ssvc.issue(db, req, users["pavel"].id)
+        as_user("viktor")
+        for w in ws:
+            w.status, w.done_at = "done", now()
+        osvc.set_status(db, done_wo, "ready", "Все работы выполнены")
+        as_user("irina")
+        done_wo.discount_pct = Decimal("5")
+        db.flush()
+        due = msvc.totals(db, done_wo).due
+        msvc.add_payment(db, done_wo, due, "terminal", "full", "000118")
+        msvc.close(db, done_wo, False, "advice", "", "Передние диски — износ ~60 %, проверить через 10 000 км")
+
+        # Слесарь Игорь: оклад 600 ₴/день + 25 % от работ (пример схемы)
+        as_user("admin")
+        sch = PayScheme(name="Схема: Игорь Мельник")
+        db.add(sch); db.flush()
+        db.add(UserPayScheme(user_id=users["igor"].id, scheme_id=sch.id, valid_from=date.today()))
+        db.add(PaySchemeLine(scheme_id=sch.id, kind="salary", salary_period="day", rate=Decimal("600")))
+        db.add(PaySchemeLine(scheme_id=sch.id, kind="percent", base="works", rate=Decimal("25")))
 
         # Заметки в карты клиентов
         as_user("irina")

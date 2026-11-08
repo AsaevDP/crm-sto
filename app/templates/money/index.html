@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1 class="large-title">Деньги</h1>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="?day={{ prev }}">‹</a>
+    <span class="headline">{{ d.strftime("%d.%m.%Y") }}</span>
+    <a class="btn btn-sm btn-gray" href="?day={{ next }}">›</a></div>
+</header>
+<div class="stats">
+  <div class="stat"><span class="footnote">Принято за день</span><b>{{ "{:,.0f}".format(total).replace(",", " ") }} ₴</b></div>
+  {% for k, v in PAY_METHODS.items() %}<div class="stat"><span class="footnote">{{ v }}</span><b>{{ "{:,.0f}".format(by_method[k]).replace(",", " ") }} ₴</b></div>{% endfor %}
+  <div class="stat"><span class="footnote">Долги клиентов</span><b style="color:var(--red)">{{ "{:,.0f}".format(debts|sum(attribute="1.due")).replace(",", " ") }} ₴</b></div>
+</div>
+<div class="cl-grid fill">
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Оплаты за день · {{ pays|length }}</span></div>
+      {% for p in pays %}
+      {% set o = orders.get(p.work_order_id) %}
+      <div class="kv"><span>{{ p.created_at.astimezone().strftime("%H:%M") }} · <a href="/orders/{{ p.work_order_id }}">{{ o.number[-6:] if o else "" }}</a> · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %} · {{ people.get(p.created_by).short_name if people.get(p.created_by) else "" }}</span>
+        <b>{{ "%.2f"|format(p.amount) }} ₴</b></div>
+      {% else %}<p class="footnote">Оплат нет</p>{% endfor %}
+    </div>
+  </section>
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Долги · {{ debts|length }}</span></div>
+      {% for wo, t, c in debts %}
+      <div class="kv"><span><a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ c.full_name }} · {{ {"ready":"готово","paid":"оплачено","closed":"закрыт с долгом"}[wo.status] }}</span><b style="color:var(--red)">{{ "%.2f"|format(t.due) }} ₴</b></div>
+      {% else %}<p class="footnote">Долгов нет</p>{% endfor %}
+    </div>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Ждут предоплату · {{ waiting_prepay|length }}</span></div>
+      {% for wo in waiting_prepay %}<div class="kv"><span><a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ wo.prepay_for or "предоплата" }}</span><b>{{ "%.2f"|format(wo.prepay_amount) }} ₴</b></div>
+      {% else %}<p class="footnote">Нет</p>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

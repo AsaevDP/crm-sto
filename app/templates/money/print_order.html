@@ -1,0 +1,33 @@
+{% extends "money/_print_base.html" %}
+{# Для клиента: только название, кол-во, цена, сумма. Артикулы, закупка, наценка — НЕ показываем. #}
+{% block doc_title %}ЗАКАЗ-НАРЯД{% endblock %}
+{% block body %}
+<h2>Работы</h2>
+<table>
+  <tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена, ₴</th><th class="num">Сумма, ₴</th></tr>
+  {% for w in works %}
+  <tr><td>{{ w.name }}</td>
+    <td class="num">{% if w.pricing == "hours" %}{{ (w.hours * w.qty)|num }} н/ч{% else %}{{ w.qty|num }}{% endif %}</td>
+    <td class="num">{{ "%.2f"|format(w.rate) }}</td><td class="num">{{ "%.2f"|format(w.price) }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
+</table>
+<h2>Запчасти и материалы</h2>
+<table>
+  <tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена, ₴</th><th class="num">Сумма, ₴</th></tr>
+  {% for p in parts %}
+  <tr><td>{{ p.name }}</td><td class="num">{{ p.qty|num }}</td><td class="num">{{ "%.2f"|format(p.price) }}</td><td class="num">{{ "%.2f"|format(p.price * p.qty) }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
+</table>
+<table class="sum" style="width:55%;margin-left:auto">
+  <tr><td>Работы</td><td class="num">{{ "%.2f"|format(t.works) }} ₴</td></tr>
+  <tr><td>Запчасти</td><td class="num">{{ "%.2f"|format(t.parts) }} ₴</td></tr>
+  {% if t.discount %}<tr><td>Скидка {{ wo.discount_pct|num }} %</td><td class="num">−{{ "%.2f"|format(t.discount) }} ₴</td></tr>{% endif %}
+  <tr class="big"><td>ИТОГО</td><td class="num">{{ "{:,.2f}".format(t.total).replace(",", " ") }} ₴</td></tr>
+  <tr><td>Оплачено</td><td class="num">{{ "%.2f"|format(t.paid) }} ₴</td></tr>
+  <tr><td><b>К оплате</b></td><td class="num"><b>{{ "%.2f"|format(t.due if t.due > 0 else 0) }} ₴</b></td></tr>
+</table>
+<div class="sign">
+  <div>Заказчик: ____________ / {{ c.full_name }}</div>
+  <div>Исполнитель: ____________ / {{ manager.full_name if manager else "" }}</div>
+</div>
+{% endblock %}

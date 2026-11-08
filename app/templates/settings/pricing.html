@@ -1,20 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Наценка и % запчастиста</h1></div>
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Цена часа и наценка</h1></div>
 </header>
 <form class="cl-grid" method="post">
+  <div class="card compact form">
+    <div class="card-h"><span class="headline">Нормо-час по умолчанию</span></div>
+    <label>Цена нормо-часа, ₴
+      <input class="field" type="number" name="hour_rate" min="0" step="1" inputmode="numeric" value="{{ pricing.hour_rate }}"></label>
+    <p class="hint">Подставляется в новую работу. В каждой работе менеджер вписывает свою цену часа или ставит фиксированную цену.</p>
+  </div>
   <div class="card compact form">
     <div class="card-h"><span class="headline">Наценка по умолчанию</span></div>
     <label>Для новой запчасти в наряде, %
       <input class="field" type="number" name="default_markup" min="0" max="1000" step="1" inputmode="numeric" value="{{ pricing.default_markup }}"></label>
     <p class="hint">В наряде наценка вписывается вручную по каждой позиции (0–1000 %).</p>
   </div>
-  <div class="card compact form">
-    <div class="card-h"><span class="headline">Зарплата запчастиста</span>{% if not is_admin %}<span class="tag">только главный админ</span>{% endif %}</div>
-    <label>% от наценки (не от цены), 0–30
-      <input class="field" name="partsman_margin_pct" value="{{ payroll.partsman_margin_pct }}" inputmode="decimal" {% if not is_admin %}disabled{% endif %}></label>
-    <p class="hint">Пример: закупка 100 ₴, наценка 100 % → клиент платит 200 ₴ → запчастисту {{ payroll.partsman_margin_pct }} % от 100 ₴ = {{ "%.2f"|format(payroll.partsman_margin_pct|float) }} ₴. Начисление — на шаге 6.</p>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Проценты сотрудникам</span></div>
+    <p class="hint" style="margin:0">Слесарь — {{ payroll.mechanic_works_pct }} % от работ, запчастист — {{ payroll.partsman_margin_pct }} % от наценки (по умолчанию).
+      Меняет главный админ: <a href="/settings/payroll">Зарплата: схемы и оклад</a>.</p>
   </div>
   <div><button class="btn">Сохранить</button></div>
 </form>

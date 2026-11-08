@@ -8,16 +8,16 @@
   </div>
 </header>
 <div class="stats" style="grid-template-columns:repeat(3,1fr)">
-  <div class="stat"><span class="footnote">На складе</span><b>{{ b.on_hand|float }}</b></div>
-  <div class="stat"><span class="footnote">В резерве</span><b>{{ b.reserved|float }}</b></div>
-  <div class="stat"><span class="footnote">Свободно</span><b>{{ b.free|float }}</b></div>
+  <div class="stat"><span class="footnote">На складе</span><b>{{ b.on_hand|num }}</b></div>
+  <div class="stat"><span class="footnote">В резерве</span><b>{{ b.reserved|num }}</b></div>
+  <div class="stat"><span class="footnote">Свободно</span><b>{{ b.free|num }}</b></div>
 </div>
 <div class="cl-grid">
   <section class="ov-col on">
     {% if ctx.can("stock.manage") %}
     <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/adjust">
       <div class="card-h"><span class="headline">Инвентаризация</span></div>
-      <label>Фактически на полке, шт<input class="field" name="actual" value="{{ b.on_hand|float }}" inputmode="decimal"></label>
+      <label>Фактически на полке, шт<input class="field" name="actual" value="{{ b.on_hand|num }}" inputmode="decimal"></label>
       <input class="field" name="reason" placeholder="Причина: пересчёт, брак, потеря… *" required>
       <button class="btn btn-sm">Исправить остаток</button>
     </form>
@@ -29,7 +29,7 @@
       <div class="timeline">
         {% for m in moves %}
         {% set who = people.get(m.created_by) %}
-        <div class="tl"><span><b>{{ MOVEMENT_TYPES.get(m.type, m.type) }}</b> {{ "%+g"|format(m.qty|float) if m.type in ("adjust",) else m.qty|float }} шт
+        <div class="tl"><span><b>{{ MOVEMENT_TYPES.get(m.type, m.type) }}</b> {{ ("+" if m.type == "adjust" and m.qty > 0 else "") ~ (m.qty|num) }} шт
           {% if m.work_order_id and orders.get(m.work_order_id) %}· <a href="/orders/{{ m.work_order_id }}">{{ orders[m.work_order_id].number }}</a>{% endif %}</span>
           <span class="caption">{{ m.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }} · {{ who.short_name if who else "система" }}{% if m.comment %} — {{ m.comment }}{% endif %}</span></div>
         {% else %}<p class="footnote">Движений нет</p>{% endfor %}

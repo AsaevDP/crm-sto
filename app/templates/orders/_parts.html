@@ -15,7 +15,7 @@
       <span class="chip part-st" data-ps="{{ p.status }}">{{ PART_STATUS.get(p.status, p.status) }}</span>
     </div>
     <div class="part-nums">
-      <span>{{ p.qty|float|round(2)|string|replace(".0", "") }} шт</span>
+      <span>{{ p.qty|num }} шт</span>
       {% if show_price %}<span>× <b class="p-price">{{ "%.2f"|format(p.price) }}</b> ₴ = <b class="p-sum">{{ "%.2f"|format(p.price * p.qty) }}</b> ₴</span>{% endif %}
     </div>
     {% if show_cost %}

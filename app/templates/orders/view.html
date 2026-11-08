@@ -38,17 +38,13 @@
       {% else %}<p class="footnote">Нет фото</p>{% endif %}
     </div>
 
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Что делаем</span></div>
-      {% if wo.complaint %}<p class="ov-text"><span class="footnote">Жалоба:</span> {{ wo.complaint }}</p>{% endif %}
-      {% for w in works %}<div class="li">{{ icon("wrench") }}<span>{{ w.name }}</span></div>{% else %}<p class="footnote">Работы появятся после согласования</p>{% endfor %}
-    </div>
+    {% include "orders/_works.html" %}
 
     <div class="card compact">
       <div class="card-h"><span class="headline">Акт приёма</span></div>
       <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
-      <div class="kv"><span>В машине</span><b>{% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
-      {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b>{{ wo.intake_note }}</b></div>{% endif %}
+      <div class="kv"><span>В машине</span><b class="wrap">{% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
+      {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}
     </div>
   </section>
 
@@ -127,6 +123,7 @@
 
   {# ===== Колонка 3: кто и где, история ===== #}
   <section class="ov-col" data-t="hist">
+    {% include "orders/_money.html" %}
     <div class="card compact">
       <div class="card-h"><span class="headline">Кто и где</span></div>
       {% if can_assign %}
@@ -194,6 +191,42 @@
     if (!r.ok) { alert('Не сохранилось'); return; }
     seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
     seg.closest('.finding').dataset.a = b.dataset.v;
+  }));
+
+  // Цена работы: «По нормо-часам» или «Фикс. цена» — два отдельных способа
+  document.querySelectorAll('.price-mode').forEach(box => {
+    const form = box.closest('form'), f = n => box.querySelector(`[name="${n}"]`), sum = box.querySelector('.pm-sum');
+    const num = v => parseFloat(String(v || '0').replace(',', '.')) || 0;
+    function sync() {
+      const m = box.dataset.mode;
+      box.querySelector('.pm-hours').hidden = m !== 'hours'; box.querySelector('.pm-fixed').hidden = m !== 'fixed';
+      f('pricing').value = m;
+      const rate = m === 'hours' ? f('rate_h').value : f('rate_f').value, qty = m === 'hours' ? f('qty_h').value : f('qty_f').value;
+      f('rate').value = rate; f('qty').value = qty;
+      const total = m === 'hours' ? num(f('hours').value) * num(rate) * num(qty) : num(rate) * num(qty);
+      sum.textContent = `Сумма по работе: ${total.toFixed(2)} ₴`;
+    }
+    box.querySelectorAll('.segmented button').forEach(b => b.addEventListener('click', () => {
+      box.dataset.mode = b.dataset.v; box.querySelectorAll('.segmented button').forEach(x => x.setAttribute('aria-pressed', x === b)); sync();
+    }));
+    box.addEventListener('input', sync); form.addEventListener('submit', sync); sync();
+  });
+  // Переключатели-сегменты, которые пишут значение в скрытое поле (способ оплаты, назначение, акт выдачи)
+  document.querySelectorAll('.segmented.pick').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    const form = seg.closest('form'); form.elements[seg.dataset.name].value = b.dataset.v;
+  }));
+  // Акт выдачи: поле «что неисправно» / «рекомендации» — по выбранному варианту
+  document.querySelectorAll('.radio-list input[name=state]').forEach(r => r.addEventListener('change', () => {
+    const form = r.closest('form');
+    form.querySelector('.st-partial').hidden = r.value !== 'partial'; form.querySelector('.st-advice').hidden = r.value !== 'advice';
+  }));
+  // Пауза — спросить причину
+  document.querySelectorAll('.pause-form').forEach(f => f.addEventListener('submit', e => {
+    const r = prompt('Причина паузы (ждём деталь, обед, другая машина…)', 'Ждём деталь');
+    if (r === null) { e.preventDefault(); return; }
+    f.elements.reason.value = r;
   }));
 
   // Наценка по позиции — сохраняется сразу, цена пересчитывается

@@ -62,17 +62,17 @@
           {% if l.received %}<span class="chip" data-s="ready">принято</span>{% endif %}
         </div>
         <div class="part-nums">
-          {% if part %}<span class="tag">под наряд {{ orders[part.work_order_id].number[-6:] }}: {{ part.qty|float }} шт{% if l.qty > part.qty %}, на склад {{ (l.qty - part.qty)|float }}{% endif %}</span>{% else %}<span class="tag">на склад</span>{% endif %}
+          {% if part %}<span class="tag">под наряд {{ orders[part.work_order_id].number[-6:] }}: {{ part.qty|num }} шт{% if l.qty > part.qty %}, на склад {{ (l.qty - part.qty)|num }}{% endif %}</span>{% else %}<span class="tag">на склад</span>{% endif %}
         </div>
         {% if edit %}
         <form class="part-cost" method="post" action="/purchases/{{ p.id }}/lines/{{ l.id }}">
-          <label class="caption">шт <input class="mini" name="qty" value="{{ l.qty|float }}" inputmode="decimal" size="4"></label>
+          <label class="caption">шт <input class="mini" name="qty" value="{{ l.qty|num }}" inputmode="decimal" size="4"></label>
           {% if cost_ok %}<label class="caption">₴/шт <input class="mini" name="price" value="{{ '%.2f'|format(l.price) }}" inputmode="decimal" size="7"></label>{% else %}<input type="hidden" name="price" value="{{ l.price }}">{% endif %}
           <button class="btn btn-plain btn-sm">OK</button>
           <button class="btn btn-plain btn-sm" name="delete" value="1" style="color:var(--red)">Убрать</button>
         </form>
         {% else %}
-        <div class="part-cost"><span class="caption">{{ l.qty|float }} шт{% if cost_ok %} × {{ "%.2f"|format(l.price) }} ₴{% endif %}</span>
+        <div class="part-cost"><span class="caption">{{ l.qty|num }} шт{% if cost_ok %} × {{ "%.2f"|format(l.price) }} ₴{% endif %}</span>
           {% if recv and not l.received %}
           <form class="inline-form" method="post" action="/purchases/{{ p.id }}/receive"><input type="hidden" name="line_id" value="{{ l.id }}">
             <select class="mini" name="location_id"><option value="">без ячейки</option>{% for loc in locations %}<option value="{{ loc.id }}">{{ loc_label(loc) }}</option>{% endfor %}</select>

@@ -37,7 +37,7 @@
     <div class="card compact">
       <div class="card-h"><span class="headline">Наряды</span></div>
       {% for x in cards %}
-      <a class="li link" href="/orders/{{ x.o.id }}"><span class="chip" data-s="{{ x.o.status }}">{{ STATUSES[x.o.status] }}</span>
+      <a class="li link" href="/orders/{{ x.o.id }}"><span class="chip" data-s="{{ x.o.status }}">{{ STATUS_SHORT.get(x.o.status, STATUSES[x.o.status]) }}</span>
         <span><span class="mono footnote">{{ x.o.number }}</span> · {{ x.v.make }} {{ x.v.model }}<span class="caption" style="display:block">{{ x.o.created_at.astimezone().strftime("%d.%m.%Y") }}</span></span></a>
       {% else %}<p class="footnote">Нарядов нет</p>{% endfor %}
     </div>

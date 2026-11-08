@@ -14,7 +14,7 @@
       <div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
       {% if x.r.comment %}<p class="ov-text">«{{ x.r.comment }}»</p>{% endif %}
       {% for l in x.lines %}
-      <div class="kv"><span>{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|float }} шт · {{ l.cells|join(", ") or "—" }}</b></div>
+      <div class="kv"><span>{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт · {{ l.cells|join(", ") or "—" }}</b></div>
       {% endfor %}
       <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block">Выдано</button></form>
     </div>

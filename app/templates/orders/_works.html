@@ -1,0 +1,65 @@
+{# Блок «Работы»: цена по нормо-часам или фикс (выбирает менеджер), кнопки слесаря «Начал / Пауза / Готово». #}
+{% set WST = {"todo": "ждёт", "doing": "в работе", "paused": "пауза", "done": "готово"} %}
+{% set WCOL = {"todo": "created", "doing": "work", "paused": "waiting", "done": "ready"} %}
+<div class="card compact" id="works">
+  <div class="card-h"><span class="headline">Работы · {{ works|length }}</span>
+    {% if show_price and works %}<span class="footnote">итого <b>{{ "{:,.2f}".format(t.works).replace(",", " ") }} ₴</b></span>{% endif %}</div>
+  {% if wo.complaint %}<p class="ov-text"><span class="footnote">Жалоба:</span> {{ wo.complaint }}</p>{% endif %}
+
+  {% for w in works %}
+  {% set mech = people.get(w.mechanic_id) %}
+  <div class="part work" data-ws="{{ w.status }}">
+    <div class="part-main">
+      <span class="part-name">{{ w.name }}{% if mech %}<span class="caption" style="display:block">{{ mech.full_name }}</span>{% endif %}</span>
+      <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
+    </div>
+    {% if w.status == "paused" and pauses.get(w.id) %}<div class="hint warn" style="margin:0">Пауза: {{ pauses[w.id].pause_reason }} · с {{ pauses[w.id].started_at.astimezone().strftime("%H:%M") }}</div>{% endif %}
+    {% if show_price %}
+    <div class="part-nums">
+      <span>{% if w.pricing == "fixed" %}фикс {{ "%.2f"|format(w.rate) }} ₴{% else %}{{ w.hours|num if w.hours is not none else 0 }} н/ч × {{ "%.0f"|format(w.rate) }} ₴{% endif %}{% if w.qty != 1 %} × {{ w.qty|num }}{% endif %}</span>
+      <b>{{ "%.2f"|format(w.price) }} ₴</b>
+    </div>
+    {% endif %}
+
+    {% if can_work and w.status != "done" %}
+    <div class="work-btns">
+      {% if w.status in ("todo", "paused") %}
+      <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="start"><button class="btn btn-sm">{{ "Продолжить" if w.status == "paused" else "Начал" }}</button></form>
+      {% endif %}
+      {% if w.status == "doing" %}
+      <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state" class="pause-form"><input type="hidden" name="action" value="pause">
+        <input type="hidden" name="reason"><button class="btn btn-sm btn-gray">Пауза</button></form>
+      {% endif %}
+      <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="done"><button class="btn btn-sm btn-tinted">Готово</button></form>
+    </div>
+    {% endif %}
+
+    {% if can_edit_works and w.status != "done" %}
+    <details class="work-edit">
+      <summary class="caption">Изменить цену / слесаря</summary>
+      <form class="form dense" method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}">
+        <input class="field" name="name" value="{{ w.name }}" aria-label="Название работы">
+        {% include "orders/_work_price.html" %}
+        <select class="field" name="mechanic_id" aria-label="Слесарь"><option value="">Слесарь не выбран</option>
+          {% for m in all_mechanics %}<option value="{{ m.id }}" {% if m.id == w.mechanic_id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}</select>
+        <div class="form-row"><button class="btn btn-sm">Сохранить</button><button class="btn btn-sm btn-danger" name="delete" value="1">Удалить</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="footnote">{% if wo.status in ("created", "diag", "approve") %}Работы появятся после согласования{% else %}Работ нет{% endif %}</p>
+  {% endfor %}
+
+  {% if can_edit_works %}
+  {% set w = none %}
+  <details class="add-finding">
+    <summary class="btn btn-tinted btn-block btn-sm">{{ icon("plus") }}Добавить работу</summary>
+    <form class="form dense" method="post" action="/orders/{{ wo.id }}/works" style="margin-top:8px">
+      <input class="field" name="name" placeholder="Название работы *" required>
+      {% include "orders/_work_price.html" %}
+      <button class="btn btn-sm">Добавить</button>
+    </form>
+  </details>
+  {% endif %}
+</div>

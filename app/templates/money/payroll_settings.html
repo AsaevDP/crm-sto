@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Зарплата: схемы и оклад</h1></div>
+  {% if not is_admin %}<span class="tag">менять может только главный админ</span>{% endif %}
+</header>
+<div class="ov-grid fill pay-grid">
+  {# --- Сотрудники и их схемы --- #}
+  <section class="ov-col on" data-t="main">
+    {% for u in staff %}
+    <div class="card compact" id="u-{{ u.id }}">
+      <div class="card-h"><span><b>{{ u.full_name }}</b> <span class="caption">{{ u.role.name }}</span></span></div>
+      {% for l, desc in schemes[u.id] %}
+      <div class="kv"><span>{{ desc }}</span>
+        {% if is_admin %}<form method="post" action="/settings/payroll/lines/{{ l.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>{% endif %}</div>
+      {% else %}
+      <p class="footnote" style="margin:0">{% if default_desc[u.id] %}По умолчанию: {{ default_desc[u.id]|join(", ") }}{% else %}Схема не задана{% endif %}</p>
+      {% endfor %}
+      {% if is_admin %}
+      <details class="work-edit"><summary class="caption">＋ Добавить строку схемы</summary>
+        <form class="form dense line-form" method="post" action="/settings/payroll/{{ u.id }}/lines">
+          <div class="form-row three">
+            <select class="field" name="kind" aria-label="Вид">{% for k, v in KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+            <select class="field lf-base" name="base" aria-label="Основа">{% for k, v in BASES.items() %}<option value="{{ k }}" {% if (u.role.code == "partsman" and k == "parts_margin") %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+            <select class="field lf-period" name="salary_period" aria-label="Период" hidden>{% for k, v in PERIODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+            <input class="field" name="rate" inputmode="decimal" placeholder="% или ₴" required>
+          </div>
+          <div class="form-row lf-filters">
+            <select class="field" name="filter_source" aria-label="Откуда деталь">{% for k, v in SOURCES.items() %}<option value="{{ k }}">{{ "Детали: " ~ v }}</option>{% endfor %}</select>
+            <select class="field" name="filter_group_id" aria-label="Группа"><option value="">Любая группа</option>{% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}</select>
+          </div>
+          <button class="btn btn-sm">Добавить</button>
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="ov-col on" data-t="diag">
+    {# --- Проценты по умолчанию --- #}
+    <form class="card compact form dense" method="post" action="/settings/payroll/defaults">
+      <div class="card-h"><span class="headline">По умолчанию (если своей схемы нет)</span></div>
+      <div class="form-row"><label>Слесарю, % от работ<input class="field" name="mechanic_works_pct" inputmode="decimal" value="{{ defaults.mechanic_works_pct }}" {% if not is_admin %}disabled{% endif %}></label>
+        <label>Запчастисту, % от наценки (до 30)<input class="field" name="partsman_margin_pct" inputmode="decimal" value="{{ defaults.partsman_margin_pct }}" {% if not is_admin %}disabled{% endif %}></label></div>
+      {% if is_admin %}<button class="btn btn-sm">Сохранить</button>{% endif %}
+      <p class="hint" style="margin:0">Скидка клиенту уменьшает базу у всех, если в наряде не включено «Зарплата без учёта скидки».</p>
+    </form>
+
+    {# --- Оклад за период --- #}
+    {% if is_admin %}
+    <form class="card compact form dense" method="post" action="/settings/payroll/salary">
+      <div class="card-h"><span class="headline">Начислить оклад за период</span></div>
+      <input class="field" name="note" placeholder="Например: «Оклад за ноябрь»">
+      {% for u in staff %}{% if schemes[u.id]|selectattr("0.kind", "equalto", "salary")|list %}
+      <div class="kv"><span>{{ u.full_name }}</span><span class="pct"><input class="mini" name="days_{{ u.id }}" type="number" min="0" max="31" placeholder="дней"> дн.
+        <label class="caption"><input type="checkbox" name="month_{{ u.id }}" value="1"> месяц</label></span></div>
+      {% endif %}{% else %}{% endfor %}
+      <p class="hint" style="margin:0">Показаны сотрудники, у которых в схеме есть строка «Оклад». Дневная ставка × дни, месячная — галочкой.</p>
+      <button class="btn btn-sm">Начислить</button>
+    </form>
+    {% endif %}
+
+    {# --- Группы запчастей для особых ставок --- #}
+    <div class="card compact" id="groups">
+      <div class="card-h"><span class="headline">Группы запчастей</span></div>
+      <p class="hint" style="margin:0">Например «Профицит склада» или «ТО-расходники» — на них можно поставить свою ставку запчастисту.</p>
+      {% for g in groups %}
+      <div class="kv"><span><b>{{ g.name }}</b> · {{ group_items[g.id]|map(attribute="name")|join(", ") or "пусто" }}</span></div>
+      {% if is_admin %}
+      <form class="note-form grp-form" method="post" action="/settings/payroll/groups/{{ g.id }}/items">
+        <input class="field grp-find" placeholder="Добавить: найти деталь" autocomplete="off"><input type="hidden" name="catalog_id">
+        <button class="btn btn-sm btn-gray">Добавить</button></form>
+      {% endif %}
+      {% endfor %}
+      {% if is_admin %}<form class="note-form" method="post" action="/settings/payroll/groups"><input class="field" name="name" placeholder="Новая группа" required><button class="btn btn-sm">Создать</button></form>{% endif %}
+    </div>
+  </section>
+</div>
+<script>
+// Строка схемы: для оклада — период, для процента/фикса — основа и фильтры
+document.querySelectorAll('.line-form').forEach(f => {
+  const sync = () => { const sal = f.kind.value === 'salary'; f.querySelector('.lf-base').hidden = sal; f.querySelector('.lf-period').hidden = !sal; f.querySelector('.lf-filters').hidden = sal; };
+  f.kind.addEventListener('change', sync); sync();
+});
+// Группа: поиск детали в каталоге
+document.querySelectorAll('.grp-form').forEach(f => {
+  const inp = f.querySelector('.grp-find'); let t;
+  inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
+    const r = await fetch('/api/catalog/search?q=' + encodeURIComponent(inp.value), { headers: { 'x-requested-with': 'fetch' } });
+    if (!r.ok) return; const it = (await r.json()).items[0];
+    f.catalog_id.value = it ? it.id : ''; inp.title = it ? it.name : 'не найдено';
+    inp.style.color = it ? 'var(--green)' : 'var(--red)';
+  }, 300); });
+});
+</script>
+{% endblock %}
