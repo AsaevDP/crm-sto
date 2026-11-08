@@ -27,11 +27,25 @@ TEST_USERS = [
 
 def sync_permissions(db: Session):
     existing = {p.code: p for p in db.scalars(select(Permission))}
+    first_run = not existing
+    new_codes = []
     for code, name, group in PERMISSIONS:
         if code in existing:
             existing[code].name, existing[code].group = name, group
         else:
             db.add(Permission(code=code, name=name, group=group))
+            new_codes.append(code)
+    db.flush()
+    if first_run or not new_codes:
+        return
+    # Появилось новое право (новая версия программы) — выдаём его ролям, у которых оно
+    # есть по умолчанию. Остальные права, которые Стас уже настроил руками, не трогаем.
+    for role in db.scalars(select(Role)):
+        defaults = DEFAULT_ROLES.get(role.code, (None, None, []))[2]
+        for code in new_codes:
+            if code in defaults:
+                current_branch_id.set(role.branch_id)
+                db.add(RolePermission(role_id=role.id, permission=code, branch_id=role.branch_id))
     db.flush()
 
 

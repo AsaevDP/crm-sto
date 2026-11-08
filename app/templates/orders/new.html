@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/orders">{{ icon("back") }}Наряды</a><h1 class="large-title">Приёмка</h1></div>
+</header>
+
+<form id="intake" class="intake" autocomplete="off" novalidate>
+  <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id">
+
+  {# ---------- 1. Клиент ---------- #}
+  <section class="stack">
+    <div class="group-title">1 · Клиент</div>
+    <div class="card form">
+      <div class="search-box">
+        <input class="field search" id="find" placeholder="Найти: телефон, госномер, фамилия" inputmode="search">
+        <div class="results" id="results" hidden></div>
+      </div>
+      <div class="picked" id="picked" hidden>
+        <span class="tag">из базы</span><span id="picked-text" class="grow"></span>
+        <button type="button" class="btn btn-plain btn-sm" id="unpick">Новый клиент</button>
+      </div>
+      <div class="form-row">
+        <label>Телефон *<input class="field" name="phone" type="tel" inputmode="tel" placeholder="067 123 45 67" required></label>
+        <label>Имя *<input class="field" name="name" placeholder="Олег Коваленко" required autocapitalize="words"></label>
+      </div>
+    </div>
+  </section>
+
+  {# ---------- 2. Авто ---------- #}
+  <section class="stack">
+    <div class="group-title">2 · Автомобиль</div>
+    <div class="card form">
+      <div class="vehicles" id="vehicles" hidden></div>
+      <div class="form-row">
+        <label>Госномер *<input class="field mono plate" name="plate" placeholder="АА 1234 ВС" required autocapitalize="characters"></label>
+        <label>Марка *<input class="field" name="make" list="makes" placeholder="Toyota" required></label>
+        <label>Модель *<input class="field" name="model" placeholder="Camry" required></label>
+      </div>
+      <div class="form-row">
+        <label>Год<input class="field" name="year" inputmode="numeric" maxlength="4" placeholder="2018"></label>
+        <label>Пробег, км<input class="field" name="mileage" inputmode="numeric" placeholder="125 000"></label>
+        <label>VIN<input class="field mono" name="vin" maxlength="17" autocapitalize="characters"></label>
+      </div>
+      <datalist id="makes">{% for m in makes %}<option value="{{ m }}">{% endfor %}</datalist>
+    </div>
+  </section>
+
+  {# ---------- 3. Фото ---------- #}
+  <section class="stack">
+    <div class="group-title">3 · Фото при приёмке *</div>
+    <div class="card form">
+      <div class="pp-grid" id="pgrid"></div>
+      <label class="btn btn-tinted btn-block pp-add">
+        {{ icon("plus") }}Сделать или выбрать фото
+        <input type="file" id="pinput" accept="image/*" multiple hidden>
+      </label>
+      <p class="hint" id="pcount">Снимите машину по кругу и все повреждения. До {{ MAX_PHOTOS }} фото.</p>
+    </div>
+  </section>
+
+  {# ---------- 4. Что делаем ---------- #}
+  <section class="stack">
+    <div class="group-title">4 · Что делаем</div>
+    <div class="card form">
+      <div class="segmented seg-wide" id="scen">
+        <button type="button" data-v="B" aria-pressed="true">Нужна диагностика</button>
+        <button type="button" data-v="A" aria-pressed="false">Клиент знает, что нужно</button>
+      </div>
+      <input type="hidden" name="scenario" value="B">
+      <label>Жалоба клиента<textarea class="field" name="complaint" rows="2" placeholder="Стучит спереди справа на кочках"></textarea></label>
+      <label data-only="A" hidden>Работы * (каждая с новой строки)
+        <textarea class="field" name="works" rows="3" placeholder="Замена передних колодок&#10;Замена масла"></textarea>
+      </label>
+      <p class="hint" data-only="B">Слесарь проведёт диагностику, вы согласуете с клиентом, и только согласованное уйдёт в подбор.</p>
+      <p class="hint" data-only="A" hidden>Без диагностики: наряд сразу уйдёт запчастисту в подбор.</p>
+    </div>
+  </section>
+
+  {# ---------- 5. Назначения ---------- #}
+  <section class="stack">
+    <div class="group-title">5 · Кто и где</div>
+    <div class="card form">
+      <div class="form-row">
+        <label>Запчастист<span data-only="A" hidden> *</span>
+          <select class="field" name="partsman_id"><option value="">— не назначен —</option>
+            {% for u in partsmen %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
+        </label>
+        <label>Слесарь
+          <select class="field" name="mechanic_id"><option value="">— не назначен —</option>
+            {% for u in mechanics %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
+        </label>
+        <label>Подъёмник
+          <select class="field" name="lift_id" id="lift"><option value="">— без подъёмника —</option>
+            {% for l, busy in lifts %}<option value="{{ l.id }}" {% if busy %}data-busy="{{ busy.number }}"{% endif %}>{{ l.number }}{% if busy %} · занят ({{ busy.number[-6:] }}){% endif %}</option>{% endfor %}</select>
+        </label>
+      </div>
+      <p class="hint warn" id="liftwarn" hidden></p>
+    </div>
+  </section>
+
+  {# ---------- 6. Акт приёма ---------- #}
+  <section class="stack">
+    <div class="group-title">6 · Акт приёма</div>
+    <div class="card form">
+      <div class="headline" style="font-size:15px">Топливо</div>
+      <div class="segmented seg-wide" id="fuel">
+        {% for v, t in FUEL_LEVELS.items() %}<button type="button" data-v="{{ v }}" aria-pressed="false">{{ t }}</button>{% endfor %}
+      </div>
+      <input type="hidden" name="fuel_level">
+      <div class="group" style="background:var(--surface-2)">
+        {% for code, t in INTAKE_ITEMS.items() %}
+        <label class="row" style="color:var(--text);font-size:17px"><span class="grow">{{ t }}</span><input type="checkbox" class="switch" name="intake_items" value="{{ code }}"></label>
+        {% endfor %}
+      </div>
+      <label>Замечания (царапины, сколы, что важно)<textarea class="field" name="intake_note" rows="2"></textarea></label>
+    </div>
+  </section>
+
+  <div class="flash error" id="errors" hidden></div>
+  <div class="submit-bar"><button class="btn btn-block" id="submit">Создать наряд</button></div>
+</form>
+
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+<script>
+(function () {
+  const form = document.getElementById('intake');
+  const $ = n => form.elements[n];
+
+  // ---- Фото ----
+  const pc = document.getElementById('pcount');
+  const picker = PhotoPicker(document.getElementById('pinput'), document.getElementById('pgrid'), {{ MAX_PHOTOS }},
+    n => { pc.textContent = n ? `Фото: ${n} из {{ MAX_PHOTOS }}` : 'Снимите машину по кругу и все повреждения.'; });
+
+  // ---- Сегменты: сценарий и топливо ----
+  function seg(id, field, onSet) {
+    document.getElementById(id).addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', x === b));
+      $(field).value = b.dataset.v; onSet && onSet(b.dataset.v);
+    });
+  }
+  seg('scen', 'scenario', v => document.querySelectorAll('[data-only]').forEach(el => el.hidden = el.dataset.only !== v));
+  seg('fuel', 'fuel_level');
+
+  // ---- Подъёмник занят: предупреждаем, но не запрещаем ----
+  const lift = document.getElementById('lift'), lw = document.getElementById('liftwarn');
+  lift.onchange = () => {
+    const busy = lift.selectedOptions[0].dataset.busy;
+    lw.hidden = !busy;
+    if (busy) lw.textContent = `На этом подъёмнике уже стоит наряд ${busy}. Если машину сняли — всё ок.`;
+  };
+
+  // ---- Поиск клиента ----
+  const find = document.getElementById('find'), results = document.getElementById('results');
+  const picked = document.getElementById('picked'), vbox = document.getElementById('vehicles');
+  let timer, found = [];
+  find.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = find.value.trim();
+      if (q.length < 2) { results.hidden = true; return; }
+      const r = await fetch('/api/clients/search?q=' + encodeURIComponent(q), { headers: { 'x-requested-with': 'fetch' } });
+      if (!r.ok) return;
+      found = (await r.json()).items;
+      results.innerHTML = found.length ? found.map((c, i) => `
+        <button type="button" class="res" data-i="${i}"><span class="avatar">${c.name.split(' ').map(s => s[0]).slice(0, 2).join('')}</span>
+        <span class="grow"><b>${esc(c.name)}</b><span class="caption">${esc(c.phone_fmt)} · ${c.vehicles.map(v => esc(v.plate_fmt + ' ' + v.make)).join(', ') || 'нет авто'}</span></span></button>`).join('')
+        : '<div class="res footnote">Не нашли — заполните поля ниже, клиент создастся сам</div>';
+      results.hidden = false;
+    }, 250);
+  });
+  results.addEventListener('click', e => {
+    const b = e.target.closest('[data-i]'); if (!b) return;
+    pickClient(found[+b.dataset.i]);
+  });
+  function pickClient(c) {
+    $('client_id').value = c.id; $('phone').value = c.phone_fmt; $('name').value = c.name;
+    document.getElementById('picked-text').textContent = `${c.name}, ${c.phone_fmt}`;
+    picked.hidden = false; results.hidden = true; find.value = '';
+    // Авто клиента — выбрать одно или «другое авто»
+    vbox.innerHTML = c.vehicles.map((v, i) => `<button type="button" class="vchip" data-v="${i}">${esc(v.plate_fmt)} · ${esc(v.make)} ${esc(v.model)}</button>`).join('')
+      + '<button type="button" class="vchip" data-v="new">＋ Другое авто</button>';
+    vbox.hidden = false;
+    vbox.onclick = e => {
+      const b = e.target.closest('.vchip'); if (!b) return;
+      vbox.querySelectorAll('.vchip').forEach(x => x.classList.toggle('on', x === b));
+      const v = b.dataset.v === 'new' ? null : c.vehicles[+b.dataset.v];
+      $('vehicle_id').value = v ? v.id : '';
+      for (const k of ['plate', 'make', 'model', 'year', 'vin', 'mileage']) $(k).value = v ? (k === 'plate' ? v.plate_fmt : (v[k] ?? '')) : '';
+    };
+    if (c.vehicles.length === 1) vbox.querySelector('.vchip').click();
+  }
+  document.getElementById('unpick').onclick = () => {
+    $('client_id').value = ''; $('vehicle_id').value = ''; picked.hidden = true; vbox.hidden = true;
+    for (const k of ['phone', 'name', 'plate', 'make', 'model', 'year', 'vin', 'mileage']) $(k).value = '';
+  };
+  function esc(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+
+  // ---- Отправка ----
+  const btn = document.getElementById('submit'), errBox = document.getElementById('errors');
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    picker.appendTo(fd);
+    btn.disabled = true; btn.textContent = 'Сохраняю…'; errBox.hidden = true;
+    try {
+      const r = await fetch('/orders/new', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+      const res = await r.json().catch(() => ({}));
+      if (r.ok && res.ok) { location.href = res.url; return; }
+      errBox.innerHTML = 'Не хватает: ' + (res.errors || ['ошибка сервера']).map(esc).join(', ');
+      errBox.hidden = false; errBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (err) {
+      errBox.textContent = 'Нет связи с сервером. Проверьте Wi-Fi и нажмите ещё раз.'; errBox.hidden = false;
+    }
+    btn.disabled = false; btn.textContent = 'Создать наряд';
+  });
+})();
+</script>
+{% endblock %}

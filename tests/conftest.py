@@ -6,6 +6,7 @@ import pytest
 # Тесты работают на отдельной временной базе, рабочую data/crm.db не трогают
 _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp}/test.db".replace("\\", "/")
+os.environ["CRM_DATA_DIR"] = _tmp  # фото тестов — тоже во временную папку
 
 from fastapi.testclient import TestClient  # noqa: E402
 

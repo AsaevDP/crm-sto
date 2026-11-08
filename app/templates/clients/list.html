@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><h1 class="large-title">Клиенты</h1></header>
+<form class="toolbar-row" method="get">
+  <input class="field search" name="q" value="{{ q }}" placeholder="Телефон, госномер, фамилия, VIN" autocomplete="off">
+</form>
+{% if not q %}<div class="group-title">Недавние</div>{% endif %}
+{% if items %}
+<div class="group">
+  {% for c in items %}
+  <a class="row chevron" href="/clients/{{ c.id }}">
+    <span class="avatar">{{ (c.name.split()[:2]|map("first")|join(""))|upper }}</span>
+    <span class="grow">{{ c.name }}<div class="caption">{{ c.phone_fmt }}{% for v in c.vehicles %} · {{ v.plate_fmt }} {{ v.make }}{% endfor %}</div></span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card empty"><div class="empty-icon">{{ icon("users") }}</div>
+  <div class="title-2">{% if q %}Никого не нашли{% else %}Клиентов пока нет{% endif %}</div>
+  <p class="subhead">Клиенты появляются сами при приёмке машины.</p></div>
+{% endif %}
+{% endblock %}

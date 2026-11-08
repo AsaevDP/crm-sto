@@ -8,8 +8,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import audit  # noqa: F401 — подключает автоматический журнал
 from .config import COOKIE_SECURE, MEDIA_DIR, ROOT, SECRET_KEY
-from .db import Base, engine
-from .routes import auth, pages, settings
+from .db import Base, add_missing_columns, engine
+from .routes import auth, orders, pages, settings
 from .seed import seed
 from .web import Forbidden, NotLoggedIn, templates
 
@@ -18,6 +18,7 @@ from .web import Forbidden, NotLoggedIn, templates
 async def lifespan(_app):
     # До шага 8 таблицы создаются напрямую. Перед боевой базой подключим Alembic-миграции.
     Base.metadata.create_all(engine)
+    add_missing_columns()
     seed()
     yield
 
@@ -31,6 +32,7 @@ app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
 app.include_router(auth.router)
 app.include_router(pages.router)
+app.include_router(orders.router)
 app.include_router(settings.router)
 
 

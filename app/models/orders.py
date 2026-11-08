@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Entity, now
@@ -24,6 +24,15 @@ WO_STATUSES = {
     "closed": "Выдан клиенту",
     "cancel": "Отменён",
 }
+# Активные наряды (машина на территории СТО)
+WO_ACTIVE = ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready", "paid")
+# Что есть в машине при приёмке (акт)
+INTAKE_ITEMS = {
+    "docs": "Документы", "keys2": "Второй ключ", "spare": "Запаска", "jack": "Домкрат",
+    "kit": "Аптечка / знак", "valuables": "Ценные вещи в салоне",
+}
+FUEL_LEVELS = {0: "Пусто", 25: "¼", 50: "½", 75: "¾", 100: "Полный"}
+
 # Статус позиции запчасти
 PART_STATUSES = {
     "need": "нужна", "ordered": "заказана", "arrived": "пришла", "reserved": "в резерве",
@@ -68,6 +77,10 @@ class WorkOrder(Entity):
     awaiting_prepay: Mapped[bool] = mapped_column(Boolean, default=False)
     cancel_reason: Mapped[str] = mapped_column(Text, default="")
     closed_with_debt_comment: Mapped[str] = mapped_column(Text, default="")
+    # Акт приёма
+    fuel_level: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0, 25, 50, 75, 100 (%)
+    intake_items: Mapped[list] = mapped_column(JSON, default=list)          # коды из INTAKE_ITEMS
+    intake_note: Mapped[str] = mapped_column(Text, default="")              # замечания: повреждения и т.п.
 
 
 class WoStatusHistory(Entity):
@@ -91,7 +104,8 @@ class WoPhoto(Entity):
     __tablename__ = "wo_photos"
     work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id", ondelete="CASCADE"))
     finding_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_findings.id"), nullable=True)
-    file: Mapped[str] = mapped_column(String(255))
+    file: Mapped[str] = mapped_column(String(255))          # путь внутри data/photos
+    thumb: Mapped[str] = mapped_column(String(255), default="")  # миниатюра ~400px
     stage: Mapped[str] = mapped_column(String(10), default="intake")  # intake / diag / work
 
 

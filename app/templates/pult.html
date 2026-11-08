@@ -2,43 +2,58 @@
 {% block content %}
 <header class="page-head">
   <div><p class="footnote">Что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
+  {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
 </header>
 
 <section class="stack">
-  <div class="group-title">Подъёмники</div>
+  <div class="group-title">Подъёмники · занято {{ lifts|selectattr(1)|list|length }} из {{ lifts|length }}</div>
   <div class="lifts">
-    {% for l in lifts %}
+    {% for l, wo in lifts %}
+    {% if wo %}
+    {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
+    <a class="lift busy" href="/orders/{{ wo.id }}">
+      <span class="footnote">Подъёмник</span>
+      <b>{{ l.number }}</b>
+      <span class="lift-car">{{ v.make }} {{ v.model }}</span>
+      <span class="caption">{{ fmt_plate(v.plate) }}{% if mc %} · {{ mc.short_name }}{% endif %}</span>
+      <span class="chip" data-s="{{ wo.status }}">{{ {"created":"Создан","diag":"Диагностика","approve":"Согласование","picking":"Подбор","waiting":"Ждёт запчасти","instock":"Запчасти есть","work":"В работе","ready":"Готово","paid":"Оплачено"}.get(wo.status, wo.status) }}</span>
+    </a>
+    {% else %}
     <div class="lift">
       <span class="footnote">Подъёмник</span>
       <b>{{ l.number }}</b>
       <span class="chip" data-s="created">Свободен</span>
     </div>
+    {% endif %}
     {% endfor %}
   </div>
 </section>
 
 <div class="grid-2">
   <section class="stack">
+    <div class="group-title">Очереди</div>
+    <div class="group">
+      <a class="row chevron" href="/orders"><span class="grow">Новые, без назначения</span><span class="value">{{ counts.get("created", 0) }}</span></a>
+      <a class="row chevron" href="/orders"><span class="grow">На диагностике</span><span class="value">{{ counts.get("diag", 0) }}</span></a>
+      <a class="row chevron" href="/orders"><span class="grow">Ждут согласования</span><span class="value">{{ counts.get("approve", 0) }}</span></a>
+      <a class="row chevron" href="/orders"><span class="grow">Подбор запчастей</span><span class="value">{{ counts.get("picking", 0) }}</span></a>
+      <a class="row chevron" href="/orders"><span class="grow">Ждут запчасти</span><span class="value">{{ counts.get("waiting", 0) }}</span></a>
+      <div class="row"><span class="grow">Запросы на выдачу со склада</span><span class="value">{{ issue_new }}</span></div>
+      <a class="row chevron" href="/orders"><span class="grow">Готово, ждут клиента</span><span class="value">{{ counts.get("ready", 0) }}</span></a>
+    </div>
+  </section>
+  <section class="stack">
     <div class="group-title">Сотрудники</div>
     <div class="group">
       {% for s in staff %}
       <div class="row">
-        <span class="avatar">{{ s.initials }}</span>
+        <span class="avatar" style="--accent:{{ color_css(s.role.color) }}">{{ s.initials }}</span>
         <span class="grow">{{ s.full_name }}<div class="caption">{{ s.role.name }}</div></span>
-        <span class="tag">нет отметки</span>
+        {% if busy.get(s.id) %}<span class="tag">нарядов: {{ busy[s.id] }}</span>{% endif %}
       </div>
       {% endfor %}
     </div>
-  </section>
-  <section class="stack">
-    <div class="group-title">Очереди</div>
-    <div class="group">
-      <div class="row"><span class="grow">Ждут диагностики</span><span class="value">0</span></div>
-      <div class="row"><span class="grow">Ждут согласования</span><span class="value">0</span></div>
-      <div class="row"><span class="grow">Ждут запчасти</span><span class="value">0</span></div>
-      <div class="row"><span class="grow">Запросы на выдачу со склада</span><span class="value">0</span></div>
-    </div>
-    <p class="footnote" style="margin:0 16px">Наполнится с шага 3: машины на подъёмниках, паузы, кто что делает и отметки по картам.</p>
+    <p class="footnote" style="margin:0 16px">Кто на месте по картам и паузы появятся вместе с табелем.</p>
   </section>
 </div>
 {% endblock %}

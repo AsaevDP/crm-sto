@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <a class="back" href="/orders">{{ icon("back") }}Наряды</a>
+    <div class="footnote mono">{{ wo.number }}</div>
+    <h1 class="large-title">{{ v.make }} {{ v.model }}</h1>
+    <div class="subhead" style="margin-top:4px">{{ fmt_plate(v.plate) }}{% if v.year %} · {{ v.year }}{% endif %}{% if wo.mileage_in %} · {{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% endif %}</div>
+  </div>
+  <span class="chip chip-lg" data-s="{{ wo.status }}">{{ STATUSES[wo.status] }}</span>
+</header>
+
+{% if wo.status == "cancel" %}<div class="flash error">Отменён: {{ wo.cancel_reason }}</div>{% endif %}
+
+{# ---------- Фото ---------- #}
+<section class="stack">
+  <div class="group-title">Фото · {{ photos|length }}</div>
+  {% if photos %}
+  <div class="pgallery">
+    {% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}
+  </div>
+  {% endif %}
+  {% if can_add_photo %}
+  <label class="btn btn-tinted pp-add" id="addph">{{ icon("plus") }}<span id="addtxt">Добавить фото</span><input type="file" id="pinput" accept="image/*" multiple hidden></label>
+  <div class="pp-grid" id="pgrid" hidden></div>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+  {# ---------- Клиент и наряд ---------- #}
+  <section class="stack">
+    <div class="group-title">Клиент</div>
+    <div class="group">
+      <div class="row"><span class="avatar">{{ (c.full_name.split()[:2]|map("first")|join(""))|upper }}</span><span class="grow">{{ c.full_name }}<div class="caption">{{ fmt_phone(c.phone) }}</div></span>
+        <a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a></div>
+      {% if ctx.can("clients.view") %}<a class="row chevron" href="/clients/{{ c.id }}"><span class="grow">Карточка клиента и история</span></a>{% endif %}
+    </div>
+
+    <div class="group-title">Что делаем</div>
+    <div class="group">
+      <div class="row"><span class="grow">Сценарий</span><span class="value">{{ "А · без диагностики" if wo.scenario == "A" else "Б · с диагностикой" }}</span></div>
+      {% if wo.complaint %}<div class="row"><span class="grow">Жалоба<div class="subhead" style="color:var(--text)">{{ wo.complaint }}</div></span></div>{% endif %}
+      {% for w in works %}<div class="row"><span class="tile" style="background:var(--blue)">{{ icon("wrench") }}</span><span class="grow">{{ w.name }}</span></div>{% endfor %}
+    </div>
+
+    <div class="group-title">Акт приёма</div>
+    <div class="group">
+      <div class="row"><span class="grow">Топливо</span><span class="value">{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</span></div>
+      <div class="row"><span class="grow">В машине</span><span class="value" style="text-align:right">{% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</span></div>
+      {% if wo.intake_note %}<div class="row"><span class="grow">Замечания<div class="subhead" style="color:var(--text)">{{ wo.intake_note }}</div></span></div>{% endif %}
+    </div>
+  </section>
+
+  {# ---------- Назначения и история ---------- #}
+  <section class="stack">
+    <div class="group-title">Кто и где</div>
+    {% if can_assign %}
+    <form class="card form" method="post" action="/orders/{{ wo.id }}/assign">
+      <label>Запчастист<select class="field" name="partsman_id"><option value="">— не назначен —</option>
+        {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+      <label>Слесарь<select class="field" name="mechanic_id"><option value="">— не назначен —</option>
+        {% for u in mechanics %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+      <label>Подъёмник<select class="field" name="lift_id"><option value="">— без подъёмника —</option>
+        {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }}{% if busy and busy.id != wo.id %} · занят ({{ busy.number[-6:] }}){% endif %}</option>{% endfor %}</select></label>
+      <div><button class="btn btn-sm">Сохранить</button></div>
+    </form>
+    {% else %}
+    <div class="group">
+      {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
+      <div class="row"><span class="grow">Менеджер</span><span class="value">{{ mg.full_name if mg else "—" }}</span></div>
+      <div class="row"><span class="grow">Запчастист</span><span class="value">{{ pm.full_name if pm else "—" }}</span></div>
+      <div class="row"><span class="grow">Слесарь</span><span class="value">{{ mc.full_name if mc else "—" }}</span></div>
+      <div class="row"><span class="grow">Подъёмник</span><span class="value">{{ lift.number if lift else "—" }}</span></div>
+    </div>
+    {% endif %}
+
+    <div class="group-title">История</div>
+    <div class="group">
+      {% for h in history %}
+      {% set who = people.get(h.created_by) %}
+      <div class="row"><span class="chip" data-s="{{ h.to_status }}">{{ STATUSES.get(h.to_status, h.to_status) }}</span>
+        <span class="grow caption" style="text-align:right">{{ h.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ who.short_name if who else "система" }}{% if h.comment %}<br>{{ h.comment }}{% endif %}</span></div>
+      {% endfor %}
+    </div>
+
+    {% if can_cancel %}
+    <details class="card">
+      <summary class="headline" style="cursor:pointer;color:var(--red)">Отменить наряд</summary>
+      <form class="form" method="post" action="/orders/{{ wo.id }}/cancel" style="margin-top:12px">
+        <input class="field" name="reason" placeholder="Причина (обязательно)" required>
+        <div><button class="btn btn-sm btn-danger">Отменить наряд</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+</div>
+
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% if can_add_photo %}
+<script>
+// Добавить фото: сжать на телефоне → отправить → обновить страницу
+document.getElementById('pinput').addEventListener('change', async function () {
+  const btn = document.getElementById('addph'), files = [...this.files];
+  this.value = '';
+  if (!files.length) return;
+  btn.classList.add('busy'); document.getElementById('addtxt').textContent = 'Загружаю…';
+  const fd = new FormData();
+  for (const [i, f] of files.entries()) {
+    try { const c = await compressPhoto(f); fd.append('photos', c.full, `p${i}.jpg`); fd.append('thumbs', c.thumb, `t${i}.jpg`); } catch (e) {}
+  }
+  const r = await fetch('/orders/{{ wo.id }}/photos', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+  if (!r.ok) alert('Не удалось загрузить фото');
+  location.reload();
+});
+</script>
+{% endif %}
+{% endblock %}

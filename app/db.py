@@ -55,6 +55,22 @@ class Entity(Base):
         return mapped_column(Uuid, ForeignKey("users.id", use_alter=True), nullable=True)
 
 
+def add_missing_columns():
+    """До Alembic (шаг 8): если в модели появилась новая колонка, а таблица уже есть —
+    добавляем колонку, не трогая данные. Удаление/переименование так не делается."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have:
+                    ddl = col.type.compile(dialect=engine.dialect)
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
+
+
 def get_db():
     db = SessionLocal()
     try:

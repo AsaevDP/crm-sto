@@ -17,6 +17,8 @@ PERMISSIONS = [
     ("orders.diagnose", "Диагностика: находки и фото", "Наряды"),
     ("orders.approve", "Согласование с клиентом", "Наряды"),
     ("orders.cancel", "Отменять наряды", "Наряды"),
+    ("orders.assign", "Назначать запчастиста, слесаря, подъёмник", "Наряды"),
+    ("clients.view", "Клиенты и авто", "Наряды"),
     ("parts.pick", "Подбор запчастей в наряд", "Склад и закупки"),
     ("purchases.view", "Видеть закупки", "Склад и закупки"),
     ("purchases.manage", "Создавать закупки", "Склад и закупки"),
@@ -48,7 +50,7 @@ _OWN = ["payroll.view_own", "attendance.view_own"]
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
-        "orders.cancel", "purchases.view", "stock.view", "money.view", "money.accept",
+        "orders.cancel", "orders.assign", "clients.view", "purchases.view", "stock.view", "money.view", "money.accept",
         "prices.view_sale", "attendance.view_all", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "stock.view",
@@ -75,6 +77,7 @@ SYSTEM_COLORS = {
 MENU = [
     ("/pult", "Пульт", "pult", ["dashboard.view"]),
     ("/orders", "Наряды", "orders", ["orders.view_all", "orders.view_own"]),
+    ("/clients", "Клиенты", "users", ["clients.view"]),
     ("/stock", "Склад", "stock", ["stock.view"]),
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
     ("/razbor", "Разбор", "wrench", ["razbor.view"]),

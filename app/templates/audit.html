@@ -16,11 +16,11 @@
         <td><span class="tag">{{ TABLE_NAMES.get(r.table, r.table) }}</span></td>
         <td class="changes">
           {% if r.action == "update" %}
-            {% for k, v in r.changes.items() %}<div><b>{{ k }}</b>: {{ v[0] if v[0] is not none else "—" }} → {{ v[1] if v[1] is not none else "—" }}</div>{% endfor %}
+            {% for k, v in r.changes.items() %}<div><b>{{ FIELD_NAMES.get(k, k) }}</b>: {{ v[0] if v[0] is not none else "—" }} → {{ v[1] if v[1] is not none else "—" }}</div>{% endfor %}
           {% elif r.action in ("login", "logout") %}
             {% for k, v in r.changes.items() %}{{ k }}: {{ v }}{% endfor %}
           {% else %}
-            {% for k in ("full_name", "name", "login", "permission", "key", "uid", "number") %}{% if r.changes.get(k) %}<div><b>{{ k }}</b>: {{ r.changes[k] }}</div>{% endif %}{% endfor %}
+            {% for k in CREATE_FIELDS %}{% if r.changes.get(k) %}<div><b>{{ FIELD_NAMES.get(k, k) }}</b>: {{ r.changes[k] }}</div>{% endif %}{% endfor %}
           {% endif %}
         </td>
       </tr>

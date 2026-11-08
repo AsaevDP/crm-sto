@@ -99,3 +99,72 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 
 .tag { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--fill); color: var(--text-2); white-space: nowrap; }
 .muted { opacity: .5; }
+
+/* ===== Шаг 3: наряды ===== */
+.toolbar-row { display: flex; gap: 10px; }
+.segmented a { color: var(--text); text-decoration: none; font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 7px; text-align: center; white-space: nowrap; }
+.segmented a[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 0 1px rgba(0,0,0,.04); font-weight: 600; }
+.seg-wide { display: flex; width: 100%; }
+.seg-wide > * { flex: 1; }
+.page-head .btn .ic { width: 18px; height: 18px; }
+.chip-lg { font-size: 15px; padding: 8px 14px; }
+
+/* Карточки нарядов */
+.ocards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+@media (max-width: 400px) { .ocards { grid-template-columns: 1fr; } }
+.ocard { display: flex; gap: 12px; padding: 12px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-2);
+  color: inherit; text-decoration: none; transition: transform .15s var(--ease); }
+.ocard:active { transform: scale(.98); }
+.ocard-photo { position: relative; width: 84px; height: 84px; flex: none; border-radius: var(--r-md); background: var(--fill); overflow: hidden; }
+.ocard-photo img { width: 100%; height: 100%; object-fit: cover; }
+.ocard-n { position: absolute; right: 4px; bottom: 4px; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.55); color: #fff; }
+.ocard-body { min-width: 0; flex: 1; display: grid; gap: 2px; align-content: start; }
+.ocard-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.ocard-top .chip { font-size: 11px; padding: 4px 8px; }
+.ocard-car { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Приёмка */
+.intake { display: grid; gap: 20px; }
+.intake textarea.field { resize: vertical; font: inherit; }
+.search-box { position: relative; }
+.results { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 6px); background: var(--surface); border-radius: var(--r-md);
+  box-shadow: var(--shadow-3); overflow: hidden; max-height: 340px; overflow-y: auto; }
+.res { appearance: none; border: 0; background: none; font: inherit; color: inherit; width: 100%; text-align: left; cursor: pointer;
+  display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 0.5px solid var(--separator); }
+.res:hover { background: var(--fill-2); }
+.res .grow { display: grid; min-width: 0; }
+.picked { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.vehicles { display: flex; flex-wrap: wrap; gap: 8px; }
+.vchip { appearance: none; border: 1.5px solid var(--separator); background: var(--surface); color: var(--text); font: inherit; font-size: 14px;
+  padding: 8px 12px; border-radius: 999px; cursor: pointer; }
+.vchip.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); font-weight: 600; }
+.plate { text-transform: uppercase; }
+.hint.warn { color: var(--orange); }
+.submit-bar { position: sticky; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 4; padding: 8px 0; }
+@media (min-width: 900px) { .submit-bar { bottom: 16px; } }
+.submit-bar .btn { box-shadow: var(--shadow-3); }
+
+/* Фото: выбор и галерея */
+.pp-grid, .pgallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.pp-grid:empty { display: none; }
+.pp-grid.busy::after { content: "Сжимаю…"; font-size: 13px; color: var(--text-2); align-self: center; }
+.pp-item, .pgallery a { position: relative; aspect-ratio: 1; border-radius: var(--r-sm); overflow: hidden; background: var(--fill); display: block; }
+.pp-item img, .pgallery img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pp-item button { position: absolute; top: 4px; right: 4px; width: 26px; height: 26px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(0,0,0,.55); color: #fff; font-size: 13px; }
+.pp-add { cursor: pointer; }
+.pp-add.busy { opacity: .6; pointer-events: none; }
+.lightbox { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.94); display: none; place-items: center; }
+.lightbox.on { display: grid; }
+.lightbox img { max-width: 100vw; max-height: 100dvh; object-fit: contain; }
+.lightbox button { position: absolute; border: 0; background: rgba(255,255,255,.14); color: #fff; width: 44px; height: 44px; border-radius: 50%;
+  font-size: 22px; cursor: pointer; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.lb-close { top: calc(14px + env(safe-area-inset-top)); right: 14px; }
+.lb-prev { left: 12px; top: 50%; } .lb-next { right: 12px; top: 50%; }
+.lb-count { position: absolute; bottom: calc(18px + env(safe-area-inset-bottom)); color: rgba(255,255,255,.8); font-size: 14px; }
+
+/* Пульт: занятый подъёмник */
+.lift.busy { box-shadow: inset 0 0 0 2px var(--accent), var(--shadow-1); color: inherit; text-decoration: none; }
+.lift .lift-car { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.form label.btn { display: inline-flex; color: var(--accent); font-size: 17px; }
+a.btn { text-decoration: none; }

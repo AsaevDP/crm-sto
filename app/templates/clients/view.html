@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "orders/_card.html" import order_card %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/clients">{{ icon("back") }}Клиенты</a><h1 class="large-title">{{ c.full_name }}</h1>
+    <div class="subhead" style="margin-top:4px">{{ fmt_phone(c.phone) }}</div></div>
+  <a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a>
+</header>
+
+<section class="stack">
+  <div class="group-title">Автомобили</div>
+  <div class="group">
+    {% for v in vehicles %}
+    <div class="row"><span class="tile">{{ icon("lift") }}</span>
+      <span class="grow">{{ v.make }} {{ v.model }}{% if v.year %} · {{ v.year }}{% endif %}
+        <div class="caption mono">{{ fmt_plate(v.plate) }}{% if v.vin %} · {{ v.vin }}{% endif %}{% if v.mileage %} · {{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</div></span></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="stack">
+  <div class="group-title">История нарядов · {{ cards|length }}</div>
+  {% if cards %}<div class="ocards">{% for x in cards %}{{ order_card(x, STATUSES, fmt_plate) }}{% endfor %}</div>
+  {% else %}<p class="subhead">Нарядов нет.</p>{% endif %}
+</section>
+{% endblock %}
