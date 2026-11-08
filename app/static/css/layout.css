@@ -467,3 +467,31 @@ select.field { text-overflow: ellipsis; }
 .kv > span { flex: 1 1 auto; }
 /* Карточка-список на всю высоту: строки идут сверху, без растягивания */
 .card.compact.fill, .card.fill { align-content: start; }
+
+/* ===== Шаг 6а: инструмент ===== */
+.chip[data-ts="ok"] { --c: var(--green); } .chip[data-ts="worn"] { --c: var(--yellow); color: color-mix(in srgb, var(--yellow) 50%, var(--text)); }
+.chip[data-ts="broken"], .chip[data-ts="lost"] { --c: var(--red); } .chip[data-ts="written_off"] { --c: var(--gray); }
+.chip[data-tr="ok"] { --c: var(--green); } .chip[data-tr="worn"] { --c: var(--yellow); color: color-mix(in srgb, var(--yellow) 50%, var(--text)); }
+.chip[data-tr="fault"], .chip[data-tr="lost"] { --c: var(--red); }
+.chip[data-ck="draft"] { --c: var(--blue); } .chip[data-ck="done"] { --c: var(--orange); } .chip[data-ck="approved"] { --c: var(--green); }
+.kv.link { color: inherit; text-decoration: none; } .kv.link:hover b { color: var(--accent); }
+.tool-photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: var(--r-sm); display: block; }
+.tools-grid { grid-template-columns: 1.6fr 1fr; }
+.res-pick { display: flex; flex-wrap: wrap; gap: 4px; }
+.res { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 8px; border-radius: 999px; background: var(--fill); cursor: pointer; white-space: nowrap; }
+.res input { position: absolute; opacity: 0; pointer-events: none; }
+.res:has(input:checked)[data-v="ok"] { background: color-mix(in srgb, var(--green) 20%, transparent); color: var(--green); font-weight: 600; }
+.res:has(input:checked)[data-v="worn"] { background: color-mix(in srgb, var(--yellow) 30%, transparent); font-weight: 600; }
+.res:has(input:checked)[data-v="fault"], .res:has(input:checked)[data-v="lost"] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); font-weight: 600; }
+.check-form { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.check-table { flex: 1 1 0; min-height: 0; overflow: auto; }
+.check-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.check-bar .field { flex: 1; min-width: 200px; }
+tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red) 5%, transparent); }
+@media (min-width: 900px) and (min-height: 540px) {
+  /* Двухколоночные страницы: строка сетки = остаток экрана, колонки листаются внутри */
+  body.fit .cl-grid.fill { grid-template-rows: minmax(0, 1fr); }
+  body.fit .check-form.fill { display: flex; }
+}
+.res { position: relative; } .res input { left: 0; top: 0; width: 1px; height: 1px; }
+.res-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; min-width: 170px; } .res { justify-content: center; }

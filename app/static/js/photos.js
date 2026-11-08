@@ -60,6 +60,24 @@
 
   window.compressPhoto = compress;
 
+  // Формы с фото (инструмент, проверки): отметить выбранное фото и сжать перед отправкой
+  document.querySelectorAll('input[type=file][accept^="image"]').forEach(inp => inp.addEventListener('change', () => {
+    const lab = inp.closest('label');
+    if (lab && inp.files.length && !lab.querySelector('.picked')) lab.insertAdjacentHTML('beforeend', '<span class="picked"> ✓</span>');
+  }));
+  document.querySelectorAll('form[data-compress], form.check-form').forEach(form => form.addEventListener('submit', async e => {
+    const files = [...form.querySelectorAll('input[type=file]')].filter(i => i.files.length);
+    if (!files.length) return;           // фото нет — обычная отправка
+    e.preventDefault();
+    const fd = new FormData(form);
+    if (e.submitter && e.submitter.name) fd.set(e.submitter.name, e.submitter.value);
+    for (const inp of files) {
+      try { const c = await compress(inp.files[0]); fd.set(inp.name, c.full, 'photo.jpg'); } catch (err) {}
+    }
+    const r = await fetch(form.action, { method: 'POST', body: fd, credentials: 'same-origin' });
+    location.href = r.url || location.href;
+  }));
+
   // ---- Просмотр на весь экран: <a data-lightbox href="полное фото"> ----
   const links = [...document.querySelectorAll('a[data-lightbox]')];
   if (!links.length) return;

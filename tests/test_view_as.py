@@ -25,7 +25,7 @@ def test_admin_views_as_mechanic_read_only(client):
     client.post(f"/view-as/{_uid('andrey')}")
     html = client.get("/more").text
     assert "Вы смотрите глазами" in html and "Андрей Демченко" in html
-    assert _menu(html) == ["/orders", "/timesheet", "/payroll"]       # меню слесаря
+    assert _menu(html) == ["/orders", "/timesheet", "/payroll", "/tools"]  # меню слесаря
     assert "--accent: var(--green)" in html                            # его цвет
     assert client.get("/settings").status_code == 403                  # его права
     # Любое изменение запрещено

@@ -40,6 +40,9 @@ PERMISSIONS = [
     ("payroll.view_own", "Своя зарплата", "Сотрудники"),
     ("payroll.view_all", "Зарплата всех", "Сотрудники"),
     ("payroll.manage", "Схемы зарплаты", "Сотрудники"),
+    ("tools.view", "Инструмент всех сотрудников", "Инструмент"),
+    ("tools.view_own", "Свой инструмент", "Инструмент"),
+    ("tools.manage", "Выдача инструмента и проверки", "Инструмент"),
     ("settings.access", "Настройки", "Администрирование"),
     ("users.manage", "Сотрудники и доступ", "Администрирование"),
     ("audit.view", "Журнал действий", "Администрирование"),
@@ -47,18 +50,18 @@ PERMISSIONS = [
 ALL_CODES = [p[0] for p in PERMISSIONS]
 
 # Роли по умолчанию: код → (название, цвет, права). Совпадает с docs/statuses.md, раздел 3.
-_OWN = ["payroll.view_own", "attendance.view_own"]
+_OWN = ["payroll.view_own", "attendance.view_own", "tools.view_own"]
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
         "orders.cancel", "orders.assign", "clients.view", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
-        "prices.view_sale", "attendance.view_all", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "stock.view",
         "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
     "storekeeper": ("Кладовщик", "orange", [
         "orders.view_all", "purchases.view", "stock.view", "stock.manage", "stock.issue",
-        "razbor.view", *_OWN]),
+        "razbor.view", "tools.view", "tools.manage", *_OWN]),
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export",
         "prices.view_sale", *_OWN]),
@@ -85,6 +88,7 @@ MENU = [
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),
+    ("/tools", "Инструмент", "tool", ["tools.view", "tools.view_own"]),
     ("/settings", "Настройки", "gear", ["settings.access", "users.manage"]),
     ("/audit", "Журнал", "list", ["audit.view"]),
 ]

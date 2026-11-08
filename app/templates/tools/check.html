@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="ov-head">
+  <a class="back" href="/tools/staff/{{ c.user_id }}">{{ icon("back") }}{{ u.full_name if u else "" }}</a>
+  <div class="ov-title">
+    <div><h1 class="title-1">Проверка: {{ CHECK_KINDS[c.kind]|lower }}</h1>
+      <div class="subhead">{{ u.full_name if u else "" }} · {{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · проверяет {{ people[c.created_by].full_name if c.created_by in people else "" }} · позиций {{ lines|length }}</div></div>
+    <div class="ov-actions"><span class="chip chip-lg" data-ck="{{ c.status }}">{{ CHECK_STATUS[c.status] }}</span>
+      <a class="btn btn-sm btn-gray" href="/tools/checks/{{ c.id }}/print" target="_blank">Акт</a></div>
+  </div>
+</header>
+
+<form class="fill check-form" method="post" action="/tools/checks/{{ c.id }}{{ '/approve' if can_approve else '' }}" enctype="multipart/form-data">
+  <div class="tablewrap check-table">
+    <table class="table">
+      <thead><tr><th>Инструмент</th><th>Результат</th><th>Комментарий / фото</th><th class="num">Удержание, ₴</th>{% if can_approve %}<th>Удержать?</th>{% endif %}</tr></thead>
+      <tbody>
+      {% for l in lines %}
+      {% set t = tools[l.tool_id] %}
+      <tr data-r="{{ l.result }}">
+        <td><span class="mono caption">{{ t.inv_no }}</span><div>{{ t.name }}</div><span class="caption">стоимость {{ "%.2f"|format(t.cost) }} ₴</span></td>
+        <td>
+          {% if can_edit %}
+          <div class="res-pick" data-cost="{{ '%.2f'|format(t.cost) }}">
+            {% for k, v in CHECK_RESULTS.items() %}<label class="res" data-v="{{ k }}" title="{{ v }}"><input type="radio" name="r_{{ l.id }}" value="{{ k }}" {% if k == l.result %}checked{% endif %}>{{ {"ok": "Исправен", "worn": "Износ", "fault": "По вине", "lost": "Утерян"}[k] }}</label>{% endfor %}
+          </div>
+          {% else %}<span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS[l.result] }}</span>{% endif %}
+        </td>
+        <td>
+          {% if can_edit %}<input class="field" name="c_{{ l.id }}" value="{{ l.comment }}" placeholder="Что с инструментом">
+          <label class="caption pp-add" style="color:var(--accent);cursor:pointer">＋ фото<input type="file" name="p_{{ l.id }}" accept="image/*" hidden></label>
+          {% else %}{{ l.comment }}{% endif %}
+          {% if l.photo %}<a href="/tools/files/{{ l.photo.split('/')[-1] }}" data-lightbox class="caption">фото</a>{% endif %}
+        </td>
+        <td class="num">{% if can_edit %}<input class="mini m-charge" name="m_{{ l.id }}" value="{{ '%.2f'|format(l.charge) if l.charge else '' }}" inputmode="decimal" placeholder="0" style="width:90px">
+          {% else %}{{ "%.2f"|format(l.charge) if l.charge else "—" }}{% if l.charge_approved %} ✓{% endif %}{% endif %}</td>
+        {% if can_approve %}<td>{% if l.result in ("fault", "lost") and l.charge > 0 %}<label><input type="checkbox" name="approve" value="{{ l.id }}" checked> да</label>{% endif %}</td>{% endif %}
+      </tr>
+      {% else %}<tr><td colspan="5" class="footnote">За сотрудником нет инструмента</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="check-bar">
+    {% if can_edit %}<input class="field" name="note" value="{{ c.note }}" placeholder="Общий комментарий к проверке">
+    <button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
+    <button class="btn btn-sm" name="action" value="finish" onclick="return confirm('Завершить проверку? Состояние инструмента обновится{{ ", весь инструмент вернётся на склад" if c.kind == "dismissal" else "" }}.')">Завершить проверку</button>
+    {% elif can_approve %}<span class="subhead">Удержание из ближайшей зарплаты одной суммой: <b>{{ "%.2f"|format(charge_total) }} ₴</b></span>
+    <button class="btn btn-sm">Утвердить решение</button>
+    {% else %}<span class="subhead">{{ c.note }}</span>{% endif %}
+  </div>
+</form>
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+<script>
+// Выбор результата: «по вине» / «утерян» — подставить стоимость в удержание, «исправен» / «износ» — обнулить
+document.querySelectorAll('.res-pick').forEach(box => box.addEventListener('change', e => {
+  const tr = box.closest('tr'), inp = tr.querySelector('.m-charge'), v = e.target.value;
+  tr.dataset.r = v;
+  if (v === 'fault' || v === 'lost') { if (!+inp.value) inp.value = box.dataset.cost; } else inp.value = '';
+}));
+</script>
+{% endblock %}

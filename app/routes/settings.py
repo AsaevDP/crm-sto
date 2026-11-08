@@ -127,7 +127,10 @@ def roles(ctx: Ctx = Depends(get_ctx)):
 
 
 def _role(ctx: Ctx, role_id: str) -> Role:
-    role = ctx.db.get(Role, uuid.UUID(role_id))
+    try:
+        role = ctx.db.get(Role, uuid.UUID(role_id))
+    except ValueError:
+        raise Forbidden()
     if not role or role.branch_id != ctx.branch.id:
         raise Forbidden()
     return role
@@ -222,7 +225,10 @@ def _check_password(pwd: str) -> str:
 
 
 def _user(ctx: Ctx, user_id: str) -> User:
-    u = ctx.db.get(User, uuid.UUID(user_id))
+    try:
+        u = ctx.db.get(User, uuid.UUID(user_id))
+    except ValueError:
+        raise Forbidden()
     if not u or u.branch_id != ctx.branch.id:
         raise Forbidden()
     return u
@@ -255,6 +261,12 @@ def user_save(user_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Form(.
     if u.id == ctx.user.id and (not active or (u.role.code == ADMIN_ROLE and new_role.code != ADMIN_ROLE)):
         flash(ctx.request, "Нельзя выключить себя или снять с себя роль админа", "error")
         return _back(f"/settings/users/{user_id}")
+    if u.active and not active:
+        from ..services.tools import holding
+        held = holding(ctx.db, u.id)
+        if held:
+            flash(ctx.request, f"За сотрудником числится инструмент ({len(held)} шт.) — сначала проведите проверку при увольнении", "error")
+            return _back(f"/tools/staff/{u.id}")
     u.full_name, u.login, u.role_id, u.phone, u.active = full_name.strip()[:120], login, new_role.id, phone.strip()[:40], bool(active)
     ctx.db.commit()
     flash(ctx.request, "Сохранено")

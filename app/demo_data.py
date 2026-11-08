@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from .config import DEMO_PASSWORD
 from .db import SessionLocal, current_branch_id, current_user_id
-from .models import (Branch, Lift, Location, Purchase, Role, User, WoFinding, WoPart, WorkOrder)
+from .models import (Branch, Lift, Location, Purchase, Role, Tool, User, WoFinding, WoPart, WorkOrder)
 from .security import hash_secret
 from .services import orders as osvc
 from .services import money as msvc
@@ -328,6 +328,46 @@ def populate():
         db.add(UserPayScheme(user_id=users["igor"].id, scheme_id=sch.id, valid_from=date.today()))
         db.add(PaySchemeLine(scheme_id=sch.id, kind="salary", salary_period="day", rate=Decimal("600")))
         db.add(PaySchemeLine(scheme_id=sch.id, kind="percent", base="works", rate=Decimal("25")))
+
+        # ---- Инструмент (шаг 6а) ----
+        from .models import ToolCheckLine
+        from .services import tools as tsvc
+        kit = [("Набор головок 1/2\" 94 пр.", "4200", "94 предмета: головки 4–32 мм, трещотка, удлинители"),
+               ("Ключ динамометрический 40–210 Нм", "3100", ""), ("Набор рожково-накидных ключей 8–24", "2650", "12 ключей"),
+               ("Гайковёрт пневматический 1/2\"", "5400", ""), ("Набор отвёрток 12 пр.", "780", ""),
+               ("Съёмник шаровых опор", "850", "")]
+        as_user("pavel")
+        n = 0
+        for login in ("andrey", "sergey", "viktor", "taras", "igor"):
+            for name, cost, desc in kit[: 6 if login in ("andrey", "taras") else 4]:
+                n += 1
+                t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), description=desc)
+                db.add(t)
+                db.flush()
+                tsvc.move(db, t, users[login], "Выдан при приёме на работу")
+        for name, cost in (("Тестер аккумуляторов", "2300"), ("Компрессометр бензиновый", "1250"), ("Эндоскоп автомобильный", "1900")):
+            n += 1
+            db.add(Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost)))
+        db.flush()
+        # Виктор: проверка при приёме — всё исправно
+        c1 = tsvc.open_check(db, users["viktor"], "hire")
+        db.flush()
+        tsvc.finish_check(db, c1)
+        # Тарас: плановая проверка — ключ сломан по вине (удержано), отвёртки — естественный износ
+        c2 = tsvc.open_check(db, users["taras"], "planned")
+        db.flush()
+        for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c2.id)):
+            tn = db.get(Tool, l.tool_id).name
+            if tn.startswith("Ключ динамометрический"):
+                l.result, l.charge, l.comment = "fault", Decimal("1500"), "Использовал как рычаг — погнут корпус. Удержание: стоимость ремонта"
+            elif tn.startswith("Набор отвёрток"):
+                l.result, l.comment = "worn", "Стёрты жала — естественный износ"
+        tsvc.finish_check(db, c2)
+        as_user("admin")
+        tsvc.approve_check(db, c2, users["admin"], {str(l.id) for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c2.id))})
+        # Андрей: плановая проверка начата кладовщиком (можно открыть и провести самому)
+        as_user("pavel")
+        tsvc.open_check(db, users["andrey"], "planned")
 
         # Заметки в карты клиентов
         as_user("irina")

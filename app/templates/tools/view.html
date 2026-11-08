@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="ov-head">
+  <a class="back" href="/tools">{{ icon("back") }}Инструмент</a>
+  <div class="ov-title">
+    <div><div class="footnote mono">{{ t.inv_no }}{% if t.serial %} · S/N {{ t.serial }}{% endif %}</div><h1 class="title-1">{{ t.name }}</h1>
+      <div class="subhead">{{ "У " ~ people[t.holder_id].full_name if t.holder_id in people else "На складе инструмента" }} · {{ "%.2f"|format(t.cost) }} ₴</div></div>
+    <span class="chip chip-lg" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span>
+  </div>
+</header>
+<div class="cl-grid fill">
+  <section class="ov-col on">
+    {% if t.photo %}<div class="card compact"><a href="/tools/files/{{ t.photo.split('/')[-1] }}" data-lightbox><img class="tool-photo" src="/tools/files/{{ t.photo.split('/')[-1] }}" alt=""></a></div>{% endif %}
+    {% if t.description %}<div class="card compact"><div class="card-h"><span class="headline">Состав / описание</span></div><p class="ov-text">{{ t.description }}</p></div>{% endif %}
+    {% if ctx.can("tools.manage") and t.status != "written_off" %}
+    <form class="card compact form dense" method="post" action="/tools/{{ t.id }}">
+      <div class="card-h"><span class="headline">Выдать / вернуть</span></div>
+      <input type="hidden" name="action" value="move">
+      <select class="field" name="to_user"><option value="">Вернуть на склад инструмента</option>
+        {% for s in staff %}<option value="{{ s.id }}" {% if s.id == t.holder_id %}selected{% endif %}>Выдать: {{ s.full_name }}</option>{% endfor %}</select>
+      <input class="field" name="comment" placeholder="Комментарий">
+      <button class="btn btn-sm">Сохранить</button>
+    </form>
+    <details class="card compact work-edit"><summary class="caption">Изменить карточку · списать</summary>
+      <form class="form dense" method="post" action="/tools/{{ t.id }}" enctype="multipart/form-data" data-compress>
+        <input class="field" name="name" value="{{ t.name }}" aria-label="Название">
+        <div class="form-row three"><input class="field mono" name="serial" value="{{ t.serial }}" placeholder="Серийный №">
+          <input class="field" name="cost" value="{{ '%.2f'|format(t.cost) }}" inputmode="decimal" aria-label="Стоимость">
+          <select class="field" name="status">{% for k, v in TOOL_STATUS.items() if k != "written_off" %}<option value="{{ k }}" {% if k == t.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <input class="field" name="description" value="{{ t.description }}" placeholder="Состав">
+        <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Новое фото<input type="file" name="photo" accept="image/*" hidden></label>
+        <div class="form-row"><button class="btn btn-sm">Сохранить</button>
+          <button class="btn btn-sm btn-danger" name="action" value="writeoff" onclick="return confirm('Списать инструмент?')">Списать</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">История</span></div>
+      <div class="timeline">
+        {% for l, c in checks %}
+        <div class="tl"><span><b>Проверка</b> · {{ CHECK_KINDS[c.kind] }} — <span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS[l.result] }}</span>{% if l.charge_approved %} · удержано {{ "%.2f"|format(l.charge) }} ₴{% endif %}</span>
+          <span class="caption">{{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · <a href="/tools/checks/{{ c.id }}">акт</a>{% if l.comment %} — {{ l.comment }}{% endif %}</span></div>
+        {% endfor %}
+        {% for m in moves %}
+        <div class="tl"><span><b>{{ {"issue": "Выдан", "return": "Возвращён на склад", "writeoff": "Списан", "lost": "Утерян"}[m.kind] }}</b>
+          {% if m.to_user in people %}→ {{ people[m.to_user].full_name }}{% endif %}{% if m.from_user in people and m.kind != "issue" %} от {{ people[m.from_user].full_name }}{% endif %}</span>
+          <span class="caption">{{ m.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }} · {{ people[m.created_by].short_name if m.created_by in people else "система" }}{% if m.comment %} — {{ m.comment }}{% endif %}</span></div>
+        {% endfor %}
+        {% if not moves and not checks %}<p class="footnote">Пусто</p>{% endif %}
+      </div>
+    </div>
+  </section>
+</div>
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% endblock %}

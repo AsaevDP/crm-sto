@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="page-head">
+  <h1 class="large-title">Инструмент</h1>
+  <form class="toolbar-row" method="get" style="flex:1;max-width:620px">
+    <input class="field search" name="q" value="{{ q }}" placeholder="Инв. №, серийный №, название" autocomplete="off">
+    <select class="field" name="holder" onchange="this.form.submit()" style="max-width:200px">
+      <option value="">У всех</option><option value="stock" {% if holder == "stock" %}selected{% endif %}>На складе инструмента</option>
+      {% for s in staff %}<option value="{{ s.id }}" {% if holder == s.id|string %}selected{% endif %}>{{ s.full_name }}</option>{% endfor %}</select>
+  </form>
+</header>
+<div class="cl-grid fill tools-grid">
+  <section class="ov-col on">
+    <div class="tablewrap">
+      <table class="table">
+        <thead><tr><th>Инв. №</th><th>Инструмент</th><th>У кого</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
+        <tbody>
+        {% for t in rows %}
+        <tr onclick="location.href='/tools/{{ t.id }}'" style="cursor:pointer">
+          <td class="mono">{{ t.inv_no }}</td>
+          <td>{{ t.name }}{% if t.serial %}<div class="caption mono">S/N {{ t.serial }}</div>{% endif %}</td>
+          <td>{{ people[t.holder_id].short_name if t.holder_id in people else "склад" }}</td>
+          <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td>
+          <td class="num">{{ "%.2f"|format(t.cost) }}</td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="footnote">Инструмента нет{% if q %} по запросу{% endif %}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="ov-col on">
+    {% if ctx.can("tools.manage") %}
+    <details class="card compact add-finding">
+      <summary class="btn btn-sm btn-block">{{ icon("plus") }}Новый инструмент</summary>
+      <form class="form dense" method="post" action="/tools" enctype="multipart/form-data" data-compress style="margin-top:8px">
+        <input class="field" name="name" placeholder="Название (набор головок 94 пр.) *" required>
+        <div class="form-row three"><input class="field mono" name="inv_no" placeholder="{{ next_inv }}" aria-label="Инвентарный номер">
+          <input class="field mono" name="serial" placeholder="Серийный №"><input class="field" name="cost" inputmode="decimal" placeholder="Стоимость ₴"></div>
+        <input class="field" name="description" placeholder="Состав набора, примечание">
+        <select class="field" name="holder_id"><option value="">На склад инструмента</option>{% for s in staff %}<option value="{{ s.id }}">Выдать: {{ s.full_name }}</option>{% endfor %}</select>
+        <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photo" accept="image/*" hidden></label>
+        <button class="btn btn-sm">Завести</button>
+      </form>
+    </details>
+    {% endif %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">За кем числится</span></div>
+      {% for s in staff %}{% set n = summary.get(s.id) %}{% if n %}
+      <a class="kv link" href="/tools/staff/{{ s.id }}"><span>{{ s.full_name }} <span class="caption">{{ s.role.name }}</span></span><b>{{ n[0] }} шт · {{ "{:,.0f}".format(n[1]).replace(",", " ") }} ₴</b></a>
+      {% endif %}{% endfor %}
+      <p class="hint" style="margin:0">Проверку (приём, увольнение, плановую) — на странице сотрудника.</p>
+    </div>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Проверки в работе · {{ pending|length }}</span></div>
+      {% for c in pending %}
+      <a class="kv link" href="/tools/checks/{{ c.id }}"><span>{{ people[c.user_id].full_name if c.user_id in people else "" }} · {{ CHECK_KINDS[c.kind] }}</span><b>{{ CHECK_STATUS[c.status] }}</b></a>
+      {% else %}<p class="footnote" style="margin:0">Нет</p>{% endfor %}
+    </div>
+  </section>
+</div>
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% endblock %}

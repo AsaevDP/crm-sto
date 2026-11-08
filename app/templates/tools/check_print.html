@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font: 12.5px/1.45 -apple-system, "Segoe UI", Arial, sans-serif; color: #111; background: #e9e9ee; margin: 0; }
+  .sheet { width: 210mm; min-height: 297mm; margin: 16px auto; padding: 14mm; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.12); }
+  .bar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: center; padding: 10px; background: rgba(233,233,238,.9); }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar a { background: #fff; color: #007aff; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .head { display: flex; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+  .muted { color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+  td, th { border: 1px solid #bbb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f3f3f6; }
+  .num { text-align: right; white-space: nowrap; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 16mm; }
+  .sign div { border-top: 1px solid #111; padding-top: 4px; }
+  @media print { body { background: #fff; } .bar { display: none; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="/tools/checks/{{ c.id }}">← К проверке</a></div>
+<div class="sheet">
+  <div class="head">
+    <div><h1>АКТ ПРОВЕРКИ ИНСТРУМЕНТА</h1><div class="muted">{{ CHECK_KINDS[c.kind] }} · {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}</div></div>
+    <div style="text-align:right"><b>{{ branding.name }}</b></div>
+  </div>
+  <p>Сотрудник: <b>{{ u.full_name if u else "" }}</b>, {{ u.role.name if u else "" }}.</p>
+  <table>
+    <tr><th>№</th><th>Инв. №</th><th>Наименование, серийный №</th><th class="num">Стоимость</th><th>Результат</th><th class="num">Удержание</th></tr>
+    {% for l in lines %}{% set t = tools[l.tool_id] %}
+    <tr><td>{{ loop.index }}</td><td>{{ t.inv_no }}</td><td>{{ t.name }}{% if t.serial %}, S/N {{ t.serial }}{% endif %}{% if l.comment %}<br><span class="muted">{{ l.comment }}</span>{% endif %}</td>
+      <td class="num">{{ "%.2f"|format(t.cost) }}</td><td>{{ CHECK_RESULTS[l.result] }}</td>
+      <td class="num">{{ "%.2f"|format(l.charge) if l.charge and l.result in ("fault", "lost") else "—" }}</td></tr>
+    {% endfor %}
+  </table>
+  <p>Итого к удержанию: <b>{{ "%.2f"|format(charge_total) }} ₴</b>{% if c.status == "approved" %} (решение принято{% if c.approved_by in people %}: {{ people[c.approved_by].full_name }}{% endif %}){% endif %}.
+    Естественный износ удержанию не подлежит.</p>
+  {% if c.note %}<p class="muted">{{ c.note }}</p>{% endif %}
+  <div class="sign">
+    <div>Сотрудник: ____________ / {{ u.full_name if u else "" }}</div>
+    <div>Проверил: ____________ / {{ people[c.created_by].full_name if c.created_by in people else "" }}</div>
+  </div>
+</div>
+</body>
+</html>
