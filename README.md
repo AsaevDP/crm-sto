@@ -12,6 +12,12 @@
 - **Схема базы:** [docs/schema.md](docs/schema.md)
 - **Статусы и права по ролям:** [docs/statuses.md](docs/statuses.md)
 
+## Живое демо
+
+Демо-версия на Render.com (бесплатный тариф): первое открытие после простоя грузится ~1 минуту, данные сбрасываются при перезапуске. Пароль для входа выдаёт владелец.
+
+Развернуть своё демо: [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/AsaevDP/crm-sto) — настройки в [render.yaml](render.yaml).
+
 ## Запустить у себя (Windows)
 
 Нужен Python 3.11+.

@@ -7,6 +7,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .config import DEMO, DEMO_PASSWORD
 from .db import SessionLocal, current_branch_id
 from .models import AccessPoint, Branch, Lift, Permission, Role, RolePermission, StaffCard, User
 from .permissions import DEFAULT_ROLES, PERMISSIONS
@@ -61,6 +62,12 @@ def seed():
         db.add(AccessPoint(name="ПК приёмки", kind="login", counts_presence=False))
 
         for login, name, role, pwd, pin, card in TEST_USERS:
+            if DEMO:
+                # Публичное демо: пароль из настроек хостинга, PIN и карт нет
+                u = User(full_name=name, login=login, role_id=roles[role].id,
+                         password_hash=hash_secret(DEMO_PASSWORD), pin_hash="")
+                db.add(u)
+                continue
             u = User(full_name=name, login=login, role_id=roles[role].id,
                      password_hash=hash_secret(pwd), pin_hash=hash_secret(pin))
             db.add(u)

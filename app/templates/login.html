@@ -46,11 +46,18 @@
   {% if branding.logo %}<img class="logo-img" src="{{ branding.logo }}" alt="">{% else %}<span class="logo">{{ branding.name[:3] }}</span>{% endif %}
   <h1 class="title-2" style="font-size:28px">{{ branding.name }}</h1>
 
+  {% if DEMO %}
+  <div class="card" style="width:100%;display:grid;gap:6px">
+    <div class="headline">Демо-версия</div>
+    <div class="footnote">Логины: <b>admin</b> (всё), <b>irina</b> (менеджер), <b>oleg</b> (запчастист), <b>pavel</b> (кладовщик), <b>dmitro</b> (разбор), <b>andrey</b> (слесарь). Пароль — у владельца. Данные сбрасываются при перезапуске.</div>
+  </div>
+  {% else %}
   <div class="segmented" role="tablist">
     <button type="button" data-tab="password">Логин</button>
     <button type="button" data-tab="pin">PIN</button>
     <button type="button" data-tab="card">Карта</button>
   </div>
+  {% endif %}
 
   <p class="error" id="err">{{ error }}</p>
 
@@ -98,7 +105,7 @@
 (function () {
   // ---- Вкладки. По умолчанию: iPhone → PIN, ПК → карта ----
   const touch = matchMedia('(pointer: coarse)').matches;
-  const initial = "{{ tab }}" || (touch ? "pin" : "card");
+  const initial = {% if DEMO %}"password"{% else %}"{{ tab }}" || (touch ? "pin" : "card"){% endif %};
   const tabs = document.querySelectorAll('[data-tab]');
   function show(name) {
     tabs.forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === name));

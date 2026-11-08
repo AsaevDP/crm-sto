@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import audit  # noqa: F401 — подключает автоматический журнал
-from .config import MEDIA_DIR, ROOT, SECRET_KEY
+from .config import COOKIE_SECURE, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, engine
 from .routes import auth, pages, settings
 from .seed import seed
@@ -24,7 +24,7 @@ async def lifespan(_app):
 
 app = FastAPI(title="CRM СТО", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, session_cookie="crm_session",
-                   max_age=14 * 24 * 3600, same_site="lax", https_only=False)  # https_only=True на шаге 8
+                   max_age=14 * 24 * 3600, same_site="lax", https_only=COOKIE_SECURE)
 
 app.mount("/static", StaticFiles(directory=ROOT / "app" / "static"), name="static")
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")

@@ -39,3 +39,14 @@ def _secret_key() -> str:
 
 SECRET_KEY = _secret_key()
 PORT = int(os.getenv("PORT", "8810"))
+
+# Демо-режим (публичный показ на хостинге, напр. Render):
+# - у тестовых сотрудников пароль из DEMO_PASSWORD (не из открытого репозитория);
+# - вход по PIN и картам выключен (их значения есть в открытом коде);
+# - сверху плашка «Демо-версия».
+DEMO = os.getenv("DEMO") == "1"
+DEMO_PASSWORD = os.getenv("DEMO_PASSWORD", "")
+if DEMO and len(DEMO_PASSWORD) < 8:
+    raise RuntimeError("В демо-режиме нужна переменная DEMO_PASSWORD (от 8 символов)")
+# Cookie только по HTTPS (на хостинге и на шаге 8)
+COOKIE_SECURE = os.getenv("COOKIE_SECURE") == "1"

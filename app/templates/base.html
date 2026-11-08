@@ -33,6 +33,7 @@
 
   <div class="main">
     <main class="content">
+      {% if DEMO %}<div class="tag" style="justify-self:start">Демо-версия · данные сбрасываются при перезапуске</div>{% endif %}
       {% if flash %}<div class="flash {{ flash.kind }}" role="status">{{ flash.text }}</div>{% endif %}
       {% block content %}{% endblock %}
     </main>

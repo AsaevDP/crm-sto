@@ -7,7 +7,7 @@ from fastapi import Depends, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from .config import ROOT
+from .config import DEMO, ROOT
 from .db import current_branch_id, current_user_id, get_db
 from .models import Branch, User
 from .permissions import SYSTEM_COLORS, effective_permissions, menu_for
@@ -54,7 +54,7 @@ def asset(path: str) -> str:
         return path
 
 
-templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset)
+templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO)
 
 
 @dataclass

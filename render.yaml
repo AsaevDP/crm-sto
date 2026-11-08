@@ -1,0 +1,25 @@
+# Демо CRM СТО на Render.com (бесплатный тариф).
+# Render читает этот файл сам: New → Blueprint → выбрать репозиторий crm-sto → Apply.
+# Пароль для входа Render сгенерирует сам: Dashboard → crm-sto-demo → Environment → DEMO_PASSWORD.
+services:
+  - type: web
+    name: crm-sto-demo
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    # --proxy-headers: Render стоит перед приложением как прокси, нужен настоящий IP посетителя
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /login
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DEMO
+        value: "1"
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEMO_PASSWORD
+        generateValue: true
