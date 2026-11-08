@@ -1,0 +1,17 @@
+# После каждой заливки в main просим Render пересобрать демо.
+# Нужен секрет репозитория RENDER_DEPLOY_HOOK (Settings → Secrets and variables → Actions).
+# Пока секрета нет — шаг пропускается, ничего не ломается.
+name: Обновить демо на Render
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Запустить сборку на Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then echo "Секрет RENDER_DEPLOY_HOOK не задан — пропускаю"; exit 0; fi
+          curl -fsS -X POST "$HOOK" > /dev/null && echo "Render: сборка запущена"
