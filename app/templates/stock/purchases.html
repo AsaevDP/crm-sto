@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <h1 class="large-title">Закупки</h1>
+  {% if ctx.can("purchases.manage") %}<form method="post" action="/purchases/new"><button class="btn btn-sm">{{ icon("plus") }}Закупка на склад</button></form>{% endif %}
+</header>
+<p class="subhead" style="margin:0">«Заказать» в наряде добавляет строку в текущий черновик. Отправили поставщику → кладовщик ждёт приход.</p>
+<div class="tablewrap">
+  <table class="table">
+    <thead><tr><th>Дата</th><th>Поставщик</th><th>Статус</th><th class="num">Строк</th>{% if ctx.can("prices.view_purchase") %}<th class="num">Сумма</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for p in rows %}
+    {% set n, total = stats.get(p.id, (0, 0)) %}
+    <tr onclick="location.href='/purchases/{{ p.id }}'" style="cursor:pointer">
+      <td class="footnote">{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
+      <td>{{ suppliers[p.supplier_id].name if p.supplier_id in suppliers else "—" }}{% if p.supplier_invoice %}<div class="caption">накл. {{ p.supplier_invoice }}</div>{% endif %}</td>
+      <td><span class="chip" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span></td>
+      <td class="num">{{ n }}</td>
+      {% if ctx.can("prices.view_purchase") %}<td class="num">{{ "%.2f"|format(total or 0) }} ₴</td>{% endif %}
+    </tr>
+    {% else %}<tr><td colspan="5" class="footnote">Закупок пока нет</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

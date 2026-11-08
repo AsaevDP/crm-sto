@@ -22,6 +22,8 @@ class PartCatalog(Entity):
     brand: Mapped[str] = mapped_column(String(80), default="")
     fits: Mapped[str] = mapped_column(Text, default="")  # применимость: марки/модели, текстом
     kind: Mapped[str] = mapped_column(String(10), default="new")  # new / used
+    revision: Mapped[str] = mapped_column(String(40), default="")  # ревизия детали (внутреннее)
+    unit: Mapped[str] = mapped_column(String(10), default="шт")
 
 
 class Location(Entity):
@@ -65,6 +67,7 @@ class Purchase(Entity):
     supplier_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("suppliers.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft / ordered / partial / arrived
     supplier_invoice: Mapped[str] = mapped_column(String(80), default="")
+    note: Mapped[str] = mapped_column(Text, default="")
 
 
 class PurchaseLine(Entity):
@@ -74,6 +77,9 @@ class PurchaseLine(Entity):
     qty: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     price: Mapped[Decimal] = mapped_column(MONEY, default=0)
     wo_part_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_parts.id"), nullable=True)  # пусто = на склад
+    # Купили больше, чем нужно наряду: qty — всего, под наряд уходит wo_part.qty, остальное — на склад
+    received: Mapped[bool] = mapped_column(Boolean, default=False)
+    location_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("locations.id"), nullable=True)
 
 
 class StockMovement(Entity):
@@ -91,6 +97,8 @@ class IssueRequest(Entity):
     __tablename__ = "issue_requests"
     work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"))
     status: Mapped[str] = mapped_column(String(10), default="new")  # new / issued / cancelled
+    comment: Mapped[str] = mapped_column(Text, default="")
+    issued_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
 
 
 class IssueRequestLine(Entity):

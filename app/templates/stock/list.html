@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <h1 class="large-title">Склад</h1>
+  <div class="ov-actions">
+    {% if ctx.can("stock.issue") %}<a class="btn btn-sm {{ '' if new_requests else 'btn-gray' }}" href="/stock/issues">Выдача{% if new_requests %} · {{ new_requests }}{% endif %}</a>{% endif %}
+    <a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки · {{ n_locations }}</a>
+  </div>
+</header>
+<form class="toolbar-row" method="get">
+  <input class="field search" name="q" value="{{ q }}" placeholder="Название, артикул, бренд, марка авто" autocomplete="off">
+  <select class="field" name="only" onchange="this.form.submit()" style="max-width:200px">
+    <option value="">Есть на складе</option><option value="free" {% if only == "free" %}selected{% endif %}>Только свободные</option>
+    <option value="all" {% if only == "all" %}selected{% endif %}>Все, включая нулевые</option></select>
+</form>
+<div class="tablewrap">
+  <table class="table">
+    <thead><tr><th>Запчасть</th><th>Артикул</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr onclick="location.href='/stock/items/{{ r.i.id }}'" style="cursor:pointer">
+      <td>{{ r.c.name }}{% if r.c.kind == "used" %} <span class="tag">б/у</span>{% endif %}</td>
+      <td class="mono footnote">{{ r.c.brand }} {{ r.c.article }}</td>
+      <td class="footnote">{{ r.loc }}</td>
+      <td class="num">{{ r.on_hand|float }}</td>
+      <td class="num">{{ r.reserved|float if r.reserved else "—" }}</td>
+      <td class="num"><b>{{ r.free|float }}</b></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="footnote">{% if q %}Ничего не нашлось{% else %}Склад пуст — запчасти появятся после первого прихода{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

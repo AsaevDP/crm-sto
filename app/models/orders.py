@@ -133,6 +133,10 @@ class WoPart(Entity):
     status: Mapped[str] = mapped_column(String(10), default="need")
     picked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="")  # purchased / from_stock — для зарплаты
+    wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)  # к какой работе
+    # Деньги (внутреннее: закупка и наценка видят только запчастист и админ). price — цена продажи за единицу.
+    cost: Mapped[Decimal] = mapped_column(MONEY, default=0)
+    markup_pct: Mapped[int] = mapped_column(Integer, default=25)
 
 
 class ClientEvent(Entity):

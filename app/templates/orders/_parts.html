@@ -1,0 +1,84 @@
+{# Блок «Запчасти» в карточке наряда. Артикул, закупка и наценка — только запчастисту и админу (show_cost). #}
+<div class="card compact" id="parts">
+  <div class="card-h">
+    <span class="headline">Запчасти · {{ parts|length }}</span>
+    {% if show_price and parts %}<span class="footnote">итого <b>{{ "{:,.2f}".format(parts_total).replace(",", " ") }} ₴</b></span>{% endif %}
+  </div>
+
+  {% for p in parts %}
+  {% set cat = cats.get(p.catalog_id) %}
+  <div class="part" data-id="{{ p.id }}">
+    <div class="part-main">
+      <span class="part-name">{{ p.name }}
+        {% if show_cost and cat and (cat.article or cat.brand) %}<span class="caption mono" style="display:block">{{ cat.brand }} {{ cat.article }}{% if cat.revision %} · рев. {{ cat.revision }}{% endif %}</span>{% endif %}
+      </span>
+      <span class="chip part-st" data-ps="{{ p.status }}">{{ PART_STATUS.get(p.status, p.status) }}</span>
+    </div>
+    <div class="part-nums">
+      <span>{{ p.qty|float|round(2)|string|replace(".0", "") }} шт</span>
+      {% if show_price %}<span>× <b class="p-price">{{ "%.2f"|format(p.price) }}</b> ₴ = <b class="p-sum">{{ "%.2f"|format(p.price * p.qty) }}</b> ₴</span>{% endif %}
+    </div>
+    {% if show_cost %}
+    <div class="part-cost">
+      <span class="caption">закупка {{ "%.2f"|format(p.cost) }} ₴</span>
+      {% if can_pick and p.status not in ("issued", "installed") %}
+      <label class="caption">наценка
+        <select class="mini" data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup">
+          {% for m in range(1, 101) %}<option value="{{ m }}" {% if m == p.markup_pct %}selected{% endif %}>{{ m }}%</option>{% endfor %}
+        </select></label>
+      <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать позицию из наряда?')">
+        <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
+      {% else %}<span class="caption">наценка {{ p.markup_pct }}%</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="footnote">{% if wo.status in ("created", "diag", "approve") %}Подбор начнётся после согласования{% else %}Запчасти не добавлены{% endif %}</p>
+  {% endfor %}
+
+  {% if can_pick %}
+  <details class="add-finding" {% if not parts and wo.status == "picking" %}open{% endif %}>
+    <summary class="btn btn-tinted btn-block">{{ icon("plus") }}Добавить запчасть</summary>
+    <form class="form dense" id="fpart" method="post" action="/orders/{{ wo.id }}/parts" style="margin-top:10px">
+      <div class="search-box">
+        <input class="field search" id="pfind" placeholder="Найти: название, артикул, марка" autocomplete="off">
+        <div class="results" id="presults" hidden></div>
+      </div>
+      <input type="hidden" name="catalog_id">
+      <input class="field" name="name" placeholder="Название (видит клиент) *" required>
+      <div class="form-row">
+        <input class="field mono" name="article" placeholder="Артикул">
+        <input class="field" name="brand" placeholder="Бренд">
+        <input class="field" name="revision" placeholder="Ревизия">
+      </div>
+      <div class="form-row">
+        <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
+        <label>Закупка за шт, ₴<input class="field" name="cost" inputmode="decimal" placeholder="0"></label>
+        <label>Наценка
+          <select class="field" name="markup_pct">{% for m in range(1, 101) %}<option value="{{ m }}" {% if m == default_markup %}selected{% endif %}>{{ m }}%</option>{% endfor %}</select></label>
+      </div>
+      {% if works %}
+      <label>К работе<select class="field" name="wo_work_id"><option value="">—</option>{% for w in works %}<option value="{{ w.id }}">{{ w.name[:60] }}</option>{% endfor %}</select></label>
+      {% endif %}
+      <p class="hint" id="pprice">Цена для клиента: —</p>
+      <p class="hint" id="pfree" hidden></p>
+      <div class="form-row">
+        <button class="btn btn-sm" name="action" value="auto">Со склада, если есть, иначе заказать</button>
+        <button class="btn btn-sm btn-gray" name="action" value="order">Только заказать</button>
+      </div>
+      <label>Купить всего, шт (излишек уйдёт на склад)<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>
+    </form>
+  </details>
+  {% if wo.status == "picking" %}
+  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button></form>
+  {% endif %}
+  {% endif %}
+
+  {% if open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
+  {% if can_request_issue %}
+  <form class="note-form" method="post" action="/orders/{{ wo.id }}/issue-request">
+    <input class="field" name="comment" placeholder="Комментарий кладовщику (необязательно)">
+    <button class="btn btn-sm">Запросить выдачу</button>
+  </form>
+  {% endif %}
+</div>

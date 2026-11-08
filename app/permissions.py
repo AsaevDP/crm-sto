@@ -25,6 +25,7 @@ PERMISSIONS = [
     ("stock.view", "Видеть склад и остатки", "Склад и закупки"),
     ("stock.manage", "Приход, ячейки, инвентаризация", "Склад и закупки"),
     ("stock.issue", "Выдача запчастей по запросу", "Склад и закупки"),
+    ("stock.request_issue", "Просить выдачу запчастей со склада", "Склад и закупки"),
     ("razbor.view", "Видеть разбор (б/у)", "Разбор"),
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
@@ -50,7 +51,7 @@ _OWN = ["payroll.view_own", "attendance.view_own"]
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
-        "orders.cancel", "orders.assign", "clients.view", "purchases.view", "stock.view", "money.view", "money.accept",
+        "orders.cancel", "orders.assign", "clients.view", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
         "prices.view_sale", "attendance.view_all", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "stock.view",
@@ -61,7 +62,7 @@ DEFAULT_ROLES = {
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export",
         "prices.view_sale", *_OWN]),
-    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", *_OWN]),
+    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", *_OWN]),
     "admin": ("Админ", "graphite", ALL_CODES),
 }
 ADMIN_ROLE = "admin"

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+{% set cost_ok = ctx.can("prices.view_purchase") %}
+{% set edit = ctx.can("purchases.manage") and p.status == "draft" %}
+{% set recv = ctx.can("stock.manage") and p.status in ("ordered", "partial") %}
+<header class="ov-head">
+  <a class="back" href="/purchases">{{ icon("back") }}Закупки</a>
+  <div class="ov-title">
+    <div><h1 class="title-1">Закупка · {{ supplier.name if supplier else "поставщик не выбран" }}</h1>
+      <div class="subhead">{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.supplier_invoice %} · накладная {{ p.supplier_invoice }}{% endif %}{% if cost_ok %} · сумма {{ "%.2f"|format(total) }} ₴{% endif %}</div></div>
+    <span class="chip chip-lg" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
+  </div>
+</header>
+
+<div class="cl-grid">
+  <section class="ov-col on">
+    {% if ctx.can("purchases.manage") %}
+    <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}">
+      <div class="card-h"><span class="headline">Поставщик</span></div>
+      <select class="field" name="supplier_id"><option value="">— выбрать —</option>
+        {% for s in suppliers %}<option value="{{ s.id }}" {% if s.id == p.supplier_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
+      <input class="field" name="supplier_new" placeholder="или новый поставщик">
+      <input class="field" name="supplier_invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной / заказа поставщика">
+      <input class="field" name="note" value="{{ p.note }}" placeholder="Заметка">
+      <div class="form-row">
+        <button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
+        {% if p.status == "draft" %}<button class="btn btn-sm" name="action" value="ordered">Отправлено поставщику</button>{% endif %}
+      </div>
+    </form>
+    {% endif %}
+
+    {% if edit %}
+    <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}/lines">
+      <div class="card-h"><span class="headline">Строка на склад (впрок)</span></div>
+      <input class="field" name="name" placeholder="Название *" required>
+      <div class="form-row"><input class="field mono" name="article" placeholder="Артикул"><input class="field" name="brand" placeholder="Бренд"></div>
+      <div class="form-row"><input class="field" name="qty" value="1" inputmode="decimal" aria-label="Количество"><input class="field" name="price" inputmode="decimal" placeholder="Цена за шт, ₴"></div>
+      <button class="btn btn-sm btn-tinted">Добавить строку</button>
+    </form>
+    {% endif %}
+
+    {% if recv %}
+    <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}/receive">
+      <div class="card-h"><span class="headline">Приход — принять всё</span></div>
+      <select class="field" name="location_id"><option value="">— без ячейки —</option>
+        {% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
+      <button class="btn btn-sm">Принять всё в эту ячейку</button>
+      {% if not locations %}<p class="hint">Ячеек ещё нет — <a href="/stock/locations">завести стеллажи</a>.</p>{% endif %}
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Строки · {{ lines|length }}</span></div>
+      {% for l in lines %}
+      {% set c, part = cats.get(l.catalog_id), parts.get(l.wo_part_id) %}
+      <div class="part">
+        <div class="part-main">
+          <span class="part-name">{{ c.name }}<span class="caption mono" style="display:block">{{ c.brand }} {{ c.article }}</span></span>
+          {% if l.received %}<span class="chip" data-s="ready">принято</span>{% endif %}
+        </div>
+        <div class="part-nums">
+          {% if part %}<span class="tag">под наряд {{ orders[part.work_order_id].number[-6:] }}: {{ part.qty|float }} шт{% if l.qty > part.qty %}, на склад {{ (l.qty - part.qty)|float }}{% endif %}</span>{% else %}<span class="tag">на склад</span>{% endif %}
+        </div>
+        {% if edit %}
+        <form class="part-cost" method="post" action="/purchases/{{ p.id }}/lines/{{ l.id }}">
+          <label class="caption">шт <input class="mini" name="qty" value="{{ l.qty|float }}" inputmode="decimal" size="4"></label>
+          {% if cost_ok %}<label class="caption">₴/шт <input class="mini" name="price" value="{{ '%.2f'|format(l.price) }}" inputmode="decimal" size="7"></label>{% else %}<input type="hidden" name="price" value="{{ l.price }}">{% endif %}
+          <button class="btn btn-plain btn-sm">OK</button>
+          <button class="btn btn-plain btn-sm" name="delete" value="1" style="color:var(--red)">Убрать</button>
+        </form>
+        {% else %}
+        <div class="part-cost"><span class="caption">{{ l.qty|float }} шт{% if cost_ok %} × {{ "%.2f"|format(l.price) }} ₴{% endif %}</span>
+          {% if recv and not l.received %}
+          <form class="inline-form" method="post" action="/purchases/{{ p.id }}/receive"><input type="hidden" name="line_id" value="{{ l.id }}">
+            <select class="mini" name="location_id"><option value="">без ячейки</option>{% for loc in locations %}<option value="{{ loc.id }}">{{ loc_label(loc) }}</option>{% endfor %}</select>
+            <button class="btn btn-plain btn-sm">Принять</button></form>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% else %}<p class="footnote">Строк нет. Добавьте «на склад» слева или «Заказать» из наряда.</p>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

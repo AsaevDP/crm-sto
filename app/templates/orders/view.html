@@ -53,6 +53,7 @@
 
   {# ===== Колонка 2: диагностика и согласование ===== #}
   <section class="ov-col" data-t="diag">
+    {% set problems_card %}
     <div class="card compact">
       <div class="card-h">
         <span class="headline">Проблемы · {{ n_find }}</span>
@@ -117,6 +118,10 @@
       </form>
       {% endif %}
     </div>
+    {% endset %}
+    {# До согласования важнее проблемы, после — запчасти #}
+    {% if wo.status in ("created", "diag", "approve") %}{{ problems_card }}{% include "orders/_parts.html" %}
+    {% else %}{% include "orders/_parts.html" %}{{ problems_card }}{% endif %}
   </section>
 
   {# ===== Колонка 3: кто и где, история ===== #}
@@ -189,6 +194,45 @@
     seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
     seg.closest('.finding').dataset.a = b.dataset.v;
   }));
+
+  // Наценка по позиции — сохраняется сразу, цена пересчитывается
+  document.querySelectorAll('select[data-markup-url]').forEach(sel => sel.addEventListener('change', async () => {
+    const r = await fetch(sel.dataset.markupUrl, { method: 'POST', body: new URLSearchParams({ markup_pct: sel.value }), headers: { 'x-requested-with': 'fetch' } });
+    if (!r.ok) { alert('Не сохранилось'); return; }
+    const j = await r.json(), row = sel.closest('.part');
+    row.querySelector('.p-price').textContent = (+j.price).toFixed(2); row.querySelector('.p-sum').textContent = (+j.sum).toFixed(2);
+  }));
+  {% if can_pick %}
+  (function () {
+    const f = document.getElementById('fpart'), find = document.getElementById('pfind'), res = document.getElementById('presults');
+    const out = document.getElementById('pprice'), free = document.getElementById('pfree');
+    function calc() {
+      const c = parseFloat((f.cost.value || '0').replace(',', '.')) || 0, m = +f.markup_pct.value, q = parseFloat((f.qty.value || '1').replace(',', '.')) || 1;
+      const p = Math.round(c * (100 + m)) / 100;
+      out.textContent = `Цена для клиента: ${p.toFixed(2)} ₴ за шт · ${(p * q).toFixed(2)} ₴ всего · наценка ${(p - c).toFixed(2)} ₴ с шт`;
+    }
+    ['cost', 'markup_pct', 'qty'].forEach(n => f[n].addEventListener('input', calc)); calc();
+    let t, found = [];
+    find.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
+      if (find.value.trim().length < 2) { res.hidden = true; return; }
+      const r = await fetch('/api/catalog/search?q=' + encodeURIComponent(find.value), { headers: { 'x-requested-with': 'fetch' } });
+      found = (await r.json()).items;
+      res.innerHTML = found.length ? found.map((x, i) => `<button type="button" class="res" data-i="${i}"><span class="grow"><b>${esc(x.name)}</b>
+        <span class="caption">${esc([x.brand, x.article].filter(Boolean).join(' '))} · свободно: ${x.free} · закупка ${x.cost.toFixed(2)} ₴</span></span></button>`).join('')
+        : '<div class="res footnote">Нет в каталоге — заполните поля, позиция создастся сама</div>';
+      res.hidden = false; }, 250); });
+    res.addEventListener('click', e => {
+      const b = e.target.closest('[data-i]'); if (!b) return; const x = found[+b.dataset.i];
+      f.catalog_id.value = x.id; f.name.value = x.name; f.article.value = x.article; f.brand.value = x.brand; f.revision.value = x.revision;
+      if (x.cost) f.cost.value = x.cost.toFixed(2);
+      free.hidden = false; free.textContent = x.free > 0 ? `На складе свободно: ${x.free} — возьмём оттуда` : 'На складе нет — будет заказ';
+      res.hidden = true; find.value = ''; calc();
+    });
+    // Поменяли название руками — это уже другая позиция каталога
+    f.name.addEventListener('input', () => { f.catalog_id.value = ''; free.hidden = true; });
+    function esc(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+  })();
+  {% endif %}
 
   {% if can_add_photo %}
   document.getElementById('pinput').addEventListener('change', async function () {

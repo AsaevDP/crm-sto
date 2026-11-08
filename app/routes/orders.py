@@ -137,6 +137,15 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                      *[f.created_by for f in findings])
     can_assign = ctx.can("orders.assign") and wo.status in WO_ACTIVE
     is_mech = ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all")
+    # Запчасти наряда (артикул/закупка/наценка — только запчастисту и админу)
+    from ..models import IssueRequest, PartCatalog, WoPart
+    from ..services import settings as st_
+    from ..services import stock as stock_svc
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id).order_by(WoPart.created_at)).all()
+    cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([p.catalog_id for p in parts if p.catalog_id])))}
+    open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
+    can_pick = (ctx.can("parts.pick") and wo.status in ("picking", "waiting")
+                and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
     return ctx.render(
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
@@ -144,6 +153,13 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_diag=ctx.can("orders.diagnose") and is_mech and wo.status in ("diag", "approve", "work"),
         can_finish_diag=ctx.can("orders.diagnose") and is_mech and wo.status == "diag",
         can_approve=ctx.can("orders.approve") and wo.status == "approve",
+        parts=parts, cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,
+        show_cost=ctx.can("prices.view_purchase"), show_price=ctx.can("prices.view_sale") or ctx.can("prices.view_purchase"),
+        default_markup=st_.get(db, ctx.branch.id, "pricing")["default_markup"], open_issue=open_issue,
+        can_request_issue=(ctx.can("stock.request_issue") and not open_issue and wo.status in ("instock", "work")
+                           and any(p.status == "reserved" for p in parts)
+                           and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id)),
+        parts_total=sum((p.price * p.qty for p in parts), 0),
         people=people, STATUSES=WO_STATUSES, INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
         fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, can_assign=can_assign,
         can_add_photo=(ctx.can("orders.create") or ctx.can("orders.diagnose")) and wo.status in WO_ACTIVE,

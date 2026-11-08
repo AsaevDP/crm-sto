@@ -48,5 +48,41 @@
   <a href="/more" {% if active == "/more" %}aria-current="page"{% endif %}>{{ icon("more") }}<span>Ещё</span></a>
 </nav>
 <script src="{{ asset('/static/js/app.js') }}"></script>
+{% if ctx.can("stock.issue") %}
+<script>
+// Окошко у кладовщика: раз в 15 секунд спрашиваем, нет ли новых запросов на выдачу
+(function () {
+  let seen; try { seen = new Set(JSON.parse(sessionStorage.getItem('seen-issues') || '[]')); } catch (e) { seen = new Set(); }
+  function badge(n) {
+    document.querySelectorAll('a[href="/stock"]').forEach(a => {
+      let b = a.querySelector('.nbadge');
+      if (!n) { b && b.remove(); return; }
+      if (!b) { b = document.createElement('span'); b.className = 'nbadge'; a.appendChild(b); }
+      b.textContent = n;
+    });
+  }
+  async function poll() {
+    try {
+      const r = await fetch('/api/notify', { headers: { 'x-requested-with': 'fetch' } });
+      if (!r.ok) return;
+      const j = await r.json(); badge(j.issues);
+      const fresh = j.items.filter(x => !seen.has(x.id));
+      if (fresh.length && location.pathname !== '/stock/issues') {
+        const x = fresh[0], t = document.createElement('a');
+        t.className = 'toast'; t.href = '/stock/issues';
+        t.innerHTML = '<span class="footnote">Запрос на выдачу</span><b></b><span class="subhead"></span>';
+        t.querySelector('b').textContent = x.who + ' просит: ' + x.text;
+        t.querySelector('.subhead').textContent = 'Наряд ' + x.order + ' · ' + x.plate;
+        document.body.appendChild(t); setTimeout(() => t.remove(), 12000);
+        try { navigator.vibrate && navigator.vibrate(200); } catch (e) {}
+      }
+      j.items.forEach(x => seen.add(x.id));
+      try { sessionStorage.setItem('seen-issues', JSON.stringify([...seen])); } catch (e) {}
+    } catch (e) {}
+  }
+  poll(); setInterval(poll, 15000);
+})();
+</script>
+{% endif %}
 </body>
 </html>

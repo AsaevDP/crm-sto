@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Ячейки склада</h1></div>
+</header>
+{% if ctx.can("stock.manage") %}
+<div class="cl-grid">
+  <form class="card compact form dense" method="post" action="/stock/locations">
+    <div class="card-h"><span class="headline">Весь стеллаж сразу</span></div>
+    <div class="form-row"><label>Стеллаж<input class="field" name="rack" placeholder="B" required maxlength="10"></label>
+      <label>Полок<input class="field" name="shelves" inputmode="numeric" placeholder="4"></label>
+      <label>Мест на полке<input class="field" name="places" inputmode="numeric" placeholder="5"></label></div>
+    <button class="btn btn-sm">Создать ячейки</button>
+    <p class="hint">Стеллаж B, 4 полки × 5 мест → 20 ячеек «B / 1 / 1» … «B / 4 / 5».</p>
+  </form>
+  <form class="card compact form dense" method="post" action="/stock/locations">
+    <div class="card-h"><span class="headline">Одна ячейка</span></div>
+    <div class="form-row"><label>Стеллаж<input class="field" name="rack" required maxlength="10"></label>
+      <label>Полка<input class="field" name="shelf" maxlength="10"></label><label>Место<input class="field" name="place" maxlength="10"></label></div>
+    <button class="btn btn-sm btn-tinted">Добавить</button>
+  </form>
+</div>
+{% endif %}
+<div class="loc-grid">
+  {% for l in rows %}<span class="tag mono">{{ loc_label(l) }}</span>{% else %}<p class="footnote">Ячеек пока нет</p>{% endfor %}
+</div>
+{% endblock %}
