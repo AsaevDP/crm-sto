@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 {% set KINDS = {"order": "Приёмка", "status": "Статус", "finding": "Найдена проблема", "approval": "Решение клиента",
                 "recommendation": "Рекомендация", "act": "Акт", "note": "Заметка"} %}
@@ -12,7 +13,7 @@
   </div>
 </header>
 
-<div class="cl-grid">
+<div class="cl-grid fill">
   <section class="ov-col on">
     <div class="card compact">
       <div class="card-h"><span class="headline">Автомобили</span></div>

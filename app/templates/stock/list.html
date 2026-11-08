@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Склад</h1>
@@ -13,7 +14,7 @@
     <option value="">Есть на складе</option><option value="free" {% if only == "free" %}selected{% endif %}>Только свободные</option>
     <option value="all" {% if only == "all" %}selected{% endif %}>Все, включая нулевые</option></select>
 </form>
-<div class="tablewrap">
+<div class="tablewrap fill scroll">
   <table class="table">
     <thead><tr><th>Запчасть</th><th>Артикул</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
     <tbody>

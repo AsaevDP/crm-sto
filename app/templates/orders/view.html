@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 {% set n_find = findings|length %}
 <header class="ov-head">
@@ -22,10 +23,10 @@
 <div class="segmented seg-wide ov-tabs" id="ovtabs">
   <button type="button" data-t="main" aria-pressed="true">Обзор</button>
   <button type="button" data-t="diag" aria-pressed="false">Проблемы{% if n_find %} · {{ n_find }}{% endif %}</button>
-  <button type="button" data-t="hist" aria-pressed="false">Кто и история</button>
+  <button type="button" data-t="hist" aria-pressed="false">История</button>
 </div>
 
-<div class="ov-grid">
+<div class="ov-grid fill">
   {# ===== Колонка 1: фото, работы, акт ===== #}
   <section class="ov-col" data-t="main">
     <div class="card compact">
@@ -130,11 +131,11 @@
       <div class="card-h"><span class="headline">Кто и где</span></div>
       {% if can_assign %}
       <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign">
-        <label>Подъёмник<select class="field" name="lift_id"><option value="">— без подъёмника —</option>
+        <label>Подъёмник<select class="field" name="lift_id"><option value="">Без поста</option>
           {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
-        <label>Слесарь<select class="field" name="mechanic_id"><option value="">— не назначен —</option>
+        <label>Слесарь<select class="field" name="mechanic_id"><option value="">Не выбран</option>
           {% for u in mechanics %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-        <label>Запчастист<select class="field" name="partsman_id"><option value="">— не назначен —</option>
+        <label>Запчастист<select class="field" name="partsman_id"><option value="">Не выбран</option>
           {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
         <button class="btn btn-sm">Сохранить</button>
       </form>

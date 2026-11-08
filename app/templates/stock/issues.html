@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Выдача запчастей</h1></div>
 </header>
-<div class="cl-grid">
+<div class="cl-grid fill">
   <section class="ov-col on">
     <div class="group-title">Ждут выдачи · {{ new|length }}</div>
     {% for x in new %}

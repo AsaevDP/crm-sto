@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Сотрудники</h1></div>
 </header>
 
-<div class="group">
+<div class="group fill scroll">
   {% for u in users %}
   <a class="row chevron {% if not u.active %}muted{% endif %}" href="/settings/users/{{ u.id }}">
     <span class="avatar" style="{{ '--accent:' ~ color_css(u.role.color) }}">{{ u.initials }}</span>

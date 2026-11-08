@@ -64,7 +64,10 @@ def asset(path: str) -> str:
         return path
 
 
-templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO)
+from .models.orders import WO_STATUS_SHORT  # noqa: E402
+
+templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO,
+                             STATUS_SHORT=WO_STATUS_SHORT)
 
 
 @dataclass

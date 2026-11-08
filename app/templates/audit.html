@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <div><p class="footnote">Последние 300 действий</p><h1 class="large-title">Журнал</h1></div>
 </header>
-<div class="tablewrap">
+<div class="tablewrap fill scroll">
   <table class="table">
     <thead><tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Что</th><th>Изменения</th></tr></thead>
     <tbody>

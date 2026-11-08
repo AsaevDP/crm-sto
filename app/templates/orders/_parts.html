@@ -45,12 +45,12 @@
       </div>
       <input type="hidden" name="catalog_id">
       <input class="field" name="name" placeholder="Название (видит клиент) *" required>
-      <div class="form-row">
+      <div class="form-row three">
         <input class="field mono" name="article" placeholder="Артикул">
         <input class="field" name="brand" placeholder="Бренд">
         <input class="field" name="revision" placeholder="Ревизия">
       </div>
-      <div class="form-row">
+      <div class="form-row three">
         <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
         <label>Закупка за шт, ₴<input class="field" name="cost" inputmode="decimal" placeholder="0"></label>
         <label>Наценка, %<input class="field" type="number" name="markup_pct" min="0" max="1000" step="1" inputmode="numeric" value="{{ default_markup }}"></label>
@@ -61,10 +61,10 @@
       <p class="hint" id="pprice">Цена для клиента: —</p>
       <p class="hint" id="pfree" hidden></p>
       <div class="form-row">
-        <button class="btn btn-sm" name="action" value="auto">Со склада, если есть, иначе заказать</button>
+        <button class="btn btn-sm" name="action" value="auto">Со склада или заказать</button>
         <button class="btn btn-sm btn-gray" name="action" value="order">Только заказать</button>
       </div>
-      <label>Купить всего, шт (излишек уйдёт на склад)<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>
+      <label>Купить всего, шт — излишек на склад<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>
     </form>
   </details>
   {% if wo.status == "picking" %}

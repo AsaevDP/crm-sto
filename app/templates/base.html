@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="{{ asset('/static/css/app.css') }}">
 <link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
 {% if ctx.viewing_as %}
 <div class="viewas-bar">
   <span>👁 Вы смотрите глазами: <b>{{ user.full_name }}</b> · {{ user.role.name }} — только просмотр</span>

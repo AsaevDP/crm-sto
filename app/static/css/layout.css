@@ -349,13 +349,13 @@ body { font-size: 16px; }
 }
 /* Текст переносится внутри блоков, а не вылезает наружу */
 .card, .group, .row, .li, .kv, .part, .finding, .tl, .ocard-body, .ov-col, .icol, .res, .rec, .lift, .stat { min-width: 0; }
-.row .grow, .li > span, .kv > *, .part-name, .finding-text, .ev-text, .rec .grow, .res .grow, .ov-title > div { min-width: 0; overflow-wrap: anywhere; }
+.row .grow, .li > span, .kv > *, .part-name, .finding-text, .ev-text, .rec .grow, .res .grow, .ov-title > div { min-width: 0; overflow-wrap: break-word; }
 .kv b { max-width: 65%; }
 .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .btn { max-width: 100%; white-space: normal; text-align: center; line-height: 1.2; }
 .segmented button, .segmented a { overflow: hidden; text-overflow: ellipsis; }
 .form-row > * { min-width: 0; }
-.table td { overflow-wrap: anywhere; }
+.table td { overflow-wrap: break-word; }
 .lift b, .stat b { font-size: 22px; }
 .ocard-car, .lift-car { min-width: 0; }
 
@@ -377,3 +377,63 @@ input.mini { width: 72px; }
 
 /* Поле поиска: отступ под лупу не должен перебиваться компактными формами */
 .field.search, .form .field.search, .form.dense .field.search, .intake .field.search { padding-left: 38px; background-position: 12px center; }
+
+/* ===== «В один экран» на ПК: страница не прокручивается, длинное листается внутри блоков ===== */
+.pult-bottom > section > .group { overflow: auto; }
+.lift-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.lift { gap: 4px; padding: 10px 12px; }
+@media (min-width: 900px) and (min-height: 540px) {
+  body.fit .content { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; gap: 12px; padding-top: 16px; padding-bottom: 16px; }
+  body.fit .content > * { flex: none; }
+  body.fit .content > .fill { flex: 1 1 0; min-height: 0; }
+  body.fit .fill.scroll { overflow: auto; overscroll-behavior: contain; }
+  /* Колонки наряда/клиента: каждая листается сама */
+  body.fit .ov-grid.fill, body.fit .cl-grid.fill { align-items: stretch; }
+  body.fit .fill > .ov-col { overflow: auto; overscroll-behavior: contain; min-height: 0; align-content: start; padding: 2px 4px 8px 2px; }
+  body.fit .timeline { max-height: none; }
+  /* Пульт: посты компактно, низ делится на два листающихся блока */
+  body.fit .lifts { grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  body.fit .pult-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+  body.fit .pult-bottom > section { display: flex; flex-direction: column; min-height: 0; gap: 6px; }
+  body.fit .pult-bottom > section > .group { flex: 1 1 0; min-height: 0; }
+  body.fit .pult-bottom .row { min-height: 36px; padding: 6px 14px; }
+  body.fit .flash { padding: 8px 14px; }
+  /* Наряд при ширине 900–1279: «Обзор» и «История» друг под другом слева, «Проблемы/Запчасти» справа */
+  body.fit .ov-grid.fill { grid-template-rows: 1fr 1fr; }
+  body.fit .ov-grid.fill > [data-t="main"] { grid-column: 1; grid-row: 1; }
+  body.fit .ov-grid.fill > [data-t="hist"] { grid-column: 1; grid-row: 2; grid-template-columns: 1fr; }
+  body.fit .ov-grid.fill > [data-t="diag"] { grid-column: 2; grid-row: 1 / 3; }
+}
+@media (min-width: 1280px) and (min-height: 540px) {
+  body.fit .ov-grid.fill { grid-template-rows: 1fr; }
+  body.fit .ov-grid.fill > [data-t="hist"] { grid-column: 3; grid-row: 1; }
+  body.fit .ov-grid.fill > [data-t="diag"] { grid-column: 2; grid-row: 1; }
+}
+
+/* Плашка статуса в карточке не обрезается — сжимается номер */
+.ocard-top .chip { flex: none; }
+.ocard-top .footnote { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#fuel button { padding: 6px 4px; }
+
+/* Приёмка «в один экран»: колонки листаются внутри, кнопка «Создать» всегда на виду */
+@media (min-width: 900px) and (min-height: 540px) {
+  body.fit .intake.fill { display: flex; flex-direction: column; gap: 10px; }
+  body.fit .intake.fill > .intake-cols { flex: 1 1 0; min-height: 0; }
+  body.fit .intake.fill .icol { overflow: auto; overscroll-behavior: contain; min-height: 0; max-height: 100%; padding: 2px 4px 6px 2px; }
+  body.fit .intake.fill .submit-bar { position: static; padding: 0; }
+}
+@media (min-width: 900px) and (min-height: 540px) {
+  /* Пульт: нижние блоки растягиваются на всю оставшуюся высоту (иначе схлопывались в ноль) */
+  body.fit .pult-bottom { align-items: stretch; }
+  body.fit .pult-bottom > section > .group { flex: 1 1 auto; min-height: 120px; }
+}
+
+.form-row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.form-row.three .field { padding-left: 8px; padding-right: 8px; }
+select.field { text-overflow: ellipsis; }
+@media (min-width: 900px) {
+  /* Приёмка: в узкой 3-й колонке поля по одному в ряд, пункты акта — сколько влезет без разрыва слов */
+  .icol[data-step="3"] .form-row { grid-template-columns: 1fr 1fr; }
+  .intake .group:has(label.row) { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .intake .group label.row { hyphens: manual; }
+}

@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Закупки</h1>
   {% if ctx.can("purchases.manage") %}<form method="post" action="/purchases/new"><button class="btn btn-sm">{{ icon("plus") }}Закупка на склад</button></form>{% endif %}
 </header>
 <p class="subhead" style="margin:0">«Заказать» в наряде добавляет строку в текущий черновик. Отправили поставщику → кладовщик ждёт приход.</p>
-<div class="tablewrap">
+<div class="tablewrap fill scroll">
   <table class="table">
     <thead><tr><th>Дата</th><th>Поставщик</th><th>Статус</th><th class="num">Строк</th>{% if ctx.can("prices.view_purchase") %}<th class="num">Сумма</th>{% endif %}</tr></thead>
     <tbody>

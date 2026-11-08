@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <div><p class="footnote">Что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
@@ -12,16 +13,14 @@
     {% if wo %}
     {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
     <a class="lift busy" href="/orders/{{ wo.id }}">
-      <span class="footnote lift-car">{{ l.name or "Подъёмник" }}</span>
-      <b>{{ l.number }}</b>
+      <span class="lift-top"><b>{{ l.number }}</b><span class="footnote lift-car">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
       <span class="lift-car">{{ v.make }} {{ v.model }}</span>
       <span class="caption">{{ fmt_plate(v.plate) }}{% if mc %} · {{ mc.short_name }}{% endif %}</span>
       <span class="chip" data-s="{{ wo.status }}">{{ {"created":"Создан","diag":"Диагностика","approve":"Согласование","picking":"Подбор","waiting":"Ждёт запчасти","instock":"Запчасти есть","work":"В работе","ready":"Готово","paid":"Оплачено"}.get(wo.status, wo.status) }}</span>
     </a>
     {% else %}
     <div class="lift">
-      <span class="footnote lift-car">{{ l.name or "Подъёмник" }}</span>
-      <b>{{ l.number }}</b>
+      <span class="lift-top"><b>{{ l.number }}</b><span class="footnote lift-car">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
       <span class="chip" data-s="created">Свободен</span>
     </div>
     {% endif %}
@@ -29,7 +28,7 @@
   </div>
 </section>
 
-<div class="grid-2">
+<div class="grid-2 fill pult-bottom">
   <section class="stack">
     <div class="group-title">Очереди</div>
     <div class="group">
