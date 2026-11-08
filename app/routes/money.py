@@ -222,7 +222,12 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = ""):
     start = datetime.combine(d, datetime.min.time()).astimezone()
     pays = db.scalars(select(Payment).where(Payment.branch_id == ctx.branch.id, Payment.created_at >= start,
                                             Payment.created_at < start + timedelta(days=1)).order_by(Payment.created_at.desc())).all()
-    by_method = {m: sum((p.amount for p in pays if p.method == m), Decimal(0)) for m in PAY_METHODS}
+    from ..models import UsedSale
+    used = db.scalars(select(UsedSale).where(UsedSale.branch_id == ctx.branch.id, UsedSale.status == "sold",
+                                             UsedSale.sold_at >= start, UsedSale.sold_at < start + timedelta(days=1))
+                      .order_by(UsedSale.sold_at.desc())).all()
+    by_method = {m: sum((p.amount for p in pays if p.method == m), Decimal(0)) + sum((s.price for s in used if s.pay_method == m), Decimal(0))
+                 for m in PAY_METHODS}
     orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([p.work_order_id for p in pays])))}
     # Долги: готовые/оплаченные/закрытые с остатком
     debts = []
@@ -234,7 +239,13 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = ""):
     waiting_prepay = db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.awaiting_prepay.is_(True),
                                                         WorkOrder.status.not_in(("closed", "cancel")))).all()
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    from ..models import PartCatalog, StockItem
+    used_names = {}
+    for s in used:
+        si = db.get(StockItem, s.stock_item_id)
+        used_names[s.id] = (si.code, db.get(PartCatalog, si.catalog_id).name, si.id)
     return ctx.render("money/index.html", title="Деньги", d=d, pays=pays, by_method=by_method, orders=orders,
+                      used=used, used_names=used_names,
                       total=sum(by_method.values(), Decimal(0)), debts=debts, waiting_prepay=waiting_prepay, people=people,
                       PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, prev=(d - timedelta(days=1)).isoformat(),
                       next=(d + timedelta(days=1)).isoformat())

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% set ST = {"stock": "в наличии", "reserved": "резерв", "sold": "продано"} %}
+{% set can = ctx.can("razbor.manage") %}
+<header class="ov-head">
+  <a class="back" href="/razbor">{{ icon("back") }}Разбор</a>
+  <div class="ov-title">
+    <div><div class="footnote mono">{{ d.code }}{% if d.vin %} · VIN {{ d.vin }}{% endif %}</div>
+      <h1 class="title-1">{{ d.make }} {{ d.model }}{% if d.year %} · {{ d.year }}{% endif %}</h1>
+      <div class="subhead">{{ [d.engine, d.gearbox, d.body, d.color]|select|join(" · ") or "характеристики не заполнены" }}{% if d.mileage %} · {{ "{:,}".format(d.mileage).replace(",", " ") }} км{% endif %}</div></div>
+    <span class="chip chip-lg" data-ds="{{ d.status }}">{{ DONOR_STATUS[d.status] }}</span>
+  </div>
+</header>
+<div class="stats">
+  <div class="stat"><span class="footnote">Вложено (покупка + расходы)</span><b>{{ "{:,.0f}".format(e.invested).replace(",", " ") }} ₴</b></div>
+  <div class="stat"><span class="footnote">Заработано (продажи + в наряды)</span><b>{{ "{:,.0f}".format(e.earned).replace(",", " ") }} ₴</b></div>
+  <div class="stat"><span class="footnote">{{ "Прибыль" if e.profit >= 0 else "До окупаемости" }}</span><b style="color:var(--{{ 'green' if e.profit >= 0 else 'orange' }})">{{ "{:,.0f}".format(e.profit|abs).replace(",", " ") }} ₴</b></div>
+  <div class="stat"><span class="footnote">Ещё на полке · {{ e.parts_left }} из {{ e.parts_total }} дет.</span><b>{{ "{:,.0f}".format(e.on_shelf).replace(",", " ") }} ₴</b></div>
+</div>
+<div class="ov-grid fill donor-grid">
+  <section class="ov-col on" data-t="main">
+    {% if photos %}<div class="card compact"><div class="pgallery sm">{% for p in photos %}<a href="/razbor/files/{{ p.file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""></a>{% endfor %}</div></div>{% endif %}
+    <details class="card compact work-edit" {% if not d.engine and can %}open{% endif %}>
+      <summary class="headline" style="font-size:14px">Карточка донора{% if can %} · изменить{% endif %}</summary>
+      <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}" enctype="multipart/form-data" data-compress style="margin-top:8px">
+        <div class="form-row three"><label>Марка<input class="field" name="make" value="{{ d.make }}"></label><label>Модель<input class="field" name="model" value="{{ d.model }}"></label><label>Год<input class="field" name="year" value="{{ d.year or '' }}" inputmode="numeric"></label></div>
+        <div class="form-row three"><label>Двигатель<input class="field" name="engine" value="{{ d.engine }}" placeholder="3.0 дизель"></label><label>КПП<input class="field" name="gearbox" value="{{ d.gearbox }}" placeholder="АКПП"></label><label>Кузов<input class="field" name="body" value="{{ d.body }}" placeholder="кроссовер"></label></div>
+        <div class="form-row three"><label>Цвет<input class="field" name="color" value="{{ d.color }}"></label><label>Пробег<input class="field" name="mileage" value="{{ d.mileage or '' }}" inputmode="numeric"></label><label>VIN<input class="field mono" name="vin" value="{{ d.vin }}"></label></div>
+        <div class="form-row three"><label>Куплен<input class="field" type="date" name="bought_on" value="{{ d.bought_on or '' }}"></label><label>Цена покупки ₴<input class="field" name="purchase_price" value="{{ '%.0f'|format(d.purchase_price) }}" inputmode="decimal"></label><label>Расходы ₴<input class="field" name="expenses" value="{{ '%.0f'|format(d.expenses) }}" inputmode="decimal"></label></div>
+        <input class="field" name="expenses_note" value="{{ d.expenses_note }}" placeholder="Расходы: эвакуатор 1500, разборка 3000…">
+        <div class="form-row"><select class="field" name="status">{% for k, v in DONOR_STATUS.items() %}<option value="{{ k }}" {% if k == d.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" hidden></label></div>
+        <textarea class="field" name="notes" rows="2" placeholder="Заметки: что битое, что уже снято">{{ d.notes }}</textarea>
+        {% if can %}<button class="btn btn-sm">Сохранить</button>{% endif %}
+      </form>
+    </details>
+  </section>
+  <section class="ov-col on" data-t="diag">
+    {% if can %}
+    <details class="card compact add-finding" {% if not rows %}open{% endif %}>
+      <summary class="btn btn-sm btn-block">{{ icon("plus") }}Снять деталь с донора</summary>
+      <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}/parts" enctype="multipart/form-data" data-compress style="margin-top:8px">
+        <input class="field" name="name" placeholder="Название (видит покупатель): Фара передняя левая *" required>
+        <div class="form-row three"><input class="field" name="price" inputmode="decimal" placeholder="Цена ₴"><input class="field" name="qty" value="1" inputmode="decimal" aria-label="Кол-во">
+          <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div class="form-row"><select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
+          <input class="field mono" name="article" placeholder="Оригинальный номер (необяз.)"></div>
+        <textarea class="field" name="description" rows="2" placeholder="Для объявления: без трещин, крепления целые…"></textarea>
+        <div class="form-row"><label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" multiple hidden></label>
+          <label class="row" style="padding:0"><span class="grow">На сайт</span><input type="checkbox" class="switch" name="publish" value="1" checked></label></div>
+        <button class="btn btn-sm">Добавить деталь</button>
+      </form>
+    </details>
+    {% endif %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Детали · {{ rows|length }}</span></div>
+      {% for r in rows %}
+      <a class="kv link" href="/razbor/parts/{{ r.i.id }}"><span><span class="mono caption">{{ r.i.code }}</span> {{ r.c.name }} <span class="caption">· {{ CONDITIONS.get(r.i.condition) }} · {{ r.loc }}</span></span>
+        <b>{{ "{:,.0f}".format(r.i.sale_price).replace(",", " ") }} ₴ <span class="chip" data-rs="{{ r.state }}">{{ ST[r.state] }}</span></b></a>
+      {% else %}<p class="footnote" style="margin:0">Деталей ещё нет — снимайте и добавляйте</p>{% endfor %}
+    </div>
+  </section>
+</div>
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% endblock %}

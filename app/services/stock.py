@@ -84,12 +84,20 @@ def search_catalog(db: Session, branch_id, q: str, limit: int = 12) -> list[dict
         PartCatalog.name.ilike(like), PartCatalog.article.ilike(like), PartCatalog.brand.ilike(like),
         PartCatalog.fits.ilike(like))).order_by(PartCatalog.name).limit(limit)).all()
     free = catalog_free(db, branch_id, [r.id for r in rows])
-    last_cost = {}
+    last = {}
     for r in rows:
-        si = db.scalars(select(StockItem).where(StockItem.catalog_id == r.id).order_by(StockItem.updated_at.desc())).first()
-        last_cost[r.id] = si.cost if si else D0
-    return [{"id": str(r.id), "name": r.name, "article": r.article, "brand": r.brand, "revision": r.revision,
-             "fits": r.fits, "free": float(free[r.id]), "cost": float(last_cost[r.id])} for r in rows]
+        last[r.id] = db.scalars(select(StockItem).where(StockItem.catalog_id == r.id).order_by(StockItem.updated_at.desc())).first()
+    out = []
+    for r in rows:
+        si = last[r.id]
+        used = r.kind == "used"
+        out.append({"id": str(r.id), "name": r.name, "article": r.article, "brand": r.brand, "revision": r.revision,
+                    "fits": r.fits, "free": float(free[r.id]), "used": used, "code": si.code if si else "",
+                    # б/у: «закупка» = цена с разбора, наценка 0 — клиент платит цену разбора
+                    "cost": float((si.sale_price if used else si.cost) if si else 0)})
+    # Сначала то, что есть в наличии (б/у — как дешёвая альтернатива)
+    out.sort(key=lambda x: (x["free"] <= 0, x["name"].lower()))
+    return out
 
 
 def get_or_create_catalog(db: Session, name: str, article: str = "", brand: str = "", revision: str = "") -> PartCatalog:

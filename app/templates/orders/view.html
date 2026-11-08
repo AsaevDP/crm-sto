@@ -251,14 +251,15 @@
       if (find.value.trim().length < 2) { res.hidden = true; return; }
       const r = await fetch('/api/catalog/search?q=' + encodeURIComponent(find.value), { headers: { 'x-requested-with': 'fetch' } });
       found = (await r.json()).items;
-      res.innerHTML = found.length ? found.map((x, i) => `<button type="button" class="res" data-i="${i}"><span class="grow"><b>${esc(x.name)}</b>
-        <span class="caption">${esc([x.brand, x.article].filter(Boolean).join(' '))} · свободно: ${x.free} · закупка ${x.cost.toFixed(2)} ₴</span></span></button>`).join('')
+      res.innerHTML = found.length ? found.map((x, i) => `<button type="button" class="res" data-i="${i}"><span class="grow"><b>${x.used ? '<span class="tag">б/у ' + esc(x.code) + '</span> ' : ''}${esc(x.name)}</b>
+        <span class="caption">${esc([x.brand, x.article, x.used ? x.fits : ''].filter(Boolean).join(' '))} · свободно: ${x.free} · ${x.used ? 'цена разбора' : 'закупка'} ${x.cost.toFixed(2)} ₴</span></span></button>`).join('')
         : '<div class="res footnote">Нет в каталоге — заполните поля, позиция создастся сама</div>';
       res.hidden = false; }, 250); });
     res.addEventListener('click', e => {
       const b = e.target.closest('[data-i]'); if (!b) return; const x = found[+b.dataset.i];
       f.catalog_id.value = x.id; f.name.value = x.name; f.article.value = x.article; f.brand.value = x.brand; f.revision.value = x.revision;
       if (x.cost) f.cost.value = x.cost.toFixed(2);
+      if (x.used) f.markup_pct.value = 0;   // б/у с разбора: клиент платит цену разбора
       free.hidden = false; free.textContent = x.free > 0 ? `На складе свободно: ${x.free} — возьмём оттуда` : 'На складе нет — будет заказ';
       res.hidden = true; find.value = ''; calc();
     });

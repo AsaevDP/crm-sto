@@ -22,6 +22,12 @@
         <b>{{ "%.2f"|format(p.amount) }} ₴</b></div>
       {% else %}<p class="footnote">Оплат нет</p>{% endfor %}
     </div>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Продажи разбора за день · {{ used|length }}</span></div>
+      {% for s in used %}{% set n = used_names[s.id] %}
+      <div class="kv"><span>{{ s.sold_at.astimezone().strftime("%H:%M") }} · <a href="/razbor/parts/{{ n[2] }}">{{ n[0] }}</a> {{ n[1] }} · {{ PAY_METHODS.get(s.pay_method) }}</span><b>{{ "%.2f"|format(s.price) }} ₴</b></div>
+      {% else %}<p class="footnote" style="margin:0">Нет</p>{% endfor %}
+    </div>
   </section>
   <section class="ov-col on">
     <div class="card compact">

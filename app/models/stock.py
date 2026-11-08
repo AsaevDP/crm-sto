@@ -47,6 +47,10 @@ class StockItem(Entity):
     condition: Mapped[str] = mapped_column(String(120), default="")
     sale_price: Mapped[Decimal] = mapped_column(MONEY, default=0)
     publish_on_site: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Разбор (б/у): донор, код для бирки и сайта, описание для объявления
+    donor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("donors.id"), nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(20), default="", index=True)   # Р-0001
+    description: Mapped[str] = mapped_column(Text, default="")
 
 
 class StockPhoto(Entity):

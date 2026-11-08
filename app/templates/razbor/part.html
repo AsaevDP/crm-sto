@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% set ST = {"stock": "в наличии", "reserved": "в резерве", "sold": "продано"} %}
+<header class="ov-head">
+  <a class="back" href="{{ '/razbor/donors/' ~ i.donor_id if i.donor_id else '/razbor' }}">{{ icon("back") }}{{ r.d.code ~ " " ~ r.d.make ~ " " ~ r.d.model if r.d else "Разбор" }}</a>
+  <div class="ov-title">
+    <div><div class="footnote"><span class="mono code-big">{{ i.code }}</span> · {{ CONDITIONS.get(i.condition) }} · ячейка {{ r.loc }}</div>
+      <h1 class="title-1">{{ r.c.name }}</h1>
+      <div class="subhead">{{ i.donor_make }} {{ i.donor_model }}{% if i.donor_year %} · {{ i.donor_year }}{% endif %}{% if r.d and r.d.engine %} · {{ r.d.engine }}{% endif %}</div></div>
+    <div class="ov-actions"><b class="price-big">{{ "{:,.0f}".format(i.sale_price).replace(",", " ") }} ₴</b>
+      <span class="chip chip-lg" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if i.publish_on_site %}<span class="tag">на сайте</span>{% endif %}</div>
+  </div>
+</header>
+<div class="ov-grid fill donor-grid">
+  <section class="ov-col on" data-t="main">
+    <div class="card compact">
+      {% if photos %}<div class="pgallery sm">{% for p in photos %}<a href="/razbor/files/{{ p.file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""></a>{% endfor %}</div>
+      {% else %}<p class="footnote" style="margin:0">Фото нет — без фото на сайте продаётся хуже</p>{% endif %}
+      {% if i.description %}<p class="ov-text">{{ i.description }}</p>{% endif %}
+    </div>
+    {% if ctx.can("razbor.manage") %}
+    <details class="card compact work-edit"><summary class="caption">Изменить: цена, состояние, ячейка, фото, «на сайт»</summary>
+      <form class="form dense" method="post" action="/razbor/parts/{{ i.id }}" enctype="multipart/form-data" data-compress>
+        <input class="field" name="name" value="{{ r.c.name }}" aria-label="Название">
+        <div class="form-row three"><input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal" aria-label="Цена">
+          <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == i.condition %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}" {% if l.id == i.location_id %}selected{% endif %}>{{ loc_label(l) }}</option>{% endfor %}</select></div>
+        <textarea class="field" name="description" rows="2" placeholder="Описание для объявления">{{ i.description }}</textarea>
+        <div class="form-row"><label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" multiple hidden></label>
+          <label class="row" style="padding:0"><span class="grow">На сайт</span><input type="hidden" name="publish" value="0"><input type="checkbox" class="switch" name="publish" value="1" {% if i.publish_on_site %}checked{% endif %}></label></div>
+        <button class="btn btn-sm">Сохранить</button>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+  <section class="ov-col on" data-t="diag">
+    {% if ctx.can("razbor.sell") and r.state == "stock" %}
+    <form class="card compact form dense" method="post" action="/razbor/parts/{{ i.id }}/sell">
+      <div class="card-h"><span class="headline">Покупатель</span><span class="caption">свободно {{ r.b.free|num }} шт</span></div>
+      <div class="form-row"><input class="field" name="buyer_name" placeholder="Имя"><input class="field" name="buyer_phone" type="tel" placeholder="Телефон"></div>
+      <div class="form-row three"><label>Цена ₴<input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal"></label>
+        <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
+        <label>Оплата<select class="field" name="pay_method">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div>
+      <div class="form-row"><select class="field" name="delivery">{% for k, v in DELIVERY.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        <input class="field mono" name="ttn" placeholder="ТТН (если отправили)"></div>
+      <div class="form-row"><button class="btn btn-sm btn-tinted" name="action" value="reserve">В резерв под покупателя</button>
+        <button class="btn btn-sm" name="action" value="sold">Продано сейчас</button></div>
+    </form>
+    {% endif %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Продажи и резервы</span></div>
+      {% for s in sales %}
+      <div class="sale">
+        <div class="kv"><span>{{ s.buyer_name or "Покупатель" }}{% if s.buyer_phone %} · {{ fmt_phone(s.buyer_phone) }}{% endif %} · {{ DELIVERY.get(s.delivery) }}{% if s.ttn %} · ТТН {{ s.ttn }}{% endif %}</span>
+          <b>{{ "%.0f"|format(s.price) }} ₴ <span class="chip" data-us="{{ s.status }}">{{ SALE_STATUS.get(s.status, s.status) }}</span></b></div>
+        {% if s.status == "reserved" and ctx.can("razbor.sell") %}
+        <form class="note-form" method="post" action="/razbor/sales/{{ s.id }}">
+          <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН">
+          <select class="field" name="pay_method" style="max-width:130px">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}" {% if k == s.pay_method %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <button class="btn btn-sm" name="action" value="sold">Продано</button>
+          <button class="btn btn-sm btn-gray" name="action" value="cancel">Отменить</button>
+        </form>
+        {% endif %}
+      </div>
+      {% else %}<p class="footnote" style="margin:0">Продаж не было</p>{% endfor %}
+    </div>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Движения</span></div>
+      {% for m in moves %}<div class="kv"><span>{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ MOVEMENT_TYPES.get(m.type) }}{% if m.comment %} — {{ m.comment }}{% endif %}</span><b>{{ m.qty|num }}</b></div>{% endfor %}
+    </div>
+  </section>
+</div>
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% endblock %}

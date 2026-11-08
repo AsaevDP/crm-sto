@@ -72,7 +72,10 @@
     const fd = new FormData(form);
     if (e.submitter && e.submitter.name) fd.set(e.submitter.name, e.submitter.value);
     for (const inp of files) {
-      try { const c = await compress(inp.files[0]); fd.set(inp.name, c.full, 'photo.jpg'); } catch (err) {}
+      fd.delete(inp.name);
+      for (const [n, file] of [...inp.files].entries()) {
+        try { const c = await compress(file); fd.append(inp.name, c.full, `photo${n}.jpg`); } catch (err) { fd.append(inp.name, file); }
+      }
     }
     const r = await fetch(form.action, { method: 'POST', body: fd, credentials: 'same-origin' });
     location.href = r.url || location.href;

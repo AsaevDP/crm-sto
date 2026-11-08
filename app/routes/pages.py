@@ -10,7 +10,6 @@ router = APIRouter()
 
 # Что появится в разделе и на каком шаге — для пустых экранов
 SECTIONS = {
-    "/razbor": ("Разбор", "wrench", 7, "Б/у детали с донором и фото, экспорт для сайта.", ["razbor.view"]),
     "/timesheet": ("Табель", "clock", None, "Кто на месте, отметки по картам, часы за день и месяц.",
                    ["attendance.view_all", "attendance.view_own"]),
 }

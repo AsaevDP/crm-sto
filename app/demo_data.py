@@ -369,6 +369,55 @@ def populate():
         as_user("pavel")
         tsvc.open_check(db, users["andrey"], "planned")
 
+        # ---- Разбор (шаг 7): доноры, б/у детали, продажи ----
+        from .models import Donor, DonorPhoto, StockPhoto
+        from .services import razbor as rsvc
+        as_user("dmitro")
+        demo_donors = [
+            (dict(make="BMW", model="X5 E70", year=2009, vin="WBAFE41000LX12345", engine="3.0 дизель M57", gearbox="АКПП 6HP",
+                  body="кроссовер", color="чёрный", mileage=312000, purchase_price=Decimal("45000"), expenses=Decimal("6500"),
+                  expenses_note="Эвакуатор 2500, разборка 4000", notes="Удар в заднюю часть, перед целый"),
+             ("front", "left", "salon"),
+             [("Фара передняя левая, ксенон", "6500", "good", "B / 3 / 2", "link", "Без трещин, крепления целые"),
+              ("Зеркало правое с поворотником", "2200", "excellent", "B / 3 / 3", "", ""),
+              ("Блок управления двигателем DDE", "8900", "good", "A / 3 / 3", "", "Проверен на стенде"),
+              ("Руль кожаный с подушкой", "4800", "fair", "B / 3 / 4", "salon", "Потёртости на коже"),
+              ("Генератор 180A", "3900", "good", "A / 3 / 4", "", ""),
+              ("Подрамник передний", "3500", "repair", "", "", "Нужна покраска")]),
+            (dict(make="Toyota", model="Camry XV40", year=2008, vin="JTNBE40K403123456", engine="2.4 бензин 2AZ", gearbox="АКПП",
+                  body="седан", color="серебристый", mileage=268000, purchase_price=Decimal("38000"), expenses=Decimal("3000"),
+                  expenses_note="Разборка", status="done"),
+             ("rear", "right"),
+             [("Дверь передняя правая в сборе", "5200", "good", "B / 2 / 4", "right", ""),
+              ("Коробка передач АКПП U250E", "14500", "good", "", "", "Пробег 268 тыс., переключается мягко"),
+              ("Капот", "3800", "fair", "", "front", "Скол краски"),
+              ("Фонарь задний левый", "1600", "excellent", "B / 2 / 3", "rear", "")]),
+        ]
+        sold_plan = {"Блок управления двигателем DDE": ("Андрей К.", "0671234500", "np", "20450123456789", "card"),
+                     "Коробка передач АКПП U250E": ("СТО «Мотор» (Киев)", "0442223344", "np", "20450987654321", "card"),
+                     "Капот": ("Сергей", "0501112233", "pickup", "", "cash")}
+        reserve_plan = {"Фара передняя левая, ксенон": ("Олег М.", "0633332211", "np")}
+        for info, d_photos, parts in demo_donors:
+            d = Donor(code=rsvc.next_donor_code(db, branch.id), bought_on=date.today() - timedelta(days=20), **info)
+            db.add(d)
+            db.flush()
+            for k in d_photos:
+                f = PHOTOS / f"{k}.jpg"
+                if f.exists():
+                    db.add(DonorPhoto(donor_id=d.id, file=rsvc.save_photo(f.read_bytes())))
+            for name, price, cond, cell, photo, desc in parts:
+                item = rsvc.add_part(db, branch.id, d, name, Decimal(1), Decimal(price), cond,
+                                     locs[cell].id if cell else None, desc, publish=True)
+                if photo and (PHOTOS / f"{photo}.jpg").exists():
+                    db.add(StockPhoto(stock_item_id=item.id, file=rsvc.save_photo((PHOTOS / f"{photo}.jpg").read_bytes())))
+                db.flush()
+                if name in sold_plan:
+                    bn, bp, dl, ttn, pm = sold_plan[name]
+                    rsvc.sell_now(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, dl, pm, ttn)
+                elif name in reserve_plan:
+                    bn, bp, dl = reserve_plan[name]
+                    rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price), bn, bp, dl)
+
         # Заметки в карты клиентов
         as_user("irina")
         for i, text in ((0, "Постоянный клиент, просит звонить после 18:00"),

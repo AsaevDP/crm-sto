@@ -495,3 +495,29 @@ tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red
 }
 .res { position: relative; } .res input { left: 0; top: 0; width: 1px; height: 1px; }
 .res-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; min-width: 170px; } .res { justify-content: center; }
+
+/* ===== Шаг 7: разбор ===== */
+.razbor-grid { grid-template-columns: 1.7fr 1fr; }
+.donor-grid { grid-template-columns: 1fr 1.2fr !important; }
+.donor-grid > [data-t="diag"] { grid-column: 2 !important; grid-row: 1 !important; }
+.donor-grid > [data-t="main"] { grid-row: 1 !important; }
+.thumb-cell { width: 44px; padding: 4px 6px !important; }
+.thumb-cell img { width: 38px; height: 38px; border-radius: 8px; object-fit: cover; display: block; }
+.chip[data-rs="stock"] { --c: var(--green); } .chip[data-rs="reserved"] { --c: var(--orange); } .chip[data-rs="sold"] { --c: var(--gray); }
+.chip[data-us="reserved"] { --c: var(--orange); } .chip[data-us="sold"] { --c: var(--green); } .chip[data-us="cancelled"] { --c: var(--gray); }
+.chip[data-ds="dismantling"] { --c: var(--blue); } .chip[data-ds="done"] { --c: var(--green); } .chip[data-ds="scrapped"] { --c: var(--gray); }
+.donor-row { display: grid; gap: 4px; padding: 8px 0; border-bottom: 0.5px solid var(--separator); color: inherit; text-decoration: none; }
+.donor-row:last-child { border-bottom: 0; }
+.donor-row:hover b { color: var(--accent); }
+.donor-top { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.payback { height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.payback span { display: block; height: 100%; background: var(--orange); border-radius: 3px; }
+.payback span.ok { background: var(--green); }
+.code-big { font-size: 15px; font-weight: 700; color: var(--text); }
+.price-big { font: 700 22px var(--font-display); letter-spacing: -.02em; }
+.sale { display: grid; gap: 6px; padding-bottom: 6px; }
+.table tr.muted td { opacity: .5; }
+.donor-grid { grid-template-rows: minmax(0, 1fr) !important; }
+@media (max-width: 600px) { .kv { flex-wrap: wrap; } .kv b { max-width: none; margin-left: auto; } }
+.nowrap { white-space: nowrap; overflow-wrap: normal !important; }
+.razbor-grid { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }

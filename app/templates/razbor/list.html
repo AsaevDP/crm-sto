@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% set ST = {"stock": "в наличии", "reserved": "резерв", "sold": "продано"} %}
+<header class="page-head">
+  <h1 class="large-title">Разбор</h1>
+  <div class="ov-actions">
+    {% if ctx.can("razbor.export") %}
+    <a class="btn btn-sm" href="/razbor/export.zip" title="Excel + CSV + JSON + фото в одном архиве">⤓ Экспорт для сайта · {{ n_site }}</a>
+    <a class="btn btn-sm btn-gray" href="/razbor/export.xlsx">Excel</a>
+    {% endif %}
+  </div>
+</header>
+<form class="toolbar-row" method="get">
+  <input class="field search" name="q" value="{{ q }}" placeholder="Код Р-0001, деталь, марка, модель, VIN" autocomplete="off">
+  <input type="hidden" name="donor" value="{{ donor }}">
+  <div class="segmented" style="flex:none">
+    {% for k, v in [("", "Все"), ("stock", "В наличии"), ("site", "На сайте"), ("reserved", "Резерв · " ~ n_reserved), ("sold", "Продано")] %}
+    <a href="?f={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if donor %}&donor={{ donor }}{% endif %}" aria-pressed="{{ (f == k)|lower }}">{{ v }}</a>{% endfor %}
+  </div>
+</form>
+<div class="cl-grid fill razbor-grid">
+  <section class="ov-col on">
+    <div class="tablewrap">
+      <table class="table">
+        <thead><tr><th></th><th>Код</th><th>Деталь</th><th class="num">Цена</th><th>Статус</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr onclick="location.href='/razbor/parts/{{ r.i.id }}'" style="cursor:pointer" class="{{ 'muted' if r.state == 'sold' }}">
+          <td class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% endif %}</td>
+          <td class="mono">{{ r.i.code }}</td>
+          <td>{{ r.c.name }}<div class="caption">{{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }} · {{ r.loc }}</div></td>
+          <td class="num nowrap">{{ "{:,.0f}".format(r.i.sale_price).replace(",", " ") }} ₴</td>
+          <td class="nowrap"><span class="chip" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if r.i.publish_on_site and r.state == "stock" %} <span class="tag" title="Уходит в экспорт для сайта">сайт</span>{% endif %}</td>
+        </tr>
+        {% else %}<tr><td colspan="5" class="footnote">Деталей нет{% if q or f %} по фильтру{% endif %}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="ov-col on">
+    {% if ctx.can("razbor.manage") %}
+    <details class="card compact add-finding">
+      <summary class="btn btn-sm btn-block">{{ icon("plus") }}Новый донор (авто на разбор)</summary>
+      <form class="form dense" method="post" action="/razbor/donors" enctype="multipart/form-data" data-compress style="margin-top:8px">
+        <div class="form-row three"><input class="field" name="make" placeholder="Марка *" required><input class="field" name="model" placeholder="Модель *" required><input class="field" name="year" inputmode="numeric" placeholder="Год"></div>
+        <div class="form-row three"><input class="field mono" name="vin" placeholder="VIN"><input class="field" name="mileage" inputmode="numeric" placeholder="Пробег"><input class="field" name="purchase_price" inputmode="decimal" placeholder="Купили за ₴"></div>
+        <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото донора<input type="file" name="photos" accept="image/*" hidden></label>
+        <button class="btn btn-sm">Завести донора</button>
+      </form>
+    </details>
+    {% endif %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Доноры · окупаемость</span>{% if donor %}<a class="btn btn-plain btn-sm" href="/razbor">все</a>{% endif %}</div>
+      {% for d in donors %}{% set e = eco[d.id] %}
+      <a class="donor-row" href="/razbor/donors/{{ d.id }}">
+        <span class="donor-top"><b>{{ d.code }} · {{ d.make }} {{ d.model }}{% if d.year %} {{ d.year }}{% endif %}</b><span class="caption">{{ DONOR_STATUS[d.status] }}</span></span>
+        <span class="payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></span>
+        <span class="caption">{{ "{:,.0f}".format(e.earned).replace(",", " ") }} из {{ "{:,.0f}".format(e.invested).replace(",", " ") }} ₴ · {{ e.pct }}% · на полке ещё {{ "{:,.0f}".format(e.on_shelf).replace(",", " ") }} ₴</span>
+      </a>
+      {% else %}<p class="footnote" style="margin:0">Доноров пока нет</p>{% endfor %}
+    </div>
+  </section>
+</div>
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% endblock %}

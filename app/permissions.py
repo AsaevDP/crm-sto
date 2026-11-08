@@ -29,6 +29,7 @@ PERMISSIONS = [
     ("razbor.view", "Видеть разбор (б/у)", "Разбор"),
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
+    ("razbor.sell", "Продажа б/у: резерв под покупателя, «продано»", "Разбор"),
     ("money.view", "Видеть деньги и оплаты", "Деньги"),
     ("money.accept", "Принимать оплату", "Деньги"),
     ("money.close_with_debt", "Закрывать наряд с долгом", "Деньги"),
@@ -55,7 +56,7 @@ DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
         "orders.cancel", "orders.assign", "clients.view", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
-        "prices.view_sale", "attendance.view_all", "tools.view", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "stock.view",
         "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
@@ -63,7 +64,7 @@ DEFAULT_ROLES = {
         "orders.view_all", "purchases.view", "stock.view", "stock.manage", "stock.issue",
         "razbor.view", "tools.view", "tools.manage", *_OWN]),
     "content": ("Кладовщик-контентщик", "teal", [
-        "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export",
+        "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
         "prices.view_sale", *_OWN]),
     "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", *_OWN]),
     "admin": ("Админ", "graphite", ALL_CODES),
@@ -84,7 +85,7 @@ MENU = [
     ("/clients", "Клиенты", "users", ["clients.view"]),
     ("/stock", "Склад", "stock", ["stock.view"]),
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
-    ("/razbor", "Разбор", "wrench", ["razbor.view"]),
+    ("/razbor", "Разбор", "car", ["razbor.view"]),
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),
