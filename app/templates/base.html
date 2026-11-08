@@ -12,6 +12,13 @@
 <link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
 </head>
 <body>
+{% if ctx.viewing_as %}
+<div class="viewas-bar">
+  <span>👁 Вы смотрите глазами: <b>{{ user.full_name }}</b> · {{ user.role.name }} — только просмотр</span>
+  <span class="viewas-actions"><a href="/view-as">Другой сотрудник</a>
+    <form method="post" action="/view-as/stop"><button>Вернуться к себе</button></form></span>
+</div>
+{% endif %}
 <div class="shell">
   {# ---- Боковая панель (ПК) ---- #}
   <aside class="side">
@@ -29,6 +36,7 @@
       <span class="grow"><span class="side-user-name">{{ user.full_name }}</span><span class="caption">{{ user.login }}</span></span>
       <form method="post" action="/logout"><button class="icon-btn" title="Выйти">{{ icon("logout") }}</button></form>
     </div>
+    {% if user.role.code == "admin" and not ctx.viewing_as %}<a class="viewas-link" href="/view-as">👁 Глазами сотрудника</a>{% endif %}
   </aside>
 
   <div class="main">

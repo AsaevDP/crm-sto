@@ -92,7 +92,8 @@ FIELD_NAMES = {
 # Какие поля показывать в журнале при создании записи (остальное — служебное)
 CREATE_FIELDS = ("full_name", "name", "login", "permission", "key", "uid", "number", "plate", "make", "model",
                  "phone", "to_status", "stage")
-ACTIONS = {"create": "создал", "update": "изменил", "delete": "удалил", "login": "вошёл", "logout": "вышел"}
+ACTIONS = {"create": "создал", "update": "изменил", "delete": "удалил", "login": "вошёл", "logout": "вышел",
+           "view_as": "смотрел глазами", "view_as_stop": "вернулся к себе"}
 
 
 @router.get("/audit")

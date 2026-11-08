@@ -109,3 +109,53 @@ def _uuid(v: str):
         return uuid.UUID(v)
     except ValueError:
         return None
+
+
+# ---------- «Глазами сотрудника» (только главный админ) ----------
+def _real_admin(request: Request, db: Session) -> User:
+    from ..web import Forbidden, NotLoggedIn
+    uid = request.session.get("uid")
+    me = db.get(User, _uuid(uid)) if uid else None
+    if not me:
+        raise NotLoggedIn()
+    if me.role.code != "admin":
+        raise Forbidden()
+    current_user_id.set(me.id)
+    current_branch_id.set(me.branch_id)
+    return me
+
+
+@router.get("/view-as")
+def view_as_list(request: Request, db: Session = Depends(get_db)):
+    from ..web import get_ctx  # noqa: F401
+    me = _real_admin(request, db)
+    from ..models import Role
+    staff = db.scalars(select(User).join(Role, User.role_id == Role.id)
+                       .where(User.branch_id == me.branch_id, User.active.is_(True), User.id != me.id)
+                       .order_by(Role.sort, User.full_name)).all()
+    from ..services import settings as st_
+    from ..web import accent_style as acc
+    return templates.TemplateResponse(request, "view_as.html", {
+        "staff": staff, "me": me, "branding": st_.get(db, me.branch_id, "branding"),
+        "accent": acc(me.role.color), "flash": request.session.pop("flash", None)})
+
+
+@router.post("/view-as/stop")
+def view_as_stop(request: Request, db: Session = Depends(get_db)):
+    if request.session.pop("as_uid", None):
+        me = _real_admin(request, db)
+        audit.write(db, "users", me.id, "view_as_stop")
+        db.commit()
+    return RedirectResponse("/view-as", status_code=303)
+
+
+@router.post("/view-as/{user_id}")
+def view_as_start(user_id: str, request: Request, db: Session = Depends(get_db)):
+    me = _real_admin(request, db)
+    target = db.get(User, _uuid(user_id))
+    if not target or target.branch_id != me.branch_id or not target.active:
+        return RedirectResponse("/view-as", status_code=303)
+    request.session["as_uid"] = str(target.id)
+    audit.write(db, "users", target.id, "view_as", {"кто смотрит": me.full_name, "глазами": target.full_name})
+    db.commit()
+    return RedirectResponse("/", status_code=303)

@@ -15,5 +15,6 @@
   {% endfor %}
 </div>
 
+{% if user.role.code == "admin" and not ctx.viewing_as %}<a class="btn btn-tinted btn-block" href="/view-as">👁 Глазами сотрудника</a>{% endif %}
 <form method="post" action="/logout"><button class="btn btn-danger btn-block">Выйти</button></form>
 {% endblock %}

@@ -11,7 +11,7 @@ from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
 from .routes import auth, diagnosis, orders, pages, settings, stock
 from .seed import seed
-from .web import Forbidden, NotLoggedIn, templates
+from .web import Forbidden, NotLoggedIn, ViewOnly, flash, templates
 
 
 @asynccontextmanager
@@ -52,3 +52,13 @@ async def _not_logged_in(request: Request, _exc):
 @app.exception_handler(Forbidden)
 async def _forbidden(request: Request, _exc):
     return templates.TemplateResponse(request, "forbidden.html", {}, status_code=403)
+
+
+@app.exception_handler(ViewOnly)
+async def _view_only(request: Request, exc: ViewOnly):
+    """В режиме «глазами сотрудника» действия выключены — возвращаем назад с пояснением."""
+    from fastapi.responses import JSONResponse
+    if request.headers.get("x-requested-with") == "fetch":
+        return JSONResponse({"ok": False, "error": "Режим просмотра: изменения выключены"}, status_code=403)
+    flash(request, "Режим просмотра глазами сотрудника — изменения выключены", "error")
+    return RedirectResponse(exc.back, status_code=303)

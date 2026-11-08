@@ -24,6 +24,16 @@ class Forbidden(Exception):
     pass
 
 
+class ViewOnly(Exception):
+    """Админ смотрит глазами сотрудника: менять ничего нельзя."""
+    def __init__(self, back: str = "/"):
+        self.back = back
+
+
+# Эти адреса работают и в режиме просмотра (выйти из него, выйти из CRM)
+VIEW_ONLY_ALLOWED = ("/view-as/stop", "/logout")
+
+
 def accent_style(color: str) -> str:
     """CSS для акцента: системный цвет (адаптируется к тёмной теме) или свой #hex."""
     if color in SYSTEM_COLORS:
@@ -66,6 +76,11 @@ class Ctx:
     perms: set[str]
     branding: dict
     menu: list = field(default_factory=list)
+    real_user: User | None = None   # если админ смотрит глазами сотрудника — это сам админ
+
+    @property
+    def viewing_as(self) -> bool:
+        return self.real_user is not None
 
     def can(self, *codes: str) -> bool:
         return any(c in self.perms for c in codes)
@@ -104,8 +119,21 @@ async def get_ctx(request: Request, db: Session = Depends(get_db)) -> Ctx:
         raise NotLoggedIn()
     request.session["seen"] = now
 
-    current_user_id.set(user.id)
+    current_user_id.set(user.id)          # все записи в журнал — от имени настоящего пользователя
     current_branch_id.set(user.branch_id)
+
+    # «Глазами сотрудника»: только главный админ, только просмотр
+    real_user = None
+    as_uid = request.session.get("as_uid")
+    if as_uid:
+        target = db.get(User, uuid.UUID(as_uid))
+        if user.role.code == "admin" and target and target.active and target.branch_id == user.branch_id:
+            real_user, user = user, target
+        else:
+            request.session.pop("as_uid", None)
+    if real_user and request.method != "GET" and request.url.path not in VIEW_ONLY_ALLOWED:
+        raise ViewOnly(request.headers.get("referer") or "/")
+
     perms = effective_permissions(db, user)
     return Ctx(request=request, db=db, user=user, branch=db.get(Branch, user.branch_id),
-               perms=perms, branding=branding, menu=menu_for(perms))
+               perms=perms, branding=branding, menu=menu_for(perms), real_user=real_user)

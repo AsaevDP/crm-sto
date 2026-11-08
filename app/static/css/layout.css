@@ -365,3 +365,12 @@ select option { background-color: var(--surface); color: var(--text); }
 input.mini { width: 72px; }
 .pct { display: inline-flex; align-items: center; gap: 4px; }
 .pct input { width: 70px; text-align: right; }
+
+/* «Глазами сотрудника» */
+.viewas-bar { position: sticky; top: 0; z-index: 20; display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: var(--orange); color: #1c1c1e; font-size: 14px; }
+.viewas-actions { display: flex; gap: 12px; align-items: center; }
+.viewas-actions a { color: #1c1c1e; font-weight: 600; }
+.viewas-actions button { appearance: none; border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; font-weight: 600; background: #1c1c1e; color: #fff; cursor: pointer; }
+.viewas-link { display: block; margin: 0 14px 14px; padding: 8px 10px; border-radius: 10px; font-size: 13px; text-decoration: none; color: var(--text-2); background: var(--fill-2); text-align: center; }
+.viewas-link:hover { color: var(--text); }

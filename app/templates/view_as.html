@@ -1,0 +1,36 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="ru" style="{{ accent }}">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Глазами сотрудника · {{ branding.name }}</title>
+<link rel="stylesheet" href="{{ asset('/static/css/app.css') }}"><link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
+<style>
+  body { padding: 24px 16px 40px; }
+  .wrap { max-width: 720px; margin: 0 auto; display: grid; gap: 16px; }
+  .people { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .who { appearance: none; border: 0; width: 100%; font: inherit; color: inherit; cursor: pointer; text-align: left;
+    display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); }
+  .who:hover { background: var(--surface-2); }
+  .who .avatar { width: 40px; height: 40px; }
+  .who span:last-child { display: grid; min-width: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/" style="color:var(--accent);text-decoration:none">‹ Назад в CRM</a>
+  <h1 class="large-title">Глазами сотрудника</h1>
+  <p class="subhead" style="margin:0">Выберите, кого посмотреть. Вы увидите CRM ровно как он: меню, цвет, его наряды и права.
+    В этом режиме можно только смотреть — кнопки ничего не меняют.</p>
+  {% if flash %}<div class="flash {{ flash.kind }}">{{ flash.text }}</div>{% endif %}
+  <div class="people">
+    {% for u in staff %}
+    <form method="post" action="/view-as/{{ u.id }}">
+      <button class="who"><span class="avatar" style="--accent:{{ color_css(u.role.color) }}">{{ u.initials }}</span>
+        <span><b>{{ u.full_name }}</b><span class="caption" style="color:{{ color_css(u.role.color) }}">{{ u.role.name }}</span></span></button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+</body>
+</html>
