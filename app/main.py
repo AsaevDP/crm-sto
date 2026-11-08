@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import audit  # noqa: F401 — подключает автоматический журнал
-from .config import COOKIE_SECURE, MEDIA_DIR, ROOT, SECRET_KEY
+from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
 from .routes import auth, diagnosis, orders, pages, settings, stock
 from .seed import seed
@@ -20,6 +20,9 @@ async def lifespan(_app):
     Base.metadata.create_all(engine)
     add_missing_columns()
     seed()
+    if DEMO:
+        from .demo_data import populate
+        populate()  # демо: выдуманные клиенты, наряды на всех этапах, склад
     yield
 
 

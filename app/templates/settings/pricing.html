@@ -7,8 +7,8 @@
   <div class="card compact form">
     <div class="card-h"><span class="headline">Наценка по умолчанию</span></div>
     <label>Для новой запчасти в наряде, %
-      <select class="field" name="default_markup">{% for m in range(1, 101) %}<option value="{{ m }}" {% if m == pricing.default_markup %}selected{% endif %}>{{ m }}%</option>{% endfor %}</select></label>
-    <p class="hint">В наряде запчастист меняет наценку по каждой позиции отдельно (1–100 %).</p>
+      <input class="field" type="number" name="default_markup" min="0" max="1000" step="1" inputmode="numeric" value="{{ pricing.default_markup }}"></label>
+    <p class="hint">В наряде наценка вписывается вручную по каждой позиции (0–1000 %).</p>
   </div>
   <div class="card compact form">
     <div class="card-h"><span class="headline">Зарплата запчастиста</span>{% if not is_admin %}<span class="tag">только главный админ</span>{% endif %}</div>

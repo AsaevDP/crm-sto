@@ -330,3 +330,38 @@ a.btn { text-decoration: none; }
   border-left: 4px solid var(--accent); animation: flash-in .3s var(--ease); color: inherit; text-decoration: none; }
 @media (min-width: 900px) { .toast { bottom: 24px; } }
 .toast b { font-size: 15px; }
+
+/* ===== Правки по замечаниям: текст не вылезает, шрифт компактнее, списки в тёмной теме ===== */
+/* Компактнее шрифт: на ПК 15px, на iPhone 16px (меньше 16 — iPhone увеличивает поля при вводе) */
+body { font-size: 16px; }
+@media (min-width: 900px) {
+  body { font-size: 15px; }
+  .headline { font-size: 15px; }
+  .subhead { font-size: 14px; }
+  .title-1 { font-size: 22px; }
+  .large-title { font-size: 26px; }
+  .btn { font-size: 15px; min-height: 42px; }
+  .btn-sm { font-size: 13px; min-height: 32px; }
+  .field { font-size: 14px; }
+  .sidebar a { font-size: 14px; }
+  .finding-text, .ev-text, .ov-text, .li, .part-name { font-size: 14px; }
+  .row { font-size: 15px; }
+}
+/* Текст переносится внутри блоков, а не вылезает наружу */
+.card, .group, .row, .li, .kv, .part, .finding, .tl, .ocard-body, .ov-col, .icol, .res, .rec, .lift, .stat { min-width: 0; }
+.row .grow, .li > span, .kv > *, .part-name, .finding-text, .ev-text, .rec .grow, .res .grow, .ov-title > div { min-width: 0; overflow-wrap: anywhere; }
+.kv b { max-width: 65%; }
+.chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.btn { max-width: 100%; white-space: normal; text-align: center; line-height: 1.2; }
+.segmented button, .segmented a { overflow: hidden; text-overflow: ellipsis; }
+.form-row > * { min-width: 0; }
+.table td { overflow-wrap: anywhere; }
+.lift b, .stat b { font-size: 22px; }
+.ocard-car, .lift-car { min-width: 0; }
+
+/* Выпадающие списки: в тёмной теме фон и цифры должны быть видны */
+select.field, select.mini { background-color: var(--surface-2); color: var(--text); }
+select option { background-color: var(--surface); color: var(--text); }
+input.mini { width: 72px; }
+.pct { display: inline-flex; align-items: center; gap: 4px; }
+.pct input { width: 70px; text-align: right; }

@@ -12,7 +12,7 @@
     {% if wo %}
     {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
     <a class="lift busy" href="/orders/{{ wo.id }}">
-      <span class="footnote">Подъёмник</span>
+      <span class="footnote lift-car">{{ l.name or "Подъёмник" }}</span>
       <b>{{ l.number }}</b>
       <span class="lift-car">{{ v.make }} {{ v.model }}</span>
       <span class="caption">{{ fmt_plate(v.plate) }}{% if mc %} · {{ mc.short_name }}{% endif %}</span>
@@ -20,7 +20,7 @@
     </a>
     {% else %}
     <div class="lift">
-      <span class="footnote">Подъёмник</span>
+      <span class="footnote lift-car">{{ l.name or "Подъёмник" }}</span>
       <b>{{ l.number }}</b>
       <span class="chip" data-s="created">Свободен</span>
     </div>

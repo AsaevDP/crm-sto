@@ -31,7 +31,7 @@ def _markup(v, ctx: Ctx) -> int:
         m = int(v)
     except (TypeError, ValueError):
         m = st.get(ctx.db, ctx.branch.id, "pricing")["default_markup"]
-    return max(1, min(100, m))
+    return max(0, min(1000, m))  # наценку решает СТО: вписывается вручную, хоть 300 %
 
 
 def _to(url):
@@ -455,7 +455,7 @@ def pricing(ctx: Ctx = Depends(get_ctx)):
 def pricing_save(ctx: Ctx = Depends(get_ctx), default_markup: str = Form("25"), partsman_margin_pct: str = Form("")):
     ctx.need("settings.access")
     try:
-        st.put(ctx.db, ctx.branch.id, "pricing", {"default_markup": max(1, min(100, int(default_markup)))})
+        st.put(ctx.db, ctx.branch.id, "pricing", {"default_markup": max(0, min(1000, int(default_markup)))})
     except ValueError:
         pass
     # % запчастиста от наценки — только главный админ, 0–30

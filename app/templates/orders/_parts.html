@@ -22,10 +22,9 @@
     <div class="part-cost">
       <span class="caption">закупка {{ "%.2f"|format(p.cost) }} ₴</span>
       {% if can_pick and p.status not in ("issued", "installed") %}
-      <label class="caption">наценка
-        <select class="mini" data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup">
-          {% for m in range(1, 101) %}<option value="{{ m }}" {% if m == p.markup_pct %}selected{% endif %}>{{ m }}%</option>{% endfor %}
-        </select></label>
+      <label class="caption pct">наценка
+        <input class="mini" type="number" min="0" max="1000" step="1" inputmode="numeric" value="{{ p.markup_pct }}"
+               data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup" aria-label="Наценка, %">%</label>
       <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать позицию из наряда?')">
         <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
       {% else %}<span class="caption">наценка {{ p.markup_pct }}%</span>{% endif %}
@@ -54,8 +53,7 @@
       <div class="form-row">
         <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
         <label>Закупка за шт, ₴<input class="field" name="cost" inputmode="decimal" placeholder="0"></label>
-        <label>Наценка
-          <select class="field" name="markup_pct">{% for m in range(1, 101) %}<option value="{{ m }}" {% if m == default_markup %}selected{% endif %}>{{ m }}%</option>{% endfor %}</select></label>
+        <label>Наценка, %<input class="field" type="number" name="markup_pct" min="0" max="1000" step="1" inputmode="numeric" value="{{ default_markup }}"></label>
       </div>
       {% if works %}
       <label>К работе<select class="field" name="wo_work_id"><option value="">—</option>{% for w in works %}<option value="{{ w.id }}">{{ w.name[:60] }}</option>{% endfor %}</select></label>
