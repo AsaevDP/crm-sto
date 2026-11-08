@@ -374,3 +374,6 @@ input.mini { width: 72px; }
 .viewas-actions button { appearance: none; border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; font-weight: 600; background: #1c1c1e; color: #fff; cursor: pointer; }
 .viewas-link { display: block; margin: 0 14px 14px; padding: 8px 10px; border-radius: 10px; font-size: 13px; text-decoration: none; color: var(--text-2); background: var(--fill-2); text-align: center; }
 .viewas-link:hover { color: var(--text); }
+
+/* Поле поиска: отступ под лупу не должен перебиваться компактными формами */
+.field.search, .form .field.search, .form.dense .field.search, .intake .field.search { padding-left: 38px; background-position: 12px center; }
