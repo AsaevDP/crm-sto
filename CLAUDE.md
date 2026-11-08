@@ -36,7 +36,9 @@
 
 ## Публичное демо (Render)
 - Репозиторий открытый: github.com/AsaevDP/crm-sto. Демо разворачивается по `render.yaml`.
-- Адрес демо: **https://crm-sto-demo.onrender.com** (Render, Blueprint `crm-sto`, обновляется сам при push в main).
+- Адрес демо: **https://crm-sto-demo.onrender.com** (Render, Blueprint `crm-sto`).
+- Сам после push НЕ обновляется (сервис создан по ссылке на открытый репо, без GitHub-подключения).
+  Обновить: Render → crm-sto-demo → **Manual Deploy → Deploy latest commit**.
 - `DEMO=1`: пароль всех тестовых сотрудников = `DEMO_PASSWORD` (генерирует Render), PIN и карт нет, плашка «Демо».
   Тестовые пароли из `seed.py` в демо НЕ работают — они публичны.
 - Фото/логотипы на бесплатном Render не сохраняются (диск временный), база сбрасывается при перезапуске.
