@@ -321,3 +321,43 @@ def user_perm(user_id: str, ctx: Ctx = Depends(get_ctx), perm: str = Form(...), 
         ctx.db.add(UserPermission(user_id=u.id, permission=perm, allow=mode == "allow"))
     ctx.db.commit()
     return {"ok": True, "effective": perm in effective_permissions(ctx.db, u)}
+
+
+# ---------- Подъёмники (посты) ----------
+@router.get("/lifts")
+def lifts_view(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("settings.access")
+    from ..models import Lift
+    from ..services.orders import staff_by_role
+    lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id).order_by(Lift.number)).all()
+    mechanics = staff_by_role(ctx.db, ctx.branch.id, "mechanic")
+    return ctx.render("settings/lifts.html", title="Подъёмники", lifts=lifts, mechanics=mechanics,
+                      by_id={m.id: m for m in mechanics})
+
+
+@router.post("/lifts/{lift_id}")
+def lift_save(lift_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(""), mechanic_id: str = Form(""),
+              active: str = Form("")):
+    ctx.need("settings.access")
+    from ..models import Lift
+    lift = ctx.db.get(Lift, uuid.UUID(lift_id))
+    if not lift or lift.branch_id != ctx.branch.id:
+        raise Forbidden()
+    lift.name = name.strip()[:60] or f"Пост {lift.number}"
+    mech = ctx.db.get(User, uuid.UUID(mechanic_id)) if mechanic_id else None
+    lift.mechanic_id = mech.id if mech and mech.branch_id == ctx.branch.id and mech.role.code == "mechanic" else None
+    lift.active = bool(active)
+    ctx.db.commit()
+    flash(ctx.request, f"Подъёмник {lift.number} сохранён")
+    return _back("/settings/lifts")
+
+
+@router.post("/lifts")
+def lift_add(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("settings.access")
+    from ..models import Lift
+    n = (ctx.db.scalar(select(func.max(Lift.number)).where(Lift.branch_id == ctx.branch.id)) or 0) + 1
+    ctx.db.add(Lift(number=n, name=f"Пост {n}"))
+    ctx.db.commit()
+    flash(ctx.request, f"Добавлен подъёмник {n}")
+    return _back("/settings/lifts")

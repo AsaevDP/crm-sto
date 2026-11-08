@@ -133,7 +133,8 @@ def _is_image(data: bytes) -> str | None:
     return None
 
 
-def save_photo(db: Session, wo: WorkOrder, data: bytes, thumb: bytes | None, stage: str = "intake") -> WoPhoto | None:
+def save_photo(db: Session, wo: WorkOrder, data: bytes, thumb: bytes | None, stage: str = "intake",
+               finding_id=None) -> WoPhoto | None:
     """Сохранить фото на диск. Проверяем «по содержимому», а не по имени файла."""
     ext = _is_image(data)
     if not ext or len(data) > MAX_PHOTO_BYTES:
@@ -146,7 +147,7 @@ def save_photo(db: Session, wo: WorkOrder, data: bytes, thumb: bytes | None, sta
     if thumb and (t_ext := _is_image(thumb)) and len(thumb) < 1024 * 1024:
         (folder / f"{name}_t.{t_ext}").write_bytes(thumb)
         thumb_rel = f"{wo.id}/{name}_t.{t_ext}"
-    p = WoPhoto(work_order_id=wo.id, file=f"{wo.id}/{name}.{ext}", thumb=thumb_rel, stage=stage)
+    p = WoPhoto(work_order_id=wo.id, file=f"{wo.id}/{name}.{ext}", thumb=thumb_rel, stage=stage, finding_id=finding_id)
     db.add(p)
     return p
 
@@ -252,12 +253,15 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
         return u.id if u and u.branch_id == bid and u.active and u.role.code == role else None
 
     lift = db.get(Lift, _uuid(f.lift_id)) if f.lift_id else None
+    if lift and lift.branch_id != bid:
+        lift = None
     fuel = _int(f.fuel_level)
+    mechanic = staff(f.mechanic_id, "mechanic") or (lift.mechanic_id if lift else None)
     wo = WorkOrder(
         number=numbering.next_number(db, bid), client_id=client.id, vehicle_id=vehicle.id,
         status="created", scenario="A" if f.scenario == "A" else "B", manager_id=ctx.user.id,
-        partsman_id=staff(f.partsman_id, "partsman"), mechanic_id=staff(f.mechanic_id, "mechanic"),
-        lift_id=lift.id if lift and lift.branch_id == bid else None,
+        partsman_id=staff(f.partsman_id, "partsman"), mechanic_id=mechanic,
+        lift_id=lift.id if lift else None,
         mileage_in=mileage, complaint=f.complaint.strip(),
         fuel_level=fuel if fuel in FUEL_LEVELS else None,
         intake_items=[i for i in f.intake_items if i in INTAKE_ITEMS], intake_note=f.intake_note.strip(),
@@ -265,6 +269,7 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     db.add(wo)
     db.flush()
     db.add(WoStatusHistory(work_order_id=wo.id, from_status="", to_status="created", comment="Приёмка"))
+    event(db, wo, "order", f"Приёмка. {wo.complaint or ''}".strip())
     if wo.scenario == "A":
         for name in f.work_lines()[:50]:
             db.add(WoWork(work_order_id=wo.id, name=name[:200], mechanic_id=wo.mechanic_id))
@@ -277,3 +282,58 @@ def route_after_intake(db: Session, wo: WorkOrder):
         set_status(db, wo, "picking", "Сценарий А: без диагностики")
     elif wo.scenario == "B" and wo.mechanic_id:
         set_status(db, wo, "diag", "Сценарий Б: на диагностику")
+
+
+# ---------- Хронология клиента ----------
+def event(db: Session, wo: WorkOrder | None, kind: str, text: str = "", client_id=None, vehicle_id=None,
+          finding=None, urgency: str = ""):
+    """Запись в карту клиента. Всё важное по клиенту пишется сюда (см. BRIEF 8а)."""
+    from ..models import ClientEvent
+    db.add(ClientEvent(client_id=client_id or wo.client_id, vehicle_id=vehicle_id or (wo.vehicle_id if wo else None),
+                       work_order_id=wo.id if wo else None, finding_id=finding.id if finding else None,
+                       kind=kind, text=text[:1000], urgency=urgency))
+
+
+# ---------- Диагностика и согласование ----------
+def add_finding(db: Session, wo: WorkOrder, text: str, urgency: str):
+    from ..models import WoFinding
+    from ..models.orders import URGENCY
+    f = WoFinding(work_order_id=wo.id, text=text.strip()[:2000], urgency=urgency if urgency in URGENCY else "soon")
+    db.add(f)
+    db.flush()
+    return f
+
+
+def finish_diagnosis(db: Session, wo: WorkOrder, n_findings: int):
+    """Слесарь закончил диагностику (или нашёл новое во время работы) → на согласование."""
+    note = f"Найдено проблем: {n_findings}" if n_findings else "Проблем не найдено"
+    set_status(db, wo, "approve", note)
+    event(db, wo, "status", f"Диагностика завершена. {note}")
+
+
+def finish_approval(db: Session, wo: WorkOrder) -> str:
+    """Менеджер закончил согласование. Возвращает текст ошибки или ''.
+    Согласованное → запчастисту в подбор, отказы → рекомендации в карту клиента."""
+    from ..models import WoFinding
+    from ..models.orders import URGENCY
+    findings = db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id)).all()
+    if any(f.approval == "pending" for f in findings):
+        return "Отметьте по каждой проблеме: согласовано или отказ"
+    yes = [f for f in findings if f.approval == "yes"]
+    if yes and not wo.partsman_id:
+        return "Назначьте запчастиста — согласованное уйдёт ему в подбор"
+    for f in findings:
+        if f.approval == "no":
+            event(db, wo, "recommendation", f.text, finding=f, urgency=f.urgency)
+    # Согласованные проблемы становятся работами наряда (цены — на шаге 6)
+    have = {w.finding_id for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))}
+    for f in yes:
+        if f.id not in have:
+            db.add(WoWork(work_order_id=wo.id, finding_id=f.id, name=f.text[:200], mechanic_id=wo.mechanic_id))
+    summary = f"Согласовано: {len(yes)}, отказ: {len(findings) - len(yes)}"
+    event(db, wo, "approval", summary)
+    if yes:
+        set_status(db, wo, "picking", summary)
+    else:
+        set_status(db, wo, "ready", summary + ". Ремонт не нужен или клиент отказался")
+    return ""

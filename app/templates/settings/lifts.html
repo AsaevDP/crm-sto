@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Подъёмники</h1></div>
+  <form method="post" action="/settings/lifts"><button class="btn btn-sm btn-tinted">{{ icon("plus") }}Добавить</button></form>
+</header>
+<p class="subhead" style="margin:0">За каждым постом закреплён один слесарь. Он подставляется в наряд сам. Уволился или заболел — выберите другого и сохраните.</p>
+
+<div class="lift-grid">
+  {% for l in lifts %}
+  <form class="card lift-edit {% if not l.active %}muted{% endif %}" method="post" action="/settings/lifts/{{ l.id }}">
+    <div class="lift-num">{{ l.number }}</div>
+    <input class="field" name="name" value="{{ l.name }}" maxlength="60" placeholder="Название поста" aria-label="Название поста {{ l.number }}">
+    <select class="field" name="mechanic_id" aria-label="Слесарь поста {{ l.number }}">
+      <option value="">— слесарь не закреплён —</option>
+      {% for m in mechanics %}<option value="{{ m.id }}" {% if m.id == l.mechanic_id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}
+    </select>
+    <label class="lift-active"><input type="checkbox" class="switch" name="active" value="1" {% if l.active %}checked{% endif %}> работает</label>
+    <button class="btn btn-sm">Сохранить</button>
+  </form>
+  {% endfor %}
+</div>
+{% endblock %}

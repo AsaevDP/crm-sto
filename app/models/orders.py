@@ -95,6 +95,7 @@ class WoFinding(Entity):
     __tablename__ = "wo_findings"
     work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id", ondelete="CASCADE"))
     text: Mapped[str] = mapped_column(Text)
+    urgency: Mapped[str] = mapped_column(String(10), default="soon")  # urgent / soon / advice
     approval: Mapped[str] = mapped_column(String(10), default="pending")  # pending / yes / no
     approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -132,6 +133,24 @@ class WoPart(Entity):
     status: Mapped[str] = mapped_column(String(10), default="need")
     picked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     source: Mapped[str] = mapped_column(String(20), default="")  # purchased / from_stock — для зарплаты
+
+
+class ClientEvent(Entity):
+    """Хронология карты клиента: всё, что происходило с клиентом и его авто.
+    kind: order — новый наряд, status — смена статуса, finding — найдена проблема,
+    approval — решение клиента, recommendation — рекомендация на будущее, act — акт, note — заметка."""
+    __tablename__ = "client_events"
+    client_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    vehicle_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("vehicles.id"), nullable=True)
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
+    finding_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_findings.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    text: Mapped[str] = mapped_column(Text, default="")
+    urgency: Mapped[str] = mapped_column(String(10), default="")
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)  # для рекомендаций: уже сделали
+
+
+URGENCY = {"urgent": "Срочно", "soon": "Скоро", "advice": "Рекомендация"}
 
 
 class WoWorkSession(Entity):

@@ -69,8 +69,11 @@ def seed():
             for p in perms:
                 db.add(RolePermission(role_id=r.id, permission=p))
 
+        lifts = []
         for n in range(1, 11):
-            db.add(Lift(number=n, name=f"Подъёмник {n}"))
+            lift = Lift(number=n, name=f"Пост {n}")
+            db.add(lift)
+            lifts.append(lift)
         db.add(AccessPoint(name="Вход в цех", kind="gate"))
         db.add(AccessPoint(name="Склад", kind="gate"))
         db.add(AccessPoint(name="ПК приёмки", kind="login", counts_presence=False))
@@ -87,4 +90,10 @@ def seed():
             db.add(u)
             db.flush()
             db.add(StaffCard(user_id=u.id, uid=card, label="тестовая"))
+        # Тестовым слесарям — по посту (остальные посты Стас закрепит в настройках)
+        db.flush()
+        mechs = db.scalars(select(User).join(Role, User.role_id == Role.id).where(Role.code == "mechanic")
+                           .order_by(User.login)).all()
+        for lift, m in zip(lifts, mechs):
+            lift.mechanic_id = m.id
         db.commit()

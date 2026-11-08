@@ -6,6 +6,9 @@
 
 <form id="intake" class="intake" autocomplete="off" novalidate>
   <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id">
+  <div class="steps" id="steps"><span class="on">1 · Клиент и авто</span><span>2 · Фото и работы</span><span>3 · Кто и акт</span></div>
+  <div class="intake-cols">
+  <div class="icol on" data-step="1">
 
   {# ---------- 1. Клиент ---------- #}
   <section class="stack">
@@ -45,6 +48,8 @@
     </div>
   </section>
 
+  </div>
+  <div class="icol" data-step="2">
   {# ---------- 3. Фото ---------- #}
   <section class="stack">
     <div class="group-title">3 · Фото при приёмке *</div>
@@ -76,6 +81,8 @@
     </div>
   </section>
 
+  </div>
+  <div class="icol" data-step="3">
   {# ---------- 5. Назначения ---------- #}
   <section class="stack">
     <div class="group-title">5 · Кто и где</div>
@@ -91,7 +98,7 @@
         </label>
         <label>Подъёмник
           <select class="field" name="lift_id" id="lift"><option value="">— без подъёмника —</option>
-            {% for l, busy in lifts %}<option value="{{ l.id }}" {% if busy %}data-busy="{{ busy.number }}"{% endif %}>{{ l.number }}{% if busy %} · занят ({{ busy.number[-6:] }}){% endif %}</option>{% endfor %}</select>
+            {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if busy %}data-busy="{{ busy.number }}"{% endif %}>{{ l.number }} · {{ l.name }}{% if busy %} · занят{% endif %}</option>{% endfor %}</select>
         </label>
       </div>
       <p class="hint warn" id="liftwarn" hidden></p>
@@ -116,8 +123,14 @@
     </div>
   </section>
 
+  </div>
+  </div>
   <div class="flash error" id="errors" hidden></div>
-  <div class="submit-bar"><button class="btn btn-block" id="submit">Создать наряд</button></div>
+  <div class="submit-bar">
+    <button type="button" class="btn btn-gray" id="prev" hidden>Назад</button>
+    <button type="button" class="btn" id="next">Далее</button>
+    <button class="btn" id="submit">Создать наряд</button>
+  </div>
 </form>
 
 <script src="{{ asset('/static/js/photos.js') }}"></script>
@@ -145,6 +158,8 @@
   // ---- Подъёмник занят: предупреждаем, но не запрещаем ----
   const lift = document.getElementById('lift'), lw = document.getElementById('liftwarn');
   lift.onchange = () => {
+    const mech = lift.selectedOptions[0].dataset.mech;
+    if (mech) $('mechanic_id').value = mech;   // слесарь, закреплённый за постом
     const busy = lift.selectedOptions[0].dataset.busy;
     lw.hidden = !busy;
     if (busy) lw.textContent = `На этом подъёмнике уже стоит наряд ${busy}. Если машину сняли — всё ок.`;
@@ -195,6 +210,21 @@
     for (const k of ['phone', 'name', 'plate', 'make', 'model', 'year', 'vin', 'mileage']) $(k).value = '';
   };
   function esc(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+
+  // ---- Шаги (только на узком экране; на ПК все колонки видны сразу) ----
+  let step = 1;
+  const cols = form.querySelectorAll('.icol'), dots = document.querySelectorAll('#steps span');
+  const prev = document.getElementById('prev'), next = document.getElementById('next'), sub = document.getElementById('submit');
+  function go(n) {
+    step = Math.max(1, Math.min(3, n));
+    cols.forEach(c => c.classList.toggle('on', +c.dataset.step === step));
+    dots.forEach((d, i) => d.classList.toggle('on', i + 1 === step));
+    prev.hidden = step === 1; next.hidden = step === 3; sub.classList.toggle('last', step === 3);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  next.onclick = () => go(step + 1); prev.onclick = () => go(step - 1);
+  dots.forEach((d, i) => d.onclick = () => go(i + 1));
+  go(1);
 
   // ---- Отправка ----
   const btn = document.getElementById('submit'), errBox = document.getElementById('errors');

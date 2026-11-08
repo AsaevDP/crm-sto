@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import audit  # noqa: F401 — подключает автоматический журнал
 from .config import COOKIE_SECURE, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
-from .routes import auth, orders, pages, settings
+from .routes import auth, diagnosis, orders, pages, settings
 from .seed import seed
 from .web import Forbidden, NotLoggedIn, templates
 
@@ -33,6 +33,7 @@ app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 app.include_router(auth.router)
 app.include_router(pages.router)
 app.include_router(orders.router)
+app.include_router(diagnosis.router)
 app.include_router(settings.router)
 
 

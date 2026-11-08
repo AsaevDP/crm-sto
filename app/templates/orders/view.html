@@ -1,94 +1,165 @@
 {% extends "base.html" %}
 {% block content %}
-<header class="page-head">
-  <div>
-    <a class="back" href="/orders">{{ icon("back") }}Наряды</a>
-    <div class="footnote mono">{{ wo.number }}</div>
-    <h1 class="large-title">{{ v.make }} {{ v.model }}</h1>
-    <div class="subhead" style="margin-top:4px">{{ fmt_plate(v.plate) }}{% if v.year %} · {{ v.year }}{% endif %}{% if wo.mileage_in %} · {{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% endif %}</div>
+{% set n_find = findings|length %}
+<header class="ov-head">
+  <a class="back" href="/orders">{{ icon("back") }}Наряды</a>
+  <div class="ov-title">
+    <div>
+      <div class="footnote mono">{{ wo.number }} · {{ "А · без диагностики" if wo.scenario == "A" else "Б · с диагностикой" }}</div>
+      <h1 class="title-1">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></h1>
+      <div class="subhead">{% if v.year %}{{ v.year }} · {% endif %}{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км · {% endif %}{{ c.full_name }} · <a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a></div>
+    </div>
+    <div class="ov-actions">
+      <span class="chip chip-lg" data-s="{{ wo.status }}">{{ STATUSES[wo.status] }}</span>
+      <a class="btn btn-sm btn-gray" href="/orders/{{ wo.id }}/act/intake" target="_blank">Акт приёма</a>
+    </div>
   </div>
-  <span class="chip chip-lg" data-s="{{ wo.status }}">{{ STATUSES[wo.status] }}</span>
 </header>
 
 {% if wo.status == "cancel" %}<div class="flash error">Отменён: {{ wo.cancel_reason }}</div>{% endif %}
 
-{# ---------- Фото ---------- #}
-<section class="stack">
-  <div class="group-title">Фото · {{ photos|length }}</div>
-  {% if photos %}
-  <div class="pgallery">
-    {% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}
-  </div>
-  {% endif %}
-  {% if can_add_photo %}
-  <label class="btn btn-tinted pp-add" id="addph">{{ icon("plus") }}<span id="addtxt">Добавить фото</span><input type="file" id="pinput" accept="image/*" multiple hidden></label>
-  <div class="pp-grid" id="pgrid" hidden></div>
-  {% endif %}
-</section>
+{# На iPhone — вкладки, на ПК всё видно сразу колонками #}
+<div class="segmented seg-wide ov-tabs" id="ovtabs">
+  <button type="button" data-t="main" aria-pressed="true">Обзор</button>
+  <button type="button" data-t="diag" aria-pressed="false">Проблемы{% if n_find %} · {{ n_find }}{% endif %}</button>
+  <button type="button" data-t="hist" aria-pressed="false">Кто и история</button>
+</div>
 
-<div class="grid-2">
-  {# ---------- Клиент и наряд ---------- #}
-  <section class="stack">
-    <div class="group-title">Клиент</div>
-    <div class="group">
-      <div class="row"><span class="avatar">{{ (c.full_name.split()[:2]|map("first")|join(""))|upper }}</span><span class="grow">{{ c.full_name }}<div class="caption">{{ fmt_phone(c.phone) }}</div></span>
-        <a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a></div>
-      {% if ctx.can("clients.view") %}<a class="row chevron" href="/clients/{{ c.id }}"><span class="grow">Карточка клиента и история</span></a>{% endif %}
+<div class="ov-grid">
+  {# ===== Колонка 1: фото, работы, акт ===== #}
+  <section class="ov-col" data-t="main">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Фото · {{ photos|length }}</span>
+        {% if can_add_photo %}<label class="btn btn-plain btn-sm pp-add" id="addph">{{ icon("plus") }}<span id="addtxt">Фото</span><input type="file" id="pinput" accept="image/*" multiple hidden></label>{% endif %}
+      </div>
+      {% if photos %}
+      <div class="pgallery sm">{% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>
+      {% else %}<p class="footnote">Нет фото</p>{% endif %}
     </div>
 
-    <div class="group-title">Что делаем</div>
-    <div class="group">
-      <div class="row"><span class="grow">Сценарий</span><span class="value">{{ "А · без диагностики" if wo.scenario == "A" else "Б · с диагностикой" }}</span></div>
-      {% if wo.complaint %}<div class="row"><span class="grow">Жалоба<div class="subhead" style="color:var(--text)">{{ wo.complaint }}</div></span></div>{% endif %}
-      {% for w in works %}<div class="row"><span class="tile" style="background:var(--blue)">{{ icon("wrench") }}</span><span class="grow">{{ w.name }}</span></div>{% endfor %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Что делаем</span></div>
+      {% if wo.complaint %}<p class="ov-text"><span class="footnote">Жалоба:</span> {{ wo.complaint }}</p>{% endif %}
+      {% for w in works %}<div class="li">{{ icon("wrench") }}<span>{{ w.name }}</span></div>{% else %}<p class="footnote">Работы появятся после согласования</p>{% endfor %}
     </div>
 
-    <div class="group-title">Акт приёма</div>
-    <div class="group">
-      <div class="row"><span class="grow">Топливо</span><span class="value">{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</span></div>
-      <div class="row"><span class="grow">В машине</span><span class="value" style="text-align:right">{% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</span></div>
-      {% if wo.intake_note %}<div class="row"><span class="grow">Замечания<div class="subhead" style="color:var(--text)">{{ wo.intake_note }}</div></span></div>{% endif %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Акт приёма</span></div>
+      <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
+      <div class="kv"><span>В машине</span><b>{% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
+      {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b>{{ wo.intake_note }}</b></div>{% endif %}
     </div>
   </section>
 
-  {# ---------- Назначения и история ---------- #}
-  <section class="stack">
-    <div class="group-title">Кто и где</div>
-    {% if can_assign %}
-    <form class="card form" method="post" action="/orders/{{ wo.id }}/assign">
-      <label>Запчастист<select class="field" name="partsman_id"><option value="">— не назначен —</option>
-        {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-      <label>Слесарь<select class="field" name="mechanic_id"><option value="">— не назначен —</option>
-        {% for u in mechanics %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-      <label>Подъёмник<select class="field" name="lift_id"><option value="">— без подъёмника —</option>
-        {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }}{% if busy and busy.id != wo.id %} · занят ({{ busy.number[-6:] }}){% endif %}</option>{% endfor %}</select></label>
-      <div><button class="btn btn-sm">Сохранить</button></div>
-    </form>
-    {% else %}
-    <div class="group">
-      {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
-      <div class="row"><span class="grow">Менеджер</span><span class="value">{{ mg.full_name if mg else "—" }}</span></div>
-      <div class="row"><span class="grow">Запчастист</span><span class="value">{{ pm.full_name if pm else "—" }}</span></div>
-      <div class="row"><span class="grow">Слесарь</span><span class="value">{{ mc.full_name if mc else "—" }}</span></div>
-      <div class="row"><span class="grow">Подъёмник</span><span class="value">{{ lift.number if lift else "—" }}</span></div>
-    </div>
-    {% endif %}
+  {# ===== Колонка 2: диагностика и согласование ===== #}
+  <section class="ov-col" data-t="diag">
+    <div class="card compact">
+      <div class="card-h">
+        <span class="headline">Проблемы · {{ n_find }}</span>
+        {% if wo.status == "approve" %}<span class="chip" data-s="approve">ждёт решения клиента</span>{% endif %}
+      </div>
 
-    <div class="group-title">История</div>
-    <div class="group">
-      {% for h in history %}
-      {% set who = people.get(h.created_by) %}
-      <div class="row"><span class="chip" data-s="{{ h.to_status }}">{{ STATUSES.get(h.to_status, h.to_status) }}</span>
-        <span class="grow caption" style="text-align:right">{{ h.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ who.short_name if who else "система" }}{% if h.comment %}<br>{{ h.comment }}{% endif %}</span></div>
+      {% for f in findings %}
+      <div class="finding" data-u="{{ f.urgency }}">
+        <div class="finding-top">
+          <span class="urg" data-u="{{ f.urgency }}">{{ URGENCY.get(f.urgency) }}</span>
+          {% if f.approval == "yes" %}<span class="chip" data-s="ready">согласовано</span>{% elif f.approval == "no" %}<span class="chip" data-s="cancel">отказ</span>{% endif %}
+        </div>
+        <div class="finding-text">{{ f.text }}</div>
+        {% set fp = finding_photos.get(f.id, []) %}
+        {% if fp %}<div class="pgallery xs">{% for p in fp %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>{% endif %}
+        <div class="finding-foot">
+          <span class="caption">{{ people.get(f.created_by).short_name if people.get(f.created_by) else "" }} · {{ f.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+          {% if can_approve %}
+          <div class="segmented yn" data-url="/orders/{{ wo.id }}/findings/{{ f.id }}/approval">
+            <button type="button" data-v="yes" aria-pressed="{{ (f.approval == 'yes')|lower }}">✓ Да</button>
+            <button type="button" data-v="no" aria-pressed="{{ (f.approval == 'no')|lower }}">✕ Нет</button>
+          </div>
+          {% elif can_diag and f.approval == "pending" and wo.status in ("diag", "approve") %}
+          <form method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Удалить</button></form>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p class="footnote">{% if wo.scenario == "A" %}Сценарий А — без диагностики.{% elif wo.status == "diag" %}Слесарь ещё не внёс проблемы.{% else %}Проблем нет.{% endif %}</p>
       {% endfor %}
+
+      {% if can_diag %}
+      <details class="add-finding" {% if wo.status == "diag" and not findings %}open{% endif %}>
+        <summary class="btn btn-tinted btn-block">{{ icon("plus") }}Добавить проблему</summary>
+        <form class="form" id="ffind" style="margin-top:10px">
+          <textarea class="field" name="text" rows="2" placeholder="Что нашли: «Течь масла с прокладки клапанной крышки»" required></textarea>
+          <div class="segmented seg-wide" id="urg">
+            <button type="button" data-v="urgent" aria-pressed="false">🔴 Срочно</button>
+            <button type="button" data-v="soon" aria-pressed="true">🟡 Скоро</button>
+            <button type="button" data-v="advice" aria-pressed="false">⚪ Совет</button>
+          </div>
+          <input type="hidden" name="urgency" value="soon">
+          <div class="pp-grid" id="fgrid"></div>
+          <div class="line" style="display:flex;gap:8px">
+            <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" id="finput" accept="image/*" multiple hidden></label>
+            <button class="btn btn-sm" style="margin-left:auto">Сохранить проблему</button>
+          </div>
+          {% if wo.status == "work" %}<p class="hint warn">Наряд вернётся на согласование с клиентом.</p>{% endif %}
+        </form>
+      </details>
+      {% endif %}
+
+      {% if can_finish_diag %}
+      <form method="post" action="/orders/{{ wo.id }}/diag-done" onsubmit="return {{ 'true' if findings else 'confirm(\'Проблем не найдено — отправить менеджеру?\')' }}">
+        <button class="btn btn-block">{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}</button>
+      </form>
+      {% endif %}
+      {% if can_approve %}
+      <form method="post" action="/orders/{{ wo.id }}/approval-done">
+        <button class="btn btn-block">Согласование завершено</button>
+        <p class="hint" style="margin:6px 0 0">«Да» уйдут запчастисту в подбор, «Нет» — в рекомендации в карте клиента.</p>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  {# ===== Колонка 3: кто и где, история ===== #}
+  <section class="ov-col" data-t="hist">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Кто и где</span></div>
+      {% if can_assign %}
+      <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign">
+        <label>Подъёмник<select class="field" name="lift_id"><option value="">— без подъёмника —</option>
+          {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
+        <label>Слесарь<select class="field" name="mechanic_id"><option value="">— не назначен —</option>
+          {% for u in mechanics %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+        <label>Запчастист<select class="field" name="partsman_id"><option value="">— не назначен —</option>
+          {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+        <button class="btn btn-sm">Сохранить</button>
+      </form>
+      {% else %}
+      {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
+      <div class="kv"><span>Подъёмник</span><b>{{ lift.number ~ " · " ~ lift.name if lift else "—" }}</b></div>
+      <div class="kv"><span>Слесарь</span><b>{{ mc.full_name if mc else "—" }}</b></div>
+      <div class="kv"><span>Запчастист</span><b>{{ pm.full_name if pm else "—" }}</b></div>
+      <div class="kv"><span>Менеджер</span><b>{{ mg.full_name if mg else "—" }}</b></div>
+      {% endif %}
+    </div>
+
+    <div class="card compact">
+      <div class="card-h"><span class="headline">История</span>
+        {% if ctx.can("clients.view") %}<a class="btn btn-plain btn-sm" href="/clients/{{ c.id }}">Карта клиента</a>{% endif %}</div>
+      <div class="timeline">
+        {% for h in history|reverse %}
+        {% set who = people.get(h.created_by) %}
+        <div class="tl"><span class="chip" data-s="{{ h.to_status }}">{{ STATUSES.get(h.to_status, h.to_status) }}</span>
+          <span class="caption">{{ h.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ who.short_name if who else "система" }}{% if h.comment %} — {{ h.comment }}{% endif %}</span></div>
+        {% endfor %}
+      </div>
     </div>
 
     {% if can_cancel %}
-    <details class="card">
-      <summary class="headline" style="cursor:pointer;color:var(--red)">Отменить наряд</summary>
-      <form class="form" method="post" action="/orders/{{ wo.id }}/cancel" style="margin-top:12px">
+    <details class="card compact">
+      <summary class="footnote" style="cursor:pointer;color:var(--red)">Отменить наряд…</summary>
+      <form class="form dense" method="post" action="/orders/{{ wo.id }}/cancel" style="margin-top:8px">
         <input class="field" name="reason" placeholder="Причина (обязательно)" required>
-        <div><button class="btn btn-sm btn-danger">Отменить наряд</button></div>
+        <button class="btn btn-sm btn-danger">Отменить наряд</button>
       </form>
     </details>
     {% endif %}
@@ -96,22 +167,60 @@
 </div>
 
 <script src="{{ asset('/static/js/photos.js') }}"></script>
-{% if can_add_photo %}
 <script>
-// Добавить фото: сжать на телефоне → отправить → обновить страницу
-document.getElementById('pinput').addEventListener('change', async function () {
-  const btn = document.getElementById('addph'), files = [...this.files];
-  this.value = '';
-  if (!files.length) return;
-  btn.classList.add('busy'); document.getElementById('addtxt').textContent = 'Загружаю…';
-  const fd = new FormData();
-  for (const [i, f] of files.entries()) {
-    try { const c = await compressPhoto(f); fd.append('photos', c.full, `p${i}.jpg`); fd.append('thumbs', c.thumb, `t${i}.jpg`); } catch (e) {}
+(function () {
+  // Вкладки на iPhone (запоминаем выбранную для этого наряда)
+  const tabs = document.getElementById('ovtabs'), key = 'ovtab-{{ wo.id }}';
+  function show(t) {
+    tabs.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === t));
+    document.querySelectorAll('.ov-col').forEach(c => c.classList.toggle('on', c.dataset.t === t));
+    try { sessionStorage.setItem(key, t); } catch (e) {}
   }
-  const r = await fetch('/orders/{{ wo.id }}/photos', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
-  if (!r.ok) alert('Не удалось загрузить фото');
-  location.reload();
-});
+  tabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(b.dataset.t); });
+  let start = '{{ "diag" if wo.status in ("diag", "approve") else "main" }}';
+  try { start = sessionStorage.getItem(key) || start; } catch (e) {}
+  show(start);
+
+  // Согласование: Да / Нет — сохраняется сразу
+  document.querySelectorAll('.yn').forEach(seg => seg.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const r = await fetch(seg.dataset.url, { method: 'POST', body: new URLSearchParams({ value: b.dataset.v }), headers: { 'x-requested-with': 'fetch' } });
+    if (!r.ok) { alert('Не сохранилось'); return; }
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    seg.closest('.finding').dataset.a = b.dataset.v;
+  }));
+
+  {% if can_add_photo %}
+  document.getElementById('pinput').addEventListener('change', async function () {
+    const files = [...this.files]; this.value = ''; if (!files.length) return;
+    document.getElementById('addph').classList.add('busy'); document.getElementById('addtxt').textContent = 'Загружаю…';
+    const fd = new FormData();
+    for (const [i, f] of files.entries()) { try { const c = await compressPhoto(f); fd.append('photos', c.full, `p${i}.jpg`); fd.append('thumbs', c.thumb, `t${i}.jpg`); } catch (e) {} }
+    const r = await fetch('/orders/{{ wo.id }}/photos', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+    if (!r.ok) alert('Не удалось загрузить фото');
+    location.reload();
+  });
+  {% endif %}
+
+  {% if can_diag %}
+  // Новая проблема: текст + срочность + фото
+  const ff = document.getElementById('ffind');
+  const fpick = PhotoPicker(document.getElementById('finput'), document.getElementById('fgrid'), 10);
+  document.getElementById('urg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#urg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    ff.elements.urgency.value = b.dataset.v;
+  });
+  ff.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = ff.querySelector('button:not([type=button])'); btn.disabled = true; btn.textContent = 'Сохраняю…';
+    const fd = new FormData(ff); fpick.appendTo(fd);
+    const r = await fetch('/orders/{{ wo.id }}/findings', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+    if (r.ok) { try { sessionStorage.setItem(key, 'diag'); } catch (e) {} location.reload(); return; }
+    const res = await r.json().catch(() => ({})); alert((res.errors || ['Не сохранилось']).join(', '));
+    btn.disabled = false; btn.textContent = 'Сохранить проблему';
+  });
+  {% endif %}
+})();
 </script>
-{% endif %}
 {% endblock %}

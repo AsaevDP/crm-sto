@@ -10,7 +10,7 @@ from .payroll import (  # noqa: F401
 )
 from .orders import (  # noqa: F401
     Client, Vehicle, WorkOrder, WoStatusHistory, WoPhoto, WoFinding,
-    WoWork, WoPart, WoWorkSession,
+    WoWork, WoPart, WoWorkSession, ClientEvent,
 )
 from .stock import (  # noqa: F401
     PartCatalog, Location, StockItem, StockPhoto, StockMovement,

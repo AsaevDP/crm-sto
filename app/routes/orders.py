@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlalchemy import func, or_, select
 
-from ..models import Client, Lift, User, Vehicle, WoPhoto, WorkOrder, WoStatusHistory, WoWork
-from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, WO_ACTIVE, WO_STATUSES
+from ..models import Client, ClientEvent, Lift, User, Vehicle, WoFinding, WoPhoto, WorkOrder, WoStatusHistory, WoWork
+from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, URGENCY, WO_ACTIVE, WO_STATUSES
 from ..services import orders as svc
 from ..web import Ctx, Forbidden, flash, get_ctx
 
@@ -55,10 +55,12 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
 
 # ---------- Список ----------
 @router.get("/orders")
-def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = ""):
+def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", status: str = ""):
     ctx.need("orders.view_all", "orders.view_own")
     query = svc.visible_orders_query(ctx)
-    if tab == "active":
+    if status in WO_STATUSES:
+        query = query.where(WorkOrder.status == status)
+    elif tab == "active":
         query = query.where(WorkOrder.status.in_(WO_ACTIVE))
     q = q.strip()
     if q:
@@ -70,7 +72,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = ""):
                  .where(or_(*conds)))
     orders = ctx.db.scalars(query.order_by(WorkOrder.created_at.desc()).limit(200)).all()
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q,
-                      STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate)
+                      STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status)
 
 
 # ---------- Приёмка ----------
@@ -130,11 +132,18 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all()
     history = db.scalars(select(WoStatusHistory).where(WoStatusHistory.work_order_id == wo.id)
                          .order_by(WoStatusHistory.created_at)).all()
-    people = _people(ctx, wo.manager_id, wo.partsman_id, wo.mechanic_id, *[h.created_by for h in history])
+    findings = db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id).order_by(WoFinding.created_at)).all()
+    people = _people(ctx, wo.manager_id, wo.partsman_id, wo.mechanic_id, *[h.created_by for h in history],
+                     *[f.created_by for f in findings])
     can_assign = ctx.can("orders.assign") and wo.status in WO_ACTIVE
+    is_mech = ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all")
     return ctx.render(
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
-        lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=photos, works=works, history=history,
+        lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
+        finding_photos={f.id: [p for p in photos if p.finding_id == f.id] for f in findings}, URGENCY=URGENCY,
+        can_diag=ctx.can("orders.diagnose") and is_mech and wo.status in ("diag", "approve", "work"),
+        can_finish_diag=ctx.can("orders.diagnose") and is_mech and wo.status == "diag",
+        can_approve=ctx.can("orders.approve") and wo.status == "approve",
         people=people, STATUSES=WO_STATUSES, INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
         fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, can_assign=can_assign,
         can_add_photo=(ctx.can("orders.create") or ctx.can("orders.diagnose")) and wo.status in WO_ACTIVE,
@@ -235,5 +244,11 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
     vehicles = ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
     orders = ctx.db.scalars(svc.visible_orders_query(ctx).where(WorkOrder.client_id == c.id)
                             .order_by(WorkOrder.created_at.desc())).all()
+    events = ctx.db.scalars(select(ClientEvent).where(ClientEvent.client_id == c.id)
+                            .order_by(ClientEvent.created_at.desc()).limit(300)).all()
+    recs = [e for e in events if e.kind == "recommendation" and not e.resolved]
+    numbers = {o.id: o.number for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.client_id == c.id))}
     return ctx.render("clients/view.html", title=c.full_name, c=c, vehicles=vehicles, cards=_cards(ctx, orders),
-                      STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate)
+                      STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, events=events,
+                      recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
+                      vmap={v.id: v for v in vehicles}, numbers=numbers)

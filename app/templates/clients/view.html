@@ -1,26 +1,65 @@
 {% extends "base.html" %}
-{% from "orders/_card.html" import order_card %}
 {% block content %}
-<header class="page-head">
-  <div><a class="back" href="/clients">{{ icon("back") }}Клиенты</a><h1 class="large-title">{{ c.full_name }}</h1>
-    <div class="subhead" style="margin-top:4px">{{ fmt_phone(c.phone) }}</div></div>
-  <a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a>
+{% set KINDS = {"order": "Приёмка", "status": "Статус", "finding": "Найдена проблема", "approval": "Решение клиента",
+                "recommendation": "Рекомендация", "act": "Акт", "note": "Заметка"} %}
+<header class="ov-head">
+  <a class="back" href="/clients">{{ icon("back") }}Клиенты</a>
+  <div class="ov-title">
+    <div><h1 class="title-1">{{ c.full_name }}</h1>
+      <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a> · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · нарядов: {{ cards|length }}</div></div>
+    <div class="ov-actions"><a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a>
+      {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">Приёмка</a>{% endif %}</div>
+  </div>
 </header>
 
-<section class="stack">
-  <div class="group-title">Автомобили</div>
-  <div class="group">
-    {% for v in vehicles %}
-    <div class="row"><span class="tile">{{ icon("lift") }}</span>
-      <span class="grow">{{ v.make }} {{ v.model }}{% if v.year %} · {{ v.year }}{% endif %}
-        <div class="caption mono">{{ fmt_plate(v.plate) }}{% if v.vin %} · {{ v.vin }}{% endif %}{% if v.mileage %} · {{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</div></span></div>
-    {% endfor %}
-  </div>
-</section>
+<div class="cl-grid">
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Автомобили</span></div>
+      {% for v in vehicles %}
+      <div class="li">{{ icon("lift") }}<span><b>{{ v.make }} {{ v.model }}</b>{% if v.year %} · {{ v.year }}{% endif %}
+        <span class="caption mono" style="display:block">{{ fmt_plate(v.plate) }}{% if v.vin %} · {{ v.vin }}{% endif %}{% if v.mileage %} · {{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</span></span></div>
+      {% endfor %}
+    </div>
 
-<section class="stack">
-  <div class="group-title">История нарядов · {{ cards|length }}</div>
-  {% if cards %}<div class="ocards">{% for x in cards %}{{ order_card(x, STATUSES, fmt_plate) }}{% endfor %}</div>
-  {% else %}<p class="subhead">Нарядов нет.</p>{% endif %}
-</section>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Рекомендации · {{ recs|length }}</span></div>
+      {% for e in recs %}
+      <div class="rec">
+        <span class="urg" data-u="{{ e.urgency }}">{{ URGENCY.get(e.urgency, "") }}</span>
+        <span class="grow">{{ e.text }}<span class="caption" style="display:block">{{ e.created_at.astimezone().strftime("%d.%m.%Y") }}{% if e.vehicle_id and vmap.get(e.vehicle_id) %} · {{ fmt_plate(vmap[e.vehicle_id].plate) }}{% endif %}</span></span>
+        <form method="post" action="/clients/{{ c.id }}/events/{{ e.id }}/resolve"><button class="btn btn-plain btn-sm" title="Отметить: сделано">Сделано</button></form>
+      </div>
+      {% else %}<p class="footnote">Нет открытых рекомендаций</p>{% endfor %}
+    </div>
+
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Наряды</span></div>
+      {% for x in cards %}
+      <a class="li link" href="/orders/{{ x.o.id }}"><span class="chip" data-s="{{ x.o.status }}">{{ STATUSES[x.o.status] }}</span>
+        <span><span class="mono footnote">{{ x.o.number }}</span> · {{ x.v.make }} {{ x.v.model }}<span class="caption" style="display:block">{{ x.o.created_at.astimezone().strftime("%d.%m.%Y") }}</span></span></a>
+      {% else %}<p class="footnote">Нарядов нет</p>{% endfor %}
+    </div>
+  </section>
+
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">История клиента</span></div>
+      <form class="note-form" method="post" action="/clients/{{ c.id }}/note">
+        <input class="field" name="text" placeholder="Заметка: «просил звонить после 18:00»" maxlength="1000" required>
+        <button class="btn btn-sm">Добавить</button>
+      </form>
+      <div class="timeline">
+        {% for e in events %}
+        {% set who = people.get(e.created_by) %}
+        <div class="tl ev" data-k="{{ e.kind }}">
+          <span class="ev-kind">{{ KINDS.get(e.kind, e.kind) }}{% if e.urgency and e.kind in ("finding", "recommendation") %} · <span class="urg" data-u="{{ e.urgency }}">{{ URGENCY.get(e.urgency) }}</span>{% endif %}{% if e.kind == "recommendation" and e.resolved %} · <span class="caption">сделано</span>{% endif %}</span>
+          <span class="ev-text">{{ e.text }}</span>
+          <span class="caption">{{ e.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }} · {{ who.short_name if who else "система" }}{% if e.work_order_id and numbers.get(e.work_order_id) %} · <a href="/orders/{{ e.work_order_id }}">{{ numbers[e.work_order_id] }}</a>{% endif %}</span>
+        </div>
+        {% else %}<p class="footnote">Пока пусто</p>{% endfor %}
+      </div>
+    </div>
+  </section>
+</div>
 {% endblock %}

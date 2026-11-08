@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  /* Печатная форма A4. Нарочно светлая и строгая — для бумаги. */
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+  * { box-sizing: border-box; }
+  body { font: 12.5px/1.45 -apple-system, "Segoe UI", Arial, sans-serif; color: #111; background: #e9e9ee; margin: 0; }
+  .sheet { width: 210mm; min-height: 297mm; margin: 16px auto; padding: 14mm; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.12); }
+  .bar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: center; padding: 10px; background: rgba(233,233,238,.9); backdrop-filter: blur(10px); }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar a { background: #fff; color: #007aff; }
+  h1 { font-size: 19px; margin: 0 0 2px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+  .muted { color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; }
+  td, th { border: 1px solid #bbb; padding: 5px 8px; vertical-align: top; text-align: left; }
+  th { background: #f3f3f6; width: 34%; font-weight: 600; }
+  h2 { font-size: 13.5px; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
+  .box { border: 1px solid #bbb; min-height: 22mm; padding: 6px 8px; }
+  .checks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; }
+  .cb { display: inline-block; width: 11px; height: 11px; border: 1px solid #111; margin-right: 6px; vertical-align: -1px; text-align: center; line-height: 10px; font-size: 10px; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 16mm; }
+  .sign div { border-top: 1px solid #111; padding-top: 4px; }
+  .small { font-size: 11px; }
+  @media print { body { background: #fff; } .bar { display: none; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="/orders/{{ wo.id }}">← К наряду</a></div>
+<div class="sheet">
+  <div class="head">
+    <div><h1>АКТ ПРИЁМА-ПЕРЕДАЧИ АВТОМОБИЛЯ В РЕМОНТ</h1>
+      <div class="muted">к заказ-наряду № <b>{{ wo.number }}</b></div></div>
+    <div style="text-align:right"><b>{{ branding.name }}</b><div class="muted">{{ wo.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }}</div></div>
+  </div>
+
+  <h2>Заказчик и автомобиль</h2>
+  <table>
+    <tr><th>Заказчик</th><td>{{ c.full_name }}</td></tr>
+    <tr><th>Телефон</th><td>{{ fmt_phone(c.phone) }}</td></tr>
+    <tr><th>Автомобиль</th><td>{{ v.make }} {{ v.model }}{% if v.year %}, {{ v.year }} г.{% endif %}</td></tr>
+    <tr><th>Госномер</th><td>{{ fmt_plate(v.plate) }}</td></tr>
+    <tr><th>VIN</th><td>{{ v.vin or "—" }}</td></tr>
+    <tr><th>Пробег при приёмке</th><td>{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% else %}—{% endif %}</td></tr>
+  </table>
+
+  <h2>Состояние при приёмке</h2>
+  <table>
+    <tr><th>Уровень топлива</th><td>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</td></tr>
+    <tr><th>В автомобиле</th><td><div class="checks">
+      {% for code, t in INTAKE_ITEMS.items() %}<span><span class="cb">{% if code in (wo.intake_items or []) %}✓{% endif %}</span>{{ t }}</span>{% endfor %}
+    </div></td></tr>
+    <tr><th>Фотофиксация</th><td>{{ n_photos }} фото внешнего вида сохранены в CRM</td></tr>
+  </table>
+
+  <h2>Замечания по внешнему виду (царапины, сколы, повреждения)</h2>
+  <div class="box">{{ wo.intake_note or "" }}</div>
+
+  <h2>Со слов заказчика (жалоба)</h2>
+  <div class="box">{{ wo.complaint or "" }}</div>
+
+  <h2>Вид работ</h2>
+  <div class="box">{{ "Указанные заказчиком работы, без диагностики" if wo.scenario == "A" else "Диагностика. Работы выполняются только после согласования с заказчиком" }}</div>
+
+  <p class="small muted" style="margin-top:12px">Заказчик подтверждает, что указанные выше данные о состоянии автомобиля верны. Личные ценные вещи из салона
+    заказчик забирает с собой, СТО за них ответственности не несёт, если они не указаны в акте.</p>
+
+  <div class="sign">
+    <div>Сдал (заказчик): ____________ / {{ c.full_name }}</div>
+    <div>Принял (СТО): ____________ / {{ manager.full_name if manager else "" }}</div>
+  </div>
+</div>
+</body>
+</html>

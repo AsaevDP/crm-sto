@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, UniqueConstraint, Uuid, Boolean
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Base, Entity, now
@@ -32,6 +32,8 @@ class Lift(Entity):
     number: Mapped[int] = mapped_column(Integer)
     name: Mapped[str] = mapped_column(String(60), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Закреплённый слесарь: всегда один и тот же человек на этом посту
+    mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", use_alter=True), nullable=True)
 
 
 class OrderCounter(Entity):
