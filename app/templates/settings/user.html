@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings/users">{{ icon("back") }}Сотрудники</a><h1 class="large-title">{{ u.full_name }}</h1></div>
+</header>
+
+<div class="grid-2">
+  <form class="card form" method="post" action="/settings/users/{{ u.id }}">
+    <div class="headline">Профиль</div>
+    <label>ФИО<input class="field" name="full_name" value="{{ u.full_name }}" required maxlength="120"></label>
+    <div class="form-row">
+      <label>Логин<input class="field" name="login" value="{{ u.login }}" required autocapitalize="none"></label>
+      <label>Телефон<input class="field" name="phone" value="{{ u.phone }}" inputmode="tel"></label>
+    </div>
+    <label>Роль
+      <select class="field" name="role_id">{% for r in roles %}<option value="{{ r.id }}" {% if r.id == u.role_id %}selected{% endif %}>{{ r.name }}</option>{% endfor %}</select>
+    </label>
+    <div class="group" style="background:var(--surface-2)">
+      <div class="row"><span class="grow">Активен (может входить)</span><input type="checkbox" class="switch" name="active" value="1" {% if u.active %}checked{% endif %}></div>
+    </div>
+    <div><button class="btn btn-sm">Сохранить</button></div>
+  </form>
+
+  <div class="stack-lg">
+    <form class="card form" method="post" action="/settings/users/{{ u.id }}/secret">
+      <div class="headline">Пароль и PIN</div>
+      <p class="hint">Заполните то, что нужно сменить. Пустое поле — без изменений.</p>
+      <div class="form-row">
+        <label>Новый пароль<input class="field" name="password" type="password" minlength="6" autocomplete="new-password"></label>
+        <label>Новый PIN<input class="field" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off"></label>
+      </div>
+      <div><button class="btn btn-sm btn-tinted">Обновить</button></div>
+    </form>
+
+    <div class="card form">
+      <div class="headline">Карты</div>
+      {% if cards %}
+      <div class="group" style="background:var(--surface-2)">
+        {% for c in cards %}
+        <div class="row {% if not c.active %}muted{% endif %}">
+          <span class="tile">{{ icon("card") }}</span>
+          <span class="grow"><span class="mono">{{ c.uid }}</span><div class="caption">{{ c.label or "без подписи" }}{% if not c.active %} · заблокирована{% endif %}</div></span>
+          <form method="post" action="/settings/users/{{ u.id }}/cards/{{ c.id }}/toggle">
+            <button class="btn btn-sm {{ 'btn-danger' if c.active else 'btn-tinted' }}">{{ "Заблокировать" if c.active else "Включить" }}</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <form class="form" method="post" action="/settings/users/{{ u.id }}/cards">
+        <p class="hint">Поставьте курсор в поле и приложите карту к считывателю — номер введётся сам.</p>
+        <div class="form-row">
+          <input class="field mono" name="uid" placeholder="Номер карты" required autocomplete="off">
+          <input class="field" name="label" placeholder="Подпись: «брелок синий»">
+        </div>
+        <div><button class="btn btn-sm btn-tinted">Привязать карту</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<section class="stack">
+  <div class="page-head" style="align-items:center"><h2 class="title-2">Права сотрудника</h2></div>
+  {% if is_admin %}
+  <div class="card"><p class="subhead" style="margin:0">Админ — все права всегда.</p></div>
+  {% else %}
+  <p class="subhead" style="margin:0">«Как у роли» — берётся из роли «{{ u.role.name }}». «Да» / «Нет» — особое правило только для этого сотрудника.</p>
+  {% for group, perms in groups.items() %}
+  <div class="group-title" style="margin-top:8px">{{ group }}</div>
+  <div class="group">
+    {% for p in perms %}
+    {% set mode = "role" if p.code not in overrides else ("allow" if overrides[p.code] else "deny") %}
+    <div class="row perm-row">
+      <span class="grow">{{ p.name }}
+        <div class="perm-state {% if p.code in effective %}on{% endif %}" data-state="{{ p.code }}">{{ "есть доступ" if p.code in effective else "нет доступа" }}</div>
+      </span>
+      <div class="segmented" data-user-perm="{{ p.code }}" data-url="/settings/users/{{ u.id }}/perm">
+        <button type="button" data-mode="role" aria-pressed="{{ (mode == 'role')|lower }}">Как у роли ({{ "да" if p.code in role_perms else "нет" }})</button>
+        <button type="button" data-mode="allow" aria-pressed="{{ (mode == 'allow')|lower }}">Да</button>
+        <button type="button" data-mode="deny" aria-pressed="{{ (mode == 'deny')|lower }}">Нет</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

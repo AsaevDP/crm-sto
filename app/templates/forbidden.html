@@ -1,0 +1,17 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Нет доступа</title>
+<link rel="stylesheet" href="{{ asset('/static/css/app.css') }}"><link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
+<style>body { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }</style>
+</head>
+<body>
+<div class="card empty" style="max-width:420px">
+  <div class="empty-icon">{{ icon("lock") }}</div>
+  <div class="title-2">Нет доступа</div>
+  <p class="subhead">У вас нет прав на этот раздел. Если нужен доступ — попросите администратора.</p>
+  <a class="btn" href="/">На главную</a>
+</div>
+</body>
+</html>

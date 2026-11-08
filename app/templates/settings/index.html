@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><h1 class="large-title">Настройки</h1></header>
+
+{% if ctx.can("settings.access") %}
+<section class="stack">
+  <div class="group-title">Основное</div>
+  <div class="group">
+    <a class="row chevron" href="/settings/branding"><span class="tile" style="background:var(--blue)">{{ icon("palette") }}</span><span class="grow">Оформление</span><span class="value">{{ branding.name }}</span></a>
+    <a class="row chevron" href="/settings/numbering"><span class="tile" style="background:var(--orange)">{{ icon("hash") }}</span><span class="grow">Номер наряда</span></a>
+  </div>
+</section>
+{% endif %}
+
+{% if ctx.can("users.manage") %}
+<section class="stack">
+  <div class="group-title">Люди и доступ</div>
+  <div class="group">
+    <a class="row chevron" href="/settings/users"><span class="tile" style="background:var(--green)">{{ icon("users") }}</span><span class="grow">Сотрудники и карты</span><span class="value">{{ n_users }}</span></a>
+    <a class="row chevron" href="/settings/roles"><span class="tile" style="background:var(--indigo)">{{ icon("shield") }}</span><span class="grow">Роли и доступ</span></a>
+  </div>
+</section>
+{% endif %}
+
+<section class="stack">
+  <div class="group-title">Скоро</div>
+  <div class="group muted">
+    <div class="row"><span class="tile" style="background:var(--teal)">{{ icon("chart") }}</span><span class="grow">Схемы зарплаты</span><span class="value">шаг 6</span></div>
+    <div class="row"><span class="tile" style="background:var(--purple)">{{ icon("card") }}</span><span class="grow">Проходные и считыватели</span><span class="value">позже</span></div>
+    <div class="row"><span class="tile" style="background:var(--gray)">{{ icon("lift") }}</span><span class="grow">Подъёмники</span><span class="value">шаг 3</span></div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="ru" data-role="{{ role_code }}" style="{{ accent }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="color-scheme" content="light dark">
+{% if branding.icon %}<link rel="apple-touch-icon" href="{{ branding.icon }}"><link rel="icon" href="{{ branding.icon }}">{% endif %}
+<title>{{ title }} · {{ branding.name }}</title>
+<link rel="stylesheet" href="{{ asset('/static/css/app.css') }}">
+<link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
+</head>
+<body>
+<div class="shell">
+  {# ---- Боковая панель (ПК) ---- #}
+  <aside class="side">
+    <a class="brand" href="/">
+      {% if branding.logo %}<img class="logo-img" src="{{ branding.logo }}" alt="">{% else %}<span class="logo">{{ branding.name[:3] }}</span>{% endif %}
+      <span><span class="headline brand-name">{{ branding.name }}</span><span class="caption">{{ user.role.name }}</span></span>
+    </a>
+    <nav class="sidebar">
+      {% for m in menu %}
+      <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}{{ m.title }}</a>
+      {% endfor %}
+    </nav>
+    <div class="side-user">
+      <span class="avatar">{{ user.initials }}</span>
+      <span class="grow"><span class="side-user-name">{{ user.full_name }}</span><span class="caption">{{ user.login }}</span></span>
+      <form method="post" action="/logout"><button class="icon-btn" title="Выйти">{{ icon("logout") }}</button></form>
+    </div>
+  </aside>
+
+  <div class="main">
+    <main class="content">
+      {% if flash %}<div class="flash {{ flash.kind }}" role="status">{{ flash.text }}</div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+{# ---- Нижняя панель (iPhone): первые 4 раздела + «Ещё» ---- #}
+<nav class="tabbar">
+  {% for m in menu[:4] %}
+  <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}<span>{{ m.title }}</span></a>
+  {% endfor %}
+  <a href="/more" {% if active == "/more" %}aria-current="page"{% endif %}>{{ icon("more") }}<span>Ещё</span></a>
+</nav>
+<script src="{{ asset('/static/js/app.js') }}"></script>
+</body>
+</html>

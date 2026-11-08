@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><h1 class="large-title">{{ title }}</h1></header>
+<div class="card empty">
+  <div class="empty-icon">{{ icon(icon_name) }}</div>
+  <div class="title-2">{% if step %}Раздел появится на шаге {{ step }}{% else %}Раздел в разработке{% endif %}</div>
+  <p class="subhead">{{ text }}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "settings/_colors.html" import color_picker %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Оформление</h1></div>
+</header>
+
+<form class="form" method="post" enctype="multipart/form-data">
+  <div class="card form">
+    <label>Название СТО<input class="field" name="name" value="{{ branding.name }}" maxlength="60" required></label>
+    <div class="form-row">
+      <label>Логотип (PNG, JPG, WEBP)
+        <span style="display:flex;gap:10px;align-items:center">
+          {% if branding.logo %}<img class="logo-img" src="{{ branding.logo }}" alt="">{% else %}<span class="logo">{{ branding.name[:3] }}</span>{% endif %}
+          <input class="field" type="file" name="logo" accept="image/png,image/jpeg,image/webp">
+        </span>
+        {% if branding.logo %}<span style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" name="remove_logo" value="1"> убрать логотип</span>{% endif %}
+      </label>
+      <label>Иконка приложения на iPhone (квадрат 512×512)
+        <span style="display:flex;gap:10px;align-items:center">
+          {% if branding.icon %}<img class="logo-img" src="{{ branding.icon }}" alt="">{% endif %}
+          <input class="field" type="file" name="icon" accept="image/png,image/jpeg,image/webp">
+        </span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card form">
+    <div class="headline">Цвет экрана входа</div>
+    <p class="hint">У каждой роли свой цвет — он меняется в «Роли и доступ».</p>
+    {{ color_picker("accent", branding.accent) }}
+  </div>
+
+  <div class="card form">
+    <label>Автовыход без действий, минут (0 — не выходить)
+      <input class="field" type="number" name="idle_minutes" min="0" max="1440" value="{{ session_cfg.idle_minutes }}" style="max-width:160px">
+    </label>
+    <p class="hint">Нужно для общих ПК со входом по карте: отошёл — через это время кабинет закроется.</p>
+  </div>
+
+  <button class="btn">Сохранить</button>
+</form>
+{% endblock %}

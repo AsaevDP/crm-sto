@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><p class="footnote">Последние 300 действий</p><h1 class="large-title">Журнал</h1></div>
+</header>
+<div class="tablewrap">
+  <table class="table">
+    <thead><tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Что</th><th>Изменения</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set who = users.get(r.created_by) %}
+      <tr>
+        <td class="footnote" style="white-space:nowrap">{{ r.created_at.astimezone().strftime("%d.%m %H:%M:%S") }}</td>
+        <td style="white-space:nowrap">{{ who.full_name if who else "система" }}</td>
+        <td>{{ ACTIONS.get(r.action, r.action) }}</td>
+        <td><span class="tag">{{ TABLE_NAMES.get(r.table, r.table) }}</span></td>
+        <td class="changes">
+          {% if r.action == "update" %}
+            {% for k, v in r.changes.items() %}<div><b>{{ k }}</b>: {{ v[0] if v[0] is not none else "—" }} → {{ v[1] if v[1] is not none else "—" }}</div>{% endfor %}
+          {% elif r.action in ("login", "logout") %}
+            {% for k, v in r.changes.items() %}{{ k }}: {{ v }}{% endfor %}
+          {% else %}
+            {% for k in ("full_name", "name", "login", "permission", "key", "uid", "number") %}{% if r.changes.get(k) %}<div><b>{{ k }}</b>: {{ r.changes[k] }}</div>{% endif %}{% endfor %}
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="footnote">Пока пусто</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

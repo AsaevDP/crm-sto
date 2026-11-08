@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><p class="footnote">Что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
+</header>
+
+<section class="stack">
+  <div class="group-title">Подъёмники</div>
+  <div class="lifts">
+    {% for l in lifts %}
+    <div class="lift">
+      <span class="footnote">Подъёмник</span>
+      <b>{{ l.number }}</b>
+      <span class="chip" data-s="created">Свободен</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="grid-2">
+  <section class="stack">
+    <div class="group-title">Сотрудники</div>
+    <div class="group">
+      {% for s in staff %}
+      <div class="row">
+        <span class="avatar">{{ s.initials }}</span>
+        <span class="grow">{{ s.full_name }}<div class="caption">{{ s.role.name }}</div></span>
+        <span class="tag">нет отметки</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="stack">
+    <div class="group-title">Очереди</div>
+    <div class="group">
+      <div class="row"><span class="grow">Ждут диагностики</span><span class="value">0</span></div>
+      <div class="row"><span class="grow">Ждут согласования</span><span class="value">0</span></div>
+      <div class="row"><span class="grow">Ждут запчасти</span><span class="value">0</span></div>
+      <div class="row"><span class="grow">Запросы на выдачу со склада</span><span class="value">0</span></div>
+    </div>
+    <p class="footnote" style="margin:0 16px">Наполнится с шага 3: машины на подъёмниках, паузы, кто что делает и отметки по картам.</p>
+  </section>
+</div>
+{% endblock %}

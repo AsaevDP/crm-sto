@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Сотрудники</h1></div>
+</header>
+
+<div class="group">
+  {% for u in users %}
+  <a class="row chevron {% if not u.active %}muted{% endif %}" href="/settings/users/{{ u.id }}">
+    <span class="avatar" style="{{ '--accent:' ~ color_css(u.role.color) }}">{{ u.initials }}</span>
+    <span class="grow">{{ u.full_name }}<div class="caption">{{ u.role.name }} · {{ u.login }}{% if not u.active %} · выключен{% endif %}</div></span>
+  </a>
+  {% endfor %}
+</div>
+
+<details class="card">
+  <summary class="headline" style="cursor:pointer">＋ Новый сотрудник</summary>
+  <form class="form" method="post" action="/settings/users" style="margin-top:14px">
+    <div class="form-row">
+      <label>ФИО<input class="field" name="full_name" required maxlength="120"></label>
+      <label>Логин (латиницей)<input class="field" name="login" required autocapitalize="none" pattern="[a-zA-Z0-9._\-]{2,40}"></label>
+    </div>
+    <div class="form-row">
+      <label>Роль
+        <select class="field" name="role_id">{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select>
+      </label>
+      <label>Пароль (от 6 символов)<input class="field" name="password" type="password" minlength="6" autocomplete="new-password"></label>
+      <label>PIN (4 цифры, для iPhone)<input class="field" name="pin" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off"></label>
+    </div>
+    <div><button class="btn">Добавить</button></div>
+  </form>
+</details>
+{% endblock %}

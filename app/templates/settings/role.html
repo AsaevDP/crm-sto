@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "settings/_colors.html" import color_picker %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings/roles">{{ icon("back") }}Роли</a><h1 class="large-title">{{ role.name }}</h1></div>
+</header>
+
+<form class="card form" method="post" action="/settings/roles/{{ role.id }}/color">
+  <label>Название роли<input class="field" name="name" value="{{ role.name }}" maxlength="80"></label>
+  <div class="headline">Цвет интерфейса</div>
+  {{ color_picker("color", role.color) }}
+  <div><button class="btn btn-sm">Сохранить</button></div>
+</form>
+
+{% if is_admin %}
+<div class="card"><p class="subhead" style="margin:0">У админа все права всегда — их нельзя выключить, чтобы не потерять доступ к настройкам.</p></div>
+{% endif %}
+
+{% for group, perms in groups.items() %}
+<section class="stack">
+  <div class="group-title">{{ group }}</div>
+  <div class="group">
+    {% for p in perms %}
+    <div class="row">
+      <span class="grow">{{ p.name }}</span>
+      <input type="checkbox" class="switch" data-perm="{{ p.code }}" data-url="/settings/roles/{{ role.id }}/perm"
+             {% if is_admin or p.code in on %}checked{% endif %} {% if is_admin %}disabled{% endif %} aria-label="{{ p.name }}">
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endblock %}

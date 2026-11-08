@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Роли и доступ</h1></div>
+</header>
+<p class="subhead" style="margin:0">У каждой роли свой цвет интерфейса и набор прав. Отдельному сотруднику права можно добавить или забрать в его карточке.</p>
+
+<div class="group">
+  {% for r in roles %}
+  <a class="row chevron" href="/settings/roles/{{ r.id }}">
+    <span class="tile" style="background:{{ color_css(r.color) }}">{{ icon("shield") }}</span>
+    <span class="grow">{{ r.name }}</span>
+    <span class="value">{{ counts.get(r.id, 0) }} чел.</span>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

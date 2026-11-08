@@ -1,0 +1,14 @@
+{# Выбор цвета: системные цвета Apple + свой #}
+{% macro color_picker(name, current) -%}
+<div class="colors">
+  {% for code, title in SYSTEM_COLORS.items() %}
+  <label title="{{ title }}"><input type="radio" name="{{ name }}" value="{{ code }}" {% if current == code %}checked{% endif %}><span class="dot" style="background:var(--{{ code }})"></span></label>
+  {% endfor %}
+  {% set is_custom = current.startswith("#") %}
+  <label class="custom" title="Свой цвет">
+    <input type="radio" name="{{ name }}" value="{{ current if is_custom else '#ff6b00' }}" data-custom {% if is_custom %}checked{% endif %}>
+    <input type="color" value="{{ current if is_custom else '#ff6b00' }}" data-custom-picker>
+    свой
+  </label>
+</div>
+{%- endmacro %}

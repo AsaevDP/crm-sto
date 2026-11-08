@@ -1,0 +1,275 @@
+/* =========================================================
+   CRM СТО — базовые стили (дизайн-токены + компоненты)
+   Стиль: в духе Apple. Системный шрифт, мягкие карточки.
+   Никаких внешних шрифтов и CDN — всё локально.
+
+   Акцент меняется двумя способами:
+   1) по роли:  <html data-role="mechanic">
+   2) из настроек: <html style="--accent: #ff6b00"> (перекрывает роль)
+   ========================================================= */
+
+:root {
+  color-scheme: light dark;
+
+  /* Шрифт: на iPhone/Mac — San Francisco, на Windows — Segoe UI */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* Фоны (как «сгруппированный» фон iOS) */
+  --bg:        #f2f2f7;
+  --surface:   #ffffff;
+  --surface-2: #f7f7fa;
+  --fill:      rgba(120, 120, 128, 0.12);   /* поля ввода, сегменты */
+  --fill-2:    rgba(120, 120, 128, 0.08);
+  --separator: rgba(60, 60, 67, 0.13);
+  --bar:       rgba(249, 249, 251, 0.78);   /* полупрозрачные панели */
+  --seg-on:    #ffffff;                     /* выбранный сегмент */
+
+  /* Текст */
+  --text:   #1c1c1e;
+  --text-2: rgba(60, 60, 67, 0.62);
+  --text-3: rgba(60, 60, 67, 0.36);
+
+  /* Системные цвета iOS */
+  --blue:   #007aff;
+  --green:  #34c759;
+  --orange: #ff9500;
+  --red:    #ff3b30;
+  --indigo: #5856d6;
+  --teal:   #30b0c7;
+  --purple: #af52de;
+  --yellow: #ffcc00;
+  --gray:   #8e8e93;
+  --graphite: #48484a;
+
+  --accent: var(--blue);
+  --on-accent: #ffffff;
+
+  /* Формы */
+  --r-xs: 8px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,.04), 0 1px 1px rgba(0,0,0,.03);
+  --shadow-2: 0 4px 16px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.04);
+  --shadow-3: 0 12px 40px rgba(0,0,0,.10), 0 2px 8px rgba(0,0,0,.05);
+
+  --ease: cubic-bezier(.25,.1,.25,1);
+  --tap: 44px; /* минимальная зона нажатия по гайдам Apple */
+}
+
+/* Тёмная тема: автоматически по системе, либо принудительно data-theme */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000; --surface: #1c1c1e; --surface-2: #2c2c2e;
+    --fill: rgba(118,118,128,.24); --fill-2: rgba(118,118,128,.16);
+    --separator: rgba(84,84,88,.6); --bar: rgba(28,28,30,.78); --seg-on: #636366;
+    --text: #f5f5f7; --text-2: rgba(235,235,245,.6); --text-3: rgba(235,235,245,.3);
+    --blue: #0a84ff; --green: #30d158; --orange: #ff9f0a; --red: #ff453a;
+    --indigo: #5e5ce6; --teal: #40c8e0; --purple: #bf5af2; --yellow: #ffd60a;
+    --gray: #98989d; --graphite: #aeaeb2;
+    --shadow-1: none; --shadow-2: 0 0 0 1px rgba(255,255,255,.04); --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #000000; --surface: #1c1c1e; --surface-2: #2c2c2e;
+  --fill: rgba(118,118,128,.24); --fill-2: rgba(118,118,128,.16);
+  --separator: rgba(84,84,88,.6); --bar: rgba(28,28,30,.78); --seg-on: #636366;
+  --text: #f5f5f7; --text-2: rgba(235,235,245,.6); --text-3: rgba(235,235,245,.3);
+  --blue: #0a84ff; --green: #30d158; --orange: #ff9f0a; --red: #ff453a;
+  --indigo: #5e5ce6; --teal: #40c8e0; --purple: #bf5af2; --yellow: #ffd60a;
+  --gray: #98989d; --graphite: #aeaeb2;
+  --shadow-1: none; --shadow-2: 0 0 0 1px rgba(255,255,255,.04); --shadow-3: 0 12px 40px rgba(0,0,0,.6);
+}
+
+/* Цвет интерфейса по роли (по умолчанию; меняется в настройках) */
+[data-role="manager"]    { --accent: var(--blue); }
+[data-role="partsman"]   { --accent: var(--indigo); }
+[data-role="storekeeper"]{ --accent: var(--orange); }
+[data-role="content"]    { --accent: var(--teal); }
+[data-role="mechanic"]   { --accent: var(--green); }
+[data-role="admin"]      { --accent: var(--graphite); }
+[data-role="admin"]      { --on-accent: var(--bg); }
+
+/* ---------- База ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; } /* иначе display:grid у блока перебивает hidden */
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 17px; line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+h1, h2, h3 { font-family: var(--font-display); margin: 0; letter-spacing: -0.02em; }
+.large-title { font-size: 34px; font-weight: 700; line-height: 1.1; }
+.title-2     { font-size: 22px; font-weight: 700; }
+.headline    { font-size: 17px; font-weight: 600; }
+.subhead     { font-size: 15px; color: var(--text-2); }
+.footnote    { font-size: 13px; color: var(--text-2); }
+.caption     { font-size: 12px; color: var(--text-2); }
+.mono        { font-family: var(--mono); letter-spacing: 0; }
+.accent-text { color: var(--accent); }
+
+/* ---------- Карточки и списки (как inset-grouped в iOS) ---------- */
+.card {
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  padding: 16px;
+}
+.group {
+  background: var(--surface);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.group-title {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .02em;
+  color: var(--text-2); padding: 0 16px 6px;
+}
+.row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: var(--tap); padding: 10px 16px;
+  position: relative;
+}
+.row + .row::before {
+  content: ""; position: absolute; top: 0; right: 0; left: 16px;
+  border-top: 0.5px solid var(--separator);
+}
+.row .grow { flex: 1; min-width: 0; }
+.row .value { color: var(--text-2); }
+.chevron::after {
+  content: ""; width: 8px; height: 8px; margin-left: 4px;
+  border-right: 2px solid var(--text-3); border-top: 2px solid var(--text-3);
+  transform: rotate(45deg); display: inline-block;
+}
+
+/* Значок-плитка (как в «Настройках» iOS) */
+.tile {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: grid; place-items: center; flex: none;
+  background: var(--accent); color: #fff;
+}
+.tile svg { width: 18px; height: 18px; }
+
+/* ---------- Кнопки ---------- */
+.btn {
+  appearance: none; border: 0; cursor: pointer;
+  font: inherit; font-weight: 600; font-size: 17px;
+  min-height: 50px; padding: 0 22px;
+  border-radius: var(--r-md);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--accent); color: var(--on-accent);
+  transition: transform .15s var(--ease), opacity .15s var(--ease), background .2s;
+}
+.btn:active { transform: scale(.97); opacity: .85; }
+.btn-tinted { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.btn-plain  { background: transparent; color: var(--accent); padding: 0 8px; }
+.btn-gray   { background: var(--fill); color: var(--text); }
+.btn-danger { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+.btn-sm     { min-height: 34px; font-size: 15px; padding: 0 14px; border-radius: 999px; }
+.btn-block  { width: 100%; }
+
+/* ---------- Поля ввода ---------- */
+.field {
+  width: 100%; font: inherit; color: var(--text);
+  min-height: var(--tap); padding: 10px 14px;
+  background: var(--fill); border: 0; border-radius: var(--r-sm);
+  outline: none; transition: box-shadow .2s;
+}
+.field::placeholder { color: var(--text-3); }
+.field:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.search {
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: 11px center; background-size: 17px;
+}
+
+/* Переключатель (iOS switch) */
+.switch { appearance: none; width: 51px; height: 31px; border-radius: 99px; background: var(--fill); position: relative; cursor: pointer; transition: background .25s var(--ease); flex: none; margin: 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16); transition: transform .25s var(--ease); }
+.switch:checked { background: var(--green); }
+.switch:checked::after { transform: translateX(20px); }
+
+/* Сегменты (iOS segmented control) */
+.segmented { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--fill); gap: 2px; }
+.segmented button {
+  appearance: none; border: 0; background: transparent; color: var(--text);
+  font: inherit; font-size: 13px; font-weight: 500;
+  padding: 6px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+}
+.segmented button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 0 1px rgba(0,0,0,.04); font-weight: 600; }
+
+/* ---------- Статусы ---------- */
+.chip {
+  --c: var(--gray);
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; line-height: 1;
+  padding: 6px 10px; border-radius: 999px;
+  color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
+  white-space: nowrap;
+}
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip[data-s="created"]   { --c: var(--gray); }
+.chip[data-s="diag"]      { --c: var(--purple); }
+.chip[data-s="approve"]   { --c: var(--yellow); color: color-mix(in srgb, var(--yellow) 55%, var(--text)); }
+.chip[data-s="picking"]   { --c: var(--indigo); }
+.chip[data-s="waiting"]   { --c: var(--orange); }
+.chip[data-s="instock"]   { --c: var(--teal); }
+.chip[data-s="work"]      { --c: var(--blue); }
+.chip[data-s="ready"]     { --c: var(--green); }
+.chip[data-s="paid"]      { --c: var(--green); }
+.chip[data-s="closed"]    { --c: var(--graphite); }
+.chip[data-s="cancel"]    { --c: var(--red); }
+.chip[data-s="prepay"]    { --c: var(--red); }
+
+/* ---------- Навигация ---------- */
+/* Нижняя панель (iPhone) */
+.tabbar {
+  position: sticky; bottom: 0;
+  display: flex; justify-content: space-around;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-top: 0.5px solid var(--separator);
+}
+.tabbar a { flex: 1; display: grid; justify-items: center; gap: 2px; font-size: 10px; font-weight: 500; color: var(--gray); text-decoration: none; padding: 2px 0; }
+.tabbar a svg { width: 26px; height: 26px; }
+.tabbar a[aria-current] { color: var(--accent); }
+
+/* Боковая панель (ПК) */
+.sidebar { display: grid; gap: 2px; align-content: start; padding: 12px; }
+.sidebar a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r-xs);
+  color: var(--text); text-decoration: none; font-size: 15px;
+}
+.sidebar a svg { width: 20px; height: 20px; color: var(--accent); }
+.sidebar a:hover { background: var(--fill-2); }
+.sidebar a[aria-current] { background: var(--accent); color: var(--on-accent); }
+.sidebar a[aria-current] svg { color: inherit; }
+
+/* Таблица (ПК) */
+.table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.table th { text-align: left; font-weight: 500; font-size: 12px; color: var(--text-2); text-transform: uppercase; letter-spacing: .03em; padding: 10px 14px; border-bottom: 0.5px solid var(--separator); }
+.table td { padding: 12px 14px; border-bottom: 0.5px solid var(--separator); vertical-align: middle; }
+.table tr:last-child td { border-bottom: 0; }
+.table tbody tr { transition: background .15s; }
+.table tbody tr:hover { background: var(--fill-2); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Фото-сетка */
+.thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.thumbs > * { aspect-ratio: 1; border-radius: var(--r-sm); background: var(--fill); overflow: hidden; }
+
+/* Аватар */
+.avatar { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); flex: none; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

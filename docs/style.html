@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ru" data-role="manager">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Стиль CRM СТО</title>
+<link rel="stylesheet" href="../app/static/css/app.css">
+<style>
+  /* Только для этой демо-страницы */
+  body { padding: 32px 24px 80px; }
+  .wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 40px; }
+  .top { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; justify-content: space-between; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; }
+  section > h2 { font-size: 22px; margin-bottom: 14px; }
+  .stage { display: grid; grid-template-columns: 390px 1fr; gap: 32px; align-items: start; }
+  @media (max-width: 1000px) { .stage { grid-template-columns: 1fr; justify-items: center; } .desk { width: 100%; } }
+
+  /* Рамка iPhone */
+  .phone { width: 390px; height: 800px; border-radius: 54px; padding: 12px; background: #1c1c1e; box-shadow: var(--shadow-3); }
+  .screen { height: 100%; border-radius: 44px; overflow: hidden; background: var(--bg); display: flex; flex-direction: column; position: relative; }
+  .status { height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 6px 30px 0; font-size: 15px; font-weight: 600; flex: none; }
+  .island { position: absolute; top: 11px; left: 50%; translate: -50%; width: 120px; height: 34px; background: #000; border-radius: 20px; }
+  .scroll { flex: 1; overflow: auto; padding: 4px 16px 16px; display: grid; gap: 14px; align-content: start; }
+  .navrow { display: flex; justify-content: space-between; align-items: center; min-height: 40px; }
+
+  /* Окно ПК */
+  .desk { border-radius: 14px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-3); display: grid; grid-template-columns: 220px 1fr; min-height: 640px; }
+  .desk aside { background: var(--surface-2); border-right: 0.5px solid var(--separator); }
+  .traffic { display: flex; gap: 8px; padding: 16px 16px 6px; }
+  .traffic i { width: 12px; height: 12px; border-radius: 50%; background: var(--fill); }
+  .brand { display: flex; gap: 10px; align-items: center; padding: 10px 14px 14px; }
+  .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+  .desk main { padding: 22px 26px; display: grid; gap: 18px; align-content: start; min-width: 0; }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .toolbar .field { max-width: 300px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat { background: var(--surface-2); border-radius: var(--r-md); padding: 14px 16px; }
+  .stat b { display: block; font-size: 28px; font-family: var(--font-display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .tablewrap { border: 0.5px solid var(--separator); border-radius: var(--r-md); overflow: auto; }
+
+  /* Палитра и компоненты */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .sw { border-radius: var(--r-md); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-1); cursor: pointer; border: 2px solid transparent; text-align: left; padding: 0; font: inherit; color: inherit; }
+  .sw[aria-pressed="true"] { border-color: var(--text); }
+  .sw div { height: 64px; }
+  .sw p { margin: 0; padding: 10px 12px; font-size: 14px; }
+  .sw small { display: block; color: var(--text-2); }
+  .kit { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .kit .card { display: grid; gap: 12px; align-content: start; }
+  .line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  /* Проходная */
+  .kiosk { border-radius: var(--r-xl); background: var(--surface); box-shadow: var(--shadow-2); padding: 40px; display: grid; justify-items: center; gap: 10px; text-align: center; }
+  .kiosk .ok { width: 84px; height: 84px; border-radius: 50%; background: var(--green); display: grid; place-items: center; color: #fff; }
+  .kiosk .ok svg { width: 44px; height: 44px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <p class="footnote">CRM СТО · шаг 1 · на утверждение</p>
+      <h1 class="large-title">Стиль интерфейса</h1>
+      <p class="subhead">Мягко и светло, в духе Apple. У каждой роли свой цвет. Переключай сверху.</p>
+    </div>
+    <div class="controls">
+      <div class="segmented" id="roles">
+        <button data-r="manager" aria-pressed="true">Менеджер</button>
+        <button data-r="partsman">Запчастист</button>
+        <button data-r="storekeeper">Кладовщик</button>
+        <button data-r="content">Разбор</button>
+        <button data-r="mechanic">Слесарь</button>
+        <button data-r="admin">Админ</button>
+      </div>
+      <div class="segmented" id="themes">
+        <button data-t="" aria-pressed="true">Авто</button>
+        <button data-t="light">Светлая</button>
+        <button data-t="dark">Тёмная</button>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Экраны: iPhone и ПК</h2>
+    <div class="stage">
+
+      <!-- ===== iPhone ===== -->
+      <div class="phone"><div class="screen">
+        <div class="island"></div>
+        <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+        <div class="scroll">
+          <div class="navrow">
+            <span class="btn-plain" style="font-size:17px">Фильтр</span>
+            <span class="btn btn-sm">＋ Наряд</span>
+          </div>
+          <h1 class="large-title" id="ph-title">Наряды</h1>
+          <input class="field search" placeholder="Номер, госномер, клиент">
+
+          <div class="segmented" style="width:100%; display:flex">
+            <button aria-pressed="true" style="flex:1">В работе · 7</button>
+            <button style="flex:1">Ждут</button>
+            <button style="flex:1">Готово</button>
+          </div>
+
+          <article class="card" style="display:grid; gap:12px">
+            <div style="display:flex; justify-content:space-between; align-items:start; gap:8px">
+              <div>
+                <div class="footnote mono">СТО1-2026-000123</div>
+                <div class="headline" style="font-size:20px">Toyota Camry 2018</div>
+                <div class="subhead">АА 1234 ВС · Подъёмник 4</div>
+              </div>
+              <span class="chip" data-s="approve">Согласование</span>
+            </div>
+            <div class="thumbs">
+              <div style="background:linear-gradient(135deg,#c9d6df,#8ea6b4)"></div>
+              <div style="background:linear-gradient(135deg,#e2d1c3,#b59a85)"></div>
+              <div style="background:linear-gradient(135deg,#d4d4d8,#9a9aa2)"></div>
+              <div style="display:grid;place-items:center" class="footnote">+2</div>
+            </div>
+            <div class="group" style="background:var(--surface-2)">
+              <div class="row"><span class="grow">Колодки передние</span><span class="chip" data-s="ready">Да</span></div>
+              <div class="row"><span class="grow">Течь масла, прокладка</span><span class="chip" data-s="approve">Ждём</span></div>
+              <div class="row"><span class="grow">Сайлентблоки</span><span class="chip" data-s="cancel">Нет</span></div>
+            </div>
+            <div style="display:flex; gap:8px">
+              <button class="btn btn-tinted" style="flex:1">Позвонить</button>
+              <button class="btn" style="flex:1">Согласовать</button>
+            </div>
+          </article>
+
+          <article class="card" style="display:flex; gap:12px; align-items:center">
+            <div class="grow" style="flex:1">
+              <div class="footnote mono">СТО1-2026-000122</div>
+              <div class="headline">VW Passat B8</div>
+              <div class="subhead">КА 5678 АІ · Подъёмник 2</div>
+            </div>
+            <span class="chip" data-s="waiting">Ждёт запчасти</span>
+          </article>
+
+          <article class="card" style="display:flex; gap:12px; align-items:center">
+            <div style="flex:1">
+              <div class="footnote mono">СТО1-2026-000121</div>
+              <div class="headline">Skoda Octavia A7</div>
+              <div class="subhead">АІ 9012 КК · Подъёмник 7</div>
+            </div>
+            <span class="chip" data-s="prepay">Предоплата</span>
+          </article>
+        </div>
+        <nav class="tabbar">
+          <a aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Наряды</a>
+          <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>Склад</a>
+          <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M7 15h3"/></svg>Деньги</a>
+          <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Я</a>
+        </nav>
+      </div></div>
+
+      <!-- ===== ПК ===== -->
+      <div class="desk">
+        <aside>
+          <div class="traffic"><i></i><i></i><i></i></div>
+          <div class="brand"><div class="logo">СТО</div><div><div class="headline" style="font-size:15px">СТО №1</div><div class="caption" id="who">Менеджер · Ирина</div></div></div>
+          <nav class="sidebar">
+            <a aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Наряды</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>Склад</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6h15l-2 9H8z"/><path d="M6 6 5 3H2"/><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/></svg>Закупки</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-2.5z"/></svg>Разбор</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18M7 15h3"/></svg>Деньги</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Табель</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>Моя зарплата</a>
+            <a><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Настройки</a>
+          </nav>
+        </aside>
+        <main>
+          <div class="toolbar">
+            <h1 class="title-2" style="font-size:28px; margin-right:auto">Наряды</h1>
+            <input class="field search" placeholder="Поиск">
+            <button class="btn btn-sm">＋ Новый наряд</button>
+          </div>
+          <div class="stats">
+            <div class="stat"><span class="footnote">На подъёмниках</span><b>7 / 10</b></div>
+            <div class="stat"><span class="footnote">Ждут запчасти</span><b>4</b></div>
+            <div class="stat"><span class="footnote">Готово к выдаче</span><b>2</b></div>
+            <div class="stat"><span class="footnote">Оплаты сегодня</span><b>48 300 ₴</b></div>
+          </div>
+          <div class="tablewrap">
+            <table class="table">
+              <thead><tr><th>Номер</th><th>Авто</th><th>Клиент</th><th>Подъёмник</th><th>Статус</th><th class="num">Сумма</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">000123</td><td>Toyota Camry · АА 1234 ВС</td><td><div style="display:flex;gap:8px;align-items:center"><span class="avatar">ОК</span>Олег К.</div></td><td>4</td><td><span class="chip" data-s="approve">Согласование</span></td><td class="num">12 450 ₴</td></tr>
+                <tr><td class="mono">000122</td><td>VW Passat · КА 5678 АІ</td><td><div style="display:flex;gap:8px;align-items:center"><span class="avatar">МП</span>Марина П.</div></td><td>2</td><td><span class="chip" data-s="waiting">Ждёт запчасти</span></td><td class="num">8 900 ₴</td></tr>
+                <tr><td class="mono">000121</td><td>Skoda Octavia · АІ 9012 КК</td><td><div style="display:flex;gap:8px;align-items:center"><span class="avatar">ВС</span>Виктор С.</div></td><td>7</td><td><span class="chip" data-s="prepay">Ждёт предоплату</span></td><td class="num">54 000 ₴</td></tr>
+                <tr><td class="mono">000120</td><td>Renault Megane · ВІ 3344 ОО</td><td><div style="display:flex;gap:8px;align-items:center"><span class="avatar">АД</span>Андрей Д.</div></td><td>1</td><td><span class="chip" data-s="work">В работе</span></td><td class="num">3 200 ₴</td></tr>
+                <tr><td class="mono">000119</td><td>BMW X5 · АА 0001 ХХ</td><td><div style="display:flex;gap:8px;align-items:center"><span class="avatar">ЕЛ</span>Елена Л.</div></td><td>—</td><td><span class="chip" data-s="ready">Готово</span></td><td class="num">21 760 ₴</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Цвета ролей</h2>
+    <p class="subhead" style="margin:-6px 0 14px">По умолчанию системные цвета Apple. В «Настройках» любой цвет меняется на свой. Нажми карточку, чтобы примерить.</p>
+    <div class="swatches" id="sw">
+      <button class="sw" data-r="manager" aria-pressed="true"><div style="background:var(--blue)"></div><p>Менеджер<small>синий</small></p></button>
+      <button class="sw" data-r="partsman"><div style="background:var(--indigo)"></div><p>Запчастист<small>индиго</small></p></button>
+      <button class="sw" data-r="storekeeper"><div style="background:var(--orange)"></div><p>Кладовщик<small>оранжевый</small></p></button>
+      <button class="sw" data-r="content"><div style="background:var(--teal)"></div><p>Разбор<small>бирюзовый</small></p></button>
+      <button class="sw" data-r="mechanic"><div style="background:var(--green)"></div><p>Слесарь<small>зелёный</small></p></button>
+      <button class="sw" data-r="admin"><div style="background:var(--graphite)"></div><p>Админ<small>графит</small></p></button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Элементы</h2>
+    <div class="kit">
+      <div class="card">
+        <div class="headline">Кнопки</div>
+        <button class="btn btn-block">Основная</button>
+        <div class="line"><button class="btn btn-tinted">Мягкая</button><button class="btn btn-gray">Серая</button><button class="btn btn-danger">Отменить</button></div>
+        <div class="line"><button class="btn btn-sm">Маленькая</button><button class="btn btn-plain">Текстовая</button></div>
+      </div>
+      <div class="card">
+        <div class="headline">Поля и переключатели</div>
+        <input class="field" placeholder="Госномер">
+        <input class="field search" placeholder="Артикул, название, марка">
+        <div class="group" style="background:var(--surface-2)">
+          <div class="row"><span class="grow">Без диагностики</span><input type="checkbox" class="switch" checked></div>
+          <div class="row"><span class="grow">Ждёт предоплату</span><input type="checkbox" class="switch"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="headline">Статусы наряда</div>
+        <div class="line">
+          <span class="chip" data-s="created">Создан</span>
+          <span class="chip" data-s="diag">Диагностика</span>
+          <span class="chip" data-s="approve">Согласование</span>
+          <span class="chip" data-s="picking">Подбор</span>
+          <span class="chip" data-s="waiting">Ждёт запчасти</span>
+          <span class="chip" data-s="instock">На складе</span>
+          <span class="chip" data-s="work">В работе</span>
+          <span class="chip" data-s="ready">Готово</span>
+          <span class="chip" data-s="paid">Оплачено</span>
+          <span class="chip" data-s="closed">Выдан</span>
+          <span class="chip" data-s="cancel">Отменён</span>
+          <span class="chip" data-s="prepay">Ждёт предоплату</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="headline">Моя зарплата (слесарь)</div>
+        <div style="display:flex; align-items:baseline; gap:8px"><b style="font-size:34px; font-family:var(--font-display); letter-spacing:-.02em">2 340 ₴</b><span class="subhead">сегодня</span></div>
+        <div class="group" style="background:var(--surface-2)">
+          <div class="row"><span class="grow">000120 · Замена колодок<div class="caption">30% от 1 800 ₴</div></span><span class="value">540 ₴</span></div>
+          <div class="row"><span class="grow">000118 · ТО-60<div class="caption">30% от 6 000 ₴</div></span><span class="value">1 800 ₴</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="headline">Настройки → Доступ</div>
+        <div class="group" style="background:var(--surface-2)">
+          <div class="row"><span class="tile" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8"/></svg></span><span class="grow">Видеть все наряды</span><input type="checkbox" class="switch" checked></div>
+          <div class="row"><span class="tile" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10h18"/></svg></span><span class="grow">Принимать оплату</span><input type="checkbox" class="switch"></div>
+          <div class="row"><span class="tile" style="background:var(--orange)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 19V9M10 19V5M16 19v-7"/></svg></span><span class="grow">Видеть закупочные цены</span><input type="checkbox" class="switch"></div>
+          <div class="row chevron"><span class="tile" style="background:var(--gray)"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></span><span class="grow">Права сотрудника</span><span class="value">Олег</span></div>
+        </div>
+      </div>
+      <div class="kiosk">
+        <div class="ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></svg></div>
+        <div class="footnote">Проходная · экран у считывателя карт</div>
+        <div class="title-2" style="font-size:28px">Андрей Демченко</div>
+        <div class="subhead">Пришёл в 08:02</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Переключатели только для этой демо-страницы
+  const root = document.documentElement;
+  const names = { manager:'Менеджер · Ирина', partsman:'Запчастист · Олег', storekeeper:'Кладовщик · Павел', content:'Разбор · Павел', mechanic:'Слесарь · Андрей', admin:'Админ · Стас' };
+  function setRole(r) {
+    root.dataset.role = r;
+    document.querySelectorAll('#roles button, #sw .sw').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === r));
+    document.getElementById('who').textContent = names[r];
+  }
+  document.querySelectorAll('#roles button, #sw .sw').forEach(b => b.onclick = () => setRole(b.dataset.r));
+  document.querySelectorAll('#themes button').forEach(b => b.onclick = () => {
+    if (b.dataset.t) root.dataset.theme = b.dataset.t; else delete root.dataset.theme;
+    document.querySelectorAll('#themes button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  });
+</script>
+</body>
+</html>

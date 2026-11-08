@@ -1,0 +1,158 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="ru" style="{{ accent }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="color-scheme" content="light dark">
+{% if branding.icon %}<link rel="apple-touch-icon" href="{{ branding.icon }}"><link rel="icon" href="{{ branding.icon }}">{% endif %}
+<title>Вход · {{ branding.name }}</title>
+<link rel="stylesheet" href="{{ asset('/static/css/app.css') }}">
+<link rel="stylesheet" href="{{ asset('/static/css/layout.css') }}">
+<style>
+  body { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+  .login { width: 100%; max-width: 400px; display: grid; gap: 22px; justify-items: center; }
+  .login .logo, .login .logo-img { width: 72px; height: 72px; border-radius: 20px; font-size: 20px; box-shadow: var(--shadow-2); }
+  .login h1 { text-align: center; }
+  .panel { width: 100%; display: none; }
+  .panel.on { display: grid; gap: 12px; }
+  .segmented { width: 100%; display: flex; }
+  .segmented button { flex: 1; font-size: 14px; padding: 8px; }
+  .error { color: var(--red); font-size: 15px; text-align: center; min-height: 20px; margin: 0; }
+  /* PIN */
+  .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; max-height: 340px; overflow: auto; }
+  .person { appearance: none; border: 0; font: inherit; color: inherit; background: var(--surface); border-radius: var(--r-md); padding: 14px 6px; display: grid; justify-items: center; gap: 8px; cursor: pointer; box-shadow: var(--shadow-1); }
+  .person .avatar { width: 48px; height: 48px; font-size: 17px; }
+  .person span:last-child { font-size: 13px; line-height: 1.2; text-align: center; }
+  .pin-who { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .dots { display: flex; justify-content: center; gap: 16px; margin: 8px 0; }
+  .dots i { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--text-2); transition: background .15s; }
+  .dots i.f { background: var(--text); border-color: var(--text); }
+  .keypad { display: grid; grid-template-columns: repeat(3, 76px); gap: 14px 22px; justify-content: center; }
+  .key { appearance: none; border: 0; width: 76px; height: 76px; border-radius: 50%; background: var(--fill); color: var(--text); font: inherit; font-size: 30px; font-weight: 400; cursor: pointer; transition: background .1s; }
+  .key:active { background: var(--text-3); }
+  .key.ghost { background: transparent; font-size: 16px; color: var(--accent); }
+  .shake { animation: shake .35s; }
+  @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+  /* Карта */
+  .card-wait { display: grid; justify-items: center; gap: 12px; padding: 28px 16px; text-align: center; }
+  .card-wait .pulse { width: 88px; height: 88px; border-radius: 24px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); animation: pulse 2s infinite; }
+  .card-wait .pulse .ic { width: 44px; height: 44px; }
+  @keyframes pulse { 50% { transform: scale(1.06); box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 8%, transparent); } }
+</style>
+</head>
+<body>
+<div class="login">
+  {% if branding.logo %}<img class="logo-img" src="{{ branding.logo }}" alt="">{% else %}<span class="logo">{{ branding.name[:3] }}</span>{% endif %}
+  <h1 class="title-2" style="font-size:28px">{{ branding.name }}</h1>
+
+  <div class="segmented" role="tablist">
+    <button type="button" data-tab="password">Логин</button>
+    <button type="button" data-tab="pin">PIN</button>
+    <button type="button" data-tab="card">Карта</button>
+  </div>
+
+  <p class="error" id="err">{{ error }}</p>
+
+  {# Логин и пароль #}
+  <form class="panel form" data-panel="password" method="post" action="/login">
+    <input class="field" name="login" placeholder="Логин" autocomplete="username" autocapitalize="none" autocorrect="off" required>
+    <input class="field" name="password" type="password" placeholder="Пароль" autocomplete="current-password" required>
+    <button class="btn btn-block">Войти</button>
+  </form>
+
+  {# Сотрудник + PIN (для iPhone) #}
+  <div class="panel" data-panel="pin">
+    <div class="people" id="people">
+      {% for s in staff %}
+      <button type="button" class="person" data-id="{{ s.id }}" data-name="{{ s.full_name }}" data-initials="{{ s.initials }}">
+        <span class="avatar">{{ s.initials }}</span><span>{{ s.full_name }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <form id="pinform" method="post" action="/login/pin" hidden>
+      <input type="hidden" name="user_id"><input type="hidden" name="pin">
+      <div class="pin-who"><span class="avatar" id="pin-av"></span><span class="headline" id="pin-name"></span></div>
+      <div class="dots" id="dots"><i></i><i></i><i></i><i></i></div>
+      <div class="keypad">
+        {% for k in "123456789" %}<button type="button" class="key" data-k="{{ k }}">{{ k }}</button>{% endfor %}
+        <button type="button" class="key ghost" data-k="back">Назад</button>
+        <button type="button" class="key" data-k="0">0</button>
+        <button type="button" class="key ghost" data-k="del">Стереть</button>
+      </div>
+    </form>
+  </div>
+
+  {# Карта: считыватель «печатает» номер и жмёт Enter #}
+  <form class="panel" data-panel="card" method="post" action="/login/card" id="cardform">
+    <div class="card-wait">
+      <div class="pulse">{{ icon("card") }}</div>
+      <div class="headline">Приложите карту к считывателю</div>
+      <div class="footnote">Нет считывателя? Наберите номер карты и нажмите Enter</div>
+    </div>
+    <input class="field" name="uid" id="uid" placeholder="Номер карты" autocomplete="off" inputmode="numeric">
+  </form>
+</div>
+
+<script>
+(function () {
+  // ---- Вкладки. По умолчанию: iPhone → PIN, ПК → карта ----
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const initial = "{{ tab }}" || (touch ? "pin" : "card");
+  const tabs = document.querySelectorAll('[data-tab]');
+  function show(name) {
+    tabs.forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === name));
+    document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('on', p.dataset.panel === name));
+    if (name === 'card') document.getElementById('uid').focus();
+    if (name === 'password') document.querySelector('[name=login]').focus();
+  }
+  tabs.forEach(b => b.onclick = () => { document.getElementById('err').textContent = ''; show(b.dataset.tab); });
+  show(initial);
+
+  // ---- PIN: выбрать себя → набрать 4 цифры → вход сам ----
+  const form = document.getElementById('pinform'), people = document.getElementById('people');
+  const dots = document.querySelectorAll('#dots i');
+  let pin = '';
+  function paint() { dots.forEach((d, i) => d.classList.toggle('f', i < pin.length)); }
+  people.addEventListener('click', e => {
+    const p = e.target.closest('.person'); if (!p) return;
+    form.user_id.value = p.dataset.id;
+    document.getElementById('pin-name').textContent = p.dataset.name;
+    document.getElementById('pin-av').textContent = p.dataset.initials;
+    people.hidden = true; form.hidden = false; pin = ''; paint();
+    try { localStorage.setItem('crm-last-user', p.dataset.id); } catch (e) {}
+  });
+  form.addEventListener('click', e => {
+    const k = e.target.closest('.key'); if (!k) return;
+    const v = k.dataset.k;
+    if (v === 'back') { form.hidden = true; people.hidden = false; return; }
+    if (v === 'del') { pin = pin.slice(0, -1); paint(); return; }
+    if (pin.length < 4) { pin += v; paint(); }
+    if (pin.length === 4) { form.pin.value = pin; setTimeout(() => form.submit(), 120); }
+  });
+  // Если ошибка PIN — сразу открыть клавиатуру того же сотрудника
+  {% if tab == "pin" %}
+  try {
+    const last = localStorage.getItem('crm-last-user');
+    const btn = last && people.querySelector(`[data-id="${last}"]`);
+    if (btn) { btn.click(); document.querySelector('.dots').classList.add('shake'); }
+  } catch (e) {}
+  {% endif %}
+
+  // ---- Карта: считыватель работает как клавиатура. Ловим быстрый ввод цифр с Enter
+  //      даже если поле не в фокусе (например, открыта вкладка «Логин»). ----
+  let buf = '', last = 0;
+  document.addEventListener('keydown', e => {
+    if (document.activeElement && ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    const now = performance.now();
+    if (now - last > 80) buf = '';     // человек печатает медленнее считывателя
+    last = now;
+    if (e.key === 'Enter' && buf.length >= 6) {
+      document.getElementById('uid').value = buf;
+      document.getElementById('cardform').submit();
+    } else if (e.key.length === 1) buf += e.key;
+  });
+})();
+</script>
+</body>
+</html>

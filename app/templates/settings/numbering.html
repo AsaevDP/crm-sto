@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Номер наряда</h1></div>
+</header>
+
+<form class="form" method="post">
+  <div class="card form">
+    <div style="text-align:center;padding:12px 0 4px">
+      <div class="footnote">Так будет выглядеть номер</div>
+      <div class="mono" id="preview" style="font-size:30px;font-weight:600;letter-spacing:-.01em;margin-top:4px">{{ example }}</div>
+    </div>
+    <div class="form-row">
+      <label>Код СТО<input class="field" name="code" id="code" value="{{ ctx.branch.code }}" maxlength="20" required></label>
+      <label>Шаблон<input class="field mono" name="template" id="tpl" value="{{ cfg.template }}" maxlength="80" required></label>
+    </div>
+    <div class="line" style="display:flex;flex-wrap:wrap;gap:8px">
+      <span class="footnote">Вставить:</span>
+      {% for t in ["{код}", "{год}", "{гг}", "{номер:6}", "{номер:4}", "-", "/"] %}
+      <button type="button" class="btn btn-sm btn-gray mono" data-ins="{{ t }}">{{ t }}</button>
+      {% endfor %}
+    </div>
+    <p class="hint">{код} — код СТО · {год} — 2026 · {гг} — 26 · {номер:6} — номер с нулями до 6 цифр</p>
+    <div class="group" style="background:var(--surface-2)">
+      <div class="row"><span class="grow">Начинать нумерацию заново каждый год</span><input type="checkbox" class="switch" name="reset_yearly" value="1" {% if cfg.reset_yearly %}checked{% endif %}></div>
+    </div>
+  </div>
+  <button class="btn">Сохранить</button>
+</form>
+
+<script>
+// Живое превью номера (та же логика, что на сервере — app/services/numbering.py)
+(function () {
+  const tpl = document.getElementById('tpl'), code = document.getElementById('code'), out = document.getElementById('preview');
+  const y = new Date().getFullYear();
+  function upd() {
+    out.textContent = tpl.value.replaceAll('{код}', code.value).replaceAll('{год}', y).replaceAll('{гг}', String(y % 100).padStart(2, '0'))
+      .replace(/\{номер(?::(\d+))?\}/g, (_, n) => '123'.padStart(+n || 1, '0'));
+  }
+  tpl.oninput = code.oninput = upd;
+  document.querySelectorAll('[data-ins]').forEach(b => b.onclick = () => {
+    const s = tpl.selectionStart ?? tpl.value.length;
+    tpl.value = tpl.value.slice(0, s) + b.dataset.ins + tpl.value.slice(tpl.selectionEnd ?? s);
+    tpl.focus(); upd();
+  });
+})();
+</script>
+{% endblock %}
