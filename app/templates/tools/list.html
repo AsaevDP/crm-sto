@@ -3,8 +3,15 @@
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Инструмент</h1>
-  <form class="toolbar-row" method="get" style="flex:1;max-width:620px">
+  <form class="toolbar-row" method="get" style="flex:1;max-width:820px">
     <input class="field search" name="q" value="{{ q }}" placeholder="Инв. №, серийный №, название" autocomplete="off">
+    <select class="field" name="cat" onchange="this.form.submit()" style="max-width:230px" aria-label="Категория">
+      <option value="">Все категории · {{ n_all }}</option>
+      <option value="personal" {% if cat == "personal" %}selected{% endif %}>Личный · {{ n_personal }}</option>
+      <option value="shared" {% if cat == "shared" %}selected{% endif %}>Общий (под наряд) · {{ n_all - n_personal }}</option>
+      <optgroup label="Общий по категориям">
+      {% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}" {% if cat == k %}selected{% endif %}>{{ v }} · {{ cat_counts.get(k, 0) }}</option>{% endfor %}
+      </optgroup></select>
     <select class="field" name="holder" onchange="this.form.submit()" style="max-width:200px">
       <option value="">У всех</option><option value="stock" {% if holder == "stock" %}selected{% endif %}>На складе инструмента</option>
       {% for s in staff %}<option value="{{ s.id }}" {% if holder == s.id|string %}selected{% endif %}>{{ s.full_name }}</option>{% endfor %}</select>
@@ -19,12 +26,13 @@
         {% for t in rows %}
         <tr onclick="location.href='/tools/{{ t.id }}'" style="cursor:pointer">
           <td class="mono">{{ t.inv_no }}</td>
-          <td>{{ t.name }}{% if t.serial %}<div class="caption mono">S/N {{ t.serial }}</div>{% endif %}</td>
-          <td>{{ people[t.holder_id].short_name if t.holder_id in people else "склад" }}</td>
+          <td>{{ t.name }}<div class="caption"><span class="tag tool-cat" data-c="{{ t.cat }}">{{ TOOL_CATEGORIES[t.cat] }}</span>{% if t.serial %} <span class="mono">S/N {{ t.serial }}</span>{% endif %}</div></td>
+          <td>{{ people[t.holder_id].short_name if t.holder_id in people else "склад" }}
+            {% if t.work_order_id in wo_nums %}<div class="caption">под наряд {{ wo_nums[t.work_order_id] }}</div>{% endif %}</td>
           <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td>
           <td class="num">{{ "%.2f"|format(t.cost) }}</td>
         </tr>
-        {% else %}<tr><td colspan="5" class="footnote">Инструмента нет{% if q %} по запросу{% endif %}</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="5" class="footnote">Инструмента нет{% if q or cat %} по запросу{% endif %}</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
@@ -38,7 +46,11 @@
         <div class="form-row three"><input class="field mono" name="inv_no" placeholder="{{ next_inv }}" aria-label="Инвентарный номер">
           <input class="field mono" name="serial" placeholder="Серийный №"><input class="field" name="cost" inputmode="decimal" placeholder="Стоимость ₴"></div>
         <input class="field" name="description" placeholder="Состав набора, примечание">
-        <select class="field" name="holder_id"><option value="">На склад инструмента</option>{% for s in staff %}<option value="{{ s.id }}">Выдать: {{ s.full_name }}</option>{% endfor %}</select>
+        <select class="field" name="category" id="newcat" aria-label="Категория">
+          <option value="personal">Личный — числится за слесарем</option>
+          <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</optgroup></select>
+        <select class="field" name="holder_id" id="newholder"><option value="">На склад инструмента</option>{% for s in staff %}<option value="{{ s.id }}">Выдать: {{ s.full_name }}</option>{% endfor %}</select>
+        <p class="hint" id="newhint" hidden style="margin:0">Общий инструмент заводится на склад, выдаётся потом в наряде под конкретную работу.</p>
         <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photo" accept="image/*" hidden></label>
         <button class="btn btn-sm">Завести</button>
       </form>
@@ -60,4 +72,12 @@
   </section>
 </div>
 <script src="{{ asset('/static/js/photos.js') }}"></script>
+<script>
+(function () {  // «Выдать» при заведении — только для личного инструмента
+  const c = document.getElementById('newcat'), h = document.getElementById('newholder'), hint = document.getElementById('newhint');
+  if (!c) return;
+  function sync() { const p = c.value === 'personal'; h.hidden = !p; hint.hidden = p; if (!p) h.value = ''; }
+  c.addEventListener('change', sync); sync();
+})();
+</script>
 {% endblock %}

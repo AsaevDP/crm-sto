@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 
 from ..models import Tool, ToolCheck, ToolCheckLine, ToolMove, User
-from ..models.tools import CHECK_KINDS, CHECK_RESULTS, CHECK_STATUS, TOOL_STATUS
+from ..models.tools import CHECK_KINDS, CHECK_RESULTS, CHECK_STATUS, TOOL_CATEGORIES, TOOL_STATUS
 from ..services import orders as osvc
 from ..services import tools as svc
 from ..web import Ctx, Forbidden, flash, get_ctx
@@ -40,6 +40,33 @@ def _tool(ctx: Ctx, tid: str) -> Tool:
     return t
 
 
+def _target(ctx: Ctx, v: str):
+    """«wo:<id>» — весь наряд, «w:<id>» — конкретная работа. Возвращает (наряд, работа)."""
+    from ..models import WorkOrder, WoWork
+    kind, _, raw = v.partition(":")
+    if kind == "w":
+        w = ctx.db.get(WoWork, _uuid(raw))
+        wo = ctx.db.get(WorkOrder, w.work_order_id) if w else None
+        return (wo, w) if wo and wo.branch_id == ctx.branch.id else (None, None)
+    if kind == "wo":
+        wo = ctx.db.get(WorkOrder, _uuid(raw))
+        return (wo, None) if wo and wo.branch_id == ctx.branch.id else (None, None)
+    return None, None
+
+
+def _active_orders(ctx: Ctx):
+    """Наряды на СТО и их работы — для выдачи общего инструмента."""
+    from ..models import Vehicle, WorkOrder, WoWork
+    from ..models.orders import WO_ACTIVE
+    orders = ctx.db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE))
+                            .order_by(WorkOrder.created_at.desc())).all()
+    vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
+    works = {}
+    for w in ctx.db.scalars(select(WoWork).where(WoWork.work_order_id.in_([o.id for o in orders])).order_by(WoWork.created_at)):
+        works.setdefault(w.work_order_id, []).append(w)
+    return [(o, vehicles.get(o.vehicle_id), works.get(o.id, [])) for o in orders]
+
+
 async def _photo_from(form) -> str | None:
     f = form.get("photo")
     if f is not None and hasattr(f, "read"):
@@ -50,12 +77,22 @@ async def _photo_from(form) -> str | None:
 
 # ---------- Список ----------
 @router.get("/tools")
-def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = ""):
+def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = "", cat: str = ""):
     ctx.need("tools.view", "tools.view_own")
     if not ctx.can("tools.view"):
         return _to(f"/tools/staff/{ctx.user.id}")
     db = ctx.db
     query = select(Tool).where(Tool.branch_id == ctx.branch.id, Tool.status != "written_off")
+    all_rows = db.scalars(query).all()
+    cat_counts = {}
+    for t in all_rows:
+        cat_counts[t.cat] = cat_counts.get(t.cat, 0) + 1
+    if cat == "shared":
+        query = query.where(~svc.personal_filter())
+    elif cat == "personal":
+        query = query.where(svc.personal_filter())
+    elif cat in TOOL_CATEGORIES:
+        query = query.where(Tool.category == cat)
     if holder == "stock":
         query = query.where(Tool.holder_id.is_(None))
     elif holder:
@@ -73,9 +110,14 @@ def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = ""):
         summary[t.holder_id] = (n + 1, s + t.cost)
     pending = db.scalars(select(ToolCheck).where(ToolCheck.branch_id == ctx.branch.id, ToolCheck.status != "approved")
                          .order_by(ToolCheck.created_at.desc())).all()
-    return ctx.render("tools/list.html", title="Инструмент", rows=rows, q=q, holder=holder, staff=staff, people=people,
-                      summary=summary, pending=pending, TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS,
-                      CHECK_STATUS=CHECK_STATUS, next_inv=svc.next_inv_no(db, ctx.branch.id))
+    from ..models import WorkOrder
+    wo_nums = {o.id: o.number for o in db.scalars(select(WorkOrder).where(
+        WorkOrder.id.in_([t.work_order_id for t in rows if t.work_order_id])))}
+    return ctx.render("tools/list.html", title="Инструмент", rows=rows, q=q, holder=holder, cat=cat, staff=staff,
+                      people=people, summary=summary, pending=pending, TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS,
+                      CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES, cat_counts=cat_counts,
+                      n_all=len(all_rows), n_personal=cat_counts.get("personal", 0), wo_nums=wo_nums,
+                      next_inv=svc.next_inv_no(db, ctx.branch.id))
 
 
 @router.post("/tools")
@@ -90,15 +132,16 @@ async def tool_add(request: Request, ctx: Ctx = Depends(get_ctx)):
     if ctx.db.scalar(select(Tool.id).where(Tool.branch_id == ctx.branch.id, Tool.inv_no == inv)):
         flash(request, f"Инвентарный номер {inv} уже занят", "error")
         return _to("/tools")
+    category = str(form.get("category", "personal"))
     t = Tool(inv_no=inv, name=name[:200], serial=str(form.get("serial", "")).strip()[:80],
              description=str(form.get("description", "")).strip(), cost=_dec(form.get("cost")),
-             photo=(await _photo_from(form)) or "")
+             photo=(await _photo_from(form)) or "", category=category if category in TOOL_CATEGORIES else "personal")
     ctx.db.add(t)
     ctx.db.flush()
     holder = form.get("holder_id")
     u = ctx.db.get(User, _uuid(str(holder))) if holder else None
-    if u and u.branch_id == ctx.branch.id:
-        svc.move(ctx.db, t, u, "Выдан при заведении")
+    if u and u.branch_id == ctx.branch.id and t.is_personal:  # общий — на склад, выдаётся потом под наряд
+        svc.move(ctx.db, t, u, "Личный инструмент: выдан при заведении")
     ctx.db.commit()
     flash(request, f"Инструмент {t.inv_no} заведён")
     return _to(f"/tools/{t.id}")
@@ -114,8 +157,16 @@ def tool_view(tid: str, ctx: Ctx = Depends(get_ctx)):
     checks = db.execute(select(ToolCheckLine, ToolCheck).join(ToolCheck, ToolCheck.id == ToolCheckLine.check_id)
                         .where(ToolCheckLine.tool_id == t.id).order_by(ToolCheck.created_at.desc())).all()
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    from ..models import WorkOrder, WoWork
+    wo_ids = {m.work_order_id for m in moves if m.work_order_id} | ({t.work_order_id} if t.work_order_id else set())
+    wo_nums = {o.id: o.number for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_(list(wo_ids))))}
+    work_names = {w.id: w.name for w in db.scalars(select(WoWork).where(WoWork.id.in_(
+        [x for x in [t.wo_work_id, *[m.wo_work_id for m in moves]] if x])))}
     return ctx.render("tools/view.html", title=t.name, t=t, moves=moves, checks=checks, people=people, staff=_staff(ctx),
-                      TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS, CHECK_RESULTS=CHECK_RESULTS)
+                      TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS, CHECK_RESULTS=CHECK_RESULTS,
+                      TOOL_CATEGORIES=TOOL_CATEGORIES, wo_nums=wo_nums, work_names=work_names,
+                      active_orders=_active_orders(ctx) if ctx.can("tools.manage") and not t.is_personal else [],
+                      fmt_plate=osvc.fmt_plate)
 
 
 @router.post("/tools/{tid}")
@@ -124,10 +175,20 @@ async def tool_edit(tid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     t = _tool(ctx, tid)
     form = await request.form()
     action = str(form.get("action", "save"))
+    back = str(form.get("back", ""))
+    back = back if back.startswith("/") and not back.startswith("//") else f"/tools/{tid}"
     if action == "move":
         u = ctx.db.get(User, _uuid(str(form.get("to_user")))) if form.get("to_user") else None
-        svc.move(ctx.db, t, u if u and u.branch_id == ctx.branch.id else None, str(form.get("comment", "")))
+        u = u if u and u.branch_id == ctx.branch.id else None
+        wo, work = _target(ctx, str(form.get("target", "")))
+        if u and not t.is_personal and not wo:
+            flash(request, "Общий инструмент выдаётся под наряд — выберите наряд или работу", "error")
+            return _to(back)
+        svc.move(ctx.db, t, u, str(form.get("comment", "")) or (f"Под наряд {wo.number}" if wo else ""),
+                 wo=None if t.is_personal else wo, work=None if t.is_personal else work)
         flash(request, f"Выдан: {u.full_name}" if u else "Возвращён на склад инструмента")
+        ctx.db.commit()
+        return _to(back)
     elif action == "writeoff":
         ctx.db.add(ToolMove(tool_id=t.id, kind="writeoff", from_user=t.holder_id, comment=str(form.get("comment", ""))[:500]))
         t.status, t.holder_id = "written_off", None
@@ -137,6 +198,10 @@ async def tool_edit(tid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         t.serial = str(form.get("serial", "")).strip()[:80]
         t.description = str(form.get("description", "")).strip()
         t.cost = _dec(form.get("cost"))
+        if form.get("category") in TOOL_CATEGORIES:
+            t.category = str(form.get("category"))
+            if t.is_personal:
+                t.work_order_id = t.wo_work_id = None
         if form.get("status") in TOOL_STATUS and form.get("status") != "written_off":
             t.status = str(form.get("status"))
         photo = await _photo_from(form)
@@ -165,9 +230,16 @@ def staff_tools(uid: str, ctx: Ctx = Depends(get_ctx)):
         raise Forbidden()
     tools = svc.holding(ctx.db, u.id)
     checks = ctx.db.scalars(select(ToolCheck).where(ToolCheck.user_id == u.id).order_by(ToolCheck.created_at.desc())).all()
+    from ..models import Vehicle, WorkOrder, WoWork
+    temp = [t for t in tools if not t.is_personal]
+    orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([t.work_order_id for t in temp if t.work_order_id])))}
+    vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
+    work_names = {w.id: w.name for w in ctx.db.scalars(select(WoWork).where(WoWork.id.in_([t.wo_work_id for t in temp if t.wo_work_id])))}
     return ctx.render("tools/staff.html", title=f"Инструмент: {u.full_name}", u=u, tools=tools, checks=checks,
-                      total=sum((t.cost for t in tools), Decimal(0)), TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS,
-                      CHECK_STATUS=CHECK_STATUS, is_me=u.id == ctx.user.id)
+                      personal=[t for t in tools if t.is_personal], temp=temp, orders=orders, vehicles=vehicles,
+                      work_names=work_names, total=sum((t.cost for t in tools), Decimal(0)), TOOL_STATUS=TOOL_STATUS,
+                      CHECK_KINDS=CHECK_KINDS, CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES,
+                      fmt_plate=osvc.fmt_plate, is_me=u.id == ctx.user.id)
 
 
 @router.post("/tools/staff/{uid}/checks")

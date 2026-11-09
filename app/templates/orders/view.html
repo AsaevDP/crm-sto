@@ -40,6 +40,38 @@
 
     {% include "orders/_works.html" %}
 
+    {% if wo_tools or can_issue_tool %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Инструмент под наряд · {{ wo_tools|length }}</span></div>
+      {% for t in wo_tools %}{% set h = tool_holders.get(t.holder_id) %}{% set w = works_by_id.get(t.wo_work_id) %}
+      <div class="kv tool-kv">
+        <span><a href="/tools/{{ t.id }}">{{ t.name }}</a> <span class="caption mono">{{ t.inv_no }}</span>
+          <div class="caption">{{ h.full_name if h else "" }}{% if w %} · {{ w.name }}{% endif %}</div></span>
+        {% if ctx.can("tools.manage") %}
+        <form method="post" action="/tools/{{ t.id }}"><input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/orders/{{ wo.id }}">
+          <button class="btn btn-plain btn-sm">Вернуть</button></form>
+        {% endif %}
+      </div>
+      {% else %}<p class="footnote" style="margin:0">Общий инструмент под этот наряд не выдавался.</p>{% endfor %}
+      {% if can_issue_tool %}
+      <details class="add-finding">
+        <summary class="btn btn-sm btn-tinted btn-block">{{ icon("plus") }}Выдать инструмент</summary>
+        <form class="form dense" method="post" action="/orders/{{ wo.id }}/tools" style="margin-top:8px">
+          <select class="field" name="tool_id" required aria-label="Инструмент"><option value="">Инструмент со склада…</option>
+            {% for t in free_tools %}<option value="{{ t.id }}">{{ TOOL_CATEGORIES[t.cat] }} · {{ t.name }} ({{ t.inv_no }})</option>{% endfor %}</select>
+          <div class="form-row">
+            <select class="field" name="user_id" required aria-label="Кому">{% for u in tool_staff %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select>
+            <select class="field" name="work_id" aria-label="Под какую работу"><option value="">Весь наряд</option>
+              {% for w in works %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}</select>
+          </div>
+          <button class="btn btn-sm">Выдать</button>
+          {% if not free_tools %}<p class="hint" style="margin:0">На складе нет свободного общего инструмента.</p>{% endif %}
+        </form>
+      </details>
+      {% endif %}
+    </div>
+    {% endif %}
+
     <div class="card compact">
       <div class="card-h"><span class="headline">Акт приёма</span></div>
       <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>

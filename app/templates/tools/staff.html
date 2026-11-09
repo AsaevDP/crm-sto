@@ -5,7 +5,7 @@
   {% if ctx.can("tools.view") %}<a class="back" href="/tools">{{ icon("back") }}Инструмент</a>{% endif %}
   <div class="ov-title">
     <div><h1 class="title-1">{{ "Мой инструмент" if is_me else u.full_name }}</h1>
-      <div class="subhead">{{ u.role.name }} · числится {{ tools|length }} шт на {{ "{:,.2f}".format(total).replace(",", " ") }} ₴</div></div>
+      <div class="subhead">{{ u.role.name }} · числится {{ tools|length }} шт на {{ "{:,.2f}".format(total).replace(",", " ") }} ₴{% if temp %} · из них временно под наряд: {{ temp|length }}{% endif %}</div></div>
     {% if ctx.can("tools.manage") %}
     <form class="ov-actions" method="post" action="/tools/staff/{{ u.id }}/checks">
       <select class="field" name="kind" style="max-width:240px">{% for k, v in CHECK_KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
@@ -13,17 +13,33 @@
     {% endif %}
   </div>
 </header>
-<div class="cl-grid fill">
+<div class="cl-grid fill tools-grid">
   <section class="ov-col on">
     <div class="tablewrap">
       <table class="table">
-        <thead><tr><th>Инв. №</th><th>Инструмент</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
+        <thead><tr><th colspan="4" class="tbl-group">Личный инструмент · {{ personal|length }} <span class="caption">— выдан при приёме на работу, числится постоянно</span></th></tr>
+          <tr><th>Инв. №</th><th>Инструмент</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
         <tbody>
-        {% for t in tools %}
+        {% for t in personal %}
         <tr onclick="location.href='/tools/{{ t.id }}'" style="cursor:pointer"><td class="mono">{{ t.inv_no }}</td>
           <td>{{ t.name }}{% if t.serial %}<div class="caption mono">S/N {{ t.serial }}</div>{% endif %}</td>
           <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td><td class="num">{{ "%.2f"|format(t.cost) }}</td></tr>
-        {% else %}<tr><td colspan="4" class="footnote">За сотрудником инструмент не числится</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="4" class="footnote">Личного инструмента нет</td></tr>{% endfor %}
+        </tbody>
+        <thead><tr><th colspan="4" class="tbl-group">Временно, под наряд · {{ temp|length }} <span class="caption">— общий инструмент, вернуть на склад</span></th></tr>
+          <tr><th>Инв. №</th><th>Инструмент</th><th>Наряд / работа</th><th class="num">{% if ctx.can("tools.manage") %}{% else %}Стоимость{% endif %}</th></tr></thead>
+        <tbody>
+        {% for t in temp %}{% set o = orders.get(t.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else none %}
+        <tr><td class="mono"><a href="/tools/{{ t.id }}">{{ t.inv_no }}</a></td>
+          <td>{{ t.name }}<div class="caption">{{ TOOL_CATEGORIES[t.cat] }}</div></td>
+          <td>{% if o %}<a href="/orders/{{ o.id }}" class="nowrap">{{ o.number }}</a>{% if v %} <span class="caption nowrap">{{ v.make }} {{ fmt_plate(v.plate) }}</span>{% endif %}
+            {% if o.status in ("closed", "cancel") %}<div class="caption" style="color:var(--orange)">наряд закрыт, инструмент не сдан</div>{% endif %}
+            {% if t.wo_work_id in work_names %}<div class="caption">{{ work_names[t.wo_work_id] }}</div>{% endif %}{% else %}—{% endif %}</td>
+          <td class="num">{% if ctx.can("tools.manage") %}
+            <form method="post" action="/tools/{{ t.id }}"><input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/tools/staff/{{ u.id }}">
+              <button class="btn btn-sm btn-tinted">Вернуть</button></form>
+            {% else %}{{ "%.2f"|format(t.cost) }}{% endif %}</td></tr>
+        {% else %}<tr><td colspan="4" class="footnote">Временно выданного нет</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
@@ -35,7 +51,7 @@
       <a class="kv link" href="/tools/checks/{{ c.id }}"><span>{{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · {{ CHECK_KINDS[c.kind] }}</span><b>{{ CHECK_STATUS[c.status] }}</b></a>
       {% else %}<p class="footnote" style="margin:0">Проверок не было</p>{% endfor %}
     </div>
-    <p class="hint">Проверка — при приёме на работу, при увольнении и плановая. Сломан по вине или утерян — удержание из зарплаты (решает главный админ), естественный износ — без удержания.</p>
+    <p class="hint">Личный инструмент выдаётся при приёме на работу. Общий (ТО, двигатель, ходовая и др.) — временно, под наряд и работу; наряд можно закрыть без возврата, инструмент останется числиться здесь. Проверка — при приёме, при увольнении и плановая.</p>
   </section>
 </div>
 {% endblock %}

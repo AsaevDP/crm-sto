@@ -217,7 +217,45 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         partsmen=svc.staff_by_role(db, ctx.branch.id, "partsman") if can_assign else [],
         mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if can_assign else [],
         lifts=svc.lifts_with_load(db, ctx.branch.id) if can_assign else [],
+        **_order_tools(ctx, wo, works),
     )
+
+
+def _order_tools(ctx: Ctx, wo, works) -> dict:
+    """Общий инструмент под этот наряд: что выдано и (кладовщику) — что можно выдать."""
+    from ..models.tools import TOOL_CATEGORIES
+    from ..services import tools as tsvc
+    if not ctx.can("tools.view", "tools.manage", "tools.view_own", "orders.view_all"):
+        return {"wo_tools": [], "can_issue_tool": False}
+    can_issue = ctx.can("tools.manage") and wo.status in WO_ACTIVE
+    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True))
+                           .order_by(User.full_name)).all() if can_issue else []
+    holders = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    return {"wo_tools": tsvc.for_order(ctx.db, wo.id), "can_issue_tool": can_issue,
+            "free_tools": tsvc.available_shared(ctx.db, ctx.branch.id) if can_issue else [],
+            "tool_staff": staff, "tool_holders": holders, "TOOL_CATEGORIES": TOOL_CATEGORIES,
+            "works_by_id": {w.id: w for w in works}}
+
+
+@router.post("/orders/{order_id}/tools")
+def order_tool_issue(order_id: str, ctx: Ctx = Depends(get_ctx), tool_id: str = Form(...), user_id: str = Form(...),
+                     work_id: str = Form("")):
+    """Кладовщик выдаёт общий инструмент под этот наряд (и работу) — временно, до возврата."""
+    ctx.need("tools.manage")
+    wo = _order(ctx, order_id)
+    from ..models import Tool
+    from ..services import tools as tsvc
+    t = ctx.db.get(Tool, _uuid(tool_id))
+    u = ctx.db.get(User, _uuid(user_id))
+    w = ctx.db.get(WoWork, _uuid(work_id)) if work_id else None
+    if (not t or t.branch_id != ctx.branch.id or t.holder_id or t.is_personal or not u or u.branch_id != ctx.branch.id
+            or not u.active or (w and w.work_order_id != wo.id)):
+        flash(ctx.request, "Не получилось выдать: проверьте инструмент и сотрудника", "error")
+    else:
+        tsvc.move(ctx.db, t, u, f"Под наряд {wo.number}" + (f": {w.name}" if w else ""), wo=wo, work=w)
+        ctx.db.commit()
+        flash(ctx.request, f"{t.name} выдан: {u.full_name}")
+    return RedirectResponse(f"/orders/{wo.id}", status_code=303)
 
 
 @router.post("/orders/{order_id}/assign")

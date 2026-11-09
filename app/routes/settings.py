@@ -259,7 +259,10 @@ def user_view(user_id: str, ctx: Ctx = Depends(get_ctx)):
     role_perms = set(ctx.db.scalars(select(RolePermission.permission).where(RolePermission.role_id == u.role_id)))
     overrides = {p.permission: p.allow for p in ctx.db.scalars(select(UserPermission).where(UserPermission.user_id == u.id))}
     cards = ctx.db.scalars(select(StaffCard).where(StaffCard.user_id == u.id).order_by(StaffCard.created_at)).all()
+    from ..services.tools import holding
+    held = holding(ctx.db, u.id)
     return ctx.render("settings/user.html", title=u.full_name, u=u, roles=roles, groups=_perm_groups(ctx),
+                      n_tools=len(held), n_tools_temp=sum(1 for t in held if not t.is_personal),
                       role_perms=role_perms, overrides=overrides, cards=cards,
                       effective=effective_permissions(ctx.db, u), is_admin=u.role.code == ADMIN_ROLE)
 

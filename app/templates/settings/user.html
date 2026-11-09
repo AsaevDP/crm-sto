@@ -4,6 +4,7 @@
   <div><a class="back" href="/settings/users{{ '' if u.active else '?tab=archive' }}">{{ icon("back") }}{{ "Сотрудники" if u.active else "Архив" }}</a><h1 class="large-title">{{ u.full_name }}</h1></div>
   <div class="ov-actions">
     <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print" target="_blank">🖨 Папка сотрудника</a>
+    {% if ctx.can("tools.view") %}<a class="btn btn-sm btn-gray" href="/tools/staff/{{ u.id }}">🔧 Инструмент · {{ n_tools }}{% if n_tools_temp %} ({{ n_tools_temp }} врем.){% endif %}</a>{% endif %}
     {% if user.role.code == "admin" and u.id != user.id and u.active %}
     <form method="post" action="/view-as/{{ u.id }}"><button class="btn btn-sm btn-tinted">👁 Его глазами</button></form>
     {% endif %}

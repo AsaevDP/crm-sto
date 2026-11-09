@@ -343,13 +343,28 @@ def populate():
         for login in ("andrey", "sergey", "viktor", "taras", "igor", "roman"):
             for name, cost, desc in kit[: 6 if login in ("andrey", "taras") else 4]:
                 n += 1
-                t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), description=desc)
+                t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), description=desc,
+                         category="personal")
                 db.add(t)
                 db.flush()
-                tsvc.move(db, t, users[login], "Выдан при приёме на работу")
-        for name, cost in (("Тестер аккумуляторов", "2300"), ("Компрессометр бензиновый", "1250"), ("Эндоскоп автомобильный", "1900")):
+                tsvc.move(db, t, users[login], "Личный инструмент: выдан при приёме на работу")
+        # Общий инструмент — на складе, выдаётся под наряд (решение владельца 09.11.2026)
+        shared = {}
+        for name, cost, cat in (("Тестер аккумуляторов", "2300", "electric"), ("Компрессометр бензиновый", "1250", "engine"),
+                                ("Эндоскоп автомобильный", "1900", "electric"), ("Ключ для масляных фильтров (краб)", "450", "to"),
+                                ("Стяжки пружин (пара)", "1600", "chassis"), ("Съёмник ступиц универсальный", "3200", "pullers"),
+                                ("Сепаратор тормозных цилиндров", "700", "brakes"), ("Гайковёрт аккумуляторный 1/2\"", "6800", "pneumo"),
+                                ("Мультиметр", "950", "measure"), ("Фиксатор распредвалов (набор)", "2100", "engine")):
             n += 1
-            db.add(Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost)))
+            t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), category=cat)
+            db.add(t)
+            shared[name] = t
+        db.flush()
+        # Андрей взял стяжки и съёмник под работы по Hyundai; Виктор не сдал мультиметр после закрытого наряда
+        hy_works = db.scalars(select(WoWork).where(WoWork.work_order_id == hy.id).order_by(WoWork.created_at)).all()
+        tsvc.move(db, shared["Стяжки пружин (пара)"], users["andrey"], f"Под наряд {hy.number}", wo=hy, work=hy_works[0])
+        tsvc.move(db, shared["Съёмник ступиц универсальный"], users["andrey"], f"Под наряд {hy.number}", wo=hy)
+        tsvc.move(db, shared["Мультиметр"], users["viktor"], f"Под наряд {done_wo.number}", wo=done_wo)
         db.flush()
         # Виктор: проверка при приёме — всё исправно
         c1 = tsvc.open_check(db, users["viktor"], "hire")

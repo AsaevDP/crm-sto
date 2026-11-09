@@ -33,13 +33,38 @@ def save_photo(data: bytes) -> str:
     return f"tools/{name}"
 
 
-def move(db: Session, tool: Tool, to_user: User | None, comment: str = ""):
-    """Выдать сотруднику (to_user) или вернуть на склад инструмента (None)."""
-    if tool.holder_id == (to_user.id if to_user else None):
+def move(db: Session, tool: Tool, to_user: User | None, comment: str = "", wo=None, work=None):
+    """Выдать сотруднику (to_user) или вернуть на склад инструмента (None).
+    Общий (не личный) инструмент выдаётся под наряд wo и, по желанию, конкретную работу work."""
+    wo_id = wo.id if (to_user and wo) else None
+    work_id = work.id if (to_user and work) else None
+    if tool.holder_id == (to_user.id if to_user else None) and tool.work_order_id == wo_id and tool.wo_work_id == work_id:
         return
     db.add(ToolMove(tool_id=tool.id, kind="issue" if to_user else "return", from_user=tool.holder_id,
-                    to_user=to_user.id if to_user else None, comment=comment.strip()[:500]))
+                    to_user=to_user.id if to_user else None, comment=comment.strip()[:500],
+                    work_order_id=wo_id or (tool.work_order_id if not to_user else None),
+                    wo_work_id=work_id or (tool.wo_work_id if not to_user else None)))
     tool.holder_id = to_user.id if to_user else None
+    tool.work_order_id, tool.wo_work_id = wo_id, work_id
+
+
+def personal_filter():
+    """Условие «личный инструмент» (у старого инструмента категории нет — он личный)."""
+    from sqlalchemy import or_
+    return or_(Tool.category == "personal", Tool.category.is_(None), Tool.category == "")
+
+
+def for_order(db: Session, wo_id) -> list[Tool]:
+    """Общий инструмент, который сейчас числится под этот наряд."""
+    return db.scalars(select(Tool).where(Tool.work_order_id == wo_id, Tool.holder_id.is_not(None))
+                      .order_by(Tool.inv_no)).all()
+
+
+def available_shared(db: Session, branch_id) -> list[Tool]:
+    """Общий инструмент на складе — можно выдать под наряд."""
+    return db.scalars(select(Tool).where(Tool.branch_id == branch_id, Tool.holder_id.is_(None),
+                                         Tool.status.in_(("ok", "worn")), ~personal_filter())
+                      .order_by(Tool.category, Tool.name)).all()
 
 
 def holding(db: Session, user_id) -> list[Tool]:

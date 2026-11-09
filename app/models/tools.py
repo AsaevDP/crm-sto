@@ -14,10 +14,21 @@ TOOL_STATUS = {"ok": "Исправен", "worn": "Износ", "broken": "Сло
 CHECK_KINDS = {"hire": "При приёме на работу", "dismissal": "При увольнении", "planned": "Плановая"}
 CHECK_RESULTS = {"ok": "Исправен", "worn": "Естественный износ", "fault": "Сломан по вине", "lost": "Утерян"}
 CHECK_STATUS = {"draft": "Идёт проверка", "done": "Ждёт решения админа", "approved": "Закрыта"}
+# Категории (решение владельца 09.11.2026). «Личный» выдаётся слесарю при приёме на работу и числится за ним;
+# остальной — общий: выдаётся временно под конкретный наряд и работу, потом возвращается на склад инструмента.
+TOOL_CATEGORIES = {
+    "personal": "Личный", "to": "Для ТО", "engine": "Двигатель", "chassis": "Ходовая", "brakes": "Тормоза",
+    "electric": "Электрика и диагностика", "tires": "Шиномонтаж и развал", "body": "Кузов",
+    "pneumo": "Пневмо и гайковёрты", "pullers": "Спецсъёмники", "measure": "Измерительный", "other": "Прочее",
+}
 
 
 class Tool(Entity):
     __tablename__ = "tools"
+    category: Mapped[str | None] = mapped_column(String(20), default="personal", nullable=True)  # TOOL_CATEGORIES
+    # Общий инструмент, выданный временно: под какой наряд и какую работу (пусто — не выдан / личный)
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
+    wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)
     inv_no: Mapped[str] = mapped_column(String(40), index=True)       # инвентарный номер (И-0001)
     serial: Mapped[str] = mapped_column(String(80), default="")       # серийный номер производителя
     name: Mapped[str] = mapped_column(String(200))
@@ -26,6 +37,15 @@ class Tool(Entity):
     photo: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(12), default="ok")
     holder_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # пусто = склад
+
+    @property
+    def cat(self) -> str:
+        """Категория; у инструмента, заведённого до 10.11.2026, её нет — считаем личным."""
+        return self.category if self.category in TOOL_CATEGORIES else "personal"
+
+    @property
+    def is_personal(self) -> bool:
+        return self.cat == "personal"
 
 
 class ToolMove(Entity):
@@ -36,6 +56,8 @@ class ToolMove(Entity):
     from_user: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     to_user: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     comment: Mapped[str] = mapped_column(Text, default="")
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
+    wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)
 
 
 class ToolCheck(Entity):
