@@ -23,7 +23,7 @@ def test_client_tabs_sort_regular(client):
     _create(client, plate="AA4040KL", phone="0674440000", make="Nissan", model="Leaf")
 
     page = client.get("/clients").text
-    assert "Постоянные · " in page and "Должники · " in page and "Давно не были · " in page
+    assert "Постоянные · " in page and "Должники · " in page and "Давно · " in page
     reg = client.get("/clients?tab=regular").text
     c3 = _client("0673330000")
     c1 = _client("0674440000")
