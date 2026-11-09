@@ -1,34 +1,84 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
-<header class="page-head">
-  <div><p class="footnote">Последние 300 действий</p><h1 class="large-title">Журнал</h1></div>
+{% set qs = flt.query_string() %}
+<header class="ov-head">
+  <div class="ov-title">
+    <div><h1 class="title-1">Журнал</h1>
+      <div class="subhead">{{ chosen.full_name if chosen else ("Система" if flt.user == "system" else "Все сотрудники") }} · {{ total if not flt.user else counts.get(chosen.id if chosen else none, 0) }} действий</div></div>
+    <div class="ov-actions">
+      <a class="btn btn-sm btn-gray" href="/audit/print?{{ qs }}" target="_blank">🖨 Печать</a>
+      <a class="btn btn-sm btn-gray" href="/audit/export.xlsx?{{ qs }}">⬇ Excel</a>
+    </div>
+  </div>
 </header>
-<div class="tablewrap fill scroll">
-  <table class="table">
-    <thead><tr><th>Когда</th><th>Кто</th><th>Действие</th><th>Что</th><th>Изменения</th></tr></thead>
-    <tbody>
-    {% for r in rows %}
-      {% set who = users.get(r.created_by) %}
-      <tr>
-        <td class="footnote" style="white-space:nowrap">{{ r.created_at.astimezone().strftime("%d.%m %H:%M:%S") }}</td>
-        <td style="white-space:nowrap">{{ who.full_name if who else "система" }}</td>
-        <td>{{ ACTIONS.get(r.action, r.action) }}</td>
-        <td><span class="tag">{{ TABLE_NAMES.get(r.table, r.table) }}</span></td>
-        <td class="changes">
-          {% if r.action == "update" %}
-            {% for k, v in r.changes.items() %}<div><b>{{ FIELD_NAMES.get(k, k) }}</b>: {{ v[0] if v[0] is not none else "—" }} → {{ v[1] if v[1] is not none else "—" }}</div>{% endfor %}
-          {% elif r.action in ("login", "logout") %}
-            {% for k, v in r.changes.items() %}{{ k }}: {{ v }}{% endfor %}
-          {% else %}
-            {% for k in CREATE_FIELDS %}{% if r.changes.get(k) %}<div><b>{{ FIELD_NAMES.get(k, k) }}</b>: {{ r.changes[k] }}</div>{% endif %}{% endfor %}
-          {% endif %}
-        </td>
-      </tr>
-    {% else %}
-      <tr><td colspan="5" class="footnote">Пока пусто</td></tr>
+
+<form class="audit-bar" method="get" action="/audit">
+  <nav class="segmented" aria-label="Период">
+    {% for k, v in PERIODS.items() %}<a href="/audit?{{ flt.query_string(period=k, f='', t='') }}" aria-pressed="{{ (flt.period == k and not flt.f and not flt.t)|lower }}">{{ v }}</a>{% endfor %}
+  </nav>
+  <input type="hidden" name="period" value="{{ flt.period }}">
+  <select class="field audit-mobile" name="user" onchange="this.form.submit()" aria-label="Сотрудник">
+    <option value="">Все сотрудники</option>
+    {% for u in staff %}<option value="{{ u.id }}" {% if flt.user == u.id|string %}selected{% endif %}>{{ u.full_name }} · {{ counts.get(u.id, 0) }}</option>{% endfor %}
+    {% if counts.get(none) %}<option value="system" {% if flt.user == "system" %}selected{% endif %}>Система · {{ counts.get(none) }}</option>{% endif %}
+  </select>
+  <select class="field" name="section" onchange="this.form.submit()" aria-label="Раздел">
+    <option value="">Все разделы</option>
+    {% for k, (name, _) in SECTIONS.items() %}<option value="{{ k }}" {% if flt.section == k %}selected{% endif %}>{{ name }}</option>{% endfor %}
+  </select>
+  <select class="field" name="action" onchange="this.form.submit()" aria-label="Действие">
+    <option value="">Все действия</option>
+    {% for k, v in ACTION_FILTERS.items() %}<option value="{{ k }}" {% if flt.action == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+  </select>
+  <label class="audit-dates">с <input class="field" type="date" name="f" value="{{ flt.f }}" onchange="this.form.submit()">
+    по <input class="field" type="date" name="t" value="{{ flt.t }}" onchange="this.form.submit()"></label>
+  <noscript><button class="btn btn-sm">Показать</button></noscript>
+</form>
+
+<div class="audit-grid fill">
+  <nav class="group audit-people" aria-label="Сотрудники">
+    <a class="row" href="/audit?{{ flt.query_string(user='') }}" {% if not flt.user %}aria-current="page"{% endif %}>
+      <span class="avatar" style="--accent:var(--gray)">∑</span><span class="grow">Все сотрудники</span><span class="badge-n">{{ total }}</span></a>
+    {% for u in staff %}
+    <a class="row" href="/audit?{{ flt.query_string(user=u.id|string) }}" {% if flt.user == u.id|string %}aria-current="page"{% endif %}>
+      <span class="avatar" style="{{ '--accent:' ~ color_css(u.role.color) }}">{{ u.initials }}</span>
+      <span class="grow">{{ u.full_name }}<div class="caption">{{ u.role.name }}{% if not u.active %} · уволен{% endif %}</div></span>
+      <span class="badge-n {% if not counts.get(u.id) %}zero{% endif %}">{{ counts.get(u.id, 0) }}</span></a>
     {% endfor %}
-    </tbody>
-  </table>
+    {% if counts.get(none) %}
+    <a class="row" href="/audit?{{ flt.query_string(user='system') }}" {% if flt.user == "system" %}aria-current="page"{% endif %}>
+      <span class="avatar" style="--accent:var(--gray)">⚙</span><span class="grow">Система<div class="caption">автоматические записи</div></span>
+      <span class="badge-n">{{ counts.get(none) }}</span></a>
+    {% endif %}
+  </nav>
+
+  <section class="audit-feed">
+    {% for d, items in days %}
+    <div class="audit-day">{% set td = now_local().date() %}{{ "Сегодня" if d == td else ("Вчера" if (td - d).days == 1 else d.strftime("%d.%m.%Y")) }}</div>
+    {% for it in items %}
+    <article class="ev" data-a="{{ it.row.action }}">
+      <div class="ev-top">
+        <span class="ev-time">{{ it.row.created_at.astimezone().strftime("%H:%M") }}</span>
+        {% if not chosen %}<b class="ev-who">{{ it.who }}</b>{% endif %}
+        <span class="ev-verb">{{ it.verb }}</span>
+        <span class="ev-what">{{ it.what|lower if it.row.action in ("create", "update", "delete") else "" }}</span>
+        {% if it.target %}<b class="ev-target">{{ it.target }}</b>{% endif %}
+        {% if it.section %}<span class="ev-sec">{{ it.section }}</span>{% endif %}
+      </div>
+      {% if it.changes %}
+      <ul class="ev-ch">
+        {% for k, a, b in it.changes %}
+        <li><span class="ev-k">{{ k }}</span>{% if a is not none %}<s>{{ a }}</s><span class="ev-arrow">→</span>{% endif %}<b>{{ b }}</b></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </article>
+    {% endfor %}
+    {% else %}
+    <div class="card"><p class="footnote" style="margin:0">За выбранный период действий нет. Попробуйте «30 дней» или «Всё время».</p></div>
+    {% endfor %}
+    {% if more %}<div class="audit-more"><a class="btn btn-sm btn-tinted" href="/audit?{{ flt.query_string(limit=flt.limit + 150) }}">Показать ещё</a></div>{% endif %}
+  </section>
 </div>
 {% endblock %}

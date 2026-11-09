@@ -1,4 +1,6 @@
 """Главная, разделы-заготовки (наполняются на следующих шагах), пульт, журнал."""
+from datetime import date
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -75,39 +77,93 @@ def more(ctx: Ctx = Depends(get_ctx)):
     return ctx.render("more.html", title="Ещё")
 
 
-TABLE_NAMES = {
-    "users": "Сотрудник", "roles": "Роль", "role_permissions": "Право роли", "user_permissions": "Право сотрудника",
-    "settings": "Настройки", "staff_cards": "Карта", "work_orders": "Наряд", "lifts": "Подъёмник",
-    "clients": "Клиент", "vehicles": "Авто", "wo_photos": "Фото", "wo_works": "Работа", "wo_status_history": "Статус наряда",
-    "order_counters": "Счётчик номеров", "wo_findings": "Находка", "wo_parts": "Запчасть", "payments": "Оплата",
-}
-# Названия полей в журнале — по-русски
-FIELD_NAMES = {
-    "full_name": "ФИО", "name": "Название", "login": "Логин", "phone": "Телефон", "active": "Активен",
-    "role_id": "Роль", "permission": "Право", "allow": "Разрешено", "key": "Настройка", "value": "Значение",
-    "uid": "Номер карты", "label": "Подпись", "color": "Цвет", "password_hash": "Пароль", "pin_hash": "PIN",
-    "number": "Номер", "status": "Статус", "scenario": "Сценарий", "client_id": "Клиент", "vehicle_id": "Авто",
-    "manager_id": "Менеджер", "partsman_id": "Запчастист", "mechanic_id": "Слесарь", "lift_id": "Подъёмник",
-    "complaint": "Жалоба", "plate": "Госномер", "make": "Марка", "model": "Модель", "year": "Год", "vin": "VIN",
-    "mileage": "Пробег", "mileage_in": "Пробег на приёмке", "cancel_reason": "Причина отмены",
-    "fuel_level": "Топливо", "intake_items": "В машине", "intake_note": "Замечания", "to_status": "Новый статус",
-    "from_status": "Был статус", "comment": "Комментарий", "code": "Код", "last": "Последний номер", "year_": "Год",
-    "file": "Файл", "stage": "Этап", "notes": "Заметки", "work_order_id": "Наряд",
-    "hired_on": "Принят на работу", "dismissed_on": "Уволен", "dismiss_reason": "Причина увольнения",
-    "dismissed_by": "Кто уволил",
-}
-# Какие поля показывать в журнале при создании записи (остальное — служебное)
-CREATE_FIELDS = ("full_name", "name", "login", "permission", "key", "uid", "number", "plate", "make", "model",
-                 "phone", "to_status", "stage")
-ACTIONS = {"create": "создал", "update": "изменил", "delete": "удалил", "login": "вошёл", "logout": "вышел",
-           "view_as": "смотрел глазами", "view_as_stop": "вернулся к себе"}
+
+
+# ---------- Журнал действий ----------
+def _audit_filters(user: str, section: str, action: str, period: str, f: str, t: str, limit: int):
+    from ..services import audit_view as av
+    return av.Filters(user=user, section=section, action=action, period=period if period in av.PERIODS else "week",
+                      f=f, t=t, limit=max(av.PAGE, min(limit or av.PAGE, 3000)))
 
 
 @router.get("/audit")
-def audit_view(ctx: Ctx = Depends(get_ctx)):
+def audit_view(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
+               f: str = "", t: str = "", limit: int = 0):
+    """Журнал: слева сотрудники (сколько действий), справа лента карточек «было → стало», сверху фильтры."""
     ctx.need("audit.view")
-    rows = ctx.db.scalars(select(AuditLog).where(AuditLog.branch_id == ctx.branch.id)
-                          .order_by(AuditLog.created_at.desc()).limit(300)).all()
-    users = {u.id: u for u in ctx.db.scalars(select(User))}
-    return ctx.render("audit.html", title="Журнал", rows=rows, users=users, TABLE_NAMES=TABLE_NAMES, ACTIONS=ACTIONS,
-                      FIELD_NAMES=FIELD_NAMES, CREATE_FIELDS=CREATE_FIELDS)
+    from ..services import audit_view as av
+    flt = _audit_filters(user, section, action, period, f, t, limit)
+    rows, more = av.fetch(ctx.db, ctx.branch.id, flt)
+    counts = av.counts_by_user(ctx.db, ctx.branch.id, flt)
+    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id)
+                           .order_by(User.active.desc(), User.full_name)).all()
+    staff = [u for u in staff if u.active or counts.get(u.id)]
+    items = av.describe(ctx.db, rows)
+    days: list[tuple] = []
+    for it in items:
+        d = it.row.created_at.astimezone().date()
+        if not days or days[-1][0] != d:
+            days.append((d, []))
+        days[-1][1].append(it)
+    chosen = next((u for u in staff if str(u.id) == flt.user), None)
+    return ctx.render("audit.html", title="Журнал", flt=flt, days=days, more=more, counts=counts, staff=staff,
+                      total=sum(counts.values()), chosen=chosen, SECTIONS=av.SECTIONS, ACTION_FILTERS=av.ACTION_FILTERS,
+                      PERIODS=av.PERIODS, n=len(items))
+
+
+@router.get("/audit/print")
+def audit_print(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
+                f: str = "", t: str = ""):
+    ctx.need("audit.view")
+    from ..services import audit_view as av
+    flt = _audit_filters(user, section, action, period, f, t, 0)
+    rows, more = av.fetch(ctx.db, ctx.branch.id, flt, limit=2000)
+    chosen = ctx.db.get(User, _uid(flt.user)) if flt.user not in ("", "system") else None
+    return ctx.render("audit_print.html", title="Журнал действий", items=av.describe(ctx.db, rows), more=more,
+                      flt=flt, chosen=chosen, SECTIONS=av.SECTIONS, ACTION_FILTERS=av.ACTION_FILTERS, PERIODS=av.PERIODS,
+                      changes_text=av.changes_text)
+
+
+@router.get("/audit/export.xlsx")
+def audit_xlsx(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
+               f: str = "", t: str = ""):
+    """Выгрузка журнала в Excel (до 5000 строк) — браузер предложит сохранить файл на ПК."""
+    ctx.need("audit.view")
+    import io
+    from fastapi.responses import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from ..services import audit_view as av
+    flt = _audit_filters(user, section, action, period, f, t, 0)
+    rows, _ = av.fetch(ctx.db, ctx.branch.id, flt, limit=5000)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Журнал"
+    head = ["Дата", "Время", "Сотрудник", "Действие", "Раздел", "Что", "Объект", "Изменения"]
+    ws.append(head)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="EEEEF2")
+    for it in av.describe(ctx.db, rows):
+        at = it.row.created_at.astimezone()
+        ws.append([at.strftime("%d.%m.%Y"), at.strftime("%H:%M:%S"), it.who, it.verb, it.section, it.what, it.target,
+                   av.changes_text(it)])
+    for col, w in zip("ABCDEFGH", (11, 9, 24, 14, 20, 22, 30, 80)):
+        ws.column_dimensions[col].width = w
+    for r in ws.iter_rows(min_row=2, min_col=8, max_col=8):
+        r[0].alignment = Alignment(wrap_text=True, vertical="top")
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    d1, d2 = flt.dates()
+    name = f"zhurnal_{d1 or 'nachalo'}_{d2 or date.today()}.xlsx"
+    return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+def _uid(v: str):
+    import uuid
+    try:
+        return uuid.UUID(v)
+    except ValueError:
+        return None

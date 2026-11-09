@@ -1,0 +1,22 @@
+{% extends "_print_doc.html" %}
+{% block orient %}landscape{% endblock %}
+{% block sheet_w %}297mm{% endblock %}
+{% block back %}/audit?{{ flt.query_string() }}{% endblock %}
+{% block doc_title %}ЖУРНАЛ ДЕЙСТВИЙ{% endblock %}
+{% block subtitle %}{% set d1, d2 = flt.dates() %}{{ chosen.full_name if chosen else ("Система" if flt.user == "system" else "Все сотрудники") }}
+  · {{ (d1.strftime("%d.%m.%Y") if d1 else "с начала") }} — {{ (d2.strftime("%d.%m.%Y") if d2 else "сегодня") }}
+  {% if flt.section %} · {{ SECTIONS[flt.section][0] }}{% endif %}{% if flt.action %} · {{ ACTION_FILTERS[flt.action] }}{% endif %}{% endblock %}
+{% block body %}
+<table>
+  <thead><tr><th style="width:11%">Когда</th>{% if not chosen %}<th style="width:15%">Сотрудник</th>{% endif %}<th style="width:10%">Действие</th>
+    <th style="width:22%">Что</th><th>Изменения</th></tr></thead>
+  <tbody>
+  {% for it in items %}
+    <tr><td class="num" style="text-align:left">{{ it.row.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }}</td>
+      {% if not chosen %}<td>{{ it.who }}</td>{% endif %}<td>{{ it.verb }}</td>
+      <td>{{ it.what }}{% if it.target %}: <b>{{ it.target }}</b>{% endif %}</td><td>{{ changes_text(it) }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">Действий нет</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if more %}<p class="muted">Показаны последние 2000 действий. Сузьте период или выберите сотрудника.</p>{% endif %}
+{% endblock %}
