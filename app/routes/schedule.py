@@ -42,9 +42,11 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     editing = db.get(Appointment, _uuid(edit)) if edit else None
     if editing and editing.branch_id != bid:
         editing = None
+    colors = svc.mech_colors(osvc.staff_by_role(db, bid, "mechanic"))  # цвет мастера один и тот же у всех
+    own_lift = {l.mechanic_id: l for l in lifts if l.mechanic_id}
     base = dict(day=day, view=view, mechanics=mechanics, lifts=lifts, editing=editing, APPT_STATUS=APPT_STATUS,
                 fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, local=svc.local, WEEKDAYS=WEEKDAYS,
-                can_manage=ctx.can("schedule.manage"), today=date.today())
+                can_manage=ctx.can("schedule.manage"), today=date.today(), colors=colors, own_lift=own_lift)
     if view == "week":
         start = day - timedelta(days=day.weekday())
         days = [start + timedelta(days=i) for i in range(7)]
@@ -53,15 +55,25 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
         for a in appts:
             by_day.setdefault(svc.local(a.start_at).date(), []).append(a)
         people = {u.id: u for u in mechanics}
-        return ctx.render("schedule/index.html", title="Запись", days=days, by_day=by_day, people=people,
+        hours = {d: sum((a.duration_min or 0) for a in by_day.get(d, []) if a.status in ("booked", "arrived")) / 60 for d in days}
+        cap = max(1, len(mechanics)) * 11  # примерно часов работы всех мастеров в день
+        return ctx.render("schedule/index.html", title="Запись", days=days, by_day=by_day, people=people, hours=hours,
+                          load={d: min(100, round(hours[d] * 100 / cap)) for d in days},
                           prev=(start - timedelta(days=7)).isoformat(), next=(start + timedelta(days=7)).isoformat(), **base)
     appts = svc.between(db, bid, day, day, mechanic_id=mine)
     columns = [{"id": m.id, "title": m.short_name, "user": m} for m in mechanics]
-    if not mine:
-        columns.append({"id": None, "title": "Без мастера", "user": None})
+    if not mine and (any(a.mechanic_id is None for a in appts) or not columns):
+        columns.append({"id": None, "title": "Без мастера", "user": None})  # только если есть такие записи
     g = svc.grid(db, bid, day, columns, appts)
-    return ctx.render("schedule/index.html", title="Запись", columns=columns, g=g, appts=appts,
-                      people={m.id: m for m in mechanics},
+    load = svc.day_load(db, bid, day, columns, appts)
+    summary = {"all": len(appts), "arrived": sum(a.status == "arrived" for a in appts),
+               "noshow": sum(a.status == "noshow" for a in appts), "booked": sum(a.status == "booked" for a in appts)}
+    tomorrow = []
+    if ctx.can("schedule.manage"):
+        tomorrow = [a for a in svc.between(db, bid, date.today() + timedelta(days=1), date.today() + timedelta(days=1))
+                    if a.status == "booked"]
+    return ctx.render("schedule/index.html", title="Запись", columns=columns, g=g, appts=appts, load=load,
+                      summary=summary, tomorrow=tomorrow, people={m.id: m for m in mechanics},
                       prev=(day - timedelta(days=1)).isoformat(), next=(day + timedelta(days=1)).isoformat(), **base)
 
 

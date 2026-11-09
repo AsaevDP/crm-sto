@@ -20,24 +20,39 @@
 
 <div class="cl-grid fill sched-wrap {{ 'no-form' if not can_manage }}">
   <section class="ov-col on sched-main">
+    {% set ST_ICON = {"booked": "•", "arrived": "✓", "noshow": "✕", "cancel": "✕"} %}
     {% if view == "week" %}
+    {% if mechanics|length > 1 %}<div class="mech-legend">{% for m in mechanics %}<span style="--mc:{{ color_css(colors.get(m.id, 'gray')) }}"><i></i>{{ m.short_name }}</span>{% endfor %}</div>{% endif %}
     <div class="week fill scroll">
       {% for d in days %}{% set list = by_day.get(d, []) %}
       <div class="card compact week-day {{ 'is-today' if d == today }}">
-        <a class="card-h" href="?d={{ d }}&view=day"><span class="headline">{{ WEEKDAYS[loop.index0] }} {{ d.strftime("%d.%m") }}</span><span class="footnote">{{ list|length or "" }}</span></a>
+        <a class="card-h" href="?d={{ d }}&view=day"><span class="headline">{{ WEEKDAYS[loop.index0] }} {{ d.strftime("%d.%m") }}</span>
+          <span class="footnote nowrap">{% if list %}{{ list|length }} · {{ hours[d]|round(1)|num }} ч{% endif %}</span></a>
+        <div class="loadbar" title="Загрузка мастеров ~{{ load[d] }}%"><i style="width:{{ load[d] }}%"></i></div>
         {% for a in list %}{% set m = people.get(a.mechanic_id) %}
-        <a class="appt-li" data-st="{{ a.status }}" href="?d={{ d }}&view=week&edit={{ a.id }}">
-          <b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or fmt_phone(a.phone) }}
+        <a class="appt-li" data-st="{{ a.status }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}" href="?d={{ d }}&view=week&edit={{ a.id }}">
+          <span><b>{{ local(a.start_at).strftime("%H:%M") }}</b> <span class="st-ico" data-st="{{ a.status }}">{{ ST_ICON.get(a.status) }}</span> {{ a.client_name or fmt_phone(a.phone) }}</span>
           <span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}{% if m %} · {{ m.short_name }}{% endif %}</span></a>
         {% else %}<p class="caption" style="margin:0">свободно</p>{% endfor %}
       </div>
       {% endfor %}
     </div>
     {% else %}
+    <div class="sched-sum">
+      <span class="chip">Записей: {{ summary.all }}</span>
+      {% if summary.booked %}<span class="chip" data-st="booked">Ждём: {{ summary.booked }}</span>{% endif %}
+      {% if summary.arrived %}<span class="chip" data-st="arrived">Приехали: {{ summary.arrived }}</span>{% endif %}
+      {% if summary.noshow %}<span class="chip" data-st="noshow">Не приехали: {{ summary.noshow }}</span>{% endif %}
+    </div>
     <div class="sched fill scroll">
-      <div class="sgrid" style="grid-template-columns: 52px repeat({{ columns|length }}, minmax(150px, 1fr)); grid-template-rows: 34px repeat({{ g.slots|length }}, 30px);">
+      <div class="sgrid" style="grid-template-columns: 52px repeat({{ columns|length }}, minmax(112px, 1fr)); grid-template-rows: 54px repeat({{ g.slots|length }}, 30px);">
         <div class="sg-corner"></div>
-        {% for c in columns %}<div class="sg-head" style="grid-column:{{ loop.index + 1 }}">{{ c.title }}</div>{% endfor %}
+        {% for c in columns %}{% set ld = load[c.id] %}{% set lf = own_lift.get(c.id) %}
+        <div class="sg-head" style="grid-column:{{ loop.index + 1 }};--mc:{{ color_css(colors.get(c.id, 'gray')) }}">
+          <span class="sg-who" title="{{ c.user.full_name if c.user else c.title }}{% if lf %} · пост {{ lf.number }}{% endif %}"><b>{{ c.title }}</b></span>
+          <span class="sg-load"><span class="loadbar"><i style="width:{{ ld.pct }}%"></i></span><span class="caption nowrap">{% if lf %}п.{{ lf.number }} · {% endif %}{{ (ld.booked / 60)|round(1)|num }} ч</span></span>
+        </div>{% endfor %}
+        {% if g.now_px %}<div class="sg-now" style="top:{{ g.now_px }}px" aria-hidden="true"></div>{% endif %}
         {% for s in g.slots %}{% set r = loop.index + 1 %}
         <div class="sg-time {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }}">{{ s if s.endswith(":00") else "" }}</div>
         {% for c in columns %}
@@ -45,12 +60,12 @@
         {% else %}<div class="sg-cell {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }};grid-column:{{ loop.index + 1 }}"></div>{% endif %}
         {% endfor %}{% endfor %}
         {% for b in g.blocks %}{% set a = b.a %}
-        <a class="appt" data-st="{{ a.status }}" href="?d={{ day }}&edit={{ a.id }}" style="grid-row:{{ b.row }} / span {{ b.span }};grid-column:{{ b.col }}"
+        <a class="appt" data-st="{{ a.status }}" href="?d={{ day }}&edit={{ a.id }}" style="grid-row:{{ b.row }} / span {{ b.span }};grid-column:{{ b.col }};--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}"
            title="{{ b.time }}–{{ b.end }} {{ a.client_name }} {{ a.car }} {{ a.work }}">
-          <span class="appt-t">{{ b.time }}–{{ b.end }} · {{ APPT_STATUS[a.status] }}</span>
+          <span class="appt-t"><span class="st-ico" data-st="{{ a.status }}">{{ ST_ICON.get(a.status) }}</span> {{ b.time }}–{{ b.end }}</span>
           <b>{{ a.client_name or fmt_phone(a.phone) }}</b>
-          <span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}</span>
-          {% if a.work and b.span > 2 %}<span class="caption appt-w">{{ a.work }}</span>{% endif %}
+          {% if b.span > 2 %}<span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}</span>{% endif %}
+          {% if a.work and b.span > 3 %}<span class="caption appt-w">{{ a.work }}</span>{% endif %}
         </a>
         {% endfor %}
       </div>
@@ -61,12 +76,21 @@
 
   {% if can_manage or e %}
   <section class="ov-col on">
+    {% if can_manage and not e and view != "week" and day >= today %}
+    <div class="card compact free-card">
+      <div class="card-h"><span class="headline">Свободные окна</span><span class="caption">от 1 часа · нажмите — подставится в форму</span></div>
+      {% for c in columns %}{% set ld = load[c.id] %}{% if c.id %}
+      <div class="free-row" style="--mc:{{ color_css(colors.get(c.id, 'gray')) }}"><span class="free-who"><i></i>{{ c.title }}</span>
+        <span class="free-list">{% for a, b, mins in ld.free %}<button type="button" class="free-chip" data-time="{{ a }}" data-mech="{{ c.id }}" data-mins="{{ mins }}">{{ a }}–{{ b }}</button>{% else %}<span class="caption">занят весь день</span>{% endfor %}</span></div>
+      {% endif %}{% endfor %}
+    </div>
+    {% endif %}
     <form class="card compact form dense" method="post" action="/schedule{% if e %}/{{ e.id }}{% endif %}" id="appt-form">
       <div class="card-h"><span class="headline">{{ "Запись клиента" if e else "Новая запись" }}</span>
         {% if e %}<span class="chip" data-st="{{ e.status }}">{{ APPT_STATUS[e.status] }}</span>{% endif %}</div>
       <input type="hidden" name="view" value="{{ view }}">
       {% set le = local(e.start_at) if e else none %}
-      <div class="form-row three">
+      <div class="form-row three appt-when">
         <input class="field" type="date" name="day" value="{{ le.date() if e else day }}" required aria-label="День">
         <input class="field" type="time" name="time" value="{{ le.strftime('%H:%M') if e else '09:00' }}" step="900" required aria-label="Время">
         <select class="field" name="duration" aria-label="Длительность">
@@ -106,6 +130,15 @@
       {% endif %}
     </div>
     {% endif %}
+    {% if tomorrow and not e %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Позвонить: завтра · {{ tomorrow|length }}</span><span class="caption">напомнить о записи</span></div>
+      {% for a in tomorrow %}
+      <div class="kv"><span><b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or "—" }} <span class="caption">{{ a.car }}</span></span>
+        {% if a.phone %}<a class="nowrap" href="tel:+{{ a.phone }}">{{ fmt_phone(a.phone) }}</a>{% endif %}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </section>
   {% endif %}
 </div>
@@ -118,6 +151,14 @@
     if (f.action.match(/\/schedule\/[0-9a-f-]{36}$/)) { location.href = '?d={{ day }}&t=' + c.dataset.time; return; }
     f.elements.time.value = c.dataset.time; f.elements.mechanic_id.value = c.dataset.mech;
     document.querySelectorAll('.sg-cell.picked').forEach(x => x.classList.remove('picked')); c.classList.add('picked');
+    f.elements.phone.focus();
+  }));
+  // Свободное окно → время, мастер и длительность (час или сколько влезает)
+  document.querySelectorAll('.free-chip').forEach(c => c.addEventListener('click', () => {
+    f.elements.time.value = c.dataset.time; f.elements.mechanic_id.value = c.dataset.mech;
+    const d = f.elements.duration, m = +c.dataset.mins;
+    d.value = [...d.options].map(o => +o.value).filter(v => v <= m && v <= 120).pop() || 60;
+    document.querySelectorAll('.free-chip.picked').forEach(x => x.classList.remove('picked')); c.classList.add('picked');
     f.elements.phone.focus();
   }));
   const t = new URLSearchParams(location.search).get('t');
