@@ -22,6 +22,8 @@ TEST_USERS = [
     ("dmitro",  "Дмитро Разборов",    "content",     "dmitro123",  "1004", "0000100005"),
     ("andrey",  "Андрей Демченко",    "mechanic",    "andrey123",  "1005", "0000100006"),
     ("sergey",  "Сергей Ключников",   "mechanic",    "sergey123",  "1006", "0000100007"),
+    ("director", "Виктор Директоров", "director",    "director123", "1007", "0000100008"),
+    ("deputy",  "Наталья Заместитель", "deputy",     "deputy123",  "1008", "0000100009"),
 ]
 
 
@@ -49,10 +51,42 @@ def sync_permissions(db: Session):
     db.flush()
 
 
+def _add_user(db: Session, login, name, role: Role, pwd, pin, card):
+    if DEMO:
+        db.add(User(full_name=name, login=login, role_id=role.id, password_hash=hash_secret(DEMO_PASSWORD), pin_hash=""))
+        return
+    u = User(full_name=name, login=login, role_id=role.id, password_hash=hash_secret(pwd), pin_hash=hash_secret(pin))
+    db.add(u)
+    db.flush()
+    if not db.scalar(select(StaffCard).where(StaffCard.uid == card)):
+        db.add(StaffCard(user_id=u.id, uid=card, label="тестовая"))
+
+
+def sync_roles(db: Session):
+    """Новая версия принесла новую роль (директор, зам) — добавляем её в уже работающую базу
+    вместе с тестовым сотрудником. Роли, которые Стас уже настроил, не трогаем."""
+    for branch in db.scalars(select(Branch)):
+        have = {r.code for r in db.scalars(select(Role).where(Role.branch_id == branch.id))}
+        current_branch_id.set(branch.id)
+        for i, (code, (name, color, perms)) in enumerate(DEFAULT_ROLES.items()):
+            if code in have:
+                continue
+            r = Role(code=code, name=name, color=color, is_system=True, sort=i, branch_id=branch.id)
+            db.add(r)
+            db.flush()
+            for p in perms:
+                db.add(RolePermission(role_id=r.id, permission=p, branch_id=branch.id))
+            for login, uname, role, pwd, pin, card in TEST_USERS:
+                if role == code and not db.scalar(select(User).where(User.login == login)):
+                    _add_user(db, login, uname, r, pwd, pin, card)
+    db.flush()
+
+
 def seed():
     with SessionLocal() as db:
         sync_permissions(db)
         if db.scalar(select(Branch)) is not None:
+            sync_roles(db)
             db.commit()
             return
         branch = Branch(name="СТО №1", city="", code="СТО1")

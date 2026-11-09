@@ -10,7 +10,7 @@ from sqlalchemy import select
 from ..models import Donor, DonorPhoto, Location, PartCatalog, StockItem, StockMovement, StockPhoto, UsedSale, User
 from ..models.money import PAY_METHODS
 from ..models.razbor import CONDITIONS, DELIVERY, DONOR_STATUS, SALE_STATUS
-from ..models.stock import MOVEMENT_TYPES
+from ..models.stock import MOVEMENT_TYPES, RAZBOR_CATEGORIES
 from ..services import orders as osvc
 from ..services import razbor as svc
 from ..services import stock as ssvc
@@ -72,7 +72,7 @@ def _item_rows(ctx: Ctx, items):
 
 # ======================= Список =======================
 @router.get("/razbor")
-def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = ""):
+def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "", cat: str = ""):
     ctx.need("razbor.view")
     db = ctx.db
     query = select(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id).where(
@@ -83,6 +83,11 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
     if q.strip():
         ql = q.strip().lower()
         rows = [r for r in rows if ql in f"{r['i'].code} {r['c'].name} {r['i'].donor_make} {r['i'].donor_model} {r['i'].donor_vin}".lower()]
+    counts = {}
+    for r in rows:
+        counts[r["c"].category or "Прочее"] = counts.get(r["c"].category or "Прочее", 0) + 1
+    if cat:
+        rows = [r for r in rows if (r["c"].category or "Прочее") == cat]
     if f == "site":
         rows = [r for r in rows if r["i"].publish_on_site and r["state"] == "stock"]
     elif f in ("stock", "reserved", "sold"):
@@ -91,6 +96,7 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
     eco = {d.id: svc.economy(db, ctx.branch.id, d) for d in donors}
     reserved = db.scalars(select(UsedSale).where(UsedSale.branch_id == ctx.branch.id, UsedSale.status == "reserved")).all()
     return ctx.render("razbor/list.html", title="Разбор", rows=rows, q=q, f=f, donor=donor, donors=donors, eco=eco,
+                      cat=cat, cat_counts=counts, RAZBOR_CATEGORIES=RAZBOR_CATEGORIES,
                       n_reserved=len(reserved), CONDITIONS=CONDITIONS, DONOR_STATUS=DONOR_STATUS,
                       n_site=len(svc.export_rows(db, ctx.branch.id)) if ctx.can("razbor.export") else 0)
 
@@ -172,7 +178,8 @@ async def part_add(did: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     loc = ctx.db.get(Location, _uuid(str(form.get("location_id")))) if form.get("location_id") else None
     item = svc.add_part(ctx.db, ctx.branch.id, d, name, _dec(form.get("qty"), "1"), _dec(form.get("price")),
                         str(form.get("condition", "good")), loc.id if loc else None, str(form.get("description", "")),
-                        publish=form.get("publish") == "1", article=str(form.get("article", "")))
+                        publish=form.get("publish") == "1", article=str(form.get("article", "")),
+                        category=str(form.get("category", "")))
     for p in await _photos(form):
         ctx.db.add(StockPhoto(stock_item_id=item.id, file=p))
     ctx.db.commit()
@@ -211,6 +218,8 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     form = await request.form(max_files=30)
     cat = ctx.db.get(PartCatalog, i.catalog_id)
     cat.name = str(form.get("name", cat.name)).strip()[:200] or cat.name
+    if form.get("category") is not None:
+        cat.category = str(form.get("category", "")).strip()[:60]
     i.sale_price = ssvc.money(_dec(form.get("price")))
     if form.get("condition") in CONDITIONS:
         i.condition = str(form.get("condition"))

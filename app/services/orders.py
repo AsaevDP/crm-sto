@@ -346,3 +346,25 @@ def finish_approval(db: Session, wo: WorkOrder) -> str:
     else:
         set_status(db, wo, "ready", summary + ". Ремонт не нужен или клиент отказался")
     return ""
+
+
+# ---------- Выполнение работ (полоска на карточке машины) ----------
+def work_progress(db: Session, order_ids) -> dict:
+    """{наряд: {"done": n, "total": n, "pct": 0..100, "level": none/zero/part/all}}.
+    zero — ничего не сделано (красный), part — частично (оранжевый), all — всё готово (зелёный)."""
+    from sqlalchemy import func
+    ids = [i for i in order_ids if i]
+    out = {i: {"done": 0, "total": 0, "pct": 0, "level": "none"} for i in ids}
+    if not ids:
+        return out
+    rows = db.execute(select(WoWork.work_order_id, WoWork.status, func.count()).where(WoWork.work_order_id.in_(ids))
+                      .group_by(WoWork.work_order_id, WoWork.status)).all()
+    for oid, status, n in rows:
+        out[oid]["total"] += n
+        if status == "done":
+            out[oid]["done"] += n
+    for p in out.values():
+        if p["total"]:
+            p["pct"] = round(100 * p["done"] / p["total"])
+            p["level"] = "all" if p["done"] == p["total"] else ("part" if p["done"] else "zero")
+    return out

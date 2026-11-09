@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% set e = editing %}
+<header class="page-head">
+  <div><p class="footnote">{{ WEEKDAYS[day.weekday()] }}, {{ day.strftime("%d.%m.%Y") }}{% if day == today %} · сегодня{% endif %}</p>
+    <h1 class="large-title">Запись</h1></div>
+  <div class="ov-actions">
+    <a class="btn btn-sm btn-gray" href="?d={{ prev }}&view={{ view }}" aria-label="Назад">‹</a>
+    <form method="get" style="display:contents"><input type="hidden" name="view" value="{{ view }}">
+      <input class="field" type="date" name="d" value="{{ day }}" onchange="this.form.submit()" style="max-width:160px" aria-label="Дата"></form>
+    <a class="btn btn-sm btn-gray" href="?d={{ next }}&view={{ view }}" aria-label="Вперёд">›</a>
+    {% if day != today %}<a class="btn btn-sm btn-plain" href="?view={{ view }}">Сегодня</a>{% endif %}
+    <div class="segmented" style="flex:none">
+      <a href="?d={{ day }}&view=day" aria-pressed="{{ (view != 'week')|lower }}">День</a>
+      <a href="?d={{ day }}&view=week" aria-pressed="{{ (view == 'week')|lower }}">Неделя</a>
+    </div>
+  </div>
+</header>
+
+<div class="cl-grid fill sched-wrap {{ 'no-form' if not can_manage }}">
+  <section class="ov-col on sched-main">
+    {% if view == "week" %}
+    <div class="week fill scroll">
+      {% for d in days %}{% set list = by_day.get(d, []) %}
+      <div class="card compact week-day {{ 'is-today' if d == today }}">
+        <a class="card-h" href="?d={{ d }}&view=day"><span class="headline">{{ WEEKDAYS[loop.index0] }} {{ d.strftime("%d.%m") }}</span><span class="footnote">{{ list|length or "" }}</span></a>
+        {% for a in list %}{% set m = people.get(a.mechanic_id) %}
+        <a class="appt-li" data-st="{{ a.status }}" href="?d={{ d }}&view=week&edit={{ a.id }}">
+          <b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or fmt_phone(a.phone) }}
+          <span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}{% if m %} · {{ m.short_name }}{% endif %}</span></a>
+        {% else %}<p class="caption" style="margin:0">свободно</p>{% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="sched fill scroll">
+      <div class="sgrid" style="grid-template-columns: 52px repeat({{ columns|length }}, minmax(150px, 1fr)); grid-template-rows: 34px repeat({{ g.slots|length }}, 30px);">
+        <div class="sg-corner"></div>
+        {% for c in columns %}<div class="sg-head" style="grid-column:{{ loop.index + 1 }}">{{ c.title }}</div>{% endfor %}
+        {% for s in g.slots %}{% set r = loop.index + 1 %}
+        <div class="sg-time {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }}">{{ s if s.endswith(":00") else "" }}</div>
+        {% for c in columns %}
+        {% if can_manage %}<button type="button" class="sg-cell {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }};grid-column:{{ loop.index + 1 }}" data-time="{{ s }}" data-mech="{{ c.id or '' }}" aria-label="Записать на {{ s }}, {{ c.title }}"></button>
+        {% else %}<div class="sg-cell {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }};grid-column:{{ loop.index + 1 }}"></div>{% endif %}
+        {% endfor %}{% endfor %}
+        {% for b in g.blocks %}{% set a = b.a %}
+        <a class="appt" data-st="{{ a.status }}" href="?d={{ day }}&edit={{ a.id }}" style="grid-row:{{ b.row }} / span {{ b.span }};grid-column:{{ b.col }}"
+           title="{{ b.time }}–{{ b.end }} {{ a.client_name }} {{ a.car }} {{ a.work }}">
+          <span class="appt-t">{{ b.time }}–{{ b.end }} · {{ APPT_STATUS[a.status] }}</span>
+          <b>{{ a.client_name or fmt_phone(a.phone) }}</b>
+          <span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}</span>
+          {% if a.work and b.span > 2 %}<span class="caption appt-w">{{ a.work }}</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% if not g.blocks %}<p class="footnote" style="margin:0 4px">На этот день записей нет{% if can_manage %} — нажмите на свободное время в сетке{% endif %}.</p>{% endif %}
+    {% endif %}
+  </section>
+
+  {% if can_manage or e %}
+  <section class="ov-col on">
+    <form class="card compact form dense" method="post" action="/schedule{% if e %}/{{ e.id }}{% endif %}" id="appt-form">
+      <div class="card-h"><span class="headline">{{ "Запись клиента" if e else "Новая запись" }}</span>
+        {% if e %}<span class="chip" data-st="{{ e.status }}">{{ APPT_STATUS[e.status] }}</span>{% endif %}</div>
+      <input type="hidden" name="view" value="{{ view }}">
+      {% set le = local(e.start_at) if e else none %}
+      <div class="form-row three">
+        <input class="field" type="date" name="day" value="{{ le.date() if e else day }}" required aria-label="День">
+        <input class="field" type="time" name="time" value="{{ le.strftime('%H:%M') if e else '09:00' }}" step="900" required aria-label="Время">
+        <select class="field" name="duration" aria-label="Длительность">
+          {% for m, t in [(30, "30 мин"), (60, "1 час"), (90, "1,5 часа"), (120, "2 часа"), (180, "3 часа"), (240, "4 часа"), (480, "весь день")] %}
+          <option value="{{ m }}" {% if (e and e.duration_min == m) or (not e and m == 60) %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-row">
+        <select class="field" name="mechanic_id" aria-label="Мастер"><option value="">Мастер не выбран</option>
+          {% for m in mechanics %}<option value="{{ m.id }}" {% if e and e.mechanic_id == m.id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}</select>
+        <select class="field" name="lift_id" aria-label="Подъёмник"><option value="">Пост мастера</option>
+          {% for l in lifts %}<option value="{{ l.id }}" {% if e and e.lift_id == l.id %}selected{% endif %}>{{ l.number }} · {{ l.name }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-row">
+        <input class="field" name="phone" type="tel" inputmode="tel" placeholder="Телефон" value="{{ fmt_phone(e.phone) if e else '' }}" aria-label="Телефон">
+        <input class="field" name="client_name" placeholder="Имя клиента" value="{{ e.client_name if e else '' }}" aria-label="Имя">
+      </div>
+      <div class="form-row">
+        <input class="field" name="car" placeholder="Авто: Toyota Camry" value="{{ e.car if e else '' }}" aria-label="Авто">
+        <input class="field mono" name="plate" placeholder="Госномер" value="{{ fmt_plate(e.plate) if e else '' }}" aria-label="Госномер">
+      </div>
+      <textarea class="field" name="work" rows="2" placeholder="Что делать: ТО, стук спереди…" aria-label="Что делать">{{ e.work if e else '' }}</textarea>
+      <input class="field" name="note" placeholder="Заметка (необязательно)" value="{{ e.note if e else '' }}" aria-label="Заметка">
+      {% if can_manage %}<div class="form-row"><button class="btn btn-sm">{{ "Сохранить" if e else "Записать" }}</button>
+        {% if e %}<a class="btn btn-sm btn-gray" href="?d={{ day }}&view={{ view }}">Новая запись</a>{% endif %}</div>{% endif %}
+    </form>
+    {% if e and can_manage %}
+    <div class="card compact appt-actions">
+      {% if e.work_order_id %}<a class="btn btn-sm" href="/orders/{{ e.work_order_id }}">Открыть наряд</a>
+      {% elif e.status in ("booked", "noshow") %}
+      <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="arrived"><button class="btn btn-sm">Приехал → приёмка</button></form>
+      {% endif %}
+      {% if e.status == "booked" %}
+      <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="noshow"><input type="hidden" name="view" value="{{ view }}"><button class="btn btn-sm btn-gray">Не приехал</button></form>
+      <form method="post" action="/schedule/{{ e.id }}/status" onsubmit="return confirm('Отменить запись?')"><input type="hidden" name="status" value="cancel"><input type="hidden" name="view" value="{{ view }}"><button class="btn btn-sm btn-danger">Отменить</button></form>
+      {% elif not e.work_order_id %}
+      <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="booked"><input type="hidden" name="view" value="{{ view }}"><button class="btn btn-sm btn-gray">Вернуть «Записан»</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+{% if can_manage %}
+<script>
+// Клик по свободному времени в сетке → в форме сразу это время и этот мастер
+(function () {
+  const f = document.getElementById('appt-form'); if (!f) return;
+  document.querySelectorAll('.sg-cell[data-time]').forEach(c => c.addEventListener('click', () => {
+    if (f.action.match(/\/schedule\/[0-9a-f-]{36}$/)) { location.href = '?d={{ day }}&t=' + c.dataset.time; return; }
+    f.elements.time.value = c.dataset.time; f.elements.mechanic_id.value = c.dataset.mech;
+    document.querySelectorAll('.sg-cell.picked').forEach(x => x.classList.remove('picked')); c.classList.add('picked');
+    f.elements.phone.focus();
+  }));
+  const t = new URLSearchParams(location.search).get('t');
+  if (t && !f.action.match(/[0-9a-f-]{36}$/)) f.elements.time.value = t;
+})();
+</script>
+{% endif %}
+{% endblock %}

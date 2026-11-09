@@ -6,7 +6,8 @@
 </header>
 
 <form id="intake" class="intake fill" autocomplete="off" novalidate>
-  <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id">
+  <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id"><input type="hidden" name="appt_id">
+  {% if prefill %}<div class="flash" role="status">Приёмка по записи: {{ prefill.name or "" }} {{ prefill.plate or "" }} — проверьте поля, сделайте фото</div>{% endif %}
   <div class="steps" id="steps"><span class="on">1 · Клиент и авто</span><span>2 · Фото и работы</span><span>3 · Кто и акт</span></div>
   <div class="intake-cols">
   <div class="icol on" data-step="1">
@@ -139,6 +140,9 @@
 (function () {
   const form = document.getElementById('intake');
   const $ = n => form.elements[n];
+  // Приёмка из записи: заполняем то, что уже известно
+  const PREFILL = {{ prefill|tojson }};
+  Object.entries(PREFILL).forEach(([k, v]) => { const el = form.elements[k]; if (el && 'value' in el) el.value = v; });
 
   // ---- Фото ----
   const pc = document.getElementById('pcount');

@@ -34,9 +34,11 @@ WO_STATUS_SHORT = {
 WO_ACTIVE = ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready", "paid")
 # Что есть в машине при приёмке (акт)
 INTAKE_ITEMS = {
-    "docs": "Документы", "keys2": "Второй ключ", "spare": "Запаска", "jack": "Домкрат",
-    "kit": "Аптечка / знак", "valuables": "Ценные вещи в салоне",
+    "spare": "Запаска", "kit": "Аптечка", "sign": "Знак аварийной остановки", "keys2": "Второй ключ",
+    "jack": "Домкрат", "docs": "Документы", "valuables": "Ценные вещи в салоне",
 }
+# Комплектация — эти пункты в актах приёма/выдачи печатаются всегда (есть / нет)
+INTAKE_KIT = ("spare", "kit", "sign", "keys2", "jack")
 FUEL_LEVELS = {0: "Пусто", 25: "¼", 50: "½", 75: "¾", 100: "Полный"}
 
 # Статус позиции запчасти
@@ -140,6 +142,7 @@ class WoWork(Entity):
     mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="todo")  # todo / doing / paused / done
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # кто нажал «Готово»
 
 
 class WoPart(Entity):

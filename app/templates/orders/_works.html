@@ -1,9 +1,13 @@
 {# Блок «Работы»: цена по нормо-часам или фикс (выбирает менеджер), кнопки слесаря «Начал / Пауза / Готово». #}
 {% set WST = {"todo": "ждёт", "doing": "в работе", "paused": "пауза", "done": "готово"} %}
 {% set WCOL = {"todo": "created", "doing": "work", "paused": "waiting", "done": "ready"} %}
+{% from "orders/_card.html" import progress %}
+{% set n_done = works|selectattr("status", "equalto", "done")|list|length %}
 <div class="card compact" id="works">
-  <div class="card-h"><span class="headline">Работы · {{ works|length }}</span>
+  <div class="card-h"><span class="headline">Работы · выполнено {{ n_done }} из {{ works|length }}</span>
     {% if show_price and works %}<span class="footnote">итого <b>{{ "{:,.2f}".format(t.works).replace(",", " ") }} ₴</b></span>{% endif %}</div>
+  {% if works %}{{ progress({"done": n_done, "total": works|length, "pct": (100 * n_done / works|length)|round|int,
+      "level": "all" if n_done == works|length else ("part" if n_done else "zero")}) }}{% endif %}
   {% if wo.complaint %}<p class="ov-text"><span class="footnote">Жалоба:</span> {{ wo.complaint }}</p>{% endif %}
 
   {% for w in works %}
@@ -13,11 +17,16 @@
       <span class="part-name">{{ w.name }}{% if mech %}<span class="caption" style="display:block">{{ mech.full_name }}</span>{% endif %}</span>
       <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
     </div>
+    {% if w.status == "done" and w.done_at %}{% set by = people.get(w.done_by) %}
+    <div class="caption work-done-by">✓ Выполнено {{ w.done_at.astimezone().strftime("%d.%m %H:%M") }}{% if by %} · отметил {{ by.short_name }}{% endif %}
+      {% if ctx.can("orders.view_all") and wo.status in ("work", "ready") %}
+      <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state" style="display:inline"><input type="hidden" name="action" value="undo"><button class="btn btn-plain btn-sm" style="padding:0 6px;min-height:0">вернуть</button></form>{% endif %}</div>
+    {% endif %}
     {% if w.status == "paused" and pauses.get(w.id) %}<div class="hint warn" style="margin:0">Пауза: {{ pauses[w.id].pause_reason }} · с {{ pauses[w.id].started_at.astimezone().strftime("%H:%M") }}</div>{% endif %}
     {% if show_price %}
     <div class="part-nums">
-      <span>{% if w.pricing == "fixed" %}фикс {{ "%.2f"|format(w.rate) }} ₴{% else %}{{ w.hours|num if w.hours is not none else 0 }} н/ч × {{ "%.0f"|format(w.rate) }} ₴{% endif %}{% if w.qty != 1 %} × {{ w.qty|num }}{% endif %}</span>
-      <b>{{ "%.2f"|format(w.price) }} ₴</b>
+      <span>{% if w.pricing == "fixed" %}фикс {{ "%.2f"|format(w.rate or 0) }} ₴{% else %}{{ w.hours|num if w.hours is not none else 0 }} н/ч × {{ "%.0f"|format(w.rate or 0) }} ₴{% endif %}{% if w.qty != 1 %} × {{ w.qty|num }}{% endif %}</span>
+      <b>{{ "%.2f"|format(w.price or 0) }} ₴</b>
     </div>
     {% endif %}
 
@@ -30,7 +39,7 @@
       <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state" class="pause-form"><input type="hidden" name="action" value="pause">
         <input type="hidden" name="reason"><button class="btn btn-sm btn-gray">Пауза</button></form>
       {% endif %}
-      <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="done"><button class="btn btn-sm btn-tinted">Готово</button></form>
+      <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="done"><button class="btn btn-sm btn-tinted">✓ Выполнено</button></form>
     </div>
     {% endif %}
 

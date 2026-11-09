@@ -34,6 +34,7 @@
     <div class="side-user">
       <span class="avatar">{{ user.initials }}</span>
       <span class="grow"><span class="side-user-name">{{ user.full_name }}</span><span class="caption">{{ user.login }}</span></span>
+      <button class="icon-btn" type="button" title="Распечатать эту страницу" onclick="print()">{{ icon("print") }}</button>
       <form method="post" action="/logout"><button class="icon-btn" title="Выйти">{{ icon("logout") }}</button></form>
     </div>
     {% if user.role.code == "admin" and not ctx.viewing_as %}<a class="viewas-link" href="/view-as">👁 Глазами сотрудника</a>{% endif %}
@@ -75,14 +76,12 @@
       if (!r.ok) return;
       const j = await r.json(); badge(j.issues);
       const fresh = j.items.filter(x => !seen.has(x.id));
-      if (fresh.length && location.pathname !== '/stock/issues') {
-        const x = fresh[0], t = document.createElement('a');
-        t.className = 'toast'; t.href = '/stock/issues';
-        t.innerHTML = '<span class="footnote">Запрос на выдачу</span><b></b><span class="subhead"></span>';
-        t.querySelector('b').textContent = x.who + ' просит: ' + x.text;
-        t.querySelector('.subhead').textContent = 'Наряд ' + x.order + ' · ' + x.plate;
-        document.body.appendChild(t); setTimeout(() => t.remove(), 12000);
-        try { navigator.vibrate && navigator.vibrate(200); } catch (e) {}
+      if (location.pathname !== '/stock/issues') {
+        // Окошко висит, пока его не закроют крестиком (и на других страницах тоже)
+        fresh.forEach(x => window.crmToast && window.crmToast({
+          id: 'issue-' + x.id, kicker: 'Запрос на выдачу', title: x.who + ' просит: ' + x.text,
+          text: 'Наряд ' + x.order + ' · ' + x.plate, href: '/stock/issues'}));
+        if (fresh.length) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
       }
       j.items.forEach(x => seen.add(x.id));
       try { sessionStorage.setItem('seen-issues', JSON.stringify([...seen])); } catch (e) {}

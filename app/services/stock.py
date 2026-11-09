@@ -106,7 +106,10 @@ def get_or_create_catalog(db: Session, name: str, article: str = "", brand: str 
     q = q.where(PartCatalog.article == article) if article else q.where(PartCatalog.article == "")
     p = db.scalar(q)
     if p is None:
-        p = PartCatalog(name=name, article=article, brand=brand.strip()[:80], revision=revision.strip()[:40])
+        from ..models.stock import guess_category, guess_section
+        sec = guess_section(name)
+        p = PartCatalog(name=name, article=article, brand=brand.strip()[:80], revision=revision.strip()[:40],
+                        section=sec, category=guess_category(name, sec))
         db.add(p)
         db.flush()
     return p
@@ -265,3 +268,18 @@ def location_label(loc: Location | None) -> str:
     if not loc:
         return "без ячейки"
     return loc.label or " / ".join(x for x in (loc.rack, loc.shelf, loc.place) if x)
+
+
+def backfill_categories(db: Session):
+    """Разложить по разделам/категориям позиции, заведённые до появления категорий."""
+    from ..models.stock import guess_category, guess_razbor_category, guess_section
+    for c in db.scalars(select(PartCatalog).where((PartCatalog.section == "") | (PartCatalog.category == "")
+                                                  | PartCatalog.section.is_(None) | PartCatalog.category.is_(None))):
+        if c.kind == "used":
+            if not c.category:
+                c.category = guess_razbor_category(c.name)
+            continue
+        if not c.section:
+            c.section = guess_section(c.name)
+        if not c.category:
+            c.category = guess_category(c.name, c.section)

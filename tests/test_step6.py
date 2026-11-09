@@ -108,7 +108,7 @@ def test_full_money_cycle(client):
 
     # Слесарь видит свою зарплату
     _as(client, "andrey")
-    assert "540.00" in client.get("/payroll").text
+    assert "540,00" in client.get("/payroll").text
 
 
 def test_prepay_blocks_picking(client):

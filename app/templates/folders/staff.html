@@ -1,0 +1,55 @@
+{% extends "_print_doc.html" %}
+{% block back %}{{ "/payroll" if u.id == user.id else "/settings/users/" ~ u.id }}{% endblock %}
+{% block doc_title %}ПАПКА СОТРУДНИКА{% endblock %}
+{% block subtitle %}{{ u.full_name }} · {{ u.role.name }} · период {{ d1.strftime("%d.%m.%Y") }} — {{ d2.strftime("%d.%m.%Y") }}{% endblock %}
+{% block body %}
+<table>
+  <tr><th style="width:30%">Сотрудник</th><td>{{ u.full_name }} ({{ u.login }})</td></tr>
+  <tr><th>Должность</th><td>{{ u.role.name }}</td></tr>
+  <tr><th>Телефон</th><td>{{ u.phone or "—" }}</td></tr>
+  <tr><th>Подъёмник</th><td>{{ (lift.number ~ " · " ~ lift.name) if lift else "не закреплён" }}</td></tr>
+</table>
+
+<div class="kpis">
+  <div>Дней на работе<b>{{ days|length }}</b></div>
+  <div>Часов по табелю<b>{{ (minutes_total / 60)|round(1)|num }}</b></div>
+  <div>Выполнено работ<b>{{ works|length }}</b></div>
+  <div>Нормо-часов<b>{{ hours_total|num or 0 }}</b></div>
+</div>
+
+{% if active %}
+<h2>Сейчас в работе</h2>
+<table><thead><tr><th>№ наряда</th><th>Авто</th><th>Статус</th></tr></thead>
+  {% for o in active %}{% set v = vehicles.get(o.vehicle_id) %}<tr><td>{{ o.number }}</td><td>{% if v %}{{ v.make }} {{ v.model }} {{ fmt_plate(v.plate) }}{% endif %}</td><td>{{ STATUSES.get(o.status) }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+<h2>Выполненные работы</h2>
+<table><thead><tr><th>Дата</th><th>Наряд</th><th>Авто</th><th>Работа</th><th class="num">Н/ч</th></tr></thead>
+  {% for w in works %}{% set o = orders.get(w.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else none %}
+  <tr><td>{{ w.done_at.astimezone().strftime("%d.%m.%Y %H:%M") }}</td><td>{{ o.number if o else "" }}</td><td>{% if v %}{{ v.make }} {{ fmt_plate(v.plate) }}{% endif %}</td>
+    <td>{{ w.name }}</td><td class="num">{{ ((w.hours or 0) * w.qty)|num if w.hours else "—" }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">За период нет</td></tr>{% endfor %}
+</table>
+
+<h2>Табель</h2>
+<table><thead><tr><th>Дата</th><th>Пришёл</th><th>Ушёл</th><th class="num">Часов</th></tr></thead>
+  {% for dd, d in days %}<tr><td>{{ dd.strftime("%d.%m.%Y") }}</td><td>{{ d.first_in.astimezone().strftime("%H:%M") if d.first_in else "—" }}</td>
+    <td>{{ d.last_out.astimezone().strftime("%H:%M") if d.last_out else ("на месте" if d.open else "—") }}</td><td class="num">{{ d.hours|num }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Отметок нет</td></tr>{% endfor %}
+</table>
+
+{% if pay %}
+<h2>Зарплата за период</h2>
+<table><tr>{% for k, v in COLS.items() %}<th class="num">{{ v }}</th>{% endfor %}<th class="num">Начислено</th><th class="num">Выплачено</th><th class="num">К выплате</th></tr>
+  <tr>{% for k in COLS %}<td class="num">{{ pay[k]|money }}</td>{% endfor %}<td class="num">{{ pay.accrued|money }}</td><td class="num">{{ pay.paid|money }}</td><td class="num"><b>{{ pay.due|money }}</b></td></tr></table>
+{% endif %}
+
+{% if tools %}
+<h2>Инструмент на руках</h2>
+<table><thead><tr><th>Инв. №</th><th>Название</th><th>Серийный №</th><th class="num">Стоимость</th></tr></thead>
+  {% for x in tools %}<tr><td>{{ x.inv_no }}</td><td>{{ x.name }}</td><td>{{ x.serial }}</td><td class="num">{{ x.cost|money }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<div class="sign"><div>Руководитель: ____________</div><div>Сотрудник: ____________ / {{ u.full_name }}</div></div>
+{% endblock %}

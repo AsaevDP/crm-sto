@@ -1,0 +1,32 @@
+{% extends "_print_doc.html" %}
+{% block back %}/payroll?user={{ u.id }}&f={{ d1 }}&t={{ d2 }}{% endblock %}
+{% block doc_title %}РАСЧЁТНЫЙ ЛИСТ{% endblock %}
+{% block subtitle %}{{ u.full_name }} · {{ u.role.name }} · период {{ d1.strftime("%d.%m.%Y") }} — {{ d2.strftime("%d.%m.%Y") }}{% endblock %}
+{% block body %}
+<div class="kpis">
+  <div>Начислено<b>{{ s.accrued|money }} ₴</b></div><div>Выплачено<b>{{ s.paid|money }} ₴</b></div>
+  <div>К выплате<b>{{ s.due|money }} ₴</b></div><div>Нарядов / н/ч<b>{{ s.n_orders }} / {{ s.hours|num or 0 }}</b></div>
+</div>
+<table><tr>{% for k, v in COLS.items() %}<th class="num">{{ v }}</th>{% endfor %}</tr>
+  <tr>{% for k in COLS %}<td class="num">{{ s[k]|money }}</td>{% endfor %}</tr></table>
+<p class="muted">Ставка: {{ lines|join(" · ") or "не задана" }}</p>
+<h2>Начисления</h2>
+<table>
+  <thead><tr><th>Дата</th><th>Наряд</th><th>Авто</th><th>За что</th><th>Вид</th><th class="num">База</th><th class="num">Ставка</th><th class="num">Сумма, ₴</th></tr></thead>
+  {% for a in rows %}{% set o = orders.get(a.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else none %}
+  <tr><td>{{ a.on_date.strftime("%d.%m.%Y") }}</td><td>{{ o.number if o else "—" }}</td><td>{% if v %}{{ v.make }} {{ v.model }} {{ fmt_plate(v.plate) }}{% endif %}</td>
+    <td>{{ a.note }}</td><td>{{ COLS[column_of(a)] }}</td>
+    <td class="num">{% if a.kind in ("per_unit", "salary") %}{{ a.base_amount|num }}{% else %}{{ a.base_amount|money }}{% endif %}</td>
+    <td class="num">{% if a.kind == "percent" %}{{ a.rate|num }} %{% elif a.kind == "deduction" %}—{% else %}{{ a.rate|money }}{% endif %}</td>
+    <td class="num">{{ a.amount|money }}</td></tr>
+  {% else %}<tr><td colspan="8" class="muted">Начислений нет</td></tr>{% endfor %}
+  <tr class="total"><td colspan="7">Итого начислено</td><td class="num">{{ s.accrued|money }}</td></tr>
+</table>
+<h2>Выплаты</h2>
+<table><thead><tr><th>Дата</th><th>Как</th><th>Комментарий</th><th class="num">Сумма, ₴</th></tr></thead>
+  {% for p in payouts %}<tr><td>{{ p.paid_on.strftime("%d.%m.%Y") }}</td><td>{{ PAY_METHODS.get(p.method, p.method) }}</td><td>{{ p.note }}</td><td class="num">{{ p.amount|money }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Выплат не было</td></tr>{% endfor %}
+  <tr class="total"><td colspan="3">К выплате</td><td class="num">{{ s.due|money }}</td></tr>
+</table>
+<div class="sign"><div>Выдал: ____________</div><div>Получил: ____________ / {{ u.full_name }}</div></div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "_print_doc.html" %}
+{# Папка клиента: всё по клиенту на бумаге. Для клиента — без закупочных цен и наценок. #}
+{% block back %}/clients/{{ c.id }}{% endblock %}
+{% block doc_title %}ПАПКА КЛИЕНТА{% endblock %}
+{% block subtitle %}{{ c.full_name }} · {{ fmt_phone(c.phone) }} · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}{% endblock %}
+{% block body %}
+<h2>Автомобили</h2>
+<table>
+  <thead><tr><th>Марка, модель</th><th>Год</th><th>Госномер</th><th>VIN</th><th class="num">Пробег</th></tr></thead>
+  {% for v in vehicles %}<tr><td>{{ v.make }} {{ v.model }}</td><td>{{ v.year or "" }}</td><td>{{ fmt_plate(v.plate) }}</td><td>{{ v.vin }}</td>
+    <td class="num">{% if v.mileage %}{{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">—</td></tr>{% endfor %}
+</table>
+
+<h2>Наряды · {{ docs|length }}</h2>
+<table>
+  <thead><tr><th>Дата</th><th>№ наряда</th><th>Авто</th><th>Статус</th>{% if show_money %}<th class="num">Сумма</th><th class="num">Оплачено</th><th class="num">Долг</th>{% endif %}</tr></thead>
+  {% for d in docs %}{% set v = vmap.get(d.wo.vehicle_id) %}
+  <tr><td>{{ d.wo.created_at.astimezone().strftime("%d.%m.%Y") }}</td><td>{{ d.wo.number }}</td><td>{% if v %}{{ v.make }} {{ fmt_plate(v.plate) }}{% endif %}</td>
+    <td>{{ STATUSES.get(d.wo.status, d.wo.status) }}</td>
+    {% if show_money %}<td class="num">{{ d.t.total|money }}</td><td class="num">{{ d.t.paid|money }}</td><td class="num">{{ (d.t.due if d.t.due > 0 else 0)|money }}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="7" class="muted">Нарядов нет</td></tr>{% endfor %}
+  {% if show_money and docs %}<tr class="total"><td colspan="4">Итого</td>
+    <td class="num">{{ docs|map(attribute="t.total")|sum|money }}</td><td class="num">{{ docs|map(attribute="t.paid")|sum|money }}</td><td></td></tr>{% endif %}
+</table>
+
+{% if recs %}
+<h2>Рекомендации на будущее</h2>
+<table><thead><tr><th>Дата</th><th>Срочность</th><th>Что</th></tr></thead>
+  {% for e in recs %}<tr><td>{{ e.created_at.astimezone().strftime("%d.%m.%Y") }}</td><td>{{ URGENCY.get(e.urgency, "") }}</td><td>{{ e.text }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+{% for d in docs %}{% set wo = d.wo %}{% set v = vmap.get(wo.vehicle_id) %}
+<div class="page-break"></div>
+<h2>Наряд № {{ wo.number }} от {{ wo.created_at.astimezone().strftime("%d.%m.%Y") }} — {{ STATUSES.get(wo.status, wo.status) }}</h2>
+<table>
+  <tr><th style="width:30%">Автомобиль</th><td>{% if v %}{{ v.make }} {{ v.model }}{% if v.year %}, {{ v.year }}{% endif %} · {{ fmt_plate(v.plate) }}{% endif %}</td></tr>
+  <tr><th>Пробег при приёмке</th><td>{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% else %}—{% endif %}</td></tr>
+  <tr><th>Жалоба</th><td>{{ wo.complaint or "—" }}</td></tr>
+  <tr><th>Топливо · в машине</th><td>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }} · {% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</td></tr>
+  {% if wo.intake_note %}<tr><th>Замечания при приёмке</th><td>{{ wo.intake_note }}</td></tr>{% endif %}
+  {% set mgr = people.get(wo.manager_id) %}{% set mech = people.get(wo.mechanic_id) %}
+  <tr><th>Менеджер · слесарь</th><td>{{ mgr.full_name if mgr else "—" }} · {{ mech.full_name if mech else "—" }}</td></tr>
+</table>
+{% if d.findings %}
+<table><thead><tr><th>Найдено при диагностике</th><th>Срочность</th><th>Решение клиента</th></tr></thead>
+  {% for f in d.findings %}<tr><td>{{ f.text }}</td><td>{{ URGENCY.get(f.urgency, "") }}</td><td>{{ {"yes": "Согласовано", "no": "Отказ", "pending": "Ждёт"}.get(f.approval, f.approval) }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+<table><thead><tr><th>Работы</th><th class="num">Кол-во</th>{% if show_money %}<th class="num">Сумма, ₴</th>{% endif %}<th>Выполнено</th></tr></thead>
+  {% for w in d.works %}<tr><td>{{ w.name }}</td><td class="num">{% if w.pricing == "hours" and w.hours %}{{ (w.hours * w.qty)|num }} н/ч{% else %}{{ w.qty|num }}{% endif %}</td>
+    {% if show_money %}<td class="num">{{ w.price|money }}</td>{% endif %}<td>{{ w.done_at.astimezone().strftime("%d.%m %H:%M") if w.done_at else "—" }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
+</table>
+<table><thead><tr><th>Запчасти и материалы</th><th class="num">Кол-во</th>{% if show_money %}<th class="num">Цена, ₴</th><th class="num">Сумма, ₴</th>{% endif %}</tr></thead>
+  {% for p in d.parts %}<tr><td>{{ p.name }}</td><td class="num">{{ p.qty|num }}</td>{% if show_money %}<td class="num">{{ p.price|money }}</td><td class="num">{{ (p.price * p.qty)|money }}</td>{% endif %}</tr>
+  {% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
+</table>
+{% if show_money %}
+<table style="width:60%;margin-left:auto">
+  <tr><td>Работы</td><td class="num">{{ d.t.works|money }} ₴</td></tr>
+  <tr><td>Запчасти</td><td class="num">{{ d.t.parts|money }} ₴</td></tr>
+  {% if d.t.discount %}<tr><td>Скидка {{ wo.discount_pct|num }} %</td><td class="num">−{{ d.t.discount|money }} ₴</td></tr>{% endif %}
+  <tr class="total"><td>Итого</td><td class="num">{{ d.t.total|money }} ₴</td></tr>
+  {% for p in d.payments %}<tr><td>Оплата {{ p.created_at.astimezone().strftime("%d.%m.%Y") }} · {{ PAY_METHODS.get(p.method, p.method) }}</td><td class="num">{{ p.amount|money }} ₴</td></tr>{% endfor %}
+  <tr><td><b>Остаток к оплате</b></td><td class="num"><b>{{ (d.t.due if d.t.due > 0 else 0)|money }} ₴</b></td></tr>
+</table>
+{% endif %}
+{% if wo.handover_defects or wo.handover_advice %}<p><b>При выдаче:</b> {{ wo.handover_defects }} {{ wo.handover_advice }}</p>{% endif %}
+{% endfor %}
+<div class="sign"><div>Менеджер: ____________</div><div>Заказчик: ____________ / {{ c.full_name }}</div></div>
+{% endblock %}

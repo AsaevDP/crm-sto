@@ -1,0 +1,18 @@
+{% extends "_print_doc.html" %}
+{% block orient %}landscape{% endblock %}{% block sheet_w %}297mm{% endblock %}
+{% block back %}/payroll?f={{ d1 }}&t={{ d2 }}{% endblock %}
+{% block doc_title %}ВЕДОМОСТЬ ПО ЗАРПЛАТЕ{% endblock %}
+{% block subtitle %}период {{ d1.strftime("%d.%m.%Y") }} — {{ d2.strftime("%d.%m.%Y") }}{% endblock %}
+{% block body %}
+<table>
+  <thead><tr><th>№</th><th>Сотрудник</th><th>Должность</th><th class="num">Нарядов</th><th class="num">Н/ч</th>
+    {% for k, v in COLS.items() %}<th class="num">{{ v }}</th>{% endfor %}<th class="num">Начислено</th><th class="num">Выплачено</th><th class="num">К выплате</th><th style="width:28mm">Подпись</th></tr></thead>
+  {% for s in staff %}{% set r = summ[s.id] %}
+  <tr><td>{{ loop.index }}</td><td>{{ s.full_name }}</td><td>{{ s.role.name }}</td><td class="num">{{ r.n_orders }}</td><td class="num">{{ r.hours|num or 0 }}</td>
+    {% for k in COLS %}<td class="num">{{ r[k]|money }}</td>{% endfor %}<td class="num">{{ r.accrued|money }}</td><td class="num">{{ r.paid|money }}</td><td class="num"><b>{{ r.due|money }}</b></td><td></td></tr>
+  {% endfor %}
+  <tr class="total"><td colspan="3">Итого</td><td></td><td class="num">{{ tot.hours|num or 0 }}</td>{% for k in COLS %}<td class="num">{{ tot[k]|money }}</td>{% endfor %}
+    <td class="num">{{ tot.accrued|money }}</td><td class="num">{{ tot.paid|money }}</td><td class="num">{{ tot.due|money }}</td><td></td></tr>
+</table>
+<div class="sign"><div>Составил: ____________</div><div>Утвердил: ____________</div></div>
+{% endblock %}

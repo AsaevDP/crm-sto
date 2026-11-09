@@ -50,9 +50,11 @@ def save_photo(data: bytes) -> str:
 
 # ---------- Деталь ----------
 def add_part(db: Session, branch_id, donor: Donor | None, name: str, qty, price, condition: str, location_id,
-             description: str = "", publish: bool = True, article: str = "") -> StockItem:
+             description: str = "", publish: bool = True, article: str = "", category: str = "") -> StockItem:
     """Новая б/у деталь: каталог (kind=used) + позиция склада с кодом Р-0001 + приход."""
+    from ..models.stock import guess_razbor_category
     cat = PartCatalog(name=name.strip()[:200], article=article.strip()[:80], kind="used",
+                      category=(category.strip()[:60] or guess_razbor_category(name)),
                       fits=f"{donor.make} {donor.model} {donor.year or ''}".strip() if donor else "")
     db.add(cat)
     db.flush()
@@ -158,7 +160,7 @@ def economy(db: Session, branch_id, donor: Donor) -> DonorEconomy:
 
 # ---------- Экспорт для сайта ----------
 COLUMNS = ["Код", "Название", "Марка", "Модель", "Год", "Двигатель", "КПП", "Кузов", "Состояние", "Цена, грн",
-           "Количество", "Описание", "Донор", "Фото"]
+           "Количество", "Описание", "Донор", "Фото", "Категория"]
 
 
 def export_rows(db: Session, branch_id) -> list[dict]:
@@ -175,7 +177,7 @@ def export_rows(db: Session, branch_id) -> list[dict]:
         donor = db.get(Donor, i.donor_id) if i.donor_id else None
         photos = db.scalars(select(StockPhoto).where(StockPhoto.stock_item_id == i.id).order_by(StockPhoto.created_at)).all()
         rows.append({
-            "Код": i.code, "Название": cat.name, "Марка": i.donor_make, "Модель": i.donor_model,
+            "Код": i.code, "Название": cat.name, "Категория": cat.category, "Марка": i.donor_make, "Модель": i.donor_model,
             "Год": i.donor_year or "", "Двигатель": donor.engine if donor else "", "КПП": donor.gearbox if donor else "",
             "Кузов": donor.body if donor else "", "Состояние": CONDITIONS.get(i.condition, i.condition),
             "Цена, грн": float(i.sale_price), "Количество": float(free), "Описание": i.description,

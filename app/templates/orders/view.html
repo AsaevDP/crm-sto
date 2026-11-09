@@ -44,6 +44,8 @@
       <div class="card-h"><span class="headline">Акт приёма</span></div>
       <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
       <div class="kv"><span>В машине</span><b class="wrap">{% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
+      {% set missing = INTAKE_ITEMS.keys()|reject("in", wo.intake_items or [])|select("in", ["spare", "kit", "sign", "keys2", "jack"])|list %}
+      {% if missing %}<div class="kv"><span>Нет</span><span class="wrap footnote">{% for i in missing %}{{ INTAKE_ITEMS[i] }}{% if not loop.last %}, {% endif %}{% endfor %}</span></div>{% endif %}
       {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}
     </div>
   </section>

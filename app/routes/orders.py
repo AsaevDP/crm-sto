@@ -46,8 +46,9 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
         first_photo.setdefault(p.work_order_id, p)
     n_photos = dict(ctx.db.execute(select(WoPhoto.work_order_id, func.count()).where(WoPhoto.work_order_id.in_(ids))
                                    .group_by(WoPhoto.work_order_id)).all())
+    prog = svc.work_progress(ctx.db, ids)
     return [{
-        "o": o, "v": vehicles.get(o.vehicle_id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
+        "o": o, "v": vehicles.get(o.vehicle_id), "prog": prog.get(o.id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
         "mechanic": people.get(o.mechanic_id), "partsman": people.get(o.partsman_id),
         "photo": first_photo.get(o.id), "n_photos": n_photos.get(o.id, 0),
     } for o in orders]
@@ -71,21 +72,51 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         query = (query.join(Vehicle, Vehicle.id == WorkOrder.vehicle_id).join(Client, Client.id == WorkOrder.client_id)
                  .where(or_(*conds)))
     orders = ctx.db.scalars(query.order_by(WorkOrder.created_at.desc()).limit(200)).all()
+    lifts = []
+    if ctx.can("lifts.take") and ctx.user.role.code == "mechanic":
+        lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.active.is_(True))
+                               .order_by(Lift.number)).all()
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q,
-                      STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status)
+                      STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
+                      lift_people=_people(ctx, *[l.mechanic_id for l in lifts]))
+
+
+@router.post("/lifts/take")
+def lift_take(ctx: Ctx = Depends(get_ctx), lift_id: str = Form("")):
+    """Слесарь сам закрепляется за подъёмником (или открепляется — пустое значение).
+    Занятый другим слесарем пост забрать нельзя — это решает админ в настройках."""
+    ctx.need("lifts.take")
+    if ctx.user.role.code != "mechanic":
+        raise Forbidden()
+    lift = ctx.db.get(Lift, _uuid(lift_id)) if lift_id else None
+    if lift and (lift.branch_id != ctx.branch.id or not lift.active):
+        raise Forbidden()
+    if lift and lift.mechanic_id and lift.mechanic_id != ctx.user.id:
+        flash(ctx.request, "Этот подъёмник закреплён за другим слесарем", "error")
+        return RedirectResponse("/orders", status_code=303)
+    for l in ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.mechanic_id == ctx.user.id)):
+        if not lift or l.id != lift.id:
+            l.mechanic_id = None
+    if lift:
+        lift.mechanic_id = ctx.user.id
+    ctx.db.commit()
+    flash(ctx.request, f"Вы закреплены за подъёмником {lift.number}" if lift else "Вы откреплены от подъёмника")
+    return RedirectResponse("/orders", status_code=303)
 
 
 # ---------- Приёмка ----------
 @router.get("/orders/new")
-def order_new(ctx: Ctx = Depends(get_ctx)):
+def order_new(ctx: Ctx = Depends(get_ctx), appt: str = ""):
     ctx.need("orders.create")
     bid = ctx.branch.id
+    from .schedule import prefill_from
+    prefill = prefill_from(ctx, appt) if appt else {}
     return ctx.render("orders/new.html", title="Приёмка",
                       partsmen=svc.staff_by_role(ctx.db, bid, "partsman"),
                       mechanics=svc.staff_by_role(ctx.db, bid, "mechanic"),
                       lifts=svc.lifts_with_load(ctx.db, bid), makes=svc.known_makes(ctx.db, bid),
                       INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS, MAX_PHOTOS=svc.MAX_PHOTOS,
-                      fmt_plate=svc.fmt_plate)
+                      fmt_plate=svc.fmt_plate, prefill=prefill)
 
 
 @router.post("/orders/new")
@@ -111,6 +142,9 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
         ctx.db.rollback()
         return JSONResponse({"ok": False, "errors": ["Фото не распознаны (нужны JPG/PNG)"]}, status_code=400)
     svc.route_after_intake(ctx.db, wo)
+    if form.get("appt_id"):
+        from .schedule import link_order
+        link_order(ctx, str(form.get("appt_id")), wo)
     ctx.db.commit()
     flash(request, f"Наряд {wo.number} создан")
     return {"ok": True, "url": f"/orders/{wo.id}"}
@@ -134,7 +168,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                          .order_by(WoStatusHistory.created_at)).all()
     findings = db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id).order_by(WoFinding.created_at)).all()
     people = _people(ctx, wo.manager_id, wo.partsman_id, wo.mechanic_id, *[h.created_by for h in history],
-                     *[f.created_by for f in findings], *[w.mechanic_id for w in works])
+                     *[f.created_by for f in findings], *[w.mechanic_id for w in works],
+                     *[w.done_by for w in works])
     can_assign = ctx.can("orders.assign") and wo.status in WO_ACTIVE
     is_mech = ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all")
     # Запчасти наряда (артикул/закупка/наценка — только запчастисту и админу)

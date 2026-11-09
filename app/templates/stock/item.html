@@ -4,7 +4,7 @@
   <a class="back" href="/stock">{{ icon("back") }}Склад</a>
   <div class="ov-title">
     <div><h1 class="title-1">{{ c.name }}</h1>
-      <div class="subhead mono">{{ c.brand }} {{ c.article }}{% if c.revision %} · рев. {{ c.revision }}{% endif %} · ячейка {{ loc }}</div></div>
+      <div class="subhead mono">{% if c.kind == "used" %}{{ c.category or "Прочее" }}{% else %}{{ SECTIONS.get(c.section, "") }}{% if c.category %} · {{ c.category }}{% endif %}{% endif %} · {{ c.brand }} {{ c.article }}{% if c.revision %} · рев. {{ c.revision }}{% endif %} · ячейка {{ loc }}</div></div>
   </div>
 </header>
 <div class="stats" style="grid-template-columns:repeat(3,1fr)">
@@ -14,6 +14,19 @@
 </div>
 <div class="cl-grid">
   <section class="ov-col on">
+    {% if ctx.can("stock.manage", "parts.pick") %}
+    <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/category">
+      <div class="card-h"><span class="headline">Раздел и категория</span></div>
+      {% if c.kind == "used" %}
+      <select class="field" name="category" aria-label="Категория разбора">{% for k in RAZBOR_CATEGORIES %}<option {% if k == c.category %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+      {% else %}
+      <select class="field" name="section" aria-label="Раздел">{% for k, v in SECTIONS.items() %}<option value="{{ k }}" {% if c.section == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      <input class="field" name="category" value="{{ c.category }}" list="cat-list" placeholder="Категория: Фильтры, Тормоза…" aria-label="Категория">
+      <datalist id="cat-list">{% for sec, lst in CATEGORIES.items() %}{% for k in lst %}<option value="{{ k }}">{% endfor %}{% endfor %}</datalist>
+      {% endif %}
+      <button class="btn btn-sm">Сохранить</button>
+    </form>
+    {% endif %}
     {% if ctx.can("stock.manage") %}
     <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/adjust">
       <div class="card-h"><span class="headline">Инвентаризация</span></div>

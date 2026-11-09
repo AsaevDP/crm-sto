@@ -2,6 +2,7 @@
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/settings/users">{{ icon("back") }}Сотрудники</a><h1 class="large-title">{{ u.full_name }}</h1></div>
+  <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print" target="_blank">🖨 Папка сотрудника</a>
   {% if user.role.code == "admin" and u.id != user.id and u.active %}
   <form method="post" action="/view-as/{{ u.id }}"><button class="btn btn-sm btn-tinted">👁 Посмотреть его глазами</button></form>
   {% endif %}

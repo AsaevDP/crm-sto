@@ -8,11 +8,11 @@
   <input type="hidden" name="pricing" value="{{ mode }}">
   <div class="form-row three pm-hours">
     <label>Нормо-часы<input class="field" name="hours" inputmode="decimal" value="{{ (w.hours|num) if w and w.hours is not none else 1 }}"></label>
-    <label>₴ за час<input class="field" name="rate_h" inputmode="decimal" value="{{ ('%.0f'|format(w.rate)) if w and w.pricing == 'hours' else hour_rate }}"></label>
+    <label>₴ за час<input class="field" name="rate_h" inputmode="decimal" value="{{ ('%.0f'|format(w.rate or 0)) if w and w.pricing == 'hours' else hour_rate }}"></label>
     <label>Кол-во<input class="field" name="qty_h" inputmode="decimal" value="{{ (w.qty|num) if w else 1 }}"></label>
   </div>
   <div class="form-row pm-fixed">
-    <label>Цена работы, ₴<input class="field" name="rate_f" inputmode="decimal" value="{{ ('%.2f'|format(w.rate)) if w and w.pricing == 'fixed' else '' }}" placeholder="0"></label>
+    <label>Цена работы, ₴<input class="field" name="rate_f" inputmode="decimal" value="{{ ('%.2f'|format(w.rate or 0)) if w and w.pricing == 'fixed' else '' }}" placeholder="0"></label>
     <label>Кол-во<input class="field" name="qty_f" inputmode="decimal" value="{{ (w.qty|num) if w else 1 }}"></label>
   </div>
   <input type="hidden" name="rate"><input type="hidden" name="qty">

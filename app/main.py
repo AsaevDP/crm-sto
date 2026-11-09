@@ -9,7 +9,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import audit  # noqa: F401 — подключает автоматический журнал
 from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
-from .routes import attendance, auth, diagnosis, money, orders, pages, razbor, settings, stock, tools
+from .routes import (attendance, auth, diagnosis, folders, money, orders, pages, razbor, reports, schedule,
+                     settings, stock, tools)
 from .seed import seed
 from .web import Forbidden, NotLoggedIn, ViewOnly, flash, templates
 
@@ -20,6 +21,11 @@ async def lifespan(_app):
     Base.metadata.create_all(engine)
     add_missing_columns()
     seed()
+    from .db import SessionLocal
+    from .services.stock import backfill_categories
+    with SessionLocal() as db:
+        backfill_categories(db)
+        db.commit()
     if DEMO:
         from .demo_data import populate
         populate()  # демо: выдуманные клиенты, наряды на всех этапах, склад
@@ -42,6 +48,9 @@ app.include_router(money.router)
 app.include_router(tools.router)
 app.include_router(razbor.router)
 app.include_router(attendance.router)
+app.include_router(folders.router)
+app.include_router(schedule.router)
+app.include_router(reports.router)
 app.include_router(settings.router)
 
 

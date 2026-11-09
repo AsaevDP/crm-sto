@@ -13,10 +13,13 @@
 </header>
 <form class="toolbar-row" method="get">
   <input class="field search" name="q" value="{{ q }}" placeholder="Код Р-0001, деталь, марка, модель, VIN" autocomplete="off">
-  <input type="hidden" name="donor" value="{{ donor }}">
+  <input type="hidden" name="donor" value="{{ donor }}"><input type="hidden" name="f" value="{{ f }}">
+  <select class="field" name="cat" onchange="this.form.submit()" style="max-width:230px" aria-label="Категория">
+    <option value="">Все категории</option>
+    {% for k in RAZBOR_CATEGORIES %}<option value="{{ k }}" {% if k == cat %}selected{% endif %}>{{ k }}{% if cat_counts.get(k) %} · {{ cat_counts[k] }}{% endif %}</option>{% endfor %}</select>
   <div class="segmented" style="flex:none">
     {% for k, v in [("", "Все"), ("stock", "В наличии"), ("site", "На сайте"), ("reserved", "Резерв · " ~ n_reserved), ("sold", "Продано")] %}
-    <a href="?f={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if donor %}&donor={{ donor }}{% endif %}" aria-pressed="{{ (f == k)|lower }}">{{ v }}</a>{% endfor %}
+    <a href="?f={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if donor %}&donor={{ donor }}{% endif %}{% if cat %}&cat={{ cat|urlencode }}{% endif %}" aria-pressed="{{ (f == k)|lower }}">{{ v }}</a>{% endfor %}
   </div>
 </form>
 <div class="cl-grid fill razbor-grid">
@@ -29,7 +32,7 @@
         <tr onclick="location.href='/razbor/parts/{{ r.i.id }}'" style="cursor:pointer" class="{{ 'muted' if r.state == 'sold' }}">
           <td class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% endif %}</td>
           <td class="mono">{{ r.i.code }}</td>
-          <td>{{ r.c.name }}<div class="caption">{{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }} · {{ r.loc }}</div></td>
+          <td>{{ r.c.name }}<div class="caption">{{ r.c.category or "Прочее" }} · {{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }} · {{ r.loc }}</div></td>
           <td class="num nowrap">{{ "{:,.0f}".format(r.i.sale_price).replace(",", " ") }} ₴</td>
           <td class="nowrap"><span class="chip" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if r.i.publish_on_site and r.state == "stock" %} <span class="tag" title="Уходит в экспорт для сайта">сайт</span>{% endif %}</td>
         </tr>

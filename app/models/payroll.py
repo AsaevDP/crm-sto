@@ -73,3 +73,6 @@ class PayrollPayout(Entity):
     period_from: Mapped[date] = mapped_column(Date)
     period_to: Mapped[date] = mapped_column(Date)
     amount: Mapped[Decimal] = mapped_column(MONEY)
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)   # когда выдали деньги
+    method: Mapped[str] = mapped_column(String(10), default="cash")
+    note: Mapped[str] = mapped_column(String(300), default="")

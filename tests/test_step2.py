@@ -34,7 +34,7 @@ def test_roles_see_different_menus(client):
     assert "/pult" in menus["irina"] and "/settings" not in menus["irina"]
     assert "/purchases" in menus["oleg"] and "/money" not in menus["oleg"]
     assert "/stock" in menus["pavel"] and "/pult" not in menus["pavel"]
-    assert menus["andrey"] == ["/orders", "/timesheet", "/payroll", "/tools"]
+    assert menus["andrey"] == ["/orders", "/schedule", "/timesheet", "/payroll", "/tools"]
     assert "/settings" in menus["admin"] and "/audit" in menus["admin"]
     # У запчастиста и кладовщика разделы одни и те же (различаются права внутри), остальные — разные
     assert len({tuple(m) for m in menus.values()}) == 4

@@ -1,28 +1,68 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
-{% set KIND = {"percent": "%", "per_unit": "за шт", "salary": "оклад", "deduction": "удержание"} %}
+{% set q = "user=" ~ u.id ~ "&f=" ~ d1 ~ "&t=" ~ d2 %}
 <header class="page-head">
   <div>{% if see_all %}<a class="back" href="/payroll?f={{ d1 }}&t={{ d2 }}">{{ icon("back") }}Все сотрудники</a>{% endif %}
     <h1 class="large-title">{{ "Моя зарплата" if u.id == user.id else u.full_name }}</h1></div>
   <form class="ov-actions" method="get">{% if see_all %}<input type="hidden" name="user" value="{{ u.id }}">{% endif %}
-    <input class="field" type="date" name="f" value="{{ d1 }}" style="max-width:160px"><input class="field" type="date" name="t" value="{{ d2 }}" style="max-width:160px">
-    <button class="btn btn-sm btn-gray">Показать</button></form>
+    <input class="field" type="date" name="f" value="{{ d1 }}" style="max-width:160px" aria-label="С"><input class="field" type="date" name="t" value="{{ d2 }}" style="max-width:160px" aria-label="По">
+    <button class="btn btn-sm btn-gray">Показать</button>
+    <a class="btn btn-sm btn-gray" href="/payroll/print?{{ q }}" target="_blank">🖨 Расчётный лист</a>
+    <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print?f={{ d1 }}&t={{ d2 }}" target="_blank">🖨 Папка</a></form>
 </header>
 <div class="stats">
-  <div class="stat"><span class="footnote">Сегодня</span><b>{{ "{:,.2f}".format(today_sum).replace(",", " ") }} ₴</b></div>
-  <div class="stat"><span class="footnote">За период {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ "{:,.2f}".format(total).replace(",", " ") }} ₴</b></div>
-  <div class="stat"><span class="footnote">Ставка</span><span class="subhead" style="display:block;margin-top:4px">{{ lines|join(" · ") or "не задана" }}</span></div>
+  <div class="stat"><span class="footnote">Начислено {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ s.accrued|money }} ₴</b></div>
+  <div class="stat"><span class="footnote">Выплачено</span><b>{{ s.paid|money }} ₴</b></div>
+  <div class="stat"><span class="footnote">К выплате</span><b>{{ s.due|money }} ₴</b></div>
+  <div class="stat"><span class="footnote">Сегодня</span><b>{{ today_sum|money }} ₴</b></div>
 </div>
-<div class="card compact fill scroll">
-  {% for day, rows in days.items() %}
-  <div class="card-h"><span class="headline">{{ day.strftime("%d.%m.%Y") }}</span><b>{{ "%.2f"|format(rows|sum(attribute="amount")) }} ₴</b></div>
-  {% for a in rows %}
-  {% set o = orders.get(a.work_order_id) %}
-  <div class="kv"><span>{% if o %}<a href="/orders/{{ o.id }}">{{ o.number[-6:] }}</a> · {% endif %}{{ a.note }}
-    <span class="caption">· {% if a.kind == "percent" %}{{ a.rate|num }} % от {{ "%.2f"|format(a.base_amount) }} ₴{% elif a.kind == "per_unit" %}{{ "%.2f"|format(a.rate) }} ₴ × {{ a.base_amount|num }}{% else %}{{ KIND.get(a.kind) }}{% endif %}</span></span>
-    <b>{{ "%.2f"|format(a.amount) }} ₴</b></div>
-  {% endfor %}
-  {% else %}<p class="footnote">Начислений за период нет. Начисление появляется, когда наряд оплачен.</p>{% endfor %}
+<div class="card compact pay-cols">
+  {% for k, v in COLS.items() %}{% if s[k] %}<span><span class="footnote">{{ v }}</span> <b>{{ s[k]|money }} ₴</b></span>{% endif %}{% endfor %}
+  <span><span class="footnote">Нарядов</span> <b>{{ s.n_orders }}</b></span>
+  {% if s.hours %}<span><span class="footnote">Нормо-часов</span> <b>{{ s.hours|num }}</b></span>{% endif %}
+  <span class="grow footnote">Ставка: {{ lines|join(" · ") or "не задана" }}</span>
+</div>
+<div class="cl-grid fill pay-grid">
+  <section class="ov-col on">
+    <div class="tablewrap fill scroll">
+      <table class="table dense-table">
+        <thead><tr><th>Дата</th><th>Наряд · авто</th><th>За что</th><th>Вид</th><th class="num">База</th><th class="num">Ставка</th><th class="num">Сумма</th></tr></thead>
+        <tbody>
+        {% for a in rows %}{% set o = orders.get(a.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else none %}{% set w = works.get(a.wo_work_id) %}
+        <tr>
+          <td class="nowrap">{{ a.on_date.strftime("%d.%m") }}</td>
+          <td class="nowrap">{% if o %}<a href="/orders/{{ o.id }}">{{ o.number[-6:] }}</a>{% if v %}<div class="caption">{{ v.make }} {{ fmt_plate(v.plate) }}</div>{% endif %}{% else %}—{% endif %}</td>
+          <td>{{ a.note }}{% if w and w.hours %}<div class="caption">{{ (w.hours * w.qty)|num }} н/ч</div>{% endif %}</td>
+          <td class="footnote nowrap">{{ COLS[column_of(a)] }}</td>
+          <td class="num">{% if a.kind == "per_unit" %}{{ a.base_amount|num }} шт{% elif a.kind == "salary" %}{{ a.base_amount|num }}{% else %}{{ a.base_amount|money }}{% endif %}</td>
+          <td class="num footnote">{% if a.kind == "percent" %}{{ a.rate|num }} %{% elif a.kind in ("per_unit", "salary") %}{{ a.rate|money }} ₴{% else %}—{% endif %}</td>
+          <td class="num"><b {% if a.amount < 0 %}style="color:var(--red)"{% endif %}>{{ a.amount|money }}</b></td>
+        </tr>
+        {% else %}<tr><td colspan="7" class="footnote">Начислений за период нет. Начисление появляется, когда наряд оплачен.</td></tr>{% endfor %}
+        </tbody>
+        {% if rows %}<tfoot><tr><td colspan="6"><b>Итого начислено</b></td><td class="num"><b>{{ s.accrued|money }}</b></td></tr></tfoot>{% endif %}
+      </table>
+    </div>
+  </section>
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Выплаты за период</span></div>
+      {% for p in payouts %}
+      <div class="kv"><span>{{ p.paid_on.strftime("%d.%m") }} · {{ PAY_METHODS.get(p.method, p.method) }}{% if p.note %} <span class="caption">· {{ p.note }}</span>{% endif %}</span>
+        <span class="nowrap"><b>{{ p.amount|money }} ₴</b>{% if ctx.can("payroll.manage") %}
+          <form method="post" action="/payroll/payouts/{{ p.id }}/delete" style="display:inline" onsubmit="return confirm('Удалить выплату?')"><button class="btn btn-plain btn-sm" title="Удалить выплату">×</button></form>{% endif %}</span></div>
+      {% else %}<p class="footnote" style="margin:0">Выплат не было</p>{% endfor %}
+      {% if ctx.can("payroll.manage") %}
+      <form class="form dense" method="post" action="/payroll/payouts" style="margin-top:8px">
+        <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="f" value="{{ d1 }}"><input type="hidden" name="t" value="{{ d2 }}">
+        <div class="form-row"><input class="field" name="amount" inputmode="decimal" placeholder="Сумма ₴ *" value="{{ '%.2f'|format(s.due) if s.due > 0 else '' }}" required aria-label="Сумма">
+          <select class="field" name="method" aria-label="Как выдали">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+        <input class="field" name="note" placeholder="Аванс, расчёт за месяц…" aria-label="Комментарий">
+        <button class="btn btn-sm">Записать выплату</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
 </div>
 {% endblock %}

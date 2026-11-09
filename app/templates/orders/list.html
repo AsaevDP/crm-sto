@@ -4,6 +4,16 @@
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Наряды</h1>
+  {% if my_lifts %}{% set mine = my_lifts|selectattr("mechanic_id", "equalto", user.id)|first %}
+  <form class="ov-actions lift-take" method="post" action="/lifts/take">
+    <span class="footnote">Мой подъёмник</span>
+    <select class="field" name="lift_id" onchange="this.form.submit()" aria-label="Мой подъёмник" style="max-width:220px">
+      <option value="">— не закреплён —</option>
+      {% for l in my_lifts %}{% set who = lift_people.get(l.mechanic_id) %}
+      <option value="{{ l.id }}" {% if l.mechanic_id == user.id %}selected{% elif who %}disabled{% endif %}>{{ l.number }} · {{ l.name }}{% if who and l.mechanic_id != user.id %} · {{ who.short_name }}{% endif %}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
   {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
 </header>
 

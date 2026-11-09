@@ -466,5 +466,35 @@ def populate():
             c = db.scalar(select(Client).where(Client.phone == osvc.norm_phone(CLIENTS[i][0])))
             osvc.event(db, None, "note", text, client_id=c.id)
 
+        # ---- Запись клиентов на неделю вперёд (и пара прошедших: приехал / не приехал) ----
+        as_user("irina")
+        from .models import Appointment
+        from .services.schedule import to_utc
+        plan = [  # через сколько дней, время, минут, мастер, имя, телефон, авто, номер, что делать, статус
+            (0, "15:00", 60, "sergey", "Оксана Литвин", "0671230001", "Kia Sportage", "АА 5521 КС", "Замена масла и фильтров", "booked"),
+            (0, "17:00", 90, "andrey", "Роман Гнатюк", "0501230002", "Ford Focus", "ВС 7310 АН", "Стук в подвеске спереди", "booked"),
+            (1, "09:00", 120, "andrey", "Игорь Мельник", "0631230003", "VW Passat B7", "КА 3301 ВО", "ТО-90 000, проверить тормоза", "booked"),
+            (1, "11:30", 60, "viktor", "Светлана Бойко", "0971230004", "Toyota RAV4", "АІ 4410 ЕК", "Замена тормозных колодок", "booked"),
+            (1, "14:00", 180, "taras", "Максим Кравец", "0681230005", "BMW 320d", "ВІ 9902 АМ", "Течь масла, диагностика двигателя", "booked"),
+            (2, "10:00", 60, "sergey", "Анна Шевчук", "0731230006", "Hyundai Tucson", "АА 0717 ТТ", "Развал-схождение", "booked"),
+            (2, "12:00", 240, "andrey", "Денис Олейник", "0661230007", "Skoda Superb", "КА 2244 МР", "Замена ремня ГРМ с помпой", "booked"),
+            (3, "09:30", 90, "igor", "Юрий Ковальчук", "0951230008", "Renault Duster", "СВ 1180 АР", "Шумит подшипник ступицы", "booked"),
+            (4, "16:00", 60, "viktor", "Мария Ткаченко", "0681230009", "Mazda 6", "АА 6080 ММ", "Диагностика кондиционера", "booked"),
+            (-1, "10:00", 60, "andrey", "Олег Савчук", "0501230010", "Opel Astra", "ВН 3434 АК", "Замена свечей", "noshow"),
+        ]
+        for days, hhmm, dur, mech, name, phone, car, plate, work, status in plan:
+            db.add(Appointment(start_at=to_utc(today + timedelta(days=days), hhmm), duration_min=dur,
+                               mechanic_id=users[mech].id if mech in users else None, client_name=name,
+                               phone=osvc.norm_phone(phone), car=car, plate=osvc.norm_plate(plate), work=work, status=status))
+
+        # ---- Выплаты зарплаты (аванс) — чтобы в «Зарплате» было видно «выплачено / к выплате» ----
+        as_user("admin")
+        from .models import PayrollPayout
+        for login, amount in (("andrey", 3000), ("sergey", 2500), ("irina", 4000)):
+            if login in users:
+                db.add(PayrollPayout(user_id=users[login].id, period_from=today.replace(day=1), period_to=today,
+                                     amount=Decimal(amount), paid_on=today.replace(day=min(5, today.day)), method="cash",
+                                     note="Аванс"))
+
         current_user_id.set(None)
         db.commit()

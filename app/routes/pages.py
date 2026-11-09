@@ -15,7 +15,9 @@ SECTIONS = {
 
 @router.get("/")
 def home(ctx: Ctx = Depends(get_ctx)):
-    # Каждый попадает в первый доступный ему раздел
+    # Каждый попадает в первый доступный ему раздел; директор и зам — сразу в свой кабинет
+    if ctx.user.role.code in ("director", "deputy") and ctx.can("reports.view", "reports.finance"):
+        return RedirectResponse("/reports", status_code=303)
     target = ctx.menu[0]["href"] if ctx.menu else "/more"
     return RedirectResponse(target, status_code=303)
 
@@ -61,7 +63,9 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     from ..services.attendance import _aware, local_tz, on_site_now
     presence = {uid: (e.direction, _aware(e.at).astimezone(local_tz()).strftime("%H:%M")) if e else None
                 for uid, e in on_site_now(db, bid, staff).items()}
-    return ctx.render("pult.html", title="Пульт", lifts=lifts, vehicles=vehicles, people=people, staff=staff, paused=paused,
+    from ..services.orders import work_progress
+    prog = work_progress(db, [wo.id for _, wo in lifts if wo])
+    return ctx.render("pult.html", title="Пульт", lifts=lifts, prog=prog, vehicles=vehicles, people=people, staff=staff, paused=paused,
                       presence=presence,
                       counts=counts, issue_new=issue_new, busy=busy, fmt_plate=fmt_plate)
 

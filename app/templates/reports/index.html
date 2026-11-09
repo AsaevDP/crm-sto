@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% macro kpi(label, value, sub="", tone="") -%}
+<div class="stat {{ tone }}"><span class="footnote">{{ label }}</span><b>{{ value }}</b>{% if sub %}<span class="caption">{{ sub }}</span>{% endif %}</div>
+{%- endmacro %}
+{% set nq = (p.d1.month - 1) // 3 + 1 %}
+<header class="page-head">
+  <div><p class="footnote">{{ user.role.name }} · {{ p.label }}</p><h1 class="large-title">Кабинет</h1></div>
+  <div class="ov-actions">
+    <div class="segmented" style="flex:none">
+      <a href="?tab={{ tab }}&period=month&y={{ p.d1.year }}&n={{ p.d1.month }}" aria-pressed="{{ (p.kind == 'month')|lower }}">Месяц</a>
+      <a href="?tab={{ tab }}&period=quarter&y={{ p.d1.year }}&n={{ nq }}" aria-pressed="{{ (p.kind == 'quarter')|lower }}">Квартал</a>
+      <a href="?tab={{ tab }}&period=year&y={{ p.d1.year }}" aria-pressed="{{ (p.kind == 'year')|lower }}">Год</a>
+    </div>
+    {% if p.prev %}<a class="btn btn-sm btn-gray" href="?tab={{ tab }}&{{ p.prev }}" aria-label="Предыдущий период">‹</a>
+    <a class="btn btn-sm btn-gray" href="?tab={{ tab }}&{{ p.next }}" aria-label="Следующий период">›</a>{% endif %}
+    <a class="btn btn-sm btn-gray" href="/reports/print?tab={{ tab }}&{{ qs }}" target="_blank">🖨 Печать</a>
+    <a class="btn btn-sm btn-gray" href="/reports/export.csv?tab={{ tab }}&{{ qs }}">Excel</a>
+  </div>
+</header>
+<div class="segmented seg-wide">
+  {% for k, v in tabs.items() %}<a href="?tab={{ k }}&{{ qs }}" aria-pressed="{{ (tab == k)|lower }}">{{ v }}</a>{% endfor %}
+</div>
+
+{% if tab == "overview" %}
+<div class="stats">
+  {{ kpi("Пришло денег", m.revenue|money(0) ~ " ₴", "оплаты + разбор") }}
+  {{ kpi("По нарядам", m.billed|money(0) ~ " ₴", "оплачено нарядов: " ~ m.orders_paid) }}
+  {{ kpi("Средний чек", m.avg_check|money(0) ~ " ₴") }}
+  {{ kpi("Нарядов", m.orders_created ~ " / " ~ m.orders_closed, "принято / выдано") }}
+  {% if fin %}
+  {{ kpi("Валовая прибыль", m.gross|money(0) ~ " ₴", "маржа " ~ m.margin_pct ~ " %", "tone-ok" if m.gross >= 0 else "tone-bad") }}
+  {{ kpi("Себестоимость запчастей", m.parts_cost|money(0) ~ " ₴") }}
+  {{ kpi("Зарплата начислена", m.payroll|money(0) ~ " ₴") }}
+  {% endif %}
+</div>
+<div class="rep-grid fill scroll">
+  <div class="card compact rep-chart">
+    <div class="card-h"><span class="headline">По месяцам · {{ p.d1.year }}</span>
+      <span class="legend"><i class="lg lg-revenue"></i>пришло денег{% if fin %} <i class="lg lg-gross"></i>валовая прибыль{% endif %}</span></div>
+    <svg viewBox="0 0 {{ ch.w }} {{ ch.h }}" class="chart" role="img" aria-label="Выручка по месяцам">
+      {% for tk in ch.ticks %}<line x1="{{ ch.left }}" x2="{{ ch.w }}" y1="{{ tk.y }}" y2="{{ tk.y }}" class="grid-l"/>
+      <text x="{{ ch.left - 6 }}" y="{{ tk.y + 4 }}" class="ax" text-anchor="end">{{ (tk.v / 1000)|round(0)|int }}{{ "к" if tk.v else "" }}</text>{% endfor %}
+      {% for b in ch.bars %}<rect x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2" class="bar bar-{{ b.k }} {{ 'neg' if b.neg }}"><title>{{ b.label }}: {{ b.v|money(0) }} ₴</title></rect>{% endfor %}
+      {% for l in ch.labels %}<text x="{{ l.x }}" y="{{ ch.h - 6 }}" class="ax" text-anchor="middle">{{ l.t }}</text>{% endfor %}
+    </svg>
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Касса по способам оплаты</span></div>
+    {% set mx = [m.by_method.values()|max, 1]|max %}
+    {% for k, v in PAY_METHODS.items() %}{% set val = m.by_method.get(k, 0) %}
+    <div class="hbar"><span>{{ v }}</span><span class="hbar-track"><span style="width:{{ (100 * val / mx)|round|int }}%"></span></span><b>{{ val|money(0) }} ₴</b></div>
+    {% endfor %}
+    {% if m.used_sales %}<p class="caption" style="margin:4px 0 0">из них разбор (б/у): {{ m.used_sales|money(0) }} ₴</p>{% endif %}
+    <div class="kv"><span>Работы</span><b>{{ m.works|money(0) }} ₴</b></div>
+    <div class="kv"><span>Запчасти</span><b>{{ m.parts|money(0) }} ₴</b></div>
+    {% if m.discount %}<div class="kv"><span>Скидки клиентам</span><b>−{{ m.discount|money(0) }} ₴</b></div>{% endif %}
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Наряды сейчас на СТО</span><a class="footnote" href="/orders">все →</a></div>
+    {% set fm = [funnel|map(attribute=1)|max, 1]|max %}
+    {% for name, cnt in funnel %}
+    <div class="hbar"><span>{{ name }}</span><span class="hbar-track"><span style="width:{{ (100 * cnt / fm)|round|int }}%"></span></span><b>{{ cnt }}</b></div>
+    {% endfor %}
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Мастера · {{ p.label }}</span><a class="footnote" href="?tab=staff&{{ qs }}">подробно →</a></div>
+    {% for x in top %}
+    <div class="hbar"><span>{{ x.u.short_name }}</span><span class="hbar-track"><span style="width:{{ x.pct }}%"></span></span><b>{{ x.sum|money(0) }} ₴</b></div>
+    {% else %}<p class="footnote" style="margin:0">Слесарей нет</p>{% endfor %}
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Склад в деньгах</span><a class="footnote" href="/stock">склад →</a></div>
+    {% if fin %}
+    <div class="kv"><span>Новые запчасти (по закупке)</span><b>{{ stock.new|money(0) }} ₴</b></div>
+    <div class="kv"><span class="footnote">· ТО</span><span>{{ stock.by_section.to|money(0) }} ₴</span></div>
+    <div class="kv"><span class="footnote">· Для ремонта</span><span>{{ stock.by_section.repair|money(0) }} ₴</span></div>
+    {% endif %}
+    <div class="kv"><span>Разбор (по цене продажи)</span><b>{{ stock.used|money(0) }} ₴</b></div>
+    <div class="kv"><span>Позиций с остатком</span><b>{{ stock.positions }}</b></div>
+  </div>
+</div>
+
+{% elif tab == "quarters" %}
+<div class="tablewrap fill scroll">
+  <table class="table dense-table">
+    <thead><tr><th>{{ year }}</th>{% for q in qlist %}<th class="num">{{ q.q }} кв.</th>{% endfor %}<th class="num">С начала года</th></tr></thead>
+    <tbody>
+    {% set rows = [("Пришло денег", "revenue"), ("Оплачено по нарядам", "billed"), ("· работы", "works"), ("· запчасти", "parts"),
+                   ("· скидки", "discount"), ("Разбор (б/у)", "used_sales"), ("Нарядов оплачено", "orders_paid"), ("Средний чек", "avg_check"),
+                   ("Принято машин", "orders_created"), ("Выдано машин", "orders_closed")] %}
+    {% if fin %}{% set rows = rows + [("Себестоимость запчастей", "parts_cost"), ("Зарплата начислена", "payroll"), ("Зарплата выплачена", "payroll_paid"),
+                   ("Закупки у поставщиков", "purchases"), ("Валовая прибыль", "gross"), ("Маржа, %", "margin_pct")] %}{% endif %}
+    {% for label, key in rows %}
+    <tr class="{{ 'rep-total' if key in ('revenue', 'gross') }}"><td>{{ label }}</td>
+      {% for q in qlist %}<td class="num">{% if q.future %}<span class="footnote">—</span>{% else %}{% set v = q.r[key] %}{{ v if key in ("orders_paid", "orders_created", "orders_closed", "margin_pct") else v|money(0) }}{% endif %}</td>{% endfor %}
+      {% set v = ytd[key] %}<td class="num"><b>{{ v if key in ("orders_paid", "orders_created", "orders_closed", "margin_pct") else v|money(0) }}</b></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="caption" style="margin:0 4px">«Пришло денег» — все оплаты за квартал. «Оплачено по нарядам» и прибыль — по нарядам, полностью оплаченным в этом квартале.</p>
+
+{% elif tab == "staff" %}
+<div class="tablewrap fill scroll">
+  <table class="table dense-table">
+    <thead><tr><th>Мастер</th><th class="num">Работ</th><th class="num">Нормо-часов</th><th class="num">Нарядов</th><th class="num">Сумма работ</th><th style="width:30%">Доля</th></tr></thead>
+    <tbody>
+    {% for x in load %}
+    <tr><td><b>{{ x.u.full_name }}</b></td><td class="num">{{ x.works }}</td><td class="num">{{ x.hours|num or 0 }}</td><td class="num">{{ x.orders }}</td>
+      <td class="num"><b>{{ x.sum|money(0) }} ₴</b></td><td><span class="hbar-track" style="display:block"><span style="width:{{ x.pct }}%"></span></span></td></tr>
+    {% else %}<tr><td colspan="6" class="footnote">Слесарей нет</td></tr>{% endfor %}
+    </tbody>
+    {% if load %}<tfoot><tr><td>Итого</td><td class="num">{{ load|sum(attribute="works") }}</td><td class="num">{{ load|sum(attribute="hours")|num or 0 }}</td>
+      <td class="num">{{ load|sum(attribute="orders") }}</td><td class="num"><b>{{ load|sum(attribute="sum")|money(0) }} ₴</b></td><td></td></tr></tfoot>{% endif %}
+  </table>
+</div>
+<p class="caption" style="margin:0 4px">Считаются работы, отмеченные «Выполнено» в выбранном периоде. Зарплата — в разделе <a href="/payroll">«Зарплата»</a>.</p>
+
+{% elif tab == "accounting" %}
+<div class="stats">
+  {% for k, v in PAY_METHODS.items() %}{{ kpi(v, m.by_method.get(k, 0)|money(0) ~ " ₴") }}{% endfor %}
+  {{ kpi("Зарплата: начислено / выплачено", m.payroll|money(0) ~ " / " ~ m.payroll_paid|money(0)) }}
+  {{ kpi("Закупки", m.purchases|money(0) ~ " ₴") }}
+</div>
+<div class="rep-grid fill scroll">
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Прибыль · {{ p.label }}</span></div>
+    <div class="kv"><span>Оплачено по нарядам</span><b>{{ m.billed|money }} ₴</b></div>
+    <div class="kv"><span>+ продажи разбора</span><span>{{ m.used_sales|money }} ₴</span></div>
+    <div class="kv"><span>− себестоимость запчастей</span><span>{{ m.parts_cost|money }} ₴</span></div>
+    <div class="kv"><span>− зарплата (начислено)</span><span>{{ m.payroll|money }} ₴</span></div>
+    <div class="kv rep-total"><span>Валовая прибыль</span><b>{{ m.gross|money }} ₴ · {{ m.margin_pct }} %</b></div>
+    <p class="caption" style="margin:4px 0 0">Аренда, коммуналка и прочие расходы СТО в CRM пока не ведутся — это прибыль до них.</p>
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Долги клиентов · {{ debts|length }}</span><span class="footnote">{{ debts|sum(attribute="t.due")|money(0) }} ₴</span></div>
+    {% for d in debts[:30] %}
+    <a class="kv" href="/orders/{{ d.wo.id }}"><span>{{ d.wo.number[-6:] }} · {{ d.c.full_name if d.c else "" }}</span><b>{{ d.t.due|money(0) }} ₴</b></a>
+    {% else %}<p class="footnote" style="margin:0">Долгов нет</p>{% endfor %}
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Закупки по поставщикам</span></div>
+    {% for s in suppliers %}<div class="kv"><span>{{ s.name }} <span class="caption">· {{ s.n }}</span></span><b>{{ s.sum|money(0) }} ₴</b></div>
+    {% else %}<p class="footnote" style="margin:0">Закупок за период нет</p>{% endfor %}
+  </div>
+  <div class="card compact">
+    <div class="card-h"><span class="headline">Склад в деньгах</span></div>
+    <div class="kv"><span>Новые (по закупке)</span><b>{{ stock.new|money(0) }} ₴</b></div>
+    <div class="kv"><span class="footnote">· ТО / для ремонта</span><span>{{ stock.by_section.to|money(0) }} / {{ stock.by_section.repair|money(0) }} ₴</span></div>
+    <div class="kv"><span>Разбор (по цене продажи)</span><b>{{ stock.used|money(0) }} ₴</b></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

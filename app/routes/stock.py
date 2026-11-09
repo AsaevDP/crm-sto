@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from ..models import (IssueRequest, IssueRequestLine, Location, PartCatalog, Purchase, PurchaseLine, StockItem,
                       StockMovement, Supplier, User, Vehicle, WoPart, WorkOrder, WoWork)
-from ..models.stock import MOVEMENT_TYPES
+from ..models.stock import CATEGORIES, MOVEMENT_TYPES, SECTIONS
 from ..services import orders as osvc
 from ..services import settings as st
 from ..services import stock as svc
@@ -296,7 +296,7 @@ def purchase_receive(pid: str, request_ctx: Ctx = Depends(get_ctx), location_id:
 
 # ======================= Склад =======================
 @router.get("/stock")
-def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = ""):
+def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "", cat: str = ""):
     ctx.need("stock.view")
     db = ctx.db
     items = db.scalars(select(StockItem).where(StockItem.branch_id == ctx.branch.id)).all()
@@ -311,6 +311,12 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = ""):
             continue
         if ql and ql not in f"{c.name} {c.article} {c.brand} {c.fits}".lower():
             continue
+        if sec == "used" and c.kind != "used":
+            continue
+        if sec in ("to", "repair") and (c.kind == "used" or c.section != sec):
+            continue
+        if cat and (c.category or "") != cat:
+            continue
         b = bal[i.id]
         if only == "free" and b["free"] <= 0:
             continue
@@ -320,7 +326,11 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = ""):
     rows.sort(key=lambda r: (r["c"].name.lower(), r["loc"]))
     new_requests = db.scalar(select(func.count()).select_from(IssueRequest)
                              .where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == "new"))
+    used_cats = sorted({c.category for c in cats.values() if c.kind == "used" and c.category})
+    cat_list = CATEGORIES.get(sec, []) if sec in ("to", "repair") else (used_cats if sec == "used" else [])
+    extra = sorted({r["c"].category for r in rows if r["c"].category and r["c"].category not in cat_list})
     return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests,
+                      sec=sec, cat=cat, cat_list=cat_list + extra,
                       n_locations=len(locs))
 
 
@@ -338,6 +348,22 @@ def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx)):
     return ctx.render("stock/item.html", title=c.name, i=i, c=c, b=svc.balances(ctx.db, ctx.branch.id, [i.id])[i.id],
                       loc=svc.location_label(ctx.db.get(Location, i.location_id) if i.location_id else None),
                       moves=moves, orders=orders, people=people, MOVEMENT_TYPES=MOVEMENT_TYPES)
+
+
+@router.post("/stock/items/{item_id}/category")
+def stock_category(item_id: str, ctx: Ctx = Depends(get_ctx), section: str = Form(""), category: str = Form("")):
+    """Раздел (ТО / ремонт) и категория позиции склада."""
+    ctx.need("stock.manage", "parts.pick")
+    i = ctx.db.get(StockItem, _uuid(item_id))
+    if not i or i.branch_id != ctx.branch.id:
+        raise Forbidden()
+    c = ctx.db.get(PartCatalog, i.catalog_id)
+    if c.kind != "used" and section in SECTIONS:
+        c.section = section
+    c.category = category.strip()[:60]
+    ctx.db.commit()
+    flash(ctx.request, "Категория сохранена")
+    return _to(f"/stock/items/{item_id}")
 
 
 @router.post("/stock/items/{item_id}/adjust")

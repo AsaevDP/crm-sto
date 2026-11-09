@@ -23,6 +23,7 @@
     <details class="card compact work-edit"><summary class="caption">Изменить: цена, состояние, ячейка, фото, «на сайт»</summary>
       <form class="form dense" method="post" action="/razbor/parts/{{ i.id }}" enctype="multipart/form-data" data-compress>
         <input class="field" name="name" value="{{ r.c.name }}" aria-label="Название">
+        <select class="field" name="category" aria-label="Категория">{% for k in RAZBOR_CATEGORIES %}<option {% if k == r.c.category %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
         <div class="form-row three"><input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal" aria-label="Цена">
           <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == i.condition %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
           <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}" {% if l.id == i.location_id %}selected{% endif %}>{{ loc_label(l) }}</option>{% endfor %}</select></div>

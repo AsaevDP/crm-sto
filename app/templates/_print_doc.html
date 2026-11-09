@@ -1,0 +1,43 @@
+<!doctype html>
+{# Общая печатная форма A4 (не наряд): папка клиента, сотрудника, зарплата, отчёты. #}
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  @page { size: A4 {% block orient %}{% endblock %}; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font: 12px/1.45 -apple-system, "Segoe UI", Arial, sans-serif; color: #111; background: #e9e9ee; margin: 0; }
+  .sheet { width: {% block sheet_w %}210mm{% endblock %}; min-height: 200mm; margin: 16px auto; padding: 12mm; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.12); }
+  .bar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: center; padding: 10px; background: rgba(233,233,238,.92); z-index: 2; }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar a { background: #fff; color: #007aff; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .head { display: flex; justify-content: space-between; gap: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+  .muted { color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  td, th { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #f3f3f6; font-weight: 600; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tfoot td, .total td { font-weight: 700; background: #f7f7f9; }
+  h2 { font-size: 13px; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 12px; }
+  .kpis div { border: 1px solid #bbb; padding: 6px 8px; } .kpis b { display: block; font-size: 15px; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 14mm; }
+  .sign div { border-top: 1px solid #111; padding-top: 4px; }
+  .page-break { page-break-before: always; }
+  @media print { body { background: #fff; } .bar { display: none; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="{% block back %}/{% endblock %}">← Назад</a></div>
+<div class="sheet">
+  <div class="head">
+    <div><h1>{% block doc_title %}{{ title }}{% endblock %}</h1><div class="muted">{% block subtitle %}{% endblock %}</div></div>
+    <div style="text-align:right"><b>{{ branding.name }}</b><div class="muted">распечатано {{ now_local().strftime("%d.%m.%Y %H:%M") }}{% if user %} · {{ user.short_name }}{% endif %}</div></div>
+  </div>
+  {% block body %}{% endblock %}
+</div>
+</body>
+</html>

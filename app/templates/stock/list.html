@@ -9,25 +9,33 @@
   </div>
 </header>
 <form class="toolbar-row" method="get">
+  <div class="segmented" style="flex:none">
+    {% for k, v in [("", "Все"), ("to", "ТО"), ("repair", "Для ремонта"), ("used", "Б/у")] %}
+    <a href="?sec={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if only %}&only={{ only }}{% endif %}" aria-pressed="{{ (sec == k)|lower }}" {% if k == "repair" %}title="Запчасти для ремонта"{% endif %}>{{ v }}</a>{% endfor %}
+  </div>
+  <input type="hidden" name="sec" value="{{ sec }}">
   <input class="field search" name="q" value="{{ q }}" placeholder="Название, артикул, бренд, марка авто" autocomplete="off">
+  {% if cat_list %}<select class="field" name="cat" onchange="this.form.submit()" style="max-width:200px" aria-label="Категория">
+    <option value="">Все категории</option>{% for k in cat_list %}<option {% if k == cat %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>{% endif %}
   <select class="field" name="only" onchange="this.form.submit()" style="max-width:200px">
     <option value="">Есть на складе</option><option value="free" {% if only == "free" %}selected{% endif %}>Только свободные</option>
     <option value="all" {% if only == "all" %}selected{% endif %}>Все, включая нулевые</option></select>
 </form>
 <div class="tablewrap fill scroll">
   <table class="table">
-    <thead><tr><th>Запчасть</th><th>Артикул</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
+    <thead><tr><th>Запчасть</th><th>Категория</th><th>Артикул</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
     <tbody>
     {% for r in rows %}
     <tr onclick="location.href='/stock/items/{{ r.i.id }}'" style="cursor:pointer">
       <td>{{ r.c.name }}{% if r.c.kind == "used" %} <span class="tag">б/у</span>{% endif %}</td>
+      <td class="footnote">{% if r.c.kind == "used" %}{{ r.c.category or "Прочее" }}{% else %}{{ SECTIONS.get(r.c.section, "") }}{% if r.c.category %} · {{ r.c.category }}{% endif %}{% endif %}</td>
       <td class="mono footnote">{{ r.c.brand }} {{ r.c.article }}</td>
       <td class="footnote">{{ r.loc }}</td>
       <td class="num">{{ r.on_hand|num }}</td>
       <td class="num">{{ r.reserved|num if r.reserved else "—" }}</td>
       <td class="num"><b>{{ r.free|num }}</b></td>
     </tr>
-    {% else %}<tr><td colspan="6" class="footnote">{% if q %}Ничего не нашлось{% else %}Склад пуст — запчасти появятся после первого прихода{% endif %}</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" class="footnote">{% if q %}Ничего не нашлось{% else %}Склад пуст — запчасти появятся после первого прихода{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

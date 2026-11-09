@@ -1,0 +1,59 @@
+{% extends "_print_doc.html" %}
+{% block orient %}{% if tab == "quarters" %}landscape{% endif %}{% endblock %}
+{% block sheet_w %}{{ "297mm" if tab == "quarters" else "210mm" }}{% endblock %}
+{% block back %}/reports?tab={{ tab }}{% endblock %}
+{% block doc_title %}ОТЧЁТ: {{ tabs[tab]|upper }}{% endblock %}
+{% block subtitle %}{{ p.label }}{% endblock %}
+{% block body %}
+{% if tab == "overview" %}
+<div class="kpis">
+  <div>Пришло денег<b>{{ m.revenue|money }} ₴</b></div><div>По нарядам<b>{{ m.billed|money }} ₴</b></div>
+  <div>Средний чек<b>{{ m.avg_check|money }} ₴</b></div><div>Принято / выдано<b>{{ m.orders_created }} / {{ m.orders_closed }}</b></div>
+  {% if fin %}<div>Себестоимость<b>{{ m.parts_cost|money }} ₴</b></div><div>Зарплата<b>{{ m.payroll|money }} ₴</b></div>
+  <div>Валовая прибыль<b>{{ m.gross|money }} ₴</b></div><div>Маржа<b>{{ m.margin_pct }} %</b></div>{% endif %}
+</div>
+<h2>Касса</h2>
+<table><tr>{% for k, v in PAY_METHODS.items() %}<th class="num">{{ v }}</th>{% endfor %}<th class="num">Всего</th></tr>
+  <tr>{% for k in PAY_METHODS %}<td class="num">{{ m.by_method.get(k, 0)|money }}</td>{% endfor %}<td class="num"><b>{{ m.revenue|money }}</b></td></tr></table>
+<h2>По месяцам {{ p.d1.year }}</h2>
+<table><thead><tr><th>Месяц</th><th class="num">Пришло денег</th><th class="num">По нарядам</th><th class="num">Нарядов</th>{% if fin %}<th class="num">Валовая прибыль</th>{% endif %}</tr></thead>
+  {% for r in months if not r.future %}<tr><td>{{ r.m }}</td><td class="num">{{ r.revenue|money }}</td><td class="num">{{ r.billed|money }}</td><td class="num">{{ r.orders }}</td>{% if fin %}<td class="num">{{ r.gross|money }}</td>{% endif %}</tr>{% endfor %}
+</table>
+<h2>Наряды сейчас</h2>
+<table>{% for name, cnt in funnel %}<tr><td>{{ name }}</td><td class="num">{{ cnt }}</td></tr>{% endfor %}</table>
+<h2>Мастера</h2>
+<table><thead><tr><th>Мастер</th><th class="num">Сумма работ</th></tr></thead>{% for x in top %}<tr><td>{{ x.u.full_name }}</td><td class="num">{{ x.sum|money }}</td></tr>{% endfor %}</table>
+{% elif tab == "quarters" %}
+{% set rows = [("Пришло денег", "revenue"), ("Оплачено по нарядам", "billed"), ("· работы", "works"), ("· запчасти", "parts"), ("· скидки", "discount"),
+               ("Разбор (б/у)", "used_sales"), ("Нарядов оплачено", "orders_paid"), ("Средний чек", "avg_check"), ("Принято машин", "orders_created"), ("Выдано машин", "orders_closed")] %}
+{% if fin %}{% set rows = rows + [("Себестоимость запчастей", "parts_cost"), ("Зарплата начислена", "payroll"), ("Зарплата выплачена", "payroll_paid"),
+               ("Закупки", "purchases"), ("Валовая прибыль", "gross"), ("Маржа, %", "margin_pct")] %}{% endif %}
+<table><thead><tr><th>{{ year }}</th>{% for q in qlist %}<th class="num">{{ q.q }} кв.</th>{% endfor %}<th class="num">С начала года</th></tr></thead>
+  {% for label, key in rows %}<tr><td>{{ label }}</td>
+    {% for q in qlist %}<td class="num">{% if q.future %}—{% else %}{% set v = q.r[key] %}{{ v if key in ("orders_paid", "orders_created", "orders_closed", "margin_pct") else v|money }}{% endif %}</td>{% endfor %}
+    {% set v = ytd[key] %}<td class="num"><b>{{ v if key in ("orders_paid", "orders_created", "orders_closed", "margin_pct") else v|money }}</b></td></tr>{% endfor %}
+</table>
+{% elif tab == "staff" %}
+<table><thead><tr><th>Мастер</th><th class="num">Работ</th><th class="num">Нормо-часов</th><th class="num">Нарядов</th><th class="num">Сумма работ, ₴</th></tr></thead>
+  {% for x in load %}<tr><td>{{ x.u.full_name }}</td><td class="num">{{ x.works }}</td><td class="num">{{ x.hours|num or 0 }}</td><td class="num">{{ x.orders }}</td><td class="num">{{ x.sum|money }}</td></tr>{% endfor %}
+  <tr class="total"><td>Итого</td><td class="num">{{ load|sum(attribute="works") }}</td><td class="num">{{ load|sum(attribute="hours")|num or 0 }}</td><td class="num">{{ load|sum(attribute="orders") }}</td><td class="num">{{ load|sum(attribute="sum")|money }}</td></tr>
+</table>
+{% elif tab == "accounting" %}
+<table><tr>{% for k, v in PAY_METHODS.items() %}<th class="num">{{ v }}</th>{% endfor %}<th class="num">Закупки</th><th class="num">ЗП начислено</th><th class="num">ЗП выплачено</th></tr>
+  <tr>{% for k in PAY_METHODS %}<td class="num">{{ m.by_method.get(k, 0)|money }}</td>{% endfor %}<td class="num">{{ m.purchases|money }}</td><td class="num">{{ m.payroll|money }}</td><td class="num">{{ m.payroll_paid|money }}</td></tr></table>
+<h2>Прибыль</h2>
+<table>
+  <tr><td>Оплачено по нарядам</td><td class="num">{{ m.billed|money }}</td></tr><tr><td>+ продажи разбора</td><td class="num">{{ m.used_sales|money }}</td></tr>
+  <tr><td>− себестоимость запчастей</td><td class="num">{{ m.parts_cost|money }}</td></tr><tr><td>− зарплата</td><td class="num">{{ m.payroll|money }}</td></tr>
+  <tr class="total"><td>Валовая прибыль ({{ m.margin_pct }} %)</td><td class="num">{{ m.gross|money }}</td></tr></table>
+<h2>Долги клиентов</h2>
+<table><thead><tr><th>Наряд</th><th>Клиент</th><th class="num">Итого</th><th class="num">Оплачено</th><th class="num">Долг</th></tr></thead>
+  {% for d in debts %}<tr><td>{{ d.wo.number }}</td><td>{{ d.c.full_name if d.c else "" }}</td><td class="num">{{ d.t.total|money }}</td><td class="num">{{ d.t.paid|money }}</td><td class="num">{{ d.t.due|money }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">Долгов нет</td></tr>{% endfor %}</table>
+<h2>Закупки по поставщикам</h2>
+<table>{% for s in suppliers %}<tr><td>{{ s.name }}</td><td class="num">{{ s.n }}</td><td class="num">{{ s.sum|money }}</td></tr>{% else %}<tr><td class="muted">Нет</td></tr>{% endfor %}</table>
+<h2>Склад в деньгах</h2>
+<table><tr><td>Новые (по закупке)</td><td class="num">{{ stock.new|money }}</td></tr><tr><td>Разбор (по цене продажи)</td><td class="num">{{ stock.used|money }}</td></tr></table>
+{% endif %}
+<div class="sign"><div>Составил: ____________</div><div>Директор: ____________</div></div>
+{% endblock %}

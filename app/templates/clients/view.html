@@ -8,7 +8,8 @@
   <div class="ov-title">
     <div><h1 class="title-1">{{ c.full_name }}</h1>
       <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a> · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · нарядов: {{ cards|length }}</div></div>
-    <div class="ov-actions"><a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a>
+    <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/clients/{{ c.id }}/print" target="_blank" title="Все наряды, работы, оплаты — на бумаге">🖨 Папка клиента</a>
+      <a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a>
       {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">Приёмка</a>{% endif %}</div>
   </div>
 </header>

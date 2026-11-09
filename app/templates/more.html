@@ -15,6 +15,10 @@
   {% endfor %}
 </div>
 
+<div class="group">
+  <a class="row chevron" href="/staff/{{ user.id }}/print" target="_blank"><span class="tile">{{ icon("print") }}</span><span class="grow">Моя папка для печати<div class="caption">табель, работы, зарплата, инструмент</div></span></a>
+</div>
+
 {% if user.role.code == "admin" and not ctx.viewing_as %}<a class="btn btn-tinted btn-block" href="/view-as">👁 Глазами сотрудника</a>{% endif %}
 <form method="post" action="/logout"><button class="btn btn-danger btn-block">Выйти</button></form>
 {% endblock %}

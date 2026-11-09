@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
+{% from "orders/_card.html" import progress %}
 {% block content %}
 <header class="page-head">
   <div><p class="footnote">Что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
@@ -18,11 +19,13 @@
       <span class="caption">{{ fmt_plate(v.plate) }}{% if mc %} · {{ mc.short_name }}{% endif %}</span>
       {% if wo.id in paused %}<span class="chip" data-s="waiting" title="{{ paused[wo.id] }}">⏸ Пауза</span><span class="caption pause-why">{{ paused[wo.id] }}</span>
       {% else %}<span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
+      {% if prog.get(wo.id) and prog[wo.id].total %}{{ progress(prog[wo.id]) }}{% endif %}
     </a>
     {% else %}
     <div class="lift">
       <span class="lift-top"><b>{{ l.number }}</b><span class="footnote lift-car">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
       <span class="chip" data-s="created">Свободен</span>
+      {% set lm = people.get(l.mechanic_id) %}{% if lm %}<span class="caption">пост: {{ lm.short_name }}</span>{% endif %}
     </div>
     {% endif %}
     {% endfor %}

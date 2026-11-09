@@ -101,7 +101,9 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     """Слесарь: Начал / Пауза (с причиной) / Продолжить / Готово. Отрезки времени → пульт и реальное время работ."""
     wo = _order(ctx, order_id)
     w = ctx.db.get(WoWork, _uuid(work_id))
-    if not w or w.work_order_id != wo.id or wo.status != "work":
+    # «Вернуть» (снять отметку «Готово») — менеджер, пока машину не выдали
+    undo_ok = action == "undo" and ctx.can("orders.view_all") and wo.status in ("work", "ready")
+    if not w or w.work_order_id != wo.id or (wo.status != "work" and not undo_ok):
         raise Forbidden()
     if not (ctx.user.id in (w.mechanic_id, wo.mechanic_id) or ctx.can("orders.view_all")):
         raise Forbidden()
@@ -123,12 +125,16 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
         w.status = "paused"
     elif action == "done" and w.status in ("todo", "doing", "paused"):
         close_open()
-        w.status, w.done_at = "done", t
+        w.status, w.done_at, w.done_by = "done", t, ctx.user.id
         db.flush()
         left = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status != "done")).all()
         if not left:
             osvc.set_status(db, wo, "ready", "Все работы выполнены")
             msvc.mark_paid_if_settled(db, wo)
+    elif undo_ok and w.status == "done":
+        w.status, w.done_at, w.done_by = "todo", None, None
+        if wo.status == "ready":
+            osvc.set_status(db, wo, "work", f"Работа «{w.name[:60]}» возвращена в работу")
     db.commit()
     return _to(f"/orders/{order_id}")
 
@@ -263,30 +269,114 @@ def _period(f: str, t: str):
     return d1, d2
 
 
+def _payroll_target(ctx: Ctx, user: str):
+    see_all = ctx.can("payroll.view_all")
+    target = ctx.db.get(User, _uuid(user)) if (user and see_all) else (None if see_all else ctx.user)
+    if target and target.branch_id != ctx.branch.id:
+        raise Forbidden()
+    return see_all, target
+
+
+def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
+    db = ctx.db
+    rows = psvc.accruals(db, [target.id], d1, d2)
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([a.work_order_id for a in rows if a.work_order_id])))}
+    vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
+    works = {w.id: w for w in db.scalars(select(WoWork).where(WoWork.id.in_([a.wo_work_id for a in rows if a.wo_work_id])))}
+    summ = psvc.summary(db, [target], d1, d2)[target.id]
+    return dict(u=target, rows=rows, orders=orders, vehicles=vehicles, works=works, s=summ, d1=d1, d2=d2,
+                payouts=psvc.payouts(db, [target.id], d1, d2), COLS=psvc.COLS, column_of=psvc.column_of,
+                today_sum=sum((a.amount for a in rows if a.on_date == date.today()), Decimal(0)),
+                lines=[psvc.describe(l, {}) for l in (psvc.lines_for(db, target) or psvc.default_lines(db, target))],
+                fmt_plate=osvc.fmt_plate, PAY_METHODS=PAY_METHODS)
+
+
 @router.get("/payroll")
 def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = ""):
     ctx.need("payroll.view_own", "payroll.view_all")
     db = ctx.db
     d1, d2 = _period(f, t)
-    see_all = ctx.can("payroll.view_all")
-    target = db.get(User, _uuid(user)) if (user and see_all) else (None if see_all else ctx.user)
-    staff = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    see_all, target = _payroll_target(ctx, user)
     if target:
-        rows = psvc.accruals(db, [target.id], d1, d2)
-        orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([a.work_order_id for a in rows if a.work_order_id])))}
-        days = {}
-        for a in rows:
-            days.setdefault(a.on_date, []).append(a)
-        today_sum = sum((a.amount for a in rows if a.on_date == date.today()), Decimal(0))
-        return ctx.render("money/payroll_user.html", title="Зарплата", u=target, days=days, orders=orders,
-                          total=sum((a.amount for a in rows), Decimal(0)), today_sum=today_sum, d1=d1, d2=d2,
-                          see_all=see_all, lines=[psvc.describe(l, {}) for l in (psvc.lines_for(db, target) or psvc.default_lines(db, target))])
-    rows = psvc.accruals(db, [u.id for u in staff], d1, d2)
-    sums = {}
-    for a in rows:
-        sums[a.user_id] = sums.get(a.user_id, Decimal(0)) + a.amount
-    return ctx.render("money/payroll_all.html", title="Зарплата", staff=staff, sums=sums, d1=d1, d2=d2,
-                      total=sum(sums.values(), Decimal(0)))
+        return ctx.render("money/payroll_user.html", title="Зарплата", see_all=see_all,
+                          **_payroll_user_data(ctx, target, d1, d2))
+    staff = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    summ = psvc.summary(db, staff, d1, d2)
+    tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
+    return ctx.render("money/payroll_all.html", title="Зарплата", staff=staff, summ=summ, tot=tot, d1=d1, d2=d2,
+                      COLS=psvc.COLS)
+
+
+@router.get("/payroll/print")
+def payroll_print(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = ""):
+    """Расчётный лист сотрудника или ведомость на всех — для бумажной папки."""
+    ctx.need("payroll.view_own", "payroll.view_all")
+    d1, d2 = _period(f, t)
+    see_all, target = _payroll_target(ctx, user)
+    if target:
+        return ctx.render("money/payroll_print_user.html", title=f"Расчётный лист — {target.full_name}",
+                          **_payroll_user_data(ctx, target, d1, d2))
+    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    summ = psvc.summary(ctx.db, staff, d1, d2)
+    tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
+    return ctx.render("money/payroll_print_all.html", title="Ведомость по зарплате", staff=staff, summ=summ, tot=tot,
+                      d1=d1, d2=d2, COLS=psvc.COLS)
+
+
+@router.get("/payroll/export.csv")
+def payroll_csv(ctx: Ctx = Depends(get_ctx), f: str = "", t: str = ""):
+    ctx.need("payroll.view_all")
+    import csv
+    import io
+    from fastapi.responses import Response
+    d1, d2 = _period(f, t)
+    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    summ = psvc.summary(ctx.db, staff, d1, d2)
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Сотрудник", "Должность", "Нарядов", "Нормо-часы", *psvc.COLS.values(), "Начислено", "Выплачено", "К выплате"])
+    for u in staff:
+        r = summ[u.id]
+        w.writerow([u.full_name, u.role.name, r["n_orders"], str(r["hours"]).replace(".", ","),
+                    *[str(r[k]).replace(".", ",") for k in psvc.COLS], *[str(r[k]).replace(".", ",") for k in ("accrued", "paid", "due")]])
+    return Response(("﻿" + buf.getvalue()).encode("utf-8"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="zarplata_{d1}_{d2}.csv"'})
+
+
+@router.post("/payroll/payouts")
+def payroll_payout(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), amount: str = Form(...), method: str = Form("cash"),
+                   note: str = Form(""), f: str = Form(""), t: str = Form("")):
+    """Выплата зарплаты (аванс / расчёт) — чтобы видеть «к выплате»."""
+    ctx.need("payroll.manage")
+    u = ctx.db.get(User, _uuid(user_id))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    d1, d2 = _period(f, t)
+    a = msvc.money(_dec(amount))
+    back = f"/payroll?user={u.id}&f={d1}&t={d2}"
+    if a <= 0:
+        flash(ctx.request, "Сумма выплаты должна быть больше нуля", "error")
+        return _to(back)
+    from ..models import PayrollPayout
+    ctx.db.add(PayrollPayout(user_id=u.id, period_from=d1, period_to=d2, amount=a, paid_on=date.today(),
+                             method=method if method in PAY_METHODS else "cash", note=note.strip()[:300]))
+    ctx.db.commit()
+    flash(ctx.request, f"Выплата {a} ₴ записана")
+    return _to(back)
+
+
+@router.post("/payroll/payouts/{pid}/delete")
+def payroll_payout_delete(pid: str, ctx: Ctx = Depends(get_ctx)):
+    ctx.need("payroll.manage")
+    from ..models import PayrollPayout
+    p = ctx.db.get(PayrollPayout, _uuid(pid))
+    if not p or p.branch_id != ctx.branch.id:
+        raise Forbidden()
+    uid = p.user_id
+    ctx.db.delete(p)
+    ctx.db.commit()
+    flash(ctx.request, "Выплата удалена")
+    return _to(f"/payroll?user={uid}")
 
 
 @router.get("/settings/payroll")

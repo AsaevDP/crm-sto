@@ -14,7 +14,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import (PartGroupItem, PayrollAccrual, PayScheme, PaySchemeLine, User, UserPayScheme, WoPart,
+from ..models import (PartGroupItem, PayrollAccrual, PayrollPayout, PayScheme, PaySchemeLine, User, UserPayScheme, WoPart,
                       WorkOrder, WoWork)
 from . import settings as st
 from .money import money
@@ -190,3 +190,51 @@ def parse_uuid(v):
         return uuid.UUID(v) if v else None
     except ValueError:
         return None
+
+
+# ---------- Подробная таблица (раздел «Зарплата») ----------
+COLS = {"works": "Работы", "parts": "Запчасти", "salary": "Оклад", "other": "Прочее", "deduction": "Удержания"}
+
+
+def column_of(a: PayrollAccrual) -> str:
+    if a.kind == "deduction":
+        return "deduction"
+    if a.kind == "salary":
+        return "salary"
+    if a.wo_work_id:
+        return "works"
+    if a.wo_part_id:
+        return "parts"
+    return "other"
+
+
+def payouts(db: Session, user_ids, date_from: date, date_to: date) -> list[PayrollPayout]:
+    return db.scalars(select(PayrollPayout).where(PayrollPayout.user_id.in_(list(user_ids)),
+                                                  PayrollPayout.paid_on >= date_from, PayrollPayout.paid_on <= date_to)
+                      .order_by(PayrollPayout.paid_on.desc(), PayrollPayout.created_at.desc())).all()
+
+
+def summary(db: Session, users, date_from: date, date_to: date) -> dict:
+    """По каждому сотруднику: суммы по колонкам, число нарядов, начислено, выплачено, к выплате."""
+    ids = [u.id for u in users]
+    out = {uid: {**{k: Decimal(0) for k in COLS}, "orders": set(), "accrued": Decimal(0), "paid": Decimal(0),
+                 "due": Decimal(0), "hours": Decimal(0)} for uid in ids}
+    for a in accruals(db, ids, date_from, date_to):
+        r = out[a.user_id]
+        r[column_of(a)] += a.amount
+        r["accrued"] += a.amount
+        if a.work_order_id:
+            r["orders"].add(a.work_order_id)
+    for p in payouts(db, ids, date_from, date_to):
+        out[p.user_id]["paid"] += p.amount
+    # Нормо-часы выполненных работ за период (для слесарей)
+    from datetime import datetime, time, timezone
+    t1 = datetime.combine(date_from, time.min).astimezone(timezone.utc)
+    t2 = datetime.combine(date_to, time.max).astimezone(timezone.utc)
+    for w in db.scalars(select(WoWork).where(WoWork.mechanic_id.in_(ids), WoWork.status == "done",
+                                             WoWork.done_at >= t1, WoWork.done_at <= t2)):
+        out[w.mechanic_id]["hours"] += Decimal(w.hours or 0) * Decimal(w.qty or 1)
+    for r in out.values():
+        r["due"] = r["accrued"] - r["paid"]
+        r["n_orders"] = len(r.pop("orders"))
+    return out

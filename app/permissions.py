@@ -11,6 +11,8 @@ from .models import RolePermission, User, UserPermission
 # (код, название, группа)
 PERMISSIONS = [
     ("dashboard.view", "Пульт руководителя", "Общее"),
+    ("reports.view", "Кабинет: отчёты, графики, загрузка мастеров", "Общее"),
+    ("reports.finance", "Кабинет: прибыль, себестоимость, бухгалтерия", "Общее"),
     ("orders.view_all", "Видеть все наряды", "Наряды"),
     ("orders.view_own", "Видеть свои наряды", "Наряды"),
     ("orders.create", "Создавать наряды, приёмка, фото", "Наряды"),
@@ -19,6 +21,9 @@ PERMISSIONS = [
     ("orders.cancel", "Отменять наряды", "Наряды"),
     ("orders.assign", "Назначать запчастиста, слесаря, подъёмник", "Наряды"),
     ("clients.view", "Клиенты и авто", "Наряды"),
+    ("schedule.view", "Запись клиентов: видеть (слесарь — только свою)", "Наряды"),
+    ("schedule.manage", "Записывать клиентов на время", "Наряды"),
+    ("lifts.take", "Самому закрепляться за подъёмником", "Наряды"),
     ("parts.pick", "Подбор запчастей в наряд", "Склад и закупки"),
     ("purchases.view", "Видеть закупки", "Склад и закупки"),
     ("purchases.manage", "Создавать закупки", "Склад и закупки"),
@@ -40,7 +45,7 @@ PERMISSIONS = [
     ("attendance.edit", "Править отметки табеля", "Сотрудники"),
     ("payroll.view_own", "Своя зарплата", "Сотрудники"),
     ("payroll.view_all", "Зарплата всех", "Сотрудники"),
-    ("payroll.manage", "Схемы зарплаты", "Сотрудники"),
+    ("payroll.manage", "Схемы зарплаты и выплаты", "Сотрудники"),
     ("tools.view", "Инструмент всех сотрудников", "Инструмент"),
     ("tools.view_own", "Свой инструмент", "Инструмент"),
     ("tools.manage", "Выдача инструмента и проверки", "Инструмент"),
@@ -55,7 +60,7 @@ _OWN = ["payroll.view_own", "attendance.view_own", "tools.view_own"]
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
-        "orders.cancel", "orders.assign", "clients.view", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
+        "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
         "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "stock.view",
@@ -66,7 +71,17 @@ DEFAULT_ROLES = {
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
         "prices.view_sale", *_OWN]),
-    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", *_OWN]),
+    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", "lifts.take", "schedule.view", *_OWN]),
+    # Директор: видит всё и всю бухгалтерию, сам ничего не «крутит» в нарядах
+    "director": ("Директор", "purple", [
+        "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
+        "purchases.view", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
+        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", *_OWN]),
+    # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
+    "deputy": ("Заместитель директора", "yellow", [
+        "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "orders.assign", "clients.view",
+        "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
+        "prices.view_sale", "attendance.view_all", "tools.view", *_OWN]),
     "admin": ("Админ", "graphite", ALL_CODES),
 }
 ADMIN_ROLE = "admin"
@@ -81,7 +96,9 @@ SYSTEM_COLORS = {
 # Меню: (адрес, название, иконка, какое право нужно — достаточно любого из списка)
 MENU = [
     ("/pult", "Пульт", "pult", ["dashboard.view"]),
+    ("/reports", "Кабинет", "briefcase", ["reports.view", "reports.finance"]),
     ("/orders", "Наряды", "orders", ["orders.view_all", "orders.view_own"]),
+    ("/schedule", "Запись", "calendar", ["schedule.view", "schedule.manage"]),
     ("/clients", "Клиенты", "users", ["clients.view"]),
     ("/stock", "Склад", "stock", ["stock.view"]),
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
