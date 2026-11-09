@@ -92,6 +92,8 @@ def now_local():
 
 
 templates.env.globals["now_local"] = now_local
+from .models.orders import INTAKE_LABELS  # noqa: E402
+templates.env.globals["INTAKE_LABELS"] = INTAKE_LABELS
 templates.env.filters["num"] = num
 templates.env.filters["money"] = money_fmt
 templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO,

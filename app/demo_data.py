@@ -178,11 +178,11 @@ def populate():
 
         # 1) Только приняли, слесарь не назначен
         intake(7, "B", None, complaint="Горит Check Engine, плавают обороты на холостом", fuel="25",
-               items=("docs", "keys2"), photos=("front", "odo"))
+               items=("docs",), photos=("front", "odo"))
 
         # 2) На диагностике (пост 2)
         wo = intake(1, "B", 2, complaint="Стук спереди справа на кочках, течёт масло", fuel="75",
-                    items=("docs", "spare", "jack"), photos=("front", "right", "odo"))
+                    items=("docs",), photos=("front", "right", "odo"))
         as_user("sergey")
         f = osvc.add_finding(db, wo, "Стойка стабилизатора передняя правая — люфт, стучит", "urgent")
         _photo(db, wo, "link", "diag", f.id)
@@ -190,7 +190,7 @@ def populate():
 
         # 3) Ждёт согласования с клиентом (пост 3)
         wo = intake(2, "B", 3, complaint="Скрипят тормоза, тянет вправо", fuel="50",
-                    items=("docs", "spare", "kit"), note="Скол на лобовом стекле справа внизу",
+                    items=("docs",), note="Скол на лобовом стекле справа внизу",
                     photos=("front", "left", "scratch"))
         find(wo, [("Передние колодки 2 мм, диски с бортиком — менять комплектом", "urgent", "pads"),
                   ("Пыльник наружного ШРУСа левый порван", "soon", "boot"),
@@ -198,11 +198,11 @@ def populate():
 
         # 4) Подбор запчастей (сценарий А, пост 1 — ТО)
         intake(0, "A", 1, works="ТО-120: замена масла и фильтров\nЗамена свечей зажигания", fuel="50",
-               items=("docs", "spare"), photos=("front", "rear"))
+               items=("docs",), photos=("front", "rear"))
 
         # 5) Ждём запчасти от поставщика (пост 4)
         wo = intake(4, "B", 4, complaint="Течь масла под двигателем", fuel="100",
-                    items=("docs", "keys2", "valuables"), note="Клиент оставил в салоне детское кресло",
+                    items=("docs", "valuables"), note="Клиент оставил в салоне детское кресло",
                     photos=("front", "right", "salon"))
         fs = find(wo, [("Течь масла с прокладки клапанной крышки", "soon", "oil")])
         approve(wo, fs, ["yes"])
@@ -225,7 +225,7 @@ def populate():
 
         # 7) В работе: детали выданы (пост 6 — без закреплённого слесаря, ставим Андрея)
         wo = intake(5, "B", 6, complaint="Плановое ТО + стук в подвеске", fuel="75",
-                    items=("docs", "spare"), photos=("front", "rear", "odo"))
+                    items=("docs",), photos=("front", "rear", "odo"))
         as_user("irina")
         wo.mechanic_id = users["andrey"].id
         osvc.set_status(db, wo, "diag", "Назначен слесарь")
@@ -298,7 +298,7 @@ def populate():
 
         # Mazda: полностью сделан, оплачен со скидкой, выдан с рекомендацией
         done_wo = intake(8, "A", None, works="Замена тормозных колодок задних\nЗамена щёток стеклоочистителя",
-                         fuel="75", items=("docs", "spare"), photos=("rear",))
+                         fuel="75", items=("docs",), photos=("rear",))
         as_user("irina")
         done_wo.mechanic_id = users["viktor"].id
         ws = price_works(done_wo, [(0.8, 800), (None, 150)])

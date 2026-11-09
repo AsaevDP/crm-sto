@@ -108,10 +108,16 @@ def act_intake(order_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("orders.view_all", "orders.view_own")
     wo = _order(ctx, order_id)
     db = ctx.db
-    n_photos = len(db.scalars(select(WoPhoto.id).where(WoPhoto.work_order_id == wo.id, WoPhoto.stage == "intake")).all())
+    photos = db.scalars(select(WoPhoto).where(WoPhoto.work_order_id == wo.id, WoPhoto.stage == "intake")
+                        .order_by(WoPhoto.created_at)).all()
+    from ..models import Lift, WoWork
+    works = db.scalars(select(WoWork.name).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all()
     return ctx.render("orders/act_intake.html", title=f"Акт приёма {wo.number}", wo=wo, v=db.get(Vehicle, wo.vehicle_id),
                       c=db.get(Client, wo.client_id), manager=db.get(User, wo.manager_id) if wo.manager_id else None,
-                      n_photos=n_photos, INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
+                      mechanic=db.get(User, wo.mechanic_id) if wo.mechanic_id else None,
+                      lift=db.get(Lift, wo.lift_id) if wo.lift_id else None,
+                      photo=photos[0] if photos else None, n_photos=len(photos), works=works,
+                      INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
                       fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate)
 
 

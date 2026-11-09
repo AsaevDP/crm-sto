@@ -19,10 +19,11 @@ def _uid(login):
         return db.scalar(select(User.id).where(User.login == login))
 
 
-def test_intake_kit_items():
-    for code in ("spare", "kit", "sign", "keys2", "jack"):
-        assert code in INTAKE_ITEMS
-    assert INTAKE_ITEMS["sign"].startswith("Знак")
+def test_intake_items_only_docs_and_valuables():
+    # Решение владельца 09.11.2026: в акте приёма только документы и ценные вещи, остальное — заметкой
+    from app.models.orders import INTAKE_LABELS
+    assert list(INTAKE_ITEMS) == ["docs", "valuables"]
+    assert INTAKE_LABELS["spare"] == "Запаска"  # старые наряды показываются как раньше
 
 
 def test_category_guess():

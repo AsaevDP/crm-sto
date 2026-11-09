@@ -38,7 +38,7 @@
   <tr><th style="width:30%">Автомобиль</th><td>{% if v %}{{ v.make }} {{ v.model }}{% if v.year %}, {{ v.year }}{% endif %} · {{ fmt_plate(v.plate) }}{% endif %}</td></tr>
   <tr><th>Пробег при приёмке</th><td>{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% else %}—{% endif %}</td></tr>
   <tr><th>Жалоба</th><td>{{ wo.complaint or "—" }}</td></tr>
-  <tr><th>Топливо · в машине</th><td>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }} · {% for i in wo.intake_items or [] %}{{ INTAKE_ITEMS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</td></tr>
+  <tr><th>Топливо · в машине</th><td>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }} · {% for i in wo.intake_items or [] %}{{ INTAKE_LABELS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</td></tr>
   {% if wo.intake_note %}<tr><th>Замечания при приёмке</th><td>{{ wo.intake_note }}</td></tr>{% endif %}
   {% set mgr = people.get(wo.manager_id) %}{% set mech = people.get(wo.mechanic_id) %}
   <tr><th>Менеджер · слесарь</th><td>{{ mgr.full_name if mgr else "—" }} · {{ mech.full_name if mech else "—" }}</td></tr>
