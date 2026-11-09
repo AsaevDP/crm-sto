@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  /* Отчётный документ A4. Всё с пунктирной подсказкой правится прямо на листе перед печатью. */
+  @page { size: A4 {{ "landscape" if rep.columns|length > 7 else "" }}; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font: 12px/1.45 -apple-system, "Segoe UI", Arial, sans-serif; color: #111; background: #e9e9ee; margin: 0; }
+  .sheet { width: {{ "297mm" if rep.columns|length > 7 else "210mm" }}; min-height: 200mm; margin: 16px auto; padding: 12mm; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.12); }
+  .bar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 10px; background: rgba(233,233,238,.94); z-index: 2; }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar .ghost { background: #fff; color: #007aff; }
+  .bar .hint { font: 13px -apple-system, "Segoe UI", sans-serif; color: #555; }
+  .bar .ok { color: #1a7f37; font-weight: 600; }
+  [contenteditable] { outline: none; border-radius: 3px; }
+  [contenteditable]:hover, [contenteditable]:focus { background: #fff8d6; box-shadow: 0 0 0 1px #e8c34a; }
+  .req { white-space: pre-line; color: #333; min-height: 1.4em; }
+  .req:empty::before { content: "Реквизиты: ФОП / ООО, адрес, телефон, ЕДРПОУ / ИНН — нажмите и впишите"; color: #aaa; }
+  .head { display: flex; justify-content: space-between; gap: 16px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+  h1 { font-size: 18px; margin: 10px 0 2px; }
+  .muted { color: #666; }
+  .intro { margin: 6px 0 10px; min-height: 1.4em; }
+  .intro:empty::before { content: "Текст перед таблицей (по желанию)"; color: #aaa; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+  tr { page-break-inside: avoid; }
+  td, th { border: 1px solid #bbb; padding: 3px 6px; text-align: left; vertical-align: top; }
+  th { background: #f3f3f6; font-weight: 600; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tfoot td { font-weight: 700; background: #f7f7f9; }
+  .sum { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 8px; }
+  .sum div { border: 1px solid #bbb; padding: 5px 9px; } .sum b { display: block; font-size: 14px; }
+  .foot { margin-top: 10px; white-space: pre-line; min-height: 1.4em; color: #444; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 14mm; }
+  .sign div { border-top: 1px solid #111; padding-top: 4px; }
+  @media print {
+    body { background: #fff; } .bar { display: none; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; }
+    [contenteditable]:hover, [contenteditable]:focus { background: none; box-shadow: none; }
+    .req:empty, .intro:empty { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button onclick="print()">🖨 Печать / сохранить PDF</button>
+  <button class="ghost" id="savetpl" title="Шапка с реквизитами, подвал и подписи подставятся во все следующие отчёты">Сохранить шапку и подписи как шаблон</button>
+  <a class="ghost" href="/reports/export.xlsx?tab={{ tab }}&{{ qs }}">⬇ Excel</a>
+  <a class="ghost" href="/reports?tab={{ tab }}&{{ qs }}">← В Кабинет</a>
+  <span class="hint" id="tplmsg">Жёлтым подсвечивается то, что можно исправить: нажмите и пишите.</span>
+</div>
+<div class="sheet">
+  <div class="head">
+    <div><b contenteditable="true">{{ branding.name }}</b>
+      <div class="req" contenteditable="true" id="t_header">{{ tpl.header }}</div></div>
+    <div style="text-align:right" class="muted">сформировано {{ now_local().strftime("%d.%m.%Y %H:%M") }}<br>{{ user.full_name }}</div>
+  </div>
+  <h1 contenteditable="true">{{ rep.title|upper }}</h1>
+  <div class="muted" contenteditable="true">за период: {{ p.d1.strftime("%d.%m.%Y") }} — {{ p.d2.strftime("%d.%m.%Y") }}{% if tab == "donors" %} (доноры — за всё время){% endif %}</div>
+  <div class="intro" contenteditable="true"></div>
+
+  <div class="sum">
+    {% if tab == "works" %}<div>Работ<b>{{ rep.totals.count }}</b></div><div>Нормо-часов<b>{{ rep.totals.hours|num or 0 }}</b></div><div>Сумма, ₴<b>{{ rep.totals.sum|money }}</b></div>
+    {% elif tab == "parts" %}<div>Позиций<b>{{ rep.totals.count }}</b></div><div>Продано на, ₴<b>{{ rep.totals.sum|money }}</b></div>{% if fin %}<div>Закупка, ₴<b>{{ rep.totals.cost|money }}</b></div><div>Наценка, ₴<b>{{ rep.totals.margin|money }}</b></div>{% endif %}
+    {% elif tab == "razbor" %}<div>Продано деталей<b>{{ rep.totals.count }}</b></div><div>Сумма, ₴<b>{{ rep.totals.sum|money }}</b></div>
+    {% elif tab == "donors" %}<div>Вложено, ₴<b>{{ rep.totals.spent|money }}</b></div><div>Выручено, ₴<b>{{ rep.totals.sold|money }}</b></div><div>На складе на, ₴<b>{{ rep.totals.left_sum|money }}</b></div><div>Итог, ₴<b>{{ rep.totals.profit|money }}</b></div>{% endif %}
+  </div>
+
+  <table>
+    <thead><tr><th style="width:28px">№</th>{% for k, label, kind in rep.columns %}<th class="{{ 'num' if kind }}">{{ label }}</th>{% endfor %}</tr></thead>
+    <tbody contenteditable="true">
+    {% for r in rep.rows %}
+      <tr><td>{{ loop.index }}</td>{% for k, label, kind in rep.columns %}<td class="{{ 'num' if kind }}">{% if kind == "money" %}{{ r[k]|money }}{% elif kind == "num" %}{{ r[k]|num or 0 }}{% else %}{{ r[k] }}{% endif %}</td>{% endfor %}</tr>
+    {% else %}<tr><td colspan="{{ rep.columns|length + 1 }}" class="muted">За период ничего нет</td></tr>{% endfor %}
+    </tbody>
+    {% if rep.rows %}<tfoot><tr><td></td>{% for k, label, kind in rep.columns %}<td class="{{ 'num' if kind }}">{% if loop.first %}Итого{% elif k in rep.totals and kind %}{{ rep.totals[k]|money if kind == "money" else (rep.totals[k]|num or 0) }}{% endif %}</td>{% endfor %}</tr></tfoot>{% endif %}
+  </table>
+
+  <div class="foot" contenteditable="true" id="t_footer">{{ tpl.footer }}</div>
+  <div class="sign">
+    <div><span contenteditable="true" id="t_signer1">{{ tpl.signer1 }}</span>: ____________ / ____________</div>
+    <div><span contenteditable="true" id="t_signer2">{{ tpl.signer2 }}</span>: ____________ / ____________</div>
+  </div>
+</div>
+<script>
+document.getElementById('savetpl').addEventListener('click', async () => {
+  const v = id => document.getElementById(id).innerText.trim();
+  const r = await fetch('/reports/template', { method: 'POST', headers: { 'content-type': 'application/json', 'x-requested-with': 'fetch' },
+    body: JSON.stringify({ header: v('t_header'), footer: v('t_footer'), signer1: v('t_signer1'), signer2: v('t_signer2') }) });
+  const m = document.getElementById('tplmsg');
+  m.textContent = r.ok ? 'Шаблон сохранён — шапка и подписи будут во всех отчётах' : 'Не сохранилось';
+  m.className = r.ok ? 'hint ok' : 'hint';
+});
+</script>
+</body>
+</html>

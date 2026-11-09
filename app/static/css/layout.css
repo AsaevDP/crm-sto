@@ -783,3 +783,18 @@ a.kv { color: inherit; text-decoration: none; }
 .appt-when { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) !important; }.appt b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; flex: none; }
 .appt-when { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
 .appt-when > [name="day"] { grid-column: 1 / -1; }.week-day { align-content: start; }
+/* Кабинет (10.11.2026): разделы СТО / Разбор, отчёты-документы */
+.cab-nav { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.cab-sec a { font-weight: 600; padding-left: 14px; padding-right: 14px; }
+.cab-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.cab-grid { display: grid; gap: 12px; align-items: start; }
+@media (min-width: 1100px) { .cab-grid { grid-template-columns: minmax(0, 1fr) 300px; } .cab-grid:has(> :only-child) { grid-template-columns: 1fr; } }
+@media (min-width: 900px) and (min-height: 540px) {
+  body.fit .cab-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  body.fit .cab-grid.fill > * { overflow: auto; min-height: 0; }
+  body.fit .cab-grid.fill > .card { align-self: start; max-height: 100%; }
+}
+.cab-hint { margin: -4px 4px 0; }
+@media (max-width: 899px) { .cab-nav .segmented { flex: 1 1 100%; } .cab-tabs { display: flex; } .cab-tabs a { flex: none; } }.cab-groups { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: baseline; font-size: 13px; }
+.cab-g { white-space: nowrap; padding: 3px 10px; border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-1); }
+.cab-grid .dense-table th { white-space: nowrap; }

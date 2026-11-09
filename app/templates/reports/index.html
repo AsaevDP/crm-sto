@@ -15,13 +15,65 @@
     </div>
     {% if p.prev %}<a class="btn btn-sm btn-gray" href="?tab={{ tab }}&{{ p.prev }}" aria-label="Предыдущий период">‹</a>
     <a class="btn btn-sm btn-gray" href="?tab={{ tab }}&{{ p.next }}" aria-label="Следующий период">›</a>{% endif %}
+    {% if tab in DOC_TABS %}
+    <a class="btn btn-sm" href="/reports/doc?tab={{ tab }}&{{ qs }}" target="_blank" title="Документ для печати: шапка, подписи и текст правятся прямо на листе">📄 Документ</a>
+    <a class="btn btn-sm btn-gray" href="/reports/export.xlsx?tab={{ tab }}&{{ qs }}">⬇ Excel</a>
+    {% else %}
     <a class="btn btn-sm btn-gray" href="/reports/print?tab={{ tab }}&{{ qs }}" target="_blank">🖨 Печать</a>
-    <a class="btn btn-sm btn-gray" href="/reports/export.csv?tab={{ tab }}&{{ qs }}">Excel</a>
+    <a class="btn btn-sm btn-gray" href="/reports/export.csv?tab={{ tab }}&{{ qs }}">⬇ Excel</a>
+    {% endif %}
   </div>
 </header>
-<div class="segmented seg-wide">
-  {% for k, v in tabs.items() %}<a href="?tab={{ k }}&{{ qs }}" aria-pressed="{{ (tab == k)|lower }}">{{ v }}</a>{% endfor %}
+<div class="cab-nav">
+  <nav class="segmented cab-sec" aria-label="Раздел">
+    {% for k, v in sections.items() %}<a href="?sec={{ k }}&{{ qs }}" aria-pressed="{{ (sec == k)|lower }}">{{ "🔧 " if k == "sto" else "🚗 " }}{{ v }}</a>{% endfor %}
+  </nav>
+  <nav class="segmented cab-tabs" aria-label="Отчёт">
+    {% for k, v in tabs.items() %}<a href="?tab={{ k }}&{{ qs }}" aria-pressed="{{ (tab == k)|lower }}">{{ v }}</a>{% endfor %}
+  </nav>
 </div>
+
+{% if tab in DOC_TABS %}
+<div class="stats archive-stats">
+  {% if tab == "works" %}
+  {{ kpi("Работ выполнено", rep.totals.count) }}{{ kpi("Нормо-часов", rep.totals.hours|num or 0) }}{{ kpi("На сумму, ₴", rep.totals.sum|money(0)) }}
+  {{ kpi("Средняя работа, ₴", (rep.totals.sum / rep.totals.count if rep.totals.count else 0)|money(0)) }}
+  {% elif tab == "parts" %}
+  {{ kpi("Позиций продано", rep.totals.count) }}{{ kpi("Штук", rep.totals.qty|num or 0) }}{{ kpi("Продано на, ₴", rep.totals.sum|money(0)) }}
+  {% if fin %}{{ kpi("Закупка, ₴", rep.totals.cost|money(0)) }}{{ kpi("Наценка, ₴", rep.totals.margin|money(0), "", "tone-ok") }}{% endif %}
+  {% elif tab == "razbor" %}
+  {{ kpi("Продано деталей", rep.totals.count) }}{{ kpi("На сумму, ₴", rep.totals.sum|money(0)) }}
+  {% for name, val, _ in rep.groups %}{{ kpi(name, val|money(0)) }}{% endfor %}
+  {% elif tab == "donors" %}
+  {{ kpi("Доноров", rep.totals.count) }}{{ kpi("Вложено, ₴", rep.totals.spent|money(0)) }}{{ kpi("Выручено, ₴", rep.totals.sold|money(0)) }}
+  {{ kpi("На складе на, ₴", rep.totals.left_sum|money(0)) }}{{ kpi("Итог, ₴", rep.totals.profit|money(0), "без учёта остатков", "tone-ok" if rep.totals.profit >= 0 else "tone-bad") }}
+  {% endif %}
+</div>
+{% if rep.groups and tab in ("works", "parts") %}
+<div class="cab-groups"><span class="caption">{{ "По мастерам:" if tab == "works" else "Из них:" }}</span>
+  {% for name, val, sub in rep.groups %}<span class="cab-g"><b>{{ name }}</b> {{ val|money(0) }} ₴{% if sub %} <span class="caption">· {{ sub }}</span>{% endif %}</span>{% endfor %}
+</div>
+{% endif %}
+<div class="cab-grid fill">
+  <div class="tablewrap">
+    <table class="table dense-table">
+      <thead><tr>{% for k, label, kind in rep.columns %}<th class="{{ 'num' if kind }}">{{ label }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for r in rep.rows %}
+      <tr {% if r.order_id %}onclick="location.href='/orders/{{ r.order_id }}'" style="cursor:pointer"{% endif %}>
+        {% for k, label, kind in rep.columns %}<td class="{{ 'num nowrap' if kind }}{{ ' nowrap' if k in ('date', 'order', 'code') }}">{% if kind == "money" %}{{ r[k]|money }}{% elif kind == "num" %}{{ r[k]|num or 0 }}{% else %}{{ r[k] }}{% endif %}</td>{% endfor %}
+      </tr>
+      {% else %}<tr><td colspan="{{ rep.columns|length }}" class="footnote">За период ничего нет</td></tr>{% endfor %}
+      </tbody>
+      {% if rep.rows %}<tfoot><tr>{% for k, label, kind in rep.columns %}<td class="{{ 'num nowrap' if kind }}">{% if loop.first %}Итого{% elif k in rep.totals and kind %}<b>{{ rep.totals[k]|money if kind == "money" else (rep.totals[k]|num or 0) }}</b>{% endif %}</td>{% endfor %}</tr></tfoot>{% endif %}
+    </table>
+  </div>
+</div>
+<p class="caption cab-hint">{{ {"works": "Работы, отмеченные «Выполнено» в выбранном периоде. Нажмите на строку — откроется наряд.",
+  "parts": "Запчасти из нарядов, полностью оплаченных в выбранном периоде (как «Оплачено по нарядам» в Обзоре).",
+  "razbor": "Продажи б/у деталей покупателям напрямую (Нова Пошта, самовывоз). Б/у, поставленные в наряды, — во вкладке СТО → «Проданные запчасти».",
+  "donors": "Все доноры за всё время: покупка + расходы против продаж (напрямую и через наряды). Период на этот отчёт не влияет."}[tab] }}</p>
+{% endif %}
 
 {% if tab == "overview" %}
 <div class="stats">
