@@ -16,6 +16,7 @@ from ..services import money as msvc
 from ..services import orders as osvc
 from ..services import payroll as psvc
 from ..services import settings as st
+from ..services.staff import staff_for_period
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
 
@@ -300,7 +301,7 @@ def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: st
     if target:
         return ctx.render("money/payroll_user.html", title="Зарплата", see_all=see_all,
                           **_payroll_user_data(ctx, target, d1, d2))
-    staff = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    staff = staff_for_period(db, ctx.branch.id, d1)  # уволенные в периоде — тоже, для расчёта
     summ = psvc.summary(db, staff, d1, d2)
     tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
     return ctx.render("money/payroll_all.html", title="Зарплата", staff=staff, summ=summ, tot=tot, d1=d1, d2=d2,
@@ -316,7 +317,7 @@ def payroll_print(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: s
     if target:
         return ctx.render("money/payroll_print_user.html", title=f"Расчётный лист — {target.full_name}",
                           **_payroll_user_data(ctx, target, d1, d2))
-    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    staff = staff_for_period(ctx.db, ctx.branch.id, d1)
     summ = psvc.summary(ctx.db, staff, d1, d2)
     tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
     return ctx.render("money/payroll_print_all.html", title="Ведомость по зарплате", staff=staff, summ=summ, tot=tot,
@@ -330,7 +331,7 @@ def payroll_csv(ctx: Ctx = Depends(get_ctx), f: str = "", t: str = ""):
     import io
     from fastapi.responses import Response
     d1, d2 = _period(f, t)
-    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    staff = staff_for_period(ctx.db, ctx.branch.id, d1)
     summ = psvc.summary(ctx.db, staff, d1, d2)
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")

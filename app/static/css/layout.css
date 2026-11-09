@@ -649,3 +649,11 @@ button.sg-cell:hover, button.sg-cell.picked { background: color-mix(in srgb, var
 .rep-total td, .kv.rep-total { font-weight: 600; }
 .rep-total td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 a.kv { color: inherit; text-decoration: none; }
+
+/* Увольнение и архив сотрудников */
+.dismissed-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.dismissed-bar .grow { flex: 1 1 220px; min-width: 0; }
+.warn-card { box-shadow: inset 3px 0 0 var(--orange), var(--shadow-1); }
+.archive-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }.archive-stats { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.archive-stats .stat { padding: 10px 12px; min-width: 0; }
+.archive-stats .stat b { font-size: 21px; }@media (max-width: 600px) { .archive-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .archive-stats .stat { padding: 8px 10px; } .archive-stats .stat b { font-size: 16px; } }@media (max-width: 600px) { .segmented.archive-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; } .segmented.archive-tabs a { padding: 6px 4px; } }

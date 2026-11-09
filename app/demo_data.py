@@ -21,7 +21,9 @@ from .services import stock as ssvc
 
 PHOTOS = Path(__file__).parent / "demo" / "photos"
 
-EXTRA_MECHANICS = [("viktor", "Виктор Слюсаренко"), ("taras", "Тарас Гайко"), ("igor", "Игорь Мельник")]
+EXTRA_MECHANICS = [("viktor", "Виктор Слюсаренко"), ("taras", "Тарас Гайко"), ("igor", "Игорь Мельник"),
+                   ("roman", "Роман Шевчук")]  # Роман в конце увольняется — пример для вкладки «Архив»
+FIRED_DAYS_AGO = 10
 
 CLIENTS = [
     # телефон, имя, госномер, марка, модель, год, пробег
@@ -338,7 +340,7 @@ def populate():
                ("Съёмник шаровых опор", "850", "")]
         as_user("pavel")
         n = 0
-        for login in ("andrey", "sergey", "viktor", "taras", "igor"):
+        for login in ("andrey", "sergey", "viktor", "taras", "igor", "roman"):
             for name, cost, desc in kit[: 6 if login in ("andrey", "taras") else 4]:
                 n += 1
                 t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), description=desc)
@@ -435,9 +437,12 @@ def populate():
                                    method=method, comment=comment))
 
         workers = [u for login, u in users.items() if login != "admin"]
+        fired_on = today - timedelta(days=FIRED_DAYS_AGO)
         d = start_day
         while d < today:
             for u in workers:
+                if u.login == "roman" and d > fired_on:
+                    continue                        # уволен — отметок больше нет
                 wd = d.weekday()
                 if wd == 6 or (wd == 5 and u.role.code not in ("mechanic", "manager")):
                     continue                        # воскресенье — выходной, в субботу работают слесари и менеджер
@@ -495,6 +500,36 @@ def populate():
                 db.add(PayrollPayout(user_id=users[login].id, period_from=today.replace(day=1), period_to=today,
                                      amount=Decimal(amount), paid_on=today.replace(day=min(5, today.day)), method="cash",
                                      note="Аванс"))
+
+        # ---- Уволенный слесарь Роман: сделал наряд, получил расчёт, сдал инструмент → «Архив» ----
+        from .services import staff as stsvc
+        roman = users["roman"]
+        roman.hired_on = today - timedelta(days=240)
+        old_wo = intake(0, "A", None, partsman=False, works="Замена масла двигателя\nЗамена салонного фильтра",
+                        fuel="50", items=("docs",), photos=("front",))
+        as_user("irina")
+        old_wo.mechanic_id = roman.id
+        ws = price_works(old_wo, [(0.6, 800), (None, 250)])
+        as_user("roman")
+        for w in ws:
+            w.mechanic_id, w.status, w.done_at = roman.id, "done", now() - timedelta(days=FIRED_DAYS_AGO + 3)
+        osvc.set_status(db, old_wo, "ready", "Все работы выполнены")
+        as_user("irina")
+        db.flush()
+        msvc.add_payment(db, old_wo, msvc.totals(db, old_wo).due, "cash", "full", "")
+        msvc.close(db, old_wo, False, "ok", "", "")
+        as_user("admin")
+        from .models import PayrollAccrual
+        db.add(PayrollAccrual(user_id=roman.id, base_amount=Decimal(1), rate=Decimal(6000), amount=Decimal(6000),
+                              on_date=fired_on, kind="salary", note="Оклад за отработанные дни"))
+        db.add(PayrollPayout(user_id=roman.id, period_from=fired_on.replace(day=1), period_to=fired_on,
+                             amount=Decimal(5000), paid_on=fired_on, method="cash", note="Расчёт при увольнении (часть)"))
+        as_user("pavel")
+        c3 = tsvc.open_check(db, roman, "dismissal")
+        db.flush()
+        tsvc.finish_check(db, c3)
+        as_user("admin")
+        stsvc.dismiss(db, roman, users["admin"], fired_on, "По собственному желанию — переезд в другой город", {})
 
         current_user_id.set(None)
         db.commit()

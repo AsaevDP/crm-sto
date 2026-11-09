@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="ov-head">
+  <a class="back" href="/settings/users{{ '' if u.active else '?tab=archive' }}">{{ icon("back") }}{{ "Сотрудники" if u.active else "Архив" }}</a>
+  <div class="ov-title">
+    <div><h1 class="title-1">{{ u.full_name }}</h1>
+      <div class="subhead">{{ u.role.name }} · {{ "работает с " ~ d1.strftime("%d.%m.%Y") if u.active else "в штате " ~ d1.strftime("%d.%m.%Y") ~ " — " ~ d2.strftime("%d.%m.%Y") }} <span class="nowrap">({{ tenure }})</span></div></div>
+    <div class="ov-actions">
+      <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print?f={{ d1.isoformat() }}&t={{ d2.isoformat() }}" target="_blank">🖨 Папка</a>
+      {% if ctx.can("users.manage") %}<a class="btn btn-sm btn-gray" href="/settings/users/{{ u.id }}">Профиль</a>{% endif %}
+      {% if not u.active and ctx.can("staff.dismiss") %}
+      <form method="post" action="/settings/users/{{ u.id }}/rehire" onsubmit="return confirm('Вернуть {{ u.full_name }} на работу? Снова сможет входить, история сохранится.')"><button class="btn btn-sm">Вернуть на работу</button></form>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+{% if not u.active %}
+<div class="card compact dismissed-bar">
+  <span class="grow"><b>{{ ("Уволен " ~ u.dismissed_on.strftime("%d.%m.%Y")) if u.dismissed_on else "Выключен (без даты увольнения)" }}</b>
+    <span class="caption">{% if u.dismiss_reason %} · {{ u.dismiss_reason }}{% endif %}{% if by_user %} · оформил: {{ by_user.full_name }}{% endif %}</span></span>
+</div>
+{% endif %}
+
+<div class="stats archive-stats">
+  <div class="stat"><span class="caption">Нарядов</span><b>{{ orders|length }}</b></div>
+  <div class="stat"><span class="caption">Работ</span><b>{{ works|length }}</b></div>
+  <div class="stat"><span class="caption">Нормо-часы</span><b>{{ hours|num or 0 }}</b></div>
+  {% if "time" in tabs %}<div class="stat"><span class="caption">Дней в табеле</span><b>{{ days_total }}</b></div>{% endif %}
+  {% if pay %}
+  <div class="stat"><span class="caption">Начислено, ₴</span><b class="nowrap">{{ pay.accrued|money }}</b></div>
+  <div class="stat"><span class="caption">Выплачено, ₴</span><b class="nowrap">{{ pay.paid|money }}</b></div>
+  <div class="stat {{ 'tone-bad' if pay.due > 0 else 'tone-ok' }}"><span class="caption">{{ "К выплате, ₴" if pay.due >= 0 else "Переплата, ₴" }}</span><b class="nowrap">{{ pay.due|abs|money }}</b></div>
+  {% endif %}
+</div>
+
+<nav class="segmented archive-tabs" aria-label="Разделы">
+  {% for k, v in tabs.items() %}<a href="?tab={{ k }}" aria-pressed="{{ (tab == k)|lower }}">{{ v }}</a>{% endfor %}
+</nav>
+
+<div class="tablewrap fill scroll">
+  <table class="table">
+  {% if tab == "orders" %}
+    <thead><tr><th>Наряд</th><th>Дата</th><th>Авто</th><th>Роль</th><th>Статус</th></tr></thead>
+    <tbody>
+    {% for o in orders %}{% set v = vehicles.get(o.vehicle_id) %}
+      <tr onclick="location.href='/orders/{{ o.id }}'" style="cursor:pointer">
+        <td class="nowrap">{{ o.number }}</td><td class="nowrap">{{ o.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
+        <td>{% if v %}{{ v.make }} {{ v.model }} <span class="nowrap">{{ fmt_plate(v.plate) }}</span>{% endif %}</td>
+        <td>{{ [("Слесарь" if o.mechanic_id == u.id else ""), ("Менеджер" if o.manager_id == u.id else ""), ("Запчастист" if o.partsman_id == u.id else "")]|select|join(", ") or "Работы" }}</td>
+        <td><span class="chip" data-s="{{ o.status }}">{{ STATUSES.get(o.status) }}</span></td></tr>
+    {% else %}<tr><td colspan="5" class="footnote">Нарядов нет</td></tr>{% endfor %}
+    </tbody>
+  {% elif tab == "works" %}
+    <thead><tr><th>Дата</th><th>Наряд</th><th>Работа</th><th class="num">Н/ч</th></tr></thead>
+    <tbody>
+    {% for w in works %}{% set o = omap.get(w.work_order_id) %}
+      <tr><td class="nowrap">{{ w.done_at.astimezone().strftime("%d.%m.%Y") if w.done_at else "—" }}</td><td class="nowrap">{{ o.number if o else "" }}</td>
+        <td>{{ w.name }}</td><td class="num">{{ ((w.hours or 0) * w.qty)|num if w.hours else "—" }}</td></tr>
+    {% else %}<tr><td colspan="4" class="footnote">Выполненных работ нет</td></tr>{% endfor %}
+    </tbody>
+  {% elif tab == "time" %}
+    <thead><tr><th>Месяц</th><th class="num">Дней</th><th class="num">Часов</th></tr></thead>
+    <tbody>
+    {% for m, n, mins in time_rows|reverse %}
+      <tr onclick="location.href='/timesheet?user={{ u.id }}&m={{ m.strftime('%Y-%m') }}'" style="cursor:pointer">
+        <td>{{ MONTHS[m.month] }} {{ m.year }}</td><td class="num">{{ n }}</td><td class="num">{{ (mins / 60)|round(1)|num }}</td></tr>
+    {% else %}<tr><td colspan="3" class="footnote">Отметок в табеле нет</td></tr>{% endfor %}
+    {% if time_rows %}<tr><td><b>Всего</b></td><td class="num"><b>{{ days_total }}</b></td><td class="num"><b>{{ (minutes_total / 60)|round(1)|num }}</b></td></tr>{% endif %}
+    </tbody>
+  {% elif tab == "pay" %}
+    <thead><tr><th>Месяц</th><th class="num">Начислено</th><th class="num">Выплачено</th></tr></thead>
+    <tbody>
+    {% for m, m_end, a, p in pay_rows %}
+      <tr onclick="location.href='/payroll?user={{ u.id }}&f={{ m.isoformat() }}&t={{ m_end.isoformat() }}'" style="cursor:pointer">
+        <td>{{ MONTHS[m.month] }} {{ m.year }}</td><td class="num nowrap">{{ a|money }}</td><td class="num nowrap">{{ p|money }}</td></tr>
+    {% else %}<tr><td colspan="3" class="footnote">Начислений нет</td></tr>{% endfor %}
+    </tbody>
+  {% elif tab == "tools" %}
+    <thead><tr><th>Дата</th><th>Событие</th><th>Инструмент / итог</th></tr></thead>
+    <tbody>
+    {% for c in checks %}
+      <tr onclick="location.href='/tools/checks/{{ c.id }}'" style="cursor:pointer"><td class="nowrap">{{ c.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
+        <td>Проверка: {{ CHECK_KINDS[c.kind]|lower }}</td><td>{{ CHECK_STATUS[c.status] }}</td></tr>
+    {% endfor %}
+    {% for mv in moves %}{% set t = tools.get(mv.tool_id) %}
+      <tr><td class="nowrap">{{ mv.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
+        <td>{{ "Выдан" if mv.to_user == u.id else ("Утерян" if mv.kind == "lost" else "Сдан") }}</td>
+        <td>{% if t %}<span class="mono">{{ t.inv_no }}</span> {{ t.name }}{% endif %}{% if mv.comment %}<div class="caption">{{ mv.comment }}</div>{% endif %}</td></tr>
+    {% endfor %}
+    {% if not checks and not moves %}<tr><td colspan="3" class="footnote">Инструмент не выдавался</td></tr>{% endif %}
+    </tbody>
+  {% endif %}
+  </table>
+</div>
+{% endblock %}

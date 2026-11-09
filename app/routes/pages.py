@@ -93,6 +93,8 @@ FIELD_NAMES = {
     "fuel_level": "Топливо", "intake_items": "В машине", "intake_note": "Замечания", "to_status": "Новый статус",
     "from_status": "Был статус", "comment": "Комментарий", "code": "Код", "last": "Последний номер", "year_": "Год",
     "file": "Файл", "stage": "Этап", "notes": "Заметки", "work_order_id": "Наряд",
+    "hired_on": "Принят на работу", "dismissed_on": "Уволен", "dismiss_reason": "Причина увольнения",
+    "dismissed_by": "Кто уволил",
 }
 # Какие поля показывать в журнале при создании записи (остальное — служебное)
 CREATE_FIELDS = ("full_name", "name", "login", "permission", "key", "uid", "number", "plate", "make", "model",

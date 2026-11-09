@@ -23,7 +23,7 @@
     <tbody>
     {% for s in staff %}{% set r = summ[s.id] %}
     <tr onclick="location.href='/payroll?user={{ s.id }}&f={{ d1 }}&t={{ d2 }}'" style="cursor:pointer">
-      <td><b class="nowrap">{{ s.full_name }}</b><div class="caption">{{ s.role.name }}</div></td>
+      <td><b class="nowrap">{{ s.full_name }}</b><div class="caption">{{ s.role.name }}{% if not s.active %} · уволен{% endif %}</div></td>
       <td class="num">{{ r.n_orders or "—" }}</td>
       <td class="num">{{ r.hours|num if r.hours else "—" }}</td>
       {% for k in COLS %}<td class="num" {% if r[k] < 0 %}style="color:var(--red)"{% endif %}>{{ r[k]|money if r[k] else "—" }}</td>{% endfor %}

@@ -1,8 +1,8 @@
 """Сотрудники, роли, права, карты, присутствие."""
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base, Entity, now
@@ -42,6 +42,11 @@ class User(Entity):
     role_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("roles.id"))
     phone: Mapped[str] = mapped_column(String(40), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Приём и увольнение. Уволенный не удаляется: active=False, вся история остаётся (вкладка «Архив»).
+    hired_on: Mapped[date | None] = mapped_column(Date, nullable=True)      # пусто — берём дату создания
+    dismissed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    dismiss_reason: Mapped[str] = mapped_column(Text, default="")
+    dismissed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     role: Mapped[Role] = relationship(foreign_keys=[role_id], lazy="joined")
 
@@ -49,6 +54,10 @@ class User(Entity):
     def initials(self) -> str:
         parts = self.full_name.split()
         return "".join(p[0] for p in parts[:2]).upper() or "?"
+
+    @property
+    def hired_date(self) -> date:
+        return self.hired_on or (self.created_at.date() if self.created_at else date.today())
 
     @property
     def short_name(self) -> str:

@@ -1,5 +1,5 @@
 {% extends "_print_doc.html" %}
-{% block back %}{{ "/payroll" if u.id == user.id else "/settings/users/" ~ u.id }}{% endblock %}
+{% block back %}{{ "/payroll" if u.id == user.id else ("/settings/users/" ~ u.id ~ ("" if u.active else "/archive")) }}{% endblock %}
 {% block doc_title %}ПАПКА СОТРУДНИКА{% endblock %}
 {% block subtitle %}{{ u.full_name }} · {{ u.role.name }} · период {{ d1.strftime("%d.%m.%Y") }} — {{ d2.strftime("%d.%m.%Y") }}{% endblock %}
 {% block body %}
@@ -7,6 +7,8 @@
   <tr><th style="width:30%">Сотрудник</th><td>{{ u.full_name }} ({{ u.login }})</td></tr>
   <tr><th>Должность</th><td>{{ u.role.name }}</td></tr>
   <tr><th>Телефон</th><td>{{ u.phone or "—" }}</td></tr>
+  <tr><th>Принят на работу</th><td>{{ u.hired_date.strftime("%d.%m.%Y") }}</td></tr>
+  {% if not u.active %}<tr><th>Уволен</th><td>{{ u.dismissed_on.strftime("%d.%m.%Y") if u.dismissed_on else "—" }}{% if u.dismiss_reason %} · {{ u.dismiss_reason }}{% endif %}</td></tr>{% endif %}
   <tr><th>Подъёмник</th><td>{{ (lift.number ~ " · " ~ lift.name) if lift else "не закреплён" }}</td></tr>
 </table>
 

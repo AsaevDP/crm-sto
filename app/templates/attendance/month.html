@@ -20,7 +20,7 @@
     <tbody>
     {% for s in staff %}{% set g = grid[s.id] %}
     <tr>
-      <td class="ts-name"><a href="?user={{ s.id }}&m={{ y }}-{{ '%02d'|format(mo) }}">{{ s.full_name }}</a><div class="caption">{{ s.role.name }}</div></td>
+      <td class="ts-name"><a href="?user={{ s.id }}&m={{ y }}-{{ '%02d'|format(mo) }}">{{ s.full_name }}</a><div class="caption">{{ s.role.name }}{% if not s.active %} · уволен{% endif %}</div></td>
       {% for d in range(1, n_days + 1) %}{% set day = g.get(d) %}
       <td class="ts-d {{ 'we' if d in weekends }} {{ 'open' if day and day.open and not (today.year == y and today.month == mo and today.day == d) }}"
           title="{% if day %}{{ day.first_in.strftime('%H:%M') if day.first_in else '' }}–{{ day.last_out.strftime('%H:%M') if day.last_out else '…' }}{% endif %}">

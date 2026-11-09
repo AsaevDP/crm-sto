@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="ov-head">
+  <a class="back" href="{{ '/settings/users/' ~ u.id if ctx.can('users.manage') else '/settings/users' }}">{{ icon("back") }}{{ u.full_name if ctx.can('users.manage') else "Сотрудники" }}</a>
+  <div class="ov-title">
+    <div><h1 class="title-1">Уволить сотрудника</h1>
+      <div class="subhead">{{ u.full_name }} · {{ u.role.name }} · работает с {{ u.hired_date.strftime("%d.%m.%Y") }}</div></div>
+  </div>
+</header>
+
+{% if is_me %}
+<div class="card"><p class="subhead" style="margin:0">Себя уволить нельзя.</p></div>
+{% else %}
+<form class="cl-grid fill" method="post" action="/settings/users/{{ u.id }}/dismiss"
+      onsubmit="return confirm('Уволить {{ u.full_name }}? Войти больше не сможет. Вся история останется в архиве, вернуть можно в любой момент.')">
+  <section class="ov-col on">
+    {% if tools %}
+    <div class="card compact warn-card">
+      <div class="headline">Сначала — проверка инструмента</div>
+      <p class="footnote" style="margin:0">За сотрудником числится {{ tools|length }} шт. Проведите «Проверку при увольнении» — инструмент вернётся на склад, потом можно уволить.</p>
+      {% if ctx.can("tools.view") %}<div><a class="btn btn-sm btn-tinted" href="/tools/staff/{{ u.id }}">Открыть инструмент</a></div>{% endif %}
+    </div>
+    {% endif %}
+    <div class="card form">
+      <div class="headline">Увольнение</div>
+      <label>Дата увольнения<input class="field" type="date" name="dismissed_on" value="{{ today.isoformat() }}" required></label>
+      <label>Причина (по желанию)<textarea class="field" name="reason" rows="3" maxlength="1000" placeholder="Например: по собственному желанию"></textarea></label>
+      <p class="footnote" style="margin:0">Сотрудник не сможет войти (пароль, PIN, карта), пропадёт из списков нарядов, табеля и зарплаты. Наряды, работы, табель, зарплата и инструмент сохранятся во вкладке «Архив».</p>
+    </div>
+    <div class="ov-actions">
+      <button class="btn btn-danger" {% if tools %}disabled{% endif %}>Уволить</button>
+      <a class="btn btn-gray" href="{{ '/settings/users/' ~ u.id if ctx.can('users.manage') else '/settings/users' }}">{{ "Отложить — пусть доделает" if orders else "Отмена" }}</a>
+    </div>
+  </section>
+
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Незакрытые наряды · {{ orders|length }}</span></div>
+      {% if orders %}
+      <p class="footnote" style="margin:0">Выберите, кому передать. «Оставить за ним» — наряд останется без изменений, передать можно позже в самом наряде.</p>
+      <div class="tablewrap">
+        <table class="table">
+          <thead><tr><th>Наряд</th><th>Кому передать</th></tr></thead>
+          <tbody>
+          {% for o, slots in orders %}{% set v = vehicles.get(o.vehicle_id) %}
+            {% for slot in slots %}
+            <tr>
+              {% if loop.first %}<td rowspan="{{ slots|length }}"><a href="/orders/{{ o.id }}" target="_blank" class="nowrap">{{ o.number }}</a>
+                {% if v %}<div class="caption">{{ v.make }} {{ v.model }} <span class="nowrap">{{ fmt_plate(v.plate) }}</span></div>{% endif %}
+                <span class="chip" data-s="{{ o.status }}">{{ STATUSES.get(o.status) }}</span></td>{% endif %}
+              <td style="min-width:190px"><div class="caption">{{ SLOTS[slot][1] }}</div>
+                <select class="field" name="wo_{{ o.id }}_{{ slot }}">
+                  <option value="">Оставить за ним</option>
+                  {% for c in cands[slot] %}<option value="{{ c.id }}">{{ c.full_name }}</option>{% endfor %}
+                </select></td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="footnote" style="margin:0">Незакрытых нарядов нет.</p>
+      {% endif %}
+    </div>
+    {% if appts %}
+    <div class="card form">
+      <div class="headline">Записи клиентов к нему · {{ appts|length }}</div>
+      <label>Передать записи
+        <select class="field" name="appts_to">
+          <option value="">Без мастера (назначить потом)</option>
+          {% for c in cands["mechanic_id"] %}<option value="{{ c.id }}">{{ c.full_name }}</option>{% endfor %}
+        </select></label>
+    </div>
+    {% endif %}
+  </section>
+</form>
+{% endif %}
+{% endblock %}

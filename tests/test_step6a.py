@@ -76,8 +76,8 @@ def test_dismissal_blocked_until_tools_checked(client):
     client.post("/settings/users", data={"full_name": "Тест Увольняемый", "login": "fired2", "role_id": str(mech_role.id), "password": "fired123"})
     uid = _uid("fired2")
     client.post("/tools", data={"name": "Тестер (увольнение)", "cost": "500", "holder_id": str(uid)})
-    # Отключить нельзя — числится инструмент
-    client.post(f"/settings/users/{uid}", data={"full_name": "Тест Увольняемый", "login": "fired2", "role_id": str(mech_role.id)})
+    # Уволить нельзя — числится инструмент
+    client.post(f"/settings/users/{uid}/dismiss", data={"reason": "тест"})
     with SessionLocal() as db:
         assert db.get(User, uid).active
     # Проверка при увольнении: всё исправно → инструмент на склад, теперь можно отключить
@@ -88,6 +88,6 @@ def test_dismissal_blocked_until_tools_checked(client):
     assert _tool("Тестер (увольнение)").holder_id is None
     with SessionLocal() as db:
         assert db.get(ToolCheck, c.id).status == "approved"  # удерживать нечего
-    client.post(f"/settings/users/{uid}", data={"full_name": "Тест Увольняемый", "login": "fired2", "role_id": str(mech_role.id)})
+    client.post(f"/settings/users/{uid}/dismiss", data={"reason": "тест"})
     with SessionLocal() as db:
         assert not db.get(User, uid).active

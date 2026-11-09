@@ -2,6 +2,8 @@
 import re
 import secrets
 import uuid
+from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -39,7 +41,9 @@ def _back(path: str):
 # ---------- Главная настроек ----------
 @router.get("")
 def index(ctx: Ctx = Depends(get_ctx)):
-    ctx.need("settings.access", "users.manage")
+    ctx.need("settings.access", "users.manage", "staff.dismiss")
+    if not ctx.can("settings.access", "users.manage"):
+        return _back("/settings/users")  # директор: только сотрудники и архив
     n_users = ctx.db.scalar(select(func.count()).select_from(User).where(User.branch_id == ctx.branch.id))
     return ctx.render("settings/index.html", title="Настройки", n_users=n_users)
 
@@ -178,11 +182,24 @@ def role_perm(role_id: str, ctx: Ctx = Depends(get_ctx), perm: str = Form(...), 
 
 # ---------- Сотрудники ----------
 @router.get("/users")
-def users(ctx: Ctx = Depends(get_ctx)):
-    ctx.need("users.manage")
-    rows = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id).order_by(User.active.desc(), User.full_name)).all()
+def users(ctx: Ctx = Depends(get_ctx), tab: str = ""):
+    """Сотрудники: вкладки «Работают» и «Архив» (уволенные — вся их история сохраняется)."""
+    ctx.need("users.manage", "staff.dismiss")
+    rows = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id)
+                          .order_by(User.dismissed_on.desc(), User.full_name)).all()
+    working = [u for u in rows if u.active]
+    archive = [u for u in rows if not u.active]
     roles = ctx.db.scalars(select(Role).where(Role.branch_id == ctx.branch.id).order_by(Role.sort)).all()
-    return ctx.render("settings/users.html", title="Сотрудники", users=rows, roles=roles)
+    tab = "archive" if tab == "archive" else "work"
+    return ctx.render("settings/users.html", title="Сотрудники", users=archive if tab == "archive" else working,
+                      tab=tab, n_work=len(working), n_archive=len(archive), roles=roles)
+
+
+def _date(v: str) -> date | None:
+    try:
+        return date.fromisoformat(v) if v else None
+    except ValueError:
+        return None
 
 
 LOGIN_RE = re.compile(r"^[a-z0-9._-]{2,40}$")
@@ -249,7 +266,8 @@ def user_view(user_id: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/users/{user_id}")
 def user_save(user_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Form(...), login: str = Form(...),
-              role_id: str = Form(...), phone: str = Form(""), active: str = Form("")):
+              role_id: str = Form(...), phone: str = Form(""), hired_on: str = Form("")):
+    """Профиль. Увольнение — отдельной кнопкой (страница «Уволить»), тут не меняется."""
     ctx.need("users.manage")
     u = _user(ctx, user_id)
     login = login.strip().lower()
@@ -257,17 +275,13 @@ def user_save(user_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Form(.
         flash(ctx.request, err, "error")
         return _back(f"/settings/users/{user_id}")
     new_role = _role(ctx, role_id)
-    # Себя нельзя выключить или лишить роли админа — иначе можно потерять доступ к настройкам
-    if u.id == ctx.user.id and (not active or (u.role.code == ADMIN_ROLE and new_role.code != ADMIN_ROLE)):
-        flash(ctx.request, "Нельзя выключить себя или снять с себя роль админа", "error")
+    # Себя нельзя лишить роли админа — иначе можно потерять доступ к настройкам
+    if u.id == ctx.user.id and u.role.code == ADMIN_ROLE and new_role.code != ADMIN_ROLE:
+        flash(ctx.request, "Нельзя снять с себя роль админа", "error")
         return _back(f"/settings/users/{user_id}")
-    if u.active and not active:
-        from ..services.tools import holding
-        held = holding(ctx.db, u.id)
-        if held:
-            flash(ctx.request, f"За сотрудником числится инструмент ({len(held)} шт.) — сначала проведите проверку при увольнении", "error")
-            return _back(f"/tools/staff/{u.id}")
-    u.full_name, u.login, u.role_id, u.phone, u.active = full_name.strip()[:120], login, new_role.id, phone.strip()[:40], bool(active)
+    u.full_name, u.login, u.role_id, u.phone = full_name.strip()[:120], login, new_role.id, phone.strip()[:40]
+    if (d := _date(hired_on)) and d != u.hired_date:
+        u.hired_on = d
     ctx.db.commit()
     flash(ctx.request, "Сохранено")
     return _back(f"/settings/users/{user_id}")
@@ -287,6 +301,142 @@ def user_secret(user_id: str, ctx: Ctx = Depends(get_ctx), password: str = Form(
     ctx.db.commit()
     flash(ctx.request, "Пароль / PIN обновлён" if (password or pin) else "Ничего не изменено")
     return _back(f"/settings/users/{user_id}")
+
+
+# ---------- Увольнение, возврат, архив ----------
+@router.get("/users/{user_id}/dismiss")
+def dismiss_form(user_id: str, ctx: Ctx = Depends(get_ctx)):
+    ctx.need("staff.dismiss")
+    u = _user(ctx, user_id)
+    if not u.active:
+        return _back(f"/settings/users/{u.id}/archive")
+    from ..models import Vehicle
+    from ..models.orders import WO_STATUSES
+    from ..services import orders as osvc
+    from ..services import staff as ssvc
+    from ..services.tools import holding
+    orders = ssvc.open_orders(ctx.db, u)
+    vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o, _ in orders])))}
+    return ctx.render("settings/dismiss.html", title=f"Уволить — {u.full_name}", u=u, orders=orders, vehicles=vehicles,
+                      tools=holding(ctx.db, u.id), appts=ssvc.future_appointments(ctx.db, u),
+                      cands=ssvc.candidates(ctx.db, u), SLOTS=ssvc.SLOTS, STATUSES=WO_STATUSES,
+                      fmt_plate=osvc.fmt_plate, today=date.today(), is_me=u.id == ctx.user.id)
+
+
+@router.post("/users/{user_id}/dismiss")
+async def dismiss_save(user_id: str, ctx: Ctx = Depends(get_ctx)):
+    ctx.need("staff.dismiss")
+    u = _user(ctx, user_id)
+    form = await ctx.request.form()
+    if u.id == ctx.user.id:
+        flash(ctx.request, "Себя уволить нельзя", "error")
+        return _back(f"/settings/users/{u.id}/dismiss")
+    if not u.active:
+        return _back(f"/settings/users/{u.id}/archive")
+    from ..services import staff as ssvc
+    from ..services.tools import holding
+    if held := holding(ctx.db, u.id):
+        flash(ctx.request, f"За сотрудником числится инструмент ({len(held)} шт.) — сначала проведите проверку при увольнении", "error")
+        return _back(f"/settings/users/{u.id}/dismiss")
+    on = _date(str(form.get("dismissed_on", ""))) or date.today()
+    moved = ssvc.dismiss(ctx.db, u, ctx.user, on, str(form.get("reason", "")), dict(form))
+    ctx.db.commit()
+    flash(ctx.request, f"Сотрудник {u.full_name} уволен и перенесён в архив" + (f". Передано нарядов: {moved}" if moved else ""))
+    return _back(f"/settings/users/{u.id}/archive")
+
+
+@router.post("/users/{user_id}/rehire")
+def rehire(user_id: str, ctx: Ctx = Depends(get_ctx)):
+    ctx.need("staff.dismiss")
+    u = _user(ctx, user_id)
+    if not u.active:
+        from ..services import staff as ssvc
+        ssvc.rehire(ctx.db, u, date.today())
+        ctx.db.commit()
+        flash(ctx.request, f"{u.full_name} снова в работе")
+    return _back(f"/settings/users/{u.id}" if ctx.can("users.manage") else "/settings/users")
+
+
+ARCHIVE_TABS = {"orders": "Наряды", "works": "Работы", "time": "Табель", "pay": "Зарплата", "tools": "Инструмент"}
+
+
+@router.get("/users/{user_id}/archive")
+def archive_view(user_id: str, ctx: Ctx = Depends(get_ctx), tab: str = "orders"):
+    """Всё по сотруднику за всё время: наряды, выполненные работы, табель, зарплата, инструмент."""
+    ctx.need("users.manage", "staff.dismiss")
+    u = _user(ctx, user_id)
+    db = ctx.db
+    from sqlalchemy import or_
+    from ..models import PayrollAccrual, PayrollPayout, ToolCheck, ToolMove, Tool, Vehicle, WorkOrder, WoWork
+    from ..models.orders import WO_STATUSES
+    from ..models.tools import CHECK_KINDS, CHECK_STATUS
+    from ..services import orders as osvc
+    from ..services import payroll as psvc
+    from ..services import staff as ssvc
+    from ..services.attendance import month_grid
+    d1 = u.hired_date
+    d2 = u.dismissed_on or date.today()
+    tabs = {k: v for k, v in ARCHIVE_TABS.items()
+            if (k != "pay" or ctx.can("payroll.view_all")) and (k != "time" or ctx.can("attendance.view_all"))}
+    tab = tab if tab in tabs else "orders"
+
+    works = db.scalars(select(WoWork).where(WoWork.mechanic_id == u.id, WoWork.status == "done")
+                       .order_by(WoWork.done_at.desc())).all()
+    work_wo = {w.work_order_id for w in works}
+    orders = db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, or_(
+        WorkOrder.mechanic_id == u.id, WorkOrder.manager_id == u.id, WorkOrder.partsman_id == u.id,
+        WorkOrder.id.in_(work_wo))).order_by(WorkOrder.created_at.desc())).all()
+    omap = {o.id: o for o in orders}
+    vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
+    hours = sum((Decimal(w.hours or 0) * Decimal(w.qty or 1) for w in works), Decimal(0))
+
+    # Табель и зарплата — по месяцам, от приёма до сегодня (после увольнения бывает расчёт)
+    last = date.today() if date.today() > d2 else d2
+    months = []
+    y, m = d1.year, d1.month
+    while (y, m) <= (last.year, last.month):
+        months.append((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    time_rows, days_total, minutes_total = [], 0, 0
+    if "time" in tabs:
+        for y, m in months:
+            grid = month_grid(db, ctx.branch.id, [u], y, m)[u.id]
+            days = [d for d in grid.values() if d.minutes or d.open]
+            if days:
+                mins = sum(d.minutes for d in days)
+                time_rows.append((date(y, m, 1), len(days), mins))
+                days_total, minutes_total = days_total + len(days), minutes_total + mins
+    pay_rows, pay = [], None
+    if "pay" in tabs:
+        acc = db.scalars(select(PayrollAccrual).where(PayrollAccrual.user_id == u.id, PayrollAccrual.status != "cancelled")).all()
+        outs = db.scalars(select(PayrollPayout).where(PayrollPayout.user_id == u.id)).all()
+        by = {}
+        for a in acc:
+            r = by.setdefault(a.on_date.replace(day=1), [Decimal(0), Decimal(0)])
+            r[0] += a.amount
+        for p in outs:
+            r = by.setdefault(p.paid_on.replace(day=1), [Decimal(0), Decimal(0)])
+            r[1] += p.amount
+        from calendar import monthrange
+        pay_rows = sorted(((k, k.replace(day=monthrange(k.year, k.month)[1]), a, p) for k, (a, p) in by.items()),
+                          reverse=True)
+        accrued, paid = sum((a.amount for a in acc), Decimal(0)), sum((p.amount for p in outs), Decimal(0))
+        pay = {"accrued": accrued, "paid": paid, "due": accrued - paid}
+    checks = db.scalars(select(ToolCheck).where(ToolCheck.user_id == u.id).order_by(ToolCheck.created_at.desc())).all()
+    moves = db.scalars(select(ToolMove).where(or_(ToolMove.to_user == u.id, ToolMove.from_user == u.id))
+                       .order_by(ToolMove.created_at.desc())).all()
+    tools = {t.id: t for t in db.scalars(select(Tool).where(Tool.id.in_([mv.tool_id for mv in moves])))}
+    by_user = db.get(User, u.dismissed_by) if u.dismissed_by else None
+    return ctx.render("settings/archive.html", title=u.full_name, u=u, tab=tab, tabs=tabs, d1=d1, d2=d2,
+                      tenure=ssvc.tenure(d1, d2), by_user=by_user, orders=orders, omap=omap, vehicles=vehicles,
+                      works=works, hours=hours, time_rows=time_rows, days_total=days_total,
+                      minutes_total=minutes_total, pay_rows=pay_rows, pay=pay, checks=checks, moves=moves,
+                      tools=tools, STATUSES=WO_STATUSES, CHECK_KINDS=CHECK_KINDS, CHECK_STATUS=CHECK_STATUS,
+                      fmt_plate=osvc.fmt_plate, MONTHS=MONTHS_RU)
+
+
+MONTHS_RU = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь",
+             "Ноябрь", "Декабрь"]
 
 
 @router.post("/users/{user_id}/cards")

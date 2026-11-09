@@ -46,6 +46,7 @@ PERMISSIONS = [
     ("payroll.view_own", "Своя зарплата", "Сотрудники"),
     ("payroll.view_all", "Зарплата всех", "Сотрудники"),
     ("payroll.manage", "Схемы зарплаты и выплаты", "Сотрудники"),
+    ("staff.dismiss", "Увольнять и возвращать сотрудников, архив уволенных", "Сотрудники"),
     ("tools.view", "Инструмент всех сотрудников", "Инструмент"),
     ("tools.view_own", "Свой инструмент", "Инструмент"),
     ("tools.manage", "Выдача инструмента и проверки", "Инструмент"),
@@ -76,7 +77,7 @@ DEFAULT_ROLES = {
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
-        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", *_OWN]),
+        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "orders.assign", "clients.view",
@@ -107,7 +108,7 @@ MENU = [
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),
     ("/tools", "Инструмент", "tool", ["tools.view", "tools.view_own"]),
-    ("/settings", "Настройки", "gear", ["settings.access", "users.manage"]),
+    ("/settings", "Настройки", "gear", ["settings.access", "users.manage", "staff.dismiss"]),
     ("/audit", "Журнал", "list", ["audit.view"]),
 ]
 

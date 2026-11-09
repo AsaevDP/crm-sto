@@ -17,6 +17,7 @@ from ..db import current_branch_id, current_user_id, get_db
 from ..models import AccessPoint, AttendanceEvent, User
 from ..services import attendance as svc
 from ..services import settings as st
+from ..services.staff import staff_for_period
 from ..web import Ctx, Forbidden, accent_style, flash, get_ctx, templates
 from .orders import _uuid
 
@@ -122,7 +123,7 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = ""):
     prev = (date(y, mo, 1) - timedelta(days=1)).strftime("%Y-%m")
     nxt = (date(y, mo, n_days) + timedelta(days=1)).strftime("%Y-%m")
     see_all = ctx.can("attendance.view_all")
-    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    staff = staff_for_period(ctx.db, ctx.branch.id, date(y, mo, 1))  # уволенные в этом месяце — тоже
     target = None
     if not see_all:
         target = ctx.user
