@@ -1,0 +1,42 @@
+{# Единая панель дат. bar — services.periods.Bar. Клавиши: ← → , Т, Д Н М К Г (см. static/js/app.js). #}
+{% macro period_bar(bar, compact=false) %}
+{% set per = bar.per %}
+{% set KEYS = {"day": "Д", "week": "Н", "month": "М", "quarter": "К", "year": "Г"} %}
+<div class="pbar {{ 'pbar-compact' if compact }}" data-period-bar>
+  {% if bar.prev %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ bar.prev }}" title="Назад · клавиша ←" aria-label="Предыдущий период">‹</a>{% endif %}
+  <details class="pcal">
+    <summary class="btn btn-sm btn-gray pcur" title="Выбрать дату в календаре">📅 {{ per.label }}</summary>
+    <form class="pcal-pop card compact" method="get" action="{{ bar.path }}">
+      {% for k, v in bar.keep.items() if v not in ("", none) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      {% if per.allowed|reject("in", ["custom", "all"])|list %}
+      <label class="caption">Перейти к дате
+        <input type="hidden" name="p" value="{{ per.kind if per.kind not in ('custom', 'all') else (per.allowed|reject('in', ['custom', 'all'])|first) }}">
+        <input class="field" type="date" name="d" value="{{ per.anchor.isoformat() }}" onchange="this.form.submit()"></label>
+      {% endif %}
+      {% if "custom" in per.allowed %}
+      <div class="caption" style="margin-top:6px">Свой период</div>
+      <div class="pcal-range">
+        <input class="field" type="date" form="pcust-{{ bar.path|replace('/', '') }}" name="f" value="{{ per.d1.isoformat() if per.d1 else '' }}" aria-label="С">
+        <span>—</span>
+        <input class="field" type="date" form="pcust-{{ bar.path|replace('/', '') }}" name="t" value="{{ per.d2.isoformat() if per.d2 else '' }}" aria-label="По">
+        <button class="btn btn-sm" form="pcust-{{ bar.path|replace('/', '') }}">Показать</button>
+      </div>
+      {% endif %}
+    </form>
+    {% if "custom" in per.allowed %}
+    <form id="pcust-{{ bar.path|replace('/', '') }}" method="get" action="{{ bar.path }}" hidden>
+      {% for k, v in bar.keep.items() if v not in ("", none) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <input type="hidden" name="p" value="custom">
+    </form>
+    {% endif %}
+  </details>
+  {% if bar.next %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ bar.next }}" title="Вперёд · клавиша →" aria-label="Следующий период">›</a>{% endif %}
+  {% if not per.is_current and per.kind != "all" %}<a class="btn btn-sm btn-plain" data-pkey="today" href="{{ bar.today }}" title="Сегодня · клавиша Т">Сегодня</a>{% endif %}
+  {% set q = bar.quick() %}
+  {% if q|length > 1 %}
+  <nav class="segmented pbar-kinds" aria-label="Период">
+    {% for k, t, href, on in q %}<a href="{{ href }}" data-pkey="{{ k }}" aria-pressed="{{ on|lower }}" title="{{ ('Текущий: ' ~ t|lower ~ ' · клавиша ' ~ KEYS[k]) if k in KEYS else t }}">{{ t }}</a>{% endfor %}
+  </nav>
+  {% endif %}
+</div>
+{% endmacro %}

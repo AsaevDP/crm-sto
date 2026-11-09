@@ -79,3 +79,25 @@
   };
   load().forEach(render);
 })();
+
+// ===== Панель дат: горячие клавиши (10.11.2026) =====
+// ← → — назад / вперёд, Т — сегодня, Д Н М К Г — текущие день, неделя, месяц, квартал, год.
+// Работает на русской и английской раскладке; не мешает вводу в поля.
+(function () {
+  const MAP = { 'arrowleft': 'prev', 'arrowright': 'next', 'т': 'today', 't': 'today',
+    'д': 'day', 'd': 'day', 'н': 'week', 'w': 'week', 'м': 'month', 'm': 'month', 'к': 'quarter', 'q': 'quarter',
+    'г': 'year', 'y': 'year', 'в': 'all', 'a': 'all' };
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+    const el = document.activeElement;
+    if (el && (['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable)) return;
+    const bar = document.querySelector('[data-period-bar]'); if (!bar) return;
+    const k = MAP[(e.key || '').toLowerCase()]; if (!k) return;
+    const a = bar.querySelector(`[data-pkey="${k}"]`); if (!a) return;
+    e.preventDefault(); a.click();
+  });
+  // Календарь закрывается кликом мимо
+  document.addEventListener('click', e => {
+    document.querySelectorAll('details.pcal[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
+  });
+})();

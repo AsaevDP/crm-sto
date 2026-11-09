@@ -79,6 +79,7 @@ ACTIONS = {"create": "создал", "update": "изменил", "delete": "уд
            "view_as": "смотрел глазами", "view_as_stop": "вернулся к себе"}
 ACTION_FILTERS = {"create": "Создание", "update": "Изменение", "delete": "Удаление", "login": "Входы и выходы"}
 PERIODS = {"today": "Сегодня", "week": "7 дней", "month": "30 дней", "all": "Всё"}
+PERIOD_KINDS = ("day", "week", "month", "quarter", "year", "custom", "all")
 PAGE = 150
 
 
@@ -87,25 +88,28 @@ class Filters:
     user: str = ""        # id сотрудника, "system" или пусто — все
     section: str = ""
     action: str = ""
-    period: str = "week"
+    period: str = "week"  # старые ссылки (today / week / month / all)
     f: str = ""           # своя дата с
     t: str = ""           # своя дата по
     limit: int = PAGE
+    p: str = ""           # общая панель дат (10.11.2026)
+    d: str = ""
+
+    def per(self):
+        from . import periods
+        p = self.p or ("custom" if self.f and self.t else {"today": "day", "all": "all"}.get(self.period, self.period))
+        return periods.parse(p, self.d, self.f, self.t, default="week", allowed=PERIOD_KINDS)
 
     def dates(self) -> tuple[date | None, date | None]:
-        today = date.today()
-        try:
-            if self.f or self.t:
-                return (date.fromisoformat(self.f) if self.f else None, date.fromisoformat(self.t) if self.t else None)
-        except ValueError:
-            pass
-        return {"today": (today, today), "week": (today - timedelta(days=6), today),
-                "month": (today - timedelta(days=29), today)}.get(self.period, (None, None))
+        per = self.per()
+        return per.d1, per.d2
+
+    def keep(self) -> dict:
+        return {"user": self.user, "section": self.section, "action": self.action}
 
     def query_string(self, **over) -> str:
         from urllib.parse import urlencode
-        d = {"user": self.user, "section": self.section, "action": self.action, "period": self.period,
-             "f": self.f, "t": self.t, **over}
+        d = {**self.keep(), **self.per().params(), **over}
         return urlencode({k: v for k, v in d.items() if v not in ("", None)})
 
 

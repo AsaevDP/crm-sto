@@ -30,10 +30,14 @@ def _own_only(ctx: Ctx) -> bool:
 
 
 @router.get("/schedule")
-def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: str = ""):
+def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: str = "", p: str = ""):
     ctx.need("schedule.view", "schedule.manage")
+    from ..services import periods
     db, bid = ctx.db, ctx.branch.id
     day = _day(d)
+    view = p if p in ("day", "week") else view   # общая панель дат: p=day / p=week
+    per = periods.parse("week" if view == "week" else "day", day.isoformat(), allowed=("day", "week"))
+    bar = periods.Bar(per, "/schedule", {})
     mechanics = osvc.staff_by_role(db, bid, "mechanic")
     if _own_only(ctx):
         mechanics = [m for m in mechanics if m.id == ctx.user.id]
@@ -46,7 +50,7 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     own_lift = {l.mechanic_id: l for l in lifts if l.mechanic_id}
     base = dict(day=day, view=view, mechanics=mechanics, lifts=lifts, editing=editing, APPT_STATUS=APPT_STATUS,
                 fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, local=svc.local, WEEKDAYS=WEEKDAYS,
-                can_manage=ctx.can("schedule.manage"), today=date.today(), colors=colors, own_lift=own_lift)
+                can_manage=ctx.can("schedule.manage"), today=date.today(), colors=colors, own_lift=own_lift, bar=bar)
     if view == "week":
         start = day - timedelta(days=day.weekday())
         days = [start + timedelta(days=i) for i in range(7)]

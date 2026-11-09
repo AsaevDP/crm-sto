@@ -1,16 +1,16 @@
 {% extends "base.html" %}
+{% from "_period.html" import period_bar %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
-{% set q = "user=" ~ u.id ~ "&f=" ~ d1 ~ "&t=" ~ d2 %}
+{% set q = "user=" ~ u.id ~ "&" ~ pq %}
 <header class="page-head">
-  <div>{% if see_all %}<a class="back" href="/payroll?f={{ d1 }}&t={{ d2 }}">{{ icon("back") }}Все сотрудники</a>{% endif %}
+  <div>{% if see_all %}<a class="back" href="/payroll?{{ pq }}">{{ icon("back") }}Все сотрудники</a>{% endif %}
     <h1 class="large-title">{{ "Моя зарплата" if u.id == user.id else u.full_name }}</h1></div>
-  <form class="ov-actions" method="get">{% if see_all %}<input type="hidden" name="user" value="{{ u.id }}">{% endif %}
-    <input class="field" type="date" name="f" value="{{ d1 }}" style="max-width:160px" aria-label="С"><input class="field" type="date" name="t" value="{{ d2 }}" style="max-width:160px" aria-label="По">
-    <button class="btn btn-sm btn-gray">Показать</button>
+  <div class="ov-actions">
     <a class="btn btn-sm btn-gray" href="/payroll/print?{{ q }}" target="_blank">🖨 Расчётный лист</a>
-    <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print?f={{ d1 }}&t={{ d2 }}" target="_blank">🖨 Папка</a></form>
+    <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print?f={{ d1 }}&t={{ d2 }}" target="_blank">🖨 Папка</a></div>
 </header>
+{{ period_bar(bar) }}
 <div class="stats">
   <div class="stat"><span class="footnote">Начислено {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ s.accrued|money }} ₴</b></div>
   <div class="stat"><span class="footnote">Выплачено</span><b>{{ s.paid|money }} ₴</b></div>

@@ -115,10 +115,15 @@ def _month(m: str):
 
 
 @router.get("/timesheet")
-def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = ""):
+def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str = "", d: str = ""):
     ctx.need("attendance.view_all", "attendance.view_own")
     import calendar
+    from ..services import periods
+    if d and not m:
+        m = d[:7]   # общая панель дат: табель всегда по месяцам
     y, mo = _month(m)
+    per = periods.parse("month", date(y, mo, 1).isoformat(), allowed=("month",))
+    bar = periods.Bar(per, "/timesheet", {"user": user if ctx.can("attendance.view_all") else ""})
     n_days = calendar.monthrange(y, mo)[1]
     prev = (date(y, mo, 1) - timedelta(days=1)).strftime("%Y-%m")
     nxt = (date(y, mo, n_days) + timedelta(days=1)).strftime("%Y-%m")
@@ -132,14 +137,14 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = ""):
     if target:
         grid = svc.month_grid(ctx.db, ctx.branch.id, [target], y, mo)[target.id]
         return ctx.render("attendance/user.html", title="Табель", u=target, grid=grid, y=y, mo=mo, n_days=n_days,
-                          month_name=MONTHS[mo], prev=prev, nxt=nxt, see_all=see_all, date=date,
+                          month_name=MONTHS[mo], prev=prev, nxt=nxt, see_all=see_all, date=date, bar=bar,
                           total=sum(d.minutes for d in grid.values()), can_edit=ctx.user.role.code == "admin",
                           local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
     grid = svc.month_grid(ctx.db, ctx.branch.id, staff, y, mo)
     now_on = svc.on_site_now(ctx.db, ctx.branch.id, staff)
     weekends = {d for d in range(1, n_days + 1) if date(y, mo, d).weekday() >= 5}
     return ctx.render("attendance/month.html", title="Табель", staff=staff, grid=grid, now_on=now_on, y=y, mo=mo,
-                      n_days=n_days, month_name=MONTHS[mo], prev=prev, nxt=nxt, weekends=weekends,
+                      n_days=n_days, month_name=MONTHS[mo], prev=prev, nxt=nxt, weekends=weekends, bar=bar,
                       today=date.today(), local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
 
 

@@ -2,63 +2,73 @@
 {% block body_class %}fit{% endblock %}
 {% from "orders/_card.html" import progress %}
 {% block content %}
+{% set WD = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"] %}
+{% set MG = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"] %}
 <header class="page-head">
-  <div><p class="footnote">Что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
-  {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
+  <div><p class="footnote">{{ WD[today.weekday()]|capitalize }}, {{ today.day }} {{ MG[today.month - 1] }} · что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
+  <div class="ov-actions">
+    {% if issue_new and ctx.can("stock.issue") %}<a class="btn btn-sm" href="/stock/issues">📦 Выдать со склада · {{ issue_new }}</a>{% endif %}
+    {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
+  </div>
 </header>
 
-<section class="stack">
-  <div class="group-title">Подъёмники · занято {{ lifts|selectattr(1)|list|length }} из {{ lifts|length }}</div>
-  <div class="lifts">
-    {% for l, wo in lifts %}
-    {% if wo %}
-    {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
-    <a class="lift busy" href="/orders/{{ wo.id }}">
-      <span class="lift-top"><b>{{ l.number }}</b><span class="footnote lift-car">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
-      <span class="lift-car">{{ v.make }} {{ v.model }}</span>
-      <span class="caption">{{ fmt_plate(v.plate) }}{% if mc %} · {{ mc.short_name }}{% endif %}</span>
-      {% if wo.id in paused %}<span class="chip" data-s="waiting" title="{{ paused[wo.id] }}">⏸ Пауза</span><span class="caption pause-why">{{ paused[wo.id] }}</span>
-      {% else %}<span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
-      {% if prog.get(wo.id) and prog[wo.id].total %}{{ progress(prog[wo.id]) }}{% endif %}
-    </a>
-    {% else %}
-    <div class="lift">
-      <span class="lift-top"><b>{{ l.number }}</b><span class="footnote lift-car">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
-      <span class="chip" data-s="created">Свободен</span>
-      {% set lm = people.get(l.mechanic_id) %}{% if lm %}<span class="caption">пост: {{ lm.short_name }}</span>{% endif %}
-    </div>
-    {% endif %}
-    {% endfor %}
-  </div>
-</section>
+<div class="pult-tiles">
+  {% for title, n, href, color, sub in tiles %}
+  <a class="ptile {{ 'zero' if not n }}" href="{{ href }}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+  {% if money_today is not none %}
+  <a class="ptile" href="/money" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Деньги сегодня</span><b class="nowrap">{{ money_today|money(0) }} ₴</b><span class="ptile-s">касса дня</span></a>
+  {% endif %}
+</div>
 
-<div class="grid-2 fill pult-bottom">
-  <section class="stack">
-    <div class="group-title">Очереди</div>
-    <div class="group">
-      <a class="row chevron" href="/orders"><span class="grow">Новые, без назначения</span><span class="value">{{ counts.get("created", 0) }}</span></a>
-      <a class="row chevron" href="/orders"><span class="grow">На диагностике</span><span class="value">{{ counts.get("diag", 0) }}</span></a>
-      <a class="row chevron" href="/orders"><span class="grow">Ждут согласования</span><span class="value">{{ counts.get("approve", 0) }}</span></a>
-      <a class="row chevron" href="/orders"><span class="grow">Подбор запчастей</span><span class="value">{{ counts.get("picking", 0) }}</span></a>
-      <a class="row chevron" href="/orders"><span class="grow">Ждут запчасти</span><span class="value">{{ counts.get("waiting", 0) }}</span></a>
-      <div class="row"><span class="grow">Запросы на выдачу со склада</span><span class="value">{{ issue_new }}</span></div>
-      <a class="row chevron" href="/orders"><span class="grow">Готово, ждут клиента</span><span class="value">{{ counts.get("ready", 0) }}</span></a>
-    </div>
-  </section>
-  <section class="stack">
-    <div class="group-title">Сотрудники</div>
-    <div class="group">
-      {% for s in staff %}
-      <div class="row">
-        <span class="avatar" style="--accent:{{ color_css(s.role.color) }}">{{ s.initials }}</span>
-        <span class="grow">{{ s.full_name }}<div class="caption">{{ s.role.name }}</div></span>
-        {% set pr = presence.get(s.id) %}
-        {% if pr and pr[0] == "in" %}<span class="tag tag-in">на месте с {{ pr[1] }}</span>{% elif pr %}<span class="tag">ушёл в {{ pr[1] }}</span>{% else %}<span class="tag muted-tag">нет отметки</span>{% endif %}
-        {% if busy.get(s.id) %}<span class="tag">нарядов: {{ busy[s.id] }}</span>{% endif %}
+<div class="pult-main fill">
+  <section class="pult-lifts-wrap">
+    <div class="group-title">Подъёмники · занято {{ lifts|selectattr(1)|list|length }} из {{ lifts|length }}</div>
+    <div class="plifts">
+      {% for l, wo in lifts %}
+      {% if wo %}
+      {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
+      {% set st = "pause" if wo.id in paused else wo.status %}
+      <a class="plift" data-st="{{ st }}" href="/orders/{{ wo.id }}" style="--mc:{{ color_css(colors.get(wo.mechanic_id, 'gray')) }}">
+        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
+        <span class="plift-car">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></span>
+        <span class="plift-row">{% if st == "pause" %}<span class="chip" data-s="waiting">⏸ Пауза</span>{% else %}<span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
+          {% if mc %}<span class="plift-mech"><i></i>{{ mc.short_name }}</span>{% endif %}</span>
+        {% if st == "pause" %}<span class="caption pause-why">{{ paused[wo.id] }}</span>{% endif %}
+        {% if prog.get(wo.id) and prog[wo.id].total %}{{ progress(prog[wo.id]) }}{% endif %}
+      </a>
+      {% else %}
+      {% set lm = people.get(l.mechanic_id) %}
+      <div class="plift" data-st="free" style="--mc:{{ color_css(colors.get(l.mechanic_id, 'gray')) }}">
+        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ (l.name or "").split("·")[-1].strip() }}</span><span class="chip" data-s="created">Свободен</span></span>
+        <span class="plift-free">свободен{% if lm %} · <span class="plift-mech"><i></i>{{ lm.short_name }}</span>{% endif %}</span>
       </div>
+      {% endif %}
       {% endfor %}
     </div>
-    <a class="footnote" style="margin:0 16px;color:var(--accent)" href="/timesheet">Табель за месяц →</a>
+  </section>
+
+  <section class="pult-side">
+    <div class="card compact pult-today">
+      <div class="card-h"><span class="headline">Запись на сегодня · {{ appts|length }}</span><a class="footnote" href="/schedule">вся запись →</a></div>
+      {% for a in appts %}
+      <a class="ptoday" data-st="{{ a.status }}" href="/schedule?edit={{ a.id }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
+        <b class="nowrap">{{ local(a.start_at).strftime("%H:%M") }}</b>
+        <span class="grow">{{ a.client_name or "—" }} <span class="caption">{{ a.car }}</span></span>
+        <span class="st-ico" data-st="{{ a.status }}">{{ {"booked": "ждём", "arrived": "✓ приехал", "noshow": "✕ не приехал", "cancel": "отменён"}[a.status] }}</span>
+      </a>
+      {% else %}<p class="footnote" style="margin:0">На сегодня записей нет</p>{% endfor %}
+    </div>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Сотрудники</span><a class="footnote" href="/timesheet">табель →</a></div>
+      <div class="pstaff">
+        {% for s in staff %}{% set pr = presence.get(s.id) %}
+        <span class="pwho {{ 'in' if pr and pr[0] == 'in' else ('out' if pr else 'none') }}" title="{{ s.full_name }} · {{ s.role.name }}{% if busy.get(s.id) %} · нарядов: {{ busy[s.id] }}{% endif %}">
+          <i></i>{{ s.short_name }}{% if pr %} <span class="caption">{{ ("с " if pr[0] == "in" else "ушёл ") ~ pr[1] }}</span>{% endif %}</span>
+        {% endfor %}
+      </div>
+    </div>
   </section>
 </div>
 {% endblock %}

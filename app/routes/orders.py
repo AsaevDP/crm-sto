@@ -56,9 +56,17 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
 
 # ---------- Список ----------
 @router.get("/orders")
-def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", status: str = ""):
+def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", status: str = "",
+                p: str = "", d: str = "", f: str = "", t: str = ""):
     ctx.need("orders.view_all", "orders.view_own")
+    from ..services import periods
+    from ..services.attendance import day_bounds
+    per = periods.parse(p, d, f, t, default="all", allowed=("day", "week", "month", "quarter", "year", "custom", "all"))
     query = svc.visible_orders_query(ctx)
+    if per.kind != "all":   # принятые за период
+        from datetime import timedelta
+        query = query.where(WorkOrder.created_at >= day_bounds(per.d1)[0],
+                            WorkOrder.created_at < day_bounds(per.d2)[0] + timedelta(days=1))
     if status in WO_STATUSES:
         query = query.where(WorkOrder.status == status)
     elif tab == "active":
@@ -78,7 +86,8 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
                                .order_by(Lift.number)).all()
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
-                      lift_people=_people(ctx, *[l.mechanic_id for l in lifts]))
+                      lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
+                      bar=periods.Bar(per, "/orders", {"tab": tab, "q": q, "status": status}))
 
 
 @router.post("/lifts/take")

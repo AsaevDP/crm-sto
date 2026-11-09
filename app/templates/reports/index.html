@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
+{% from "_period.html" import period_bar %}
 {% block content %}
 {% macro kpi(label, value, sub="", tone="") -%}
 <div class="stat {{ tone }}"><span class="footnote">{{ label }}</span><b>{{ value }}</b>{% if sub %}<span class="caption">{{ sub }}</span>{% endif %}</div>
@@ -8,13 +9,6 @@
 <header class="page-head">
   <div><p class="footnote">{{ user.role.name }} · {{ p.label }}</p><h1 class="large-title">Кабинет</h1></div>
   <div class="ov-actions">
-    <div class="segmented" style="flex:none">
-      <a href="?tab={{ tab }}&period=month&y={{ p.d1.year }}&n={{ p.d1.month }}" aria-pressed="{{ (p.kind == 'month')|lower }}">Месяц</a>
-      <a href="?tab={{ tab }}&period=quarter&y={{ p.d1.year }}&n={{ nq }}" aria-pressed="{{ (p.kind == 'quarter')|lower }}">Квартал</a>
-      <a href="?tab={{ tab }}&period=year&y={{ p.d1.year }}" aria-pressed="{{ (p.kind == 'year')|lower }}">Год</a>
-    </div>
-    {% if p.prev %}<a class="btn btn-sm btn-gray" href="?tab={{ tab }}&{{ p.prev }}" aria-label="Предыдущий период">‹</a>
-    <a class="btn btn-sm btn-gray" href="?tab={{ tab }}&{{ p.next }}" aria-label="Следующий период">›</a>{% endif %}
     {% if tab in DOC_TABS %}
     <a class="btn btn-sm" href="/reports/doc?tab={{ tab }}&{{ qs }}" target="_blank" title="Документ для печати: шапка, подписи и текст правятся прямо на листе">📄 Документ</a>
     <a class="btn btn-sm btn-gray" href="/reports/export.xlsx?tab={{ tab }}&{{ qs }}">⬇ Excel</a>
@@ -24,6 +18,7 @@
     {% endif %}
   </div>
 </header>
+{{ period_bar(bar) }}
 <div class="cab-nav">
   <nav class="segmented cab-sec" aria-label="Раздел">
     {% for k, v in sections.items() %}<a href="?sec={{ k }}&{{ qs }}" aria-pressed="{{ (sec == k)|lower }}">{{ "🔧 " if k == "sto" else "🚗 " }}{{ v }}</a>{% endfor %}

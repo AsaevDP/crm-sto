@@ -849,3 +849,68 @@ a.kv { color: inherit; text-decoration: none; }
   .st-table td:nth-child(2) { min-width: 160px; }
 }
 body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stretch; }.cat-row .btn { white-space: nowrap; flex: none; }
+/* Панель дат (10.11.2026) */
+.pbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pbar-arr { min-width: 34px; justify-content: center; font-size: 17px; }
+.pcal { position: relative; }
+.pcal > summary { list-style: none; white-space: nowrap; }
+.pcal > summary::-webkit-details-marker { display: none; }
+.pcal-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 270px; gap: 6px; box-shadow: var(--shadow-2, 0 10px 30px rgba(0,0,0,.18)); }
+.pcal-pop label { display: grid; gap: 4px; }
+.pcal-range { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pcal-range .field { width: 140px; }
+.pbar-kinds a { padding-left: 10px; padding-right: 10px; }
+@media (max-width: 899px) { .pbar { width: 100%; } .pbar-kinds { flex: 1 1 100%; overflow-x: auto; scrollbar-width: none; } .pcal-pop { position: fixed; left: 16px; right: 16px; top: auto; } }
+/* Пульт (10.11.2026): плитки, подъёмники цветом по состоянию, запись на сегодня */
+.pult-tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+.ptile { display: grid; gap: 2px; padding: 10px 14px; border-radius: var(--r-md); text-decoration: none; color: var(--text);
+  background: color-mix(in srgb, var(--tc) 13%, var(--surface)); box-shadow: var(--shadow-1), inset 0 3px 0 var(--tc); min-width: 0; }
+.ptile:hover { background: color-mix(in srgb, var(--tc) 20%, var(--surface)); }
+.ptile-t { font-size: 13px; font-weight: 600; color: color-mix(in srgb, var(--tc) 70%, var(--text)); }
+.ptile b { font: 700 28px/1.1 var(--font-display, inherit); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.ptile-s { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptile.zero { background: var(--surface); box-shadow: var(--shadow-1), inset 0 3px 0 color-mix(in srgb, var(--tc) 35%, transparent); }
+.ptile.zero b { color: var(--text-2); }
+.pult-main { display: grid; gap: 14px; align-items: start; }
+@media (min-width: 1100px) { .pult-main { grid-template-columns: minmax(0, 1fr) 340px; } }
+@media (min-width: 900px) and (min-height: 540px) {
+  body.fit .pult-main.fill { grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  body.fit .pult-main.fill > * { overflow: auto; min-height: 0; overscroll-behavior: contain; }
+}
+.pult-lifts-wrap { display: grid; gap: 6px; align-content: start; }
+.plifts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.plift { --lc: var(--gray); display: grid; gap: 4px; align-content: start; padding: 10px 12px; border-radius: var(--r-md); text-decoration: none; color: var(--text);
+  background: color-mix(in srgb, var(--lc) 12%, var(--surface)); box-shadow: var(--shadow-1), inset 4px 0 0 var(--lc); min-height: 112px; }
+.plift[data-st="free"] { --lc: var(--separator, #ccc); background: var(--surface); }
+.plift[data-st="created"], .plift[data-st="diag"] { --lc: var(--purple); }
+.plift[data-st="approve"] { --lc: var(--yellow); }
+.plift[data-st="picking"], .plift[data-st="waiting"], .plift[data-st="instock"] { --lc: var(--orange); }
+.plift[data-st="work"] { --lc: var(--blue); }
+.plift[data-st="ready"], .plift[data-st="paid"] { --lc: var(--green); }
+.plift[data-st="pause"] { --lc: var(--red); }
+.plift-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.plift-n { flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 14px; color: #fff; background: var(--lc); }
+.plift[data-st="free"] .plift-n { background: var(--fill); color: var(--text-2); }
+.plift-name { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plift-top .chip { flex: none; }
+.plift[data-st="free"] .plift-top .chip { display: none; }
+.plift-car { font-weight: 600; font-size: 15px; line-height: 1.25; }
+.plift-car .ov-plate { font-size: 11px; vertical-align: 1px; }
+.plift-mech { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; }
+.plift-mech i, .pwho i { width: 8px; height: 8px; border-radius: 50%; background: var(--mc); display: inline-block; }
+.plift-free { color: var(--text-2); font-size: 14px; }
+.pult-side { display: grid; gap: 12px; align-content: start; }
+.ptoday { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 8px; text-decoration: none; color: var(--text);
+  box-shadow: inset 3px 0 0 var(--mc); background: color-mix(in srgb, var(--mc) 7%, transparent); font-size: 14px; }
+.ptoday[data-st="noshow"], .ptoday[data-st="cancel"] { opacity: .6; }
+.ptoday .st-ico { font-size: 12px; white-space: nowrap; }
+.pstaff { display: flex; flex-wrap: wrap; gap: 6px; }
+.pwho { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 13px; background: var(--fill); }
+.pwho.in { background: color-mix(in srgb, var(--green) 16%, transparent); } .pwho.in i { background: var(--green); }
+.pwho.out i { background: var(--gray); } .pwho.none { opacity: .55; } .pwho.none i { background: transparent; border: 1px solid var(--text-2); }.pult-tiles { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }
+.ptile { padding: 8px 11px; }
+.ptile b { font-size: 24px; }
+.ptile-s { white-space: normal; overflow: visible; line-height: 1.2; }
+.plift-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }.pcal-pop { min-width: 360px; }
+.pcal-range .field { width: 136px; }
+@media (max-width: 899px) { .pcal-pop { min-width: 0; } }

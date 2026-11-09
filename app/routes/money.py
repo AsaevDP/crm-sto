@@ -219,21 +219,22 @@ def act_handover(order_id: str, ctx: Ctx = Depends(get_ctx)):
 
 # ======================= Раздел «Деньги» =======================
 @router.get("/money")
-def money_view(ctx: Ctx = Depends(get_ctx), day: str = ""):
+def money_view(ctx: Ctx = Depends(get_ctx), day: str = "", p: str = "", d: str = "", f: str = "", t: str = ""):
+    """Деньги за период (по умолчанию — сегодня): оплаты, продажи разбора, долги, ждут предоплату."""
     ctx.need("money.view")
+    from ..services import periods
     db = ctx.db
-    try:
-        d = date.fromisoformat(day) if day else date.today()
-    except ValueError:
-        d = date.today()
+    per = periods.parse(p or ("day" if day else ""), d or day, f, t, default="day",
+                        allowed=("day", "week", "month", "quarter", "year", "custom"))
     from ..services.attendance import day_bounds
-    start = day_bounds(d)[0]  # местный день → UTC
+    start, end = day_bounds(per.d1)[0], day_bounds(per.d2)[0] + timedelta(days=1)  # местные дни → UTC
     pays = db.scalars(select(Payment).where(Payment.branch_id == ctx.branch.id, Payment.created_at >= start,
-                                            Payment.created_at < start + timedelta(days=1)).order_by(Payment.created_at.desc())).all()
+                                            Payment.created_at < end).order_by(Payment.created_at.desc())).all()
     from ..models import UsedSale
     used = db.scalars(select(UsedSale).where(UsedSale.branch_id == ctx.branch.id, UsedSale.status == "sold",
-                                             UsedSale.sold_at >= start, UsedSale.sold_at < start + timedelta(days=1))
+                                             UsedSale.sold_at >= start, UsedSale.sold_at < end)
                       .order_by(UsedSale.sold_at.desc())).all()
+    d = per.d1
     by_method = {m: sum((p.amount for p in pays if p.method == m), Decimal(0)) + sum((s.price for s in used if s.pay_method == m), Decimal(0))
                  for m in PAY_METHODS}
     orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([p.work_order_id for p in pays])))}
@@ -255,19 +256,23 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = ""):
     return ctx.render("money/index.html", title="Деньги", d=d, pays=pays, by_method=by_method, orders=orders,
                       used=used, used_names=used_names,
                       total=sum(by_method.values(), Decimal(0)), debts=debts, waiting_prepay=waiting_prepay, people=people,
-                      PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, prev=(d - timedelta(days=1)).isoformat(),
-                      next=(d + timedelta(days=1)).isoformat())
+                      PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, per=per, one_day=per.d1 == per.d2,
+                      bar=periods.Bar(per, "/money", {}))
 
 
 # ======================= Зарплата =======================
-def _period(f: str, t: str):
-    today = date.today()
-    try:
-        d1 = date.fromisoformat(f) if f else today.replace(day=1)
-        d2 = date.fromisoformat(t) if t else today
-    except ValueError:
-        d1, d2 = today.replace(day=1), today
-    return d1, d2
+PAY_KINDS = ("week", "month", "quarter", "year", "custom")
+
+
+def _per(f: str = "", t: str = "", p: str = "", d: str = ""):
+    """Период для зарплаты — общая панель дат; старые ссылки f=…&t=… — как «свой период»."""
+    from ..services import periods
+    return periods.parse(p or ("custom" if f and t else ""), d, f, t, default="month", allowed=PAY_KINDS)
+
+
+def _period(f: str, t: str, p: str = "", d: str = ""):
+    per = _per(f, t, p, d)
+    return per.d1, per.d2
 
 
 def _payroll_target(ctx: Ctx, user: str):
@@ -293,26 +298,29 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
 
 
 @router.get("/payroll")
-def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = ""):
+def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("payroll.view_own", "payroll.view_all")
+    from ..services.periods import Bar
     db = ctx.db
-    d1, d2 = _period(f, t)
+    per = _per(f, t, p, d)
+    d1, d2 = per.d1, per.d2
     see_all, target = _payroll_target(ctx, user)
     if target:
-        return ctx.render("money/payroll_user.html", title="Зарплата", see_all=see_all,
+        return ctx.render("money/payroll_user.html", title="Зарплата", see_all=see_all, pq=per.qs,
+                          bar=Bar(per, "/payroll", {"user": str(target.id) if see_all else ""}),
                           **_payroll_user_data(ctx, target, d1, d2))
     staff = staff_for_period(db, ctx.branch.id, d1)  # уволенные в периоде — тоже, для расчёта
     summ = psvc.summary(db, staff, d1, d2)
     tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
     return ctx.render("money/payroll_all.html", title="Зарплата", staff=staff, summ=summ, tot=tot, d1=d1, d2=d2,
-                      COLS=psvc.COLS)
+                      COLS=psvc.COLS, pq=per.qs, bar=Bar(per, "/payroll", {}))
 
 
 @router.get("/payroll/print")
-def payroll_print(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = ""):
+def payroll_print(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = "", p: str = "", d: str = ""):
     """Расчётный лист сотрудника или ведомость на всех — для бумажной папки."""
     ctx.need("payroll.view_own", "payroll.view_all")
-    d1, d2 = _period(f, t)
+    d1, d2 = _period(f, t, p, d)
     see_all, target = _payroll_target(ctx, user)
     if target:
         return ctx.render("money/payroll_print_user.html", title=f"Расчётный лист — {target.full_name}",
@@ -325,10 +333,12 @@ def payroll_print(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: s
 
 
 @router.get("/payroll/export.csv")
-def payroll_csv(ctx: Ctx = Depends(get_ctx), f: str = "", t: str = ""):
+def payroll_csv(ctx: Ctx = Depends(get_ctx), f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("payroll.view_all")
     import csv
     import io
+    if p:
+        f, t = (x.isoformat() for x in _period(f, t, p, d))
     from fastapi.responses import Response
     d1, d2 = _period(f, t)
     staff = staff_for_period(ctx.db, ctx.branch.id, d1)

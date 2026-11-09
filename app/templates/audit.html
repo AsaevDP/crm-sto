@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_period.html" import period_bar %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
 {% set qs = flt.query_string() %}
@@ -13,11 +14,9 @@
   </div>
 </header>
 
+{{ period_bar(bar) }}
 <form class="audit-bar" method="get" action="/audit">
-  <nav class="segmented" aria-label="Период">
-    {% for k, v in PERIODS.items() %}<a href="/audit?{{ flt.query_string(period=k, f='', t='') }}" aria-pressed="{{ (flt.period == k and not flt.f and not flt.t)|lower }}">{{ v }}</a>{% endfor %}
-  </nav>
-  <input type="hidden" name="period" value="{{ flt.period }}">
+  {% for k, v in flt.per().params().items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <select class="field audit-mobile" name="user" onchange="this.form.submit()" aria-label="Сотрудник">
     <option value="">Все сотрудники</option>
     {% for u in staff %}<option value="{{ u.id }}" {% if flt.user == u.id|string %}selected{% endif %}>{{ u.full_name }} · {{ counts.get(u.id, 0) }}</option>{% endfor %}
@@ -31,8 +30,6 @@
     <option value="">Все действия</option>
     {% for k, v in ACTION_FILTERS.items() %}<option value="{{ k }}" {% if flt.action == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
   </select>
-  <label class="audit-dates">с <input class="field" type="date" name="f" value="{{ flt.f }}" onchange="this.form.submit()">
-    по <input class="field" type="date" name="t" value="{{ flt.t }}" onchange="this.form.submit()"></label>
   <noscript><button class="btn btn-sm">Показать</button></noscript>
 </form>
 
@@ -76,7 +73,7 @@
     </article>
     {% endfor %}
     {% else %}
-    <div class="card"><p class="footnote" style="margin:0">За выбранный период действий нет. Попробуйте «30 дней» или «Всё время».</p></div>
+    <div class="card"><p class="footnote" style="margin:0">За выбранный период действий нет. Попробуйте «Месяц» или «Всё время» (клавиши М или В).</p></div>
     {% endfor %}
     {% if more %}<div class="audit-more"><a class="btn btn-sm btn-tinted" href="/audit?{{ flt.query_string(limit=flt.limit + 150) }}">Показать ещё</a></div>{% endif %}
   </section>

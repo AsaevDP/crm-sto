@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_period.html" import period_bar %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Табель</h1>
-  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="?m={{ prev }}">‹</a><span class="headline" style="text-transform:capitalize">{{ month_name }} {{ y }}</span><a class="btn btn-sm btn-gray" href="?m={{ nxt }}">›</a></div>
+  <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 {% set on = namespace(n=0) %}{% for s in staff %}{% if now_on[s.id] and now_on[s.id].direction == "in" %}{% set on.n = on.n + 1 %}{% endif %}{% endfor %}
 <div class="onsite">

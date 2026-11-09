@@ -1,21 +1,12 @@
 {% extends "base.html" %}
+{% from "_period.html" import period_bar %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
 {% set e = editing %}
 <header class="page-head">
   <div><p class="footnote">{{ WEEKDAYS[day.weekday()] }}, {{ day.strftime("%d.%m.%Y") }}{% if day == today %} · сегодня{% endif %}</p>
     <h1 class="large-title">Запись</h1></div>
-  <div class="ov-actions">
-    <a class="btn btn-sm btn-gray" href="?d={{ prev }}&view={{ view }}" aria-label="Назад">‹</a>
-    <form method="get" style="display:contents"><input type="hidden" name="view" value="{{ view }}">
-      <input class="field" type="date" name="d" value="{{ day }}" onchange="this.form.submit()" style="max-width:160px" aria-label="Дата"></form>
-    <a class="btn btn-sm btn-gray" href="?d={{ next }}&view={{ view }}" aria-label="Вперёд">›</a>
-    {% if day != today %}<a class="btn btn-sm btn-plain" href="?view={{ view }}">Сегодня</a>{% endif %}
-    <div class="segmented" style="flex:none">
-      <a href="?d={{ day }}&view=day" aria-pressed="{{ (view != 'week')|lower }}">День</a>
-      <a href="?d={{ day }}&view=week" aria-pressed="{{ (view == 'week')|lower }}">Неделя</a>
-    </div>
-  </div>
+  <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 
 <div class="cl-grid fill sched-wrap {{ 'no-form' if not can_manage }}">

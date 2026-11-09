@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
 {% from "orders/_card.html" import order_card %}
+{% from "_period.html" import period_bar %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Наряды</h1>
@@ -19,11 +20,12 @@
 
 <form class="toolbar-row" method="get">
   <input class="field search" name="q" value="{{ q }}" placeholder="Номер, госномер, телефон, клиент" autocomplete="off">
-  <input type="hidden" name="tab" value="{{ tab }}">
+  <input type="hidden" name="tab" value="{{ tab }}">{% for k, v in per.params().items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
 </form>
+<div class="orders-bars">{{ period_bar(bar) }}</div>
 <div class="segmented seg-wide">
-  <a href="?tab=active{% if q %}&q={{ q|urlencode }}{% endif %}" aria-pressed="{{ (tab == 'active')|lower }}">На СТО</a>
-  <a href="?tab=all{% if q %}&q={{ q|urlencode }}{% endif %}" aria-pressed="{{ (tab != 'active')|lower }}">Все</a>
+  <a href="?tab=active{% if q %}&q={{ q|urlencode }}{% endif %}&{{ per.qs }}" aria-pressed="{{ (tab == 'active')|lower }}">На СТО</a>
+  <a href="?tab=all{% if q %}&q={{ q|urlencode }}{% endif %}&{{ per.qs }}" aria-pressed="{{ (tab != 'active')|lower }}">Все</a>
 </div>
 
 {% if cards %}
@@ -33,7 +35,7 @@
 {% else %}
 <div class="card empty">
   <div class="empty-icon">{{ icon("orders") }}</div>
-  <div class="title-2">{% if q %}Ничего не нашлось{% else %}Нарядов пока нет{% endif %}</div>
+  <div class="title-2">{% if q or per.kind != "all" %}Ничего не нашлось{% else %}Нарядов пока нет{% endif %}</div>
   <p class="subhead">{% if ctx.can("orders.create") %}Новая машина — кнопка «Приёмка».{% else %}Здесь появятся наряды, где вы назначены.{% endif %}</p>
 </div>
 {% endif %}

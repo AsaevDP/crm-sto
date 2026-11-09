@@ -2,6 +2,7 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends
+from ..services.periods import Bar
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
@@ -67,9 +68,32 @@ def pult(ctx: Ctx = Depends(get_ctx)):
                 for uid, e in on_site_now(db, bid, staff).items()}
     from ..services.orders import work_progress
     prog = work_progress(db, [wo.id for _, wo in lifts if wo])
+    # Пульт (10.11.2026): плитки с цифрами, запись на сегодня, цвета мастеров, деньги за сегодня (директору / админу)
+    from datetime import date as _date
+    from ..services import schedule as ssvc
+    from ..services.orders import staff_by_role
+    colors = ssvc.mech_colors(staff_by_role(db, bid, "mechanic"))
+    appts = ssvc.between(db, bid, _date.today(), _date.today())
+    on_site = sum(1 for v in presence.values() if v and v[0] == "in")
+    money_today = None
+    if ctx.can("money.view", "reports.finance") and ctx.user.role.code in ("admin", "director", "deputy", "manager"):
+        from ..services.reports import money_for
+        money_today = money_for(db, bid, _date.today(), _date.today(), light=True).revenue
+    tiles = [
+        ("На СТО", sum(counts.get(s, 0) for s in WO_ACTIVE), "/orders?tab=active", "blue", "машин"),
+        ("Диагностика", counts.get("diag", 0), "/orders?status=diag", "purple", "у слесарей"),
+        ("Согласование", counts.get("approve", 0), "/orders?status=approve", "yellow", "ответ клиента"),
+        ("Запчасти", counts.get("picking", 0) + counts.get("waiting", 0), "/orders?status=waiting", "orange",
+         f"подбор {counts.get('picking', 0)} · ждём {counts.get('waiting', 0)}"),
+        ("Готовы", counts.get("ready", 0) + counts.get("paid", 0), "/orders?status=ready", "green", "ждут клиента"),
+        ("Запись сегодня", len([a for a in appts if a.status != "cancel"]), "/schedule", "teal",
+         f"ждём {len([a for a in appts if a.status == 'booked'])}"),
+        ("На месте", on_site, "/timesheet", "indigo", f"из {len(staff)}"),
+    ]
     return ctx.render("pult.html", title="Пульт", lifts=lifts, prog=prog, vehicles=vehicles, people=people, staff=staff, paused=paused,
-                      presence=presence,
-                      counts=counts, issue_new=issue_new, busy=busy, fmt_plate=fmt_plate)
+                      presence=presence, tiles=tiles, appts=appts, colors=colors, money_today=money_today,
+                      issue_new=issue_new, local=ssvc.local, today=_date.today(),
+                      counts=counts, busy=busy, fmt_plate=fmt_plate)
 
 
 @router.get("/more")
@@ -80,19 +104,19 @@ def more(ctx: Ctx = Depends(get_ctx)):
 
 
 # ---------- Журнал действий ----------
-def _audit_filters(user: str, section: str, action: str, period: str, f: str, t: str, limit: int):
+def _audit_filters(user: str, section: str, action: str, period: str, f: str, t: str, limit: int, p: str = "", d: str = ""):
     from ..services import audit_view as av
     return av.Filters(user=user, section=section, action=action, period=period if period in av.PERIODS else "week",
-                      f=f, t=t, limit=max(av.PAGE, min(limit or av.PAGE, 3000)))
+                      f=f, t=t, limit=max(av.PAGE, min(limit or av.PAGE, 3000)), p=p, d=d)
 
 
 @router.get("/audit")
 def audit_view(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
-               f: str = "", t: str = "", limit: int = 0):
+               f: str = "", t: str = "", limit: int = 0, p: str = "", d: str = ""):
     """Журнал: слева сотрудники (сколько действий), справа лента карточек «было → стало», сверху фильтры."""
     ctx.need("audit.view")
     from ..services import audit_view as av
-    flt = _audit_filters(user, section, action, period, f, t, limit)
+    flt = _audit_filters(user, section, action, period, f, t, limit, p, d)
     rows, more = av.fetch(ctx.db, ctx.branch.id, flt)
     counts = av.counts_by_user(ctx.db, ctx.branch.id, flt)
     staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id)
@@ -108,15 +132,15 @@ def audit_view(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", a
     chosen = next((u for u in staff if str(u.id) == flt.user), None)
     return ctx.render("audit.html", title="Журнал", flt=flt, days=days, more=more, counts=counts, staff=staff,
                       total=sum(counts.values()), chosen=chosen, SECTIONS=av.SECTIONS, ACTION_FILTERS=av.ACTION_FILTERS,
-                      PERIODS=av.PERIODS, n=len(items))
+                      PERIODS=av.PERIODS, n=len(items), bar=Bar(flt.per(), "/audit", flt.keep()))
 
 
 @router.get("/audit/print")
 def audit_print(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
-                f: str = "", t: str = ""):
+                f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("audit.view")
     from ..services import audit_view as av
-    flt = _audit_filters(user, section, action, period, f, t, 0)
+    flt = _audit_filters(user, section, action, period, f, t, 0, p, d)
     rows, more = av.fetch(ctx.db, ctx.branch.id, flt, limit=2000)
     chosen = ctx.db.get(User, _uid(flt.user)) if flt.user not in ("", "system") else None
     return ctx.render("audit_print.html", title="Журнал действий", items=av.describe(ctx.db, rows), more=more,
@@ -126,7 +150,7 @@ def audit_print(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", 
 
 @router.get("/audit/export.xlsx")
 def audit_xlsx(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
-               f: str = "", t: str = ""):
+               f: str = "", t: str = "", p: str = "", d: str = ""):
     """Выгрузка журнала в Excel (до 5000 строк) — браузер предложит сохранить файл на ПК."""
     ctx.need("audit.view")
     import io
@@ -134,7 +158,7 @@ def audit_xlsx(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", a
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from ..services import audit_view as av
-    flt = _audit_filters(user, section, action, period, f, t, 0)
+    flt = _audit_filters(user, section, action, period, f, t, 0, p, d)
     rows, _ = av.fetch(ctx.db, ctx.branch.id, flt, limit=5000)
     wb = Workbook()
     ws = wb.active

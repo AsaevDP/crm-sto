@@ -1,12 +1,11 @@
 {% extends "base.html" %}
+{% from "_period.html" import period_bar %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="page-head">
   <div>{% if see_all %}<a class="back" href="/timesheet?m={{ y }}-{{ '%02d'|format(mo) }}">{{ icon("back") }}Табель</a>{% endif %}
     <h1 class="large-title">{{ "Мой табель" if u.id == user.id else u.full_name }}</h1></div>
-  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="?m={{ prev }}{% if see_all %}&user={{ u.id }}{% endif %}">‹</a>
-    <span class="headline" style="text-transform:capitalize">{{ month_name }} {{ y }}</span>
-    <a class="btn btn-sm btn-gray" href="?m={{ nxt }}{% if see_all %}&user={{ u.id }}{% endif %}">›</a></div>
+  <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 <div class="stats">
   <div class="stat"><span class="footnote">Дней на работе</span><b>{{ grid.values()|selectattr("minutes")|list|length }}</b></div>

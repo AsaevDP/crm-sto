@@ -21,8 +21,19 @@ TAB_SECTION = {"razbor": "razbor", "donors": "razbor"}
 DOC_TABS = ("works", "parts", "razbor", "donors")   # отчёты-документы: печать с правкой и Excel
 
 
-def _p(period: str, y: int, n: int, f: str, t: str):
-    return svc.period(period if period in ("month", "quarter", "year", "custom") else "month", y, n, f, t)
+PERIOD_KINDS = ("week", "month", "quarter", "year", "custom")
+
+
+def _p(period: str, y: int, n: int, f: str, t: str, p: str = "", d: str = ""):
+    """Период Кабинета: новая панель дат (p, d, f, t); старые ссылки period=…&y=…&n=… тоже понимаем."""
+    from ..services import periods
+    if not p and (y or period in ("quarter", "year", "custom")):
+        p = period if period in PERIOD_KINDS else "month"
+        today = date.today()
+        yy = y or today.year
+        m = {"quarter": 3 * (n or (today.month - 1) // 3 + 1) - 2, "year": 1}.get(p, n or today.month)
+        d = date(yy, max(1, min(m, 12)), 1).isoformat()
+    return periods.parse(p, d, f, t, default="month", allowed=PERIOD_KINDS)
 
 
 def _data(ctx: Ctx, tab: str, p) -> dict:
@@ -55,33 +66,32 @@ def _tabs(ctx: Ctx, sec: str) -> dict:
 
 
 def _qs(p) -> str:
-    if p.kind == "custom":
-        return f"period=custom&f={p.d1}&t={p.d2}"
-    return f"period={p.kind}&y={p.d1.year}&n={p.d1.month if p.kind == 'month' else (p.d1.month - 1) // 3 + 1}"
+    return p.qs
 
 
 @router.get("/reports")
 def reports(ctx: Ctx = Depends(get_ctx), tab: str = "", sec: str = "", period: str = "month", y: int = 0, n: int = 0,
-            f: str = "", t: str = ""):
+            f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("reports.view", "reports.finance")
     if tab not in TABS or (tab == "accounting" and not ctx.can("reports.finance")):
         tab = "razbor" if sec == "razbor" else "overview"
     sec = TAB_SECTION.get(tab, "sto")
-    p = _p(period, y, n, f, t)
+    p = _p(period, y, n, f, t, p, d)
+    from ..services.periods import Bar
     return ctx.render("reports/index.html", title="Кабинет", tab=tab, sec=sec, sections=SECTIONS, tabs=_tabs(ctx, sec),
-                      p=p, qs=_qs(p), PAY_METHODS=PAY_METHODS, fmt_plate=osvc.fmt_plate, MONTHS=svc.MONTHS,
+                      p=p, qs=_qs(p), bar=Bar(p, "/reports", {"tab": tab}), PAY_METHODS=PAY_METHODS, fmt_plate=osvc.fmt_plate, MONTHS=svc.MONTHS,
                       DOC_TABS=DOC_TABS, **_data(ctx, tab, p))
 
 
 @router.get("/reports/doc")
 def reports_doc(ctx: Ctx = Depends(get_ctx), tab: str = "works", period: str = "month", y: int = 0, n: int = 0,
-                f: str = "", t: str = ""):
+                f: str = "", t: str = "", p: str = "", d: str = ""):
     """Отчётный документ: шапка с реквизитами и подписи берутся из шаблона, всё можно поправить на листе перед печатью."""
     ctx.need("reports.view", "reports.finance")
     if tab not in DOC_TABS:
         tab = "works"
     from ..services import settings as st
-    p = _p(period, y, n, f, t)
+    p = _p(period, y, n, f, t, p, d)
     data = _data(ctx, tab, p)
     return ctx.render("reports/doc.html", title=f"{TABS[tab]} — {p.label}", tab=tab, p=p, qs=_qs(p),
                       tpl=st.get(ctx.db, ctx.branch.id, "report_doc"), **data)
@@ -100,14 +110,14 @@ async def reports_template(request: Request, ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/reports/export.xlsx")
 def reports_xlsx(ctx: Ctx = Depends(get_ctx), tab: str = "works", period: str = "month", y: int = 0, n: int = 0,
-                 f: str = "", t: str = ""):
+                 f: str = "", t: str = "", p: str = "", d: str = ""):
     """Отчёт-документ в Excel (.xlsx) — браузер предложит сохранить файл на ПК."""
     ctx.need("reports.view", "reports.finance")
     if tab not in DOC_TABS:
         tab = "works"
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
-    p = _p(period, y, n, f, t)
+    p = _p(period, y, n, f, t, p, d)
     rep = _data(ctx, tab, p)["rep"]
     wb = Workbook()
     ws = wb.active
@@ -144,14 +154,14 @@ def reports_xlsx(ctx: Ctx = Depends(get_ctx), tab: str = "works", period: str = 
 
 @router.get("/reports/print")
 def reports_print(ctx: Ctx = Depends(get_ctx), tab: str = "overview", period: str = "month", y: int = 0, n: int = 0,
-                  f: str = "", t: str = ""):
+                  f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("reports.view", "reports.finance")
     if tab in DOC_TABS:
         from fastapi.responses import RedirectResponse
-        return RedirectResponse(f"/reports/doc?tab={tab}&{_qs(_p(period, y, n, f, t))}", status_code=303)
+        return RedirectResponse(f"/reports/doc?tab={tab}&{_qs(_p(period, y, n, f, t, p, d))}", status_code=303)
     if tab not in TABS or (tab == "accounting" and not ctx.can("reports.finance")):
         tab = "overview"
-    p = _p(period, y, n, f, t)
+    p = _p(period, y, n, f, t, p, d)
     return ctx.render("reports/print.html", title=f"Отчёт — {TABS[tab]} — {p.label}", tab=tab, tabs=TABS, p=p,
                       PAY_METHODS=PAY_METHODS, MONTHS=svc.MONTHS, **_data(ctx, tab, p))
 
@@ -162,11 +172,11 @@ def _num(x) -> str:
 
 @router.get("/reports/export.csv")
 def reports_csv(ctx: Ctx = Depends(get_ctx), tab: str = "overview", period: str = "month", y: int = 0, n: int = 0,
-                f: str = "", t: str = ""):
+                f: str = "", t: str = "", p: str = "", d: str = ""):
     """Выгрузка в Excel (CSV с разделителем «;» — Excel открывает сразу)."""
     ctx.need("reports.view", "reports.finance")
     fin = ctx.can("reports.finance")
-    p = _p(period, y, n, f, t)
+    p = _p(period, y, n, f, t, p, d)
     db, bid = ctx.db, ctx.branch.id
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
