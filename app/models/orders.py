@@ -51,6 +51,8 @@ class Client(Entity):
     full_name: Mapped[str] = mapped_column(String(160))
     phone: Mapped[str] = mapped_column(String(40), default="", index=True)
     notes: Mapped[str] = mapped_column(Text, default="")
+    # «Постоянный» вручную (сам по себе клиент становится постоянным с 3 визитов — см. services/clients.py)
+    is_regular: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
 
 
 class Vehicle(Entity):

@@ -1,23 +1,53 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
 {% block content %}
-<header class="page-head"><h1 class="large-title">Клиенты</h1></header>
-<form class="toolbar-row" method="get">
-  <input class="field search" name="q" value="{{ q }}" placeholder="Телефон, госномер, фамилия, VIN" autocomplete="off">
-</form>
-{% if not q %}<div class="group-title">Недавние</div>{% endif %}
+<header class="page-head">
+  <h1 class="large-title">Клиенты</h1>
+  <form class="cl-tools" method="get" action="/clients">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input class="field search" name="q" value="{{ q }}" placeholder="Телефон, госномер, фамилия, VIN" autocomplete="off">
+    <select class="field" name="make" onchange="this.form.submit()" aria-label="Марка">
+      <option value="">Все марки</option>
+      {% for m, n in makes %}<option value="{{ m }}" {% if make == m %}selected{% endif %}>{{ m }} · {{ n }}</option>{% endfor %}
+    </select>
+    <select class="field" name="sort" onchange="this.form.submit()" aria-label="Сортировка">
+      {% for k, v in sorts.items() if show_money or k != "spent" %}<option value="{{ k }}" {% if sort == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select>
+  </form>
+</header>
+
+<nav class="segmented cl-tabs" aria-label="Группы клиентов">
+  {% for k, v in tabs.items() %}<a href="{{ link(tab=k) }}" aria-pressed="{{ (tab == k)|lower }}">{{ v }} · {{ counts[k] }}</a>{% endfor %}
+</nav>
+{% if tab in ("regular", "lost", "new") %}
+<p class="footnote cl-hint">{{ {"regular": "Постоянные — от " ~ REGULAR_VISITS ~ " визитов или отмеченные вручную (★ в карточке клиента).",
+  "lost": "Давно не были — больше полугода. Можно позвонить и пригласить на ТО.", "new": "Первый визит — за последние 30 дней."}[tab] }}</p>
+{% endif %}
+
 {% if items %}
-<div class="group fill scroll">
-  {% for c in items %}
-  <a class="row chevron" href="/clients/{{ c.id }}">
-    <span class="avatar">{{ (c.name.split()[:2]|map("first")|join(""))|upper }}</span>
-    <span class="grow">{{ c.name }}<div class="caption">{{ c.phone_fmt }}{% for v in c.vehicles %} · {{ v.plate_fmt }} {{ v.make }}{% endfor %}</div></span>
-  </a>
-  {% endfor %}
+<div class="tablewrap fill scroll">
+  <table class="table cl-table">
+    <thead><tr><th>Клиент</th><th>Автомобили</th><th class="num">Визитов</th><th>Последний визит</th>
+      {% if show_money %}<th class="num">Оплачено</th><th class="num">Долг</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in items %}
+    <tr onclick="location.href='/clients/{{ r.c.id }}'" style="cursor:pointer">
+      <td><div class="cl-name">{% if r.regular %}<span class="star" title="Постоянный клиент">★</span>{% endif %}<b>{{ r.c.full_name or "Без имени" }}</b></div>
+        <div class="caption nowrap">{{ fmt_phone(r.c.phone) }}{% if r.active %} · <span class="cl-onsite">на СТО</span>{% endif %}</div></td>
+      <td>{% for v in r.vehicles[:3] %}<div class="cl-car"><span class="ov-plate">{{ fmt_plate(v.plate) }}</span> {{ v.make }} {{ v.model }}{% if v.year %} <span class="caption">{{ v.year }}</span>{% endif %}</div>{% endfor %}
+        {% if r.vehicles|length > 3 %}<div class="caption">ещё {{ r.vehicles|length - 3 }}</div>{% endif %}</td>
+      <td class="num c-visits">{{ r.visits }}</td>
+      <td class="nowrap c-last">{% if r.last %}{{ r.last_local.strftime("%d.%m.%Y") }}<div class="caption">{{ "сегодня" if r.days_since == 0 else ("вчера" if r.days_since == 1 else (r.days_since ~ " дн. назад")) }}</div>{% else %}<span class="caption">не было</span>{% endif %}</td>
+      {% if show_money %}<td class="num nowrap c-spent">{{ r.spent|money if r.spent else "—" }}</td>
+      <td class="num nowrap c-debt">{% if r.debt > 0 %}<b class="cl-debt">{{ r.debt|money }}</b>{% else %}—{% endif %}</td>{% endif %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
 </div>
 {% else %}
 <div class="card empty"><div class="empty-icon">{{ icon("users") }}</div>
-  <div class="title-2">{% if q %}Никого не нашли{% else %}Клиентов пока нет{% endif %}</div>
-  <p class="subhead">Клиенты появляются сами при приёмке машины.</p></div>
+  <div class="title-2">{% if q or make or tab != "all" %}Никого не нашли{% else %}Клиентов пока нет{% endif %}</div>
+  <p class="subhead">{% if q or make or tab != "all" %}Попробуйте другую вкладку или сбросьте фильтр.{% else %}Клиенты появляются сами при приёмке машины.{% endif %}</p></div>
 {% endif %}
 {% endblock %}

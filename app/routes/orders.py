@@ -330,13 +330,39 @@ def photo_file(photo_id: str, ctx: Ctx = Depends(get_ctx), t: int = 0):
 
 # ---------- Клиенты ----------
 @router.get("/clients")
-def clients_list(ctx: Ctx = Depends(get_ctx), q: str = ""):
+def clients_list(ctx: Ctx = Depends(get_ctx), q: str = "", tab: str = "all", sort: str = "last", make: str = ""):
+    """Клиенты: вкладки (все, постоянные, должники, давно не были, новые), сортировка, фильтр по марке, поиск."""
     ctx.need("clients.view")
-    if q.strip():
-        items = svc.search_clients(ctx.db, ctx.branch.id, q, limit=50)
-    else:
-        items = svc.search_clients_recent(ctx.db, ctx.branch.id)
-    return ctx.render("clients/list.html", title="Клиенты", items=items, q=q)
+    from ..services import clients as csvc
+    tab = tab if tab in csvc.TABS else "all"
+    sort = sort if sort in csvc.SORTS else "last"
+    allrows = csvc.rows(ctx.db, ctx.branch.id)
+    ids = csvc.search_ids(ctx.db, ctx.branch.id, q)
+    base = csvc.apply(allrows, "all", sort, make, ids)
+    items = csvc.apply(allrows, tab, sort, make, ids)
+    from urllib.parse import urlencode
+
+    def link(**over):
+        d = {"q": q, "tab": tab, "sort": sort, "make": make, **over}
+        return "/clients?" + urlencode({k: v for k, v in d.items() if v and not (k == "tab" and v == "all")
+                                        and not (k == "sort" and v == "last")})
+    return ctx.render("clients/list.html", title="Клиенты", items=items, q=q, tab=tab, sort=sort, make=make,
+                      tabs=csvc.TABS, sorts=csvc.SORTS, counts=csvc.counts(base), makes=csvc.makes(allrows), link=link,
+                      show_money=ctx.can("money.view"), fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate,
+                      REGULAR_VISITS=csvc.REGULAR_VISITS, LOST_DAYS=csvc.LOST_DAYS)
+
+
+@router.post("/clients/{client_id}/regular")
+def client_regular(client_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Отметить / снять «Постоянный клиент» вручную."""
+    ctx.need("clients.view")
+    c = ctx.db.get(Client, _uuid(client_id))
+    if not c or c.branch_id != ctx.branch.id:
+        raise Forbidden()
+    c.is_regular = not bool(c.is_regular)
+    ctx.db.commit()
+    flash(ctx.request, "Отмечен как постоянный" if c.is_regular else "Отметка «постоянный» снята")
+    return RedirectResponse(f"/clients/{c.id}", status_code=303)
 
 
 @router.get("/clients/{client_id}")
@@ -352,7 +378,9 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
                             .order_by(ClientEvent.created_at.desc()).limit(300)).all()
     recs = [e for e in events if e.kind == "recommendation" and not e.resolved]
     numbers = {o.id: o.number for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.client_id == c.id))}
+    from ..services import clients as csvc
     return ctx.render("clients/view.html", title=c.full_name, c=c, vehicles=vehicles, cards=_cards(ctx, orders),
+                      st=csvc.one(ctx.db, c), REGULAR_VISITS=csvc.REGULAR_VISITS, show_money=ctx.can("money.view"),
                       STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, events=events,
                       recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
                       vmap={v.id: v for v in vehicles}, numbers=numbers)

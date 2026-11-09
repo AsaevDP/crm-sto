@@ -57,7 +57,7 @@
     {% for d, items in days %}
     <div class="audit-day">{% set td = now_local().date() %}{{ "Сегодня" if d == td else ("Вчера" if (td - d).days == 1 else d.strftime("%d.%m.%Y")) }}</div>
     {% for it in items %}
-    <article class="ev" data-a="{{ it.row.action }}">
+    <article class="aev" data-a="{{ it.row.action }}">
       <div class="ev-top">
         <span class="ev-time">{{ it.row.created_at.astimezone().strftime("%H:%M") }}</span>
         {% if not chosen %}<b class="ev-who">{{ it.who }}</b>{% endif %}

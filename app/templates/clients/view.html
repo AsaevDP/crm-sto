@@ -2,13 +2,17 @@
 {% block body_class %}fit{% endblock %}
 {% block content %}
 {% set KINDS = {"order": "Приёмка", "status": "Статус", "finding": "Найдена проблема", "approval": "Решение клиента",
-                "recommendation": "Рекомендация", "act": "Акт", "note": "Заметка"} %}
+                "recommendation": "Рекомендация", "act": "Акт", "note": "Заметка", "payment": "Оплата"} %}
 <header class="ov-head">
   <a class="back" href="/clients">{{ icon("back") }}Клиенты</a>
   <div class="ov-title">
-    <div><h1 class="title-1">{{ c.full_name }}</h1>
-      <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a> · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · нарядов: {{ cards|length }}</div></div>
-    <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/clients/{{ c.id }}/print" target="_blank" title="Все наряды, работы, оплаты — на бумаге">🖨 Папка клиента</a>
+    <div><h1 class="title-1">{% if st.regular %}<span class="star" title="Постоянный клиент">★</span> {% endif %}{{ c.full_name }}</h1>
+      <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a> · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}
+        · визитов: {{ st.visits }}{% if st.last %} · последний {{ st.last_local.strftime("%d.%m.%Y") }}{% endif %}
+        {% if show_money %}· оплачено {{ st.spent|money }} ₴{% if st.debt > 0 %} · <b class="cl-debt">долг {{ st.debt|money }} ₴</b>{% endif %}{% endif %}</div></div>
+    <div class="ov-actions">
+      <form method="post" action="/clients/{{ c.id }}/regular"><button class="btn btn-sm {{ 'btn-tinted' if c.is_regular else 'btn-gray' }}" title="{{ 'Снять отметку' if c.is_regular else 'Постоянным становится и сам — с ' ~ REGULAR_VISITS ~ ' визитов' }}">{{ "★ Постоянный" if c.is_regular else "☆ В постоянные" }}</button></form>
+      <a class="btn btn-sm btn-gray" href="/clients/{{ c.id }}/print" target="_blank" title="Все наряды, работы, оплаты — на бумаге">🖨 Папка клиента</a>
       <a class="btn btn-sm btn-tinted" href="tel:+{{ c.phone }}">Позвонить</a>
       {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">Приёмка</a>{% endif %}</div>
   </div>
@@ -47,6 +51,13 @@
   <section class="ov-col on">
     <div class="card compact">
       <div class="card-h"><span class="headline">История клиента</span></div>
+      <div class="segmented cl-hist-f" id="histf" aria-label="Что показать">
+        <button type="button" data-k="" aria-pressed="true">Всё</button>
+        <button type="button" data-k="note" aria-pressed="false">Заметки</button>
+        <button type="button" data-k="recommendation" aria-pressed="false">Рекомендации</button>
+        <button type="button" data-k="order,status,act,finding,approval" aria-pressed="false">Визиты</button>
+        <button type="button" data-k="payment" aria-pressed="false">Оплаты</button>
+      </div>
       <form class="note-form" method="post" action="/clients/{{ c.id }}/note">
         <input class="field" name="text" placeholder="Заметка: «просил звонить после 18:00»" maxlength="1000" required>
         <button class="btn btn-sm">Добавить</button>
@@ -60,8 +71,21 @@
           <span class="caption">{{ e.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }} · {{ who.short_name if who else "система" }}{% if e.work_order_id and numbers.get(e.work_order_id) %} · <a href="/orders/{{ e.work_order_id }}">{{ numbers[e.work_order_id] }}</a>{% endif %}</span>
         </div>
         {% else %}<p class="footnote">Пока пусто</p>{% endfor %}
+        <p class="footnote" id="histempty" hidden>Здесь пока пусто</p>
       </div>
     </div>
   </section>
 </div>
+<script>
+(function () {  // Фильтр истории: всё / заметки / рекомендации / визиты / оплаты
+  const seg = document.getElementById('histf'), empty = document.getElementById('histempty');
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    const ks = b.dataset.k ? b.dataset.k.split(',') : null; let n = 0;
+    document.querySelectorAll('.timeline .ev').forEach(el => { const on = !ks || ks.includes(el.dataset.k); el.hidden = !on; n += on; });
+    empty.hidden = n > 0;
+  });
+})();
+</script>
 {% endblock %}

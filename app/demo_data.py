@@ -36,6 +36,8 @@ CLIENTS = [
     ("0937778899", "Ирина Ткаченко", "КА 2468 ВВ", "Kia", "Sportage", 2020, 73400),
     ("0668889900", "Дмитрий Мороз", "АХ 1357 СЕ", "Mercedes-Benz", "E 220d W213", 2018, 199000),
     ("0951234567", "Наталья Кравец", "КА 8080 НК", "Mazda", "CX-5", 2019, 88300),
+    ("0503456789", "Павел Гончар", "АІ 7777 ОК", "Opel", "Astra J", 2012, 245000),       # давно не был
+    ("0674561234", "Светлана Руденко", "КА 1122 СВ", "Nissan", "Qashqai", 2017, 150300),  # должник
 ]
 
 STOCK = [
@@ -545,6 +547,27 @@ def populate():
         tsvc.finish_check(db, c3)
         as_user("admin")
         stsvc.dismiss(db, roman, users["admin"], fired_on, "По собственному желанию — переезд в другой город", {})
+
+        # ---- Клиенты (10.11.2026): постоянные, давно не были, должник ----
+        from .models import Client as _Client
+        for i in (0, 4):  # отмечены «постоянными» вручную
+            db.scalar(select(_Client).where(_Client.phone == osvc.norm_phone(CLIENTS[i][0]))).is_regular = True
+        lost = intake(9, "A", None, partsman=False, works="Замена масла и фильтра", fuel="50", items=("docs",), photos=("front",))
+        as_user("irina")
+        price_works(lost, [(0.5, 700)])
+        lost.status, lost.closed_at = "closed", now() - timedelta(days=220)
+        lost.created_at = now() - timedelta(days=221)
+        debtor = intake(10, "A", None, partsman=False, works="Замена передних колодок", fuel="50", items=("docs",),
+                        photos=("front",))
+        as_user("irina")
+        dw = price_works(debtor, [(1.0, 800)])
+        dw[0].mechanic_id, dw[0].status, dw[0].done_at = users["sergey"].id, "done", now() - timedelta(days=3)
+        debtor.mechanic_id = users["sergey"].id
+        osvc.set_status(db, debtor, "ready", "Все работы выполнены")
+        db.flush()
+        msvc.add_payment(db, debtor, Decimal("300"), "cash", "extra", "")
+        as_user("admin")
+        msvc.close(db, debtor, True, "ok", "", "", "Остаток доплатит в пятницу — договорились по телефону")
 
         current_user_id.set(None)
         db.commit()

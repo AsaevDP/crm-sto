@@ -669,9 +669,9 @@ a.kv { color: inherit; text-decoration: none; }
 .badge-n.zero { opacity: .45; }
 .audit-feed { display: grid; gap: 8px; align-content: start; }
 .audit-day { position: sticky; top: 0; z-index: 1; padding: 6px 2px 2px; font-size: 13px; font-weight: 600; color: var(--text-2); background: var(--bg); }
-.ev { background: var(--surface); border-radius: var(--r-md); padding: 10px 14px; box-shadow: var(--shadow-1), inset 3px 0 0 var(--ev, var(--gray)); }
-.ev[data-a="create"] { --ev: var(--green); } .ev[data-a="update"] { --ev: var(--blue); } .ev[data-a="delete"] { --ev: var(--red); }
-.ev[data-a="login"], .ev[data-a="logout"] { --ev: var(--graphite); } .ev[data-a="view_as"], .ev[data-a="view_as_stop"] { --ev: var(--purple); }
+.aev { background: var(--surface); border-radius: var(--r-md); padding: 10px 14px; box-shadow: var(--shadow-1), inset 3px 0 0 var(--ev, var(--gray)); }
+.aev[data-a="create"] { --ev: var(--green); } .aev[data-a="update"] { --ev: var(--blue); } .aev[data-a="delete"] { --ev: var(--red); }
+.aev[data-a="login"], .aev[data-a="logout"] { --ev: var(--graphite); } .aev[data-a="view_as"], .aev[data-a="view_as_stop"] { --ev: var(--purple); }
 .ev-top { display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; font-size: 14px; }
 .ev-time { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 13px; }
 .ev-verb { color: var(--ev); font-weight: 600; }
@@ -705,3 +705,41 @@ a.kv { color: inherit; text-decoration: none; }
 .tool-kv > span { min-width: 0; flex: 1 1 auto; }
 .tool-kv form { flex: none; }
 .tool-kv .btn { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+/* Клиенты: вкладки, сортировка, таблица */
+.cl-tools { display: flex; gap: 8px; flex: 1; max-width: 760px; align-items: center; }
+.cl-tools .search { flex: 1 1 260px; min-width: 0; }
+.cl-tools select { flex: 0 1 190px; width: auto; min-width: 0; }
+.cl-tabs { align-self: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.cl-hint { margin: -4px 0 0; }
+.cl-table td { vertical-align: middle; }
+.cl-name { display: flex; gap: 6px; align-items: baseline; }
+.star { color: var(--yellow); font-size: .95em; }
+.cl-debt { color: var(--red); }
+.cl-onsite { color: var(--green); font-weight: 600; }
+.cl-car { white-space: nowrap; line-height: 1.6; }
+.cl-car .ov-plate { font-size: 12px; vertical-align: 0; }
+.cl-hist-f { margin-bottom: 8px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.timeline .ev[hidden] { display: none !important; }
+@media (max-width: 899px) {
+  .cl-tools { flex-wrap: wrap; max-width: none; }
+  .cl-tools .search { flex-basis: 100%; }
+  .cl-tools select { flex: 1 1 40%; }
+  .cl-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; align-self: stretch; }
+  .cl-tabs a { padding: 6px 4px; }
+}@media (max-width: 600px) {
+  .cl-table thead { display: none; }
+  .cl-table, .cl-table tbody, .cl-table tr, .cl-table td { display: block; }
+  .cl-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 14px; border-bottom: 1px solid var(--sep, rgba(60,60,67,.12)); }
+  .cl-table td { padding: 0 !important; border: 0 !important; }
+  .cl-table td:first-child { grid-column: 1; }
+  .cl-table .c-last { grid-column: 2; grid-row: 1; text-align: right; }
+  .cl-table td:nth-child(2) { grid-column: 1 / -1; }
+  .cl-table .c-visits, .cl-table .c-spent { display: none; }
+  .cl-table .c-debt { grid-column: 1 / -1; text-align: left; }
+  .cl-table .c-debt:not(:has(.cl-debt)) { display: none; }
+  .cl-table .c-debt .cl-debt::before { content: "Долг: "; font-weight: 400; }
+  .cl-car { white-space: normal; }
+}@media (max-width: 899px) {
+  .page-head:has(.cl-tools) { flex-wrap: wrap; }
+  .page-head .cl-tools { flex: 1 1 100%; order: 2; }
+}
