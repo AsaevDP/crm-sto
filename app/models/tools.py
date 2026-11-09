@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Entity
+from ..db import Entity, UTCDateTime
 
 MONEY = Numeric(12, 2)
 
@@ -66,9 +66,9 @@ class ToolCheck(Entity):
     kind: Mapped[str] = mapped_column(String(12), default="planned")
     status: Mapped[str] = mapped_column(String(10), default="draft")
     note: Mapped[str] = mapped_column(Text, default="")
-    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class ToolCheckLine(Entity):

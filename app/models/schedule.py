@@ -5,14 +5,14 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Entity
+from ..db import Entity, UTCDateTime
 
 APPT_STATUS = {"booked": "Записан", "arrived": "Приехал", "noshow": "Не приехал", "cancel": "Отменён"}
 
 
 class Appointment(Entity):
     __tablename__ = "appointments"
-    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    start_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
     duration_min: Mapped[int] = mapped_column(Integer, default=60)
     mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True, index=True)
     lift_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("lifts.id"), nullable=True)

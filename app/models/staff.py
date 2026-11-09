@@ -5,7 +5,7 @@ from datetime import date, datetime
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from ..db import Base, Entity, now
+from ..db import Base, Entity, now, UTCDateTime
 
 
 class Role(Entity):
@@ -57,7 +57,7 @@ class User(Entity):
 
     @property
     def hired_date(self) -> date:
-        return self.hired_on or (self.created_at.date() if self.created_at else date.today())
+        return self.hired_on or (self.created_at.astimezone().date() if self.created_at else date.today())
 
     @property
     def short_name(self) -> str:
@@ -96,6 +96,6 @@ class AttendanceEvent(Entity):
     card_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("staff_cards.id"), nullable=True)
     point_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("access_points.id"), nullable=True)
     direction: Mapped[str] = mapped_column(String(10))  # in / out
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
     method: Mapped[str] = mapped_column(String(10), default="card")  # card / manual
     comment: Mapped[str] = mapped_column(Text, default="")

@@ -3,7 +3,7 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Uuid, create_engine, event
+from sqlalchemy import DateTime, ForeignKey, TypeDecorator, Uuid, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column, sessionmaker
 
 from .config import DATABASE_URL
@@ -34,6 +34,28 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class UTCDateTime(TypeDecorator):
+    """Дата-время всегда в UTC и всегда «с поясом».
+    SQLite не хранит часовой пояс и отдаёт время без него — тогда .astimezone() в шаблонах считал UTC местным
+    временем, и все часы на экранах были на 2 часа раньше (исправлено 10.11.2026). Тут: пишем в UTC,
+    читаем — помечаем как UTC. В PostgreSQL (шаг 8) пояс хранится и так."""
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if isinstance(value, datetime):
+            value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            value = value.astimezone(timezone.utc)
+            if dialect.name == "sqlite":
+                value = value.replace(tzinfo=None)  # в SQLite храним как раньше: UTC без пояса
+        return value
+
+    def process_result_value(self, value, dialect):
+        if isinstance(value, datetime) and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -43,8 +65,8 @@ class Entity(Base):
     __abstract__ = True
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now, onupdate=now)
 
     @declared_attr
     def branch_id(cls) -> Mapped[uuid.UUID]:

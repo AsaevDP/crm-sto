@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Entity, now
+from ..db import Entity, now, UTCDateTime
 
 MONEY = Numeric(12, 2)
 
@@ -88,8 +88,8 @@ class WorkOrder(Entity):
     # Деньги
     discount_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)  # скидка клиенту на весь наряд, %
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # Акт выдачи: ok — исправен, partial — не полностью исправен (handover_defects обязательно), advice — есть рекомендации
     handover_state: Mapped[str] = mapped_column(String(10), default="")
     handover_defects: Mapped[str] = mapped_column(Text, default="")
@@ -115,7 +115,7 @@ class WoFinding(Entity):
     urgency: Mapped[str] = mapped_column(String(10), default="soon")  # urgent / soon / advice
     approval: Mapped[str] = mapped_column(String(10), default="pending")  # pending / yes / no
     approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class WoPhoto(Entity):
@@ -141,7 +141,7 @@ class WoWork(Entity):
     price: Mapped[Decimal] = mapped_column(MONEY, default=0)  # итог по работе (hours×rate×qty или фикс×qty)
     mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="todo")  # todo / doing / paused / done
-    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     done_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # кто нажал «Готово»
 
 
@@ -187,7 +187,7 @@ class WoWorkSession(Entity):
     wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)
     mechanic_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"))
     lift_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("lifts.id"), nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     kind: Mapped[str] = mapped_column(String(10), default="work")  # work / pause
     pause_reason: Mapped[str] = mapped_column(String(200), default="")

@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Entity
+from ..db import Entity, UTCDateTime
 
 MONEY = Numeric(12, 2)
 
@@ -55,5 +55,5 @@ class UsedSale(Entity):
     ttn: Mapped[str] = mapped_column(String(40), default="")            # номер ТТН Новой Почты
     pay_method: Mapped[str] = mapped_column(String(10), default="cash")
     status: Mapped[str] = mapped_column(String(10), default="reserved")
-    sold_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sold_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     comment: Mapped[str] = mapped_column(Text, default="")
