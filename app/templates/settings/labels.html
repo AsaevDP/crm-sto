@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+{% set cur = cfg.width_mm ~ "x" ~ cfg.height_mm %}
+{% set presets = [("100x70", "100 × 70 мм (как договорились)"), ("100x50", "100 × 50 мм"), ("58x40", "58 × 40 мм"), ("40x30", "40 × 30 мм"), ("100x150", "100 × 150 мм")] %}
+<header class="page-head"><div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Наклейки и принтер</h1></div></header>
+<div class="grid-2 fill lbl-grid">
+  <form class="card form dense" method="post" action="/settings/labels">
+    <label>Размер наклейки
+      <select class="field" name="size" id="lsize">
+        {% for v, t in presets %}<option value="{{ v }}" {% if cur == v %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        <option value="custom" {% if cur not in presets|map(attribute=0) %}selected{% endif %}>Свой размер…</option></select></label>
+    <div class="form-row" id="lcustom">
+      <label>Ширина, мм<input class="field" name="width_mm" inputmode="numeric" value="{{ cfg.width_mm }}"></label>
+      <label>Высота, мм<input class="field" name="height_mm" inputmode="numeric" value="{{ cfg.height_mm }}"></label>
+    </div>
+    <div class="group" style="background:var(--surface-2)">
+      <label class="row"><span class="grow">Принтер наклеек (рулон)<div class="caption">одна наклейка — одна страница</div></span><input type="radio" name="mode" value="label" {% if cfg.mode == "label" %}checked{% endif %}></label>
+      <label class="row"><span class="grow">Обычный принтер, лист A4<div class="caption">наклейки сеткой, потом вырезать</div></span><input type="radio" name="mode" value="sheet" {% if cfg.mode == "sheet" %}checked{% endif %}></label>
+    </div>
+    <label>Название принтера (для памяти)<input class="field" name="printer" value="{{ cfg.printer }}" placeholder="Например: Xprinter XP-365B"></label>
+    <div class="group" style="background:var(--surface-2)">
+      <label class="row"><span class="grow">Цена (для б/у)</span><input type="checkbox" class="switch" name="show_price" value="1" {% if cfg.show_price %}checked{% endif %}></label>
+      <label class="row"><span class="grow">Ячейка склада</span><input type="checkbox" class="switch" name="show_cell" value="1" {% if cfg.show_cell %}checked{% endif %}></label>
+      <label class="row"><span class="grow">«Подходит для»</span><input type="checkbox" class="switch" name="show_fits" value="1" {% if cfg.show_fits %}checked{% endif %}></label>
+    </div>
+    <div><button class="btn btn-sm">Сохранить</button></div>
+  </form>
+  <div class="card form dense">
+    <div class="headline">Как это работает</div>
+    <p class="subhead" style="margin:0">У каждой позиции склада — новой и б/у — свой штрихкод из 12 цифр. Печать: «🏷 Наклейка» в карточке позиции
+      или галочки в списке склада → «Печать наклеек».</p>
+    <p class="subhead" style="margin:0"><b>Принтер</b> выбирается в окне печати (Ctrl+P → «Принтер»). Когда купите принтер наклеек — установите
+      его драйвер и выберите его там. Здесь меняется только размер и вид.</p>
+    <p class="subhead" style="margin:0"><b>Сканер</b> — любой USB, работает как клавиатура: курсор в поиск склада или в подбор запчасти в наряде,
+      «пик» по наклейке — откроется эта деталь.</p>
+    <div><a class="btn btn-sm btn-gray" href="/stock">Перейти на склад</a></div>
+  </div>
+</div>
+<script>
+(function () { const s = document.getElementById('lsize'), c = document.getElementById('lcustom');
+  function sync() { c.hidden = s.value !== 'custom'; } s.addEventListener('change', sync); sync(); })();
+</script>
+{% endblock %}

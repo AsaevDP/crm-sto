@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+{% set W, H = cfg.width_mm, cfg.height_mm %}
+<style>
+  /* Наклейки. Режим «label» — каждая наклейка отдельной страницей нужного размера (термопринтер наклеек);
+     «sheet» — сеткой на листе A4 (обычный принтер, потом вырезать). Принтер выбирается в окне печати. */
+  {% if cfg.mode == "label" %}@page { size: {{ W }}mm {{ H }}mm; margin: 0; }{% else %}@page { size: A4; margin: 8mm; }{% endif %}
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #000; background: #e9e9ee; }
+  .bar { position: sticky; top: 0; display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 10px;
+    background: rgba(233,233,238,.94); z-index: 2; font-size: 13px; color: #444; }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar a { background: #fff; color: #007aff; }
+  .wrap { display: flex; flex-wrap: wrap; gap: {{ "6mm" if cfg.mode == "label" else "0" }}; justify-content: center; padding: 16px; }
+  .lab { width: {{ W }}mm; height: {{ H }}mm; background: #fff; padding: {{ [W, H]|min * 0.05 }}mm; display: flex; flex-direction: column; gap: 1mm;
+    overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.15); border: {{ "0" if cfg.mode == "label" else "0.2mm dashed #999" }}; }
+  .top { display: flex; justify-content: space-between; gap: 2mm; font-size: {{ (H * 0.075)|round(1) }}pt; color: #333; }
+  .name { font-weight: 700; font-size: {{ (H * 0.15)|round(1) }}pt; line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .meta { font-size: {{ (H * 0.1)|round(1) }}pt; color: #222; line-height: 1.2; white-space: nowrap; overflow: hidden; }
+  .bc { width: 100%; flex: 1 1 auto; min-height: {{ (H * 0.3)|round(1) }}mm; display: block; }
+  .code { text-align: center; font: 600 {{ (H * 0.12)|round(1) }}pt "Consolas", monospace; letter-spacing: .12em; }
+  .price { font-weight: 800; font-size: {{ (H * 0.15)|round(1) }}pt; }
+  @media print {
+    body { background: #fff; } .bar { display: none; }
+    .wrap { padding: 0; gap: 0; display: {{ "block" if cfg.mode == "label" else "flex" }}; justify-content: flex-start; }
+    .lab { box-shadow: none; {% if cfg.mode == "label" %}page-break-after: always; break-after: page;{% endif %} }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button onclick="print()">🖨 Печать · {{ labels|length }} шт</button>
+  <a href="{{ back }}">← Назад</a>
+  <span>Размер {{ W }}×{{ H }} мм · {{ "принтер наклеек" if cfg.mode == "label" else "лист A4" }}{% if cfg.printer %} · {{ cfg.printer }}{% endif %}.
+    Принтер выберите в окне печати. {% if ctx.can("settings.access", "stock.manage") %}<a href="/settings/labels" style="padding:0;background:none">Размер и вид →</a>{% endif %}</span>
+</div>
+<div class="wrap">
+  {% for l in labels %}
+  <div class="lab">
+    <div class="top"><span>{{ branding.name }}</span><span>{{ l.i.code or ("ТО" if l.c.section == "to" else "Запчасти") }}</span></div>
+    <div class="name">{{ l.c.name }}</div>
+    <div class="meta">{{ l.c.brand }} {{ l.c.article }}{% if l.c.kind == "used" and l.i.donor_make %} · б/у с {{ l.i.donor_make }} {{ l.i.donor_model }}{% endif %}</div>
+    {% if cfg.show_fits and l.fits %}<div class="meta">для: {{ l.fits }}</div>{% endif %}
+    {{ l.svg|safe }}
+    <div class="code">{{ l.i.barcode }}</div>
+    <div class="top">{% if cfg.show_cell %}<span>ячейка {{ l.loc }}</span>{% else %}<span></span>{% endif %}
+      {% if cfg.show_price and (l.i.sale_price or 0) > 0 %}<span class="price">{{ l.i.sale_price|money(0) }} ₴</span>{% endif %}</div>
+  </div>
+  {% else %}<p>Не выбрано ни одной позиции.</p>{% endfor %}
+</div>
+</body>
+</html>

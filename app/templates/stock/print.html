@@ -1,0 +1,22 @@
+{% extends "_print_doc.html" %}
+{% block orient %}landscape{% endblock %}
+{% block sheet_w %}297mm{% endblock %}
+{% block back %}{{ back }}{% endblock %}
+{% block doc_title %}СКЛАД — СПИСОК ПОЗИЦИЙ{% endblock %}
+{% block subtitle %}{{ filt }} · позиций: {{ rows|length }}{% endblock %}
+{% block body %}
+<table>
+  <thead><tr><th style="width:26px">№</th><th>Штрихкод</th><th>Запчасть</th><th>Категория</th><th>Бренд / артикул</th><th>Подходит для</th><th>Ячейка</th>
+    <th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th>{% if show_cost %}<th class="num">Закупка</th>{% endif %}<th style="width:60px">Факт</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr><td>{{ loop.index }}</td><td style="font-family:Consolas,monospace">{{ r.i.barcode or "" }}</td><td>{{ r.c.name }}</td>
+    <td>{{ r.c.category }}{% if r.c.subcategory %} › {{ r.c.subcategory }}{% endif %}</td><td>{{ r.c.brand }} {{ r.c.article }}</td>
+    <td>{% for f in r.fits %}{{ fit_label(f) }}{% if not loop.last %}, {% endif %}{% else %}{{ r.c.fits }}{% endfor %}</td><td>{{ r.loc }}</td>
+    <td class="num">{{ r.on_hand|num }}</td><td class="num">{{ r.reserved|num if r.reserved else "" }}</td><td class="num"><b>{{ r.free|num }}</b></td>
+    {% if show_cost %}<td class="num">{{ r.i.cost|money }}</td>{% endif %}<td></td></tr>
+  {% else %}<tr><td colspan="12" class="muted">Позиций нет</td></tr>{% endfor %}
+  </tbody>
+</table>
+<div class="sign"><div>Составил: ____________</div><div>Проверил: ____________</div></div>
+{% endblock %}

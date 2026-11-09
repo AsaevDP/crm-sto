@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
+{% block content %}
+<header class="ov-head">
+  <a class="back" href="/stock">{{ icon("back") }}Склад</a>
+  <div class="ov-title"><div><h1 class="title-1">Категории склада</h1>
+    <div class="subhead">Раздел → категория → подкатегория. Переименование меняет и запчасти. Удалить можно только пустую категорию.</div></div></div>
+</header>
+<div class="cat-grid fill">
+  {% for sec, tree in trees.items() %}
+  <section class="card compact cat-col">
+    <div class="card-h"><span class="headline">{{ "ТО" if sec == "to" else "Запчасти" }}</span><span class="caption">{{ tree|length }} категорий</span></div>
+    {% for x in tree %}
+    <details class="cat-item">
+      <summary><span class="grow"><b>{{ x.c.name }}</b> <span class="caption">· {{ x.subs|length }} подкат. · {{ used[x.c.id] }} шт</span></span></summary>
+      {% if can_edit %}
+      <div class="cat-ed">
+        <form class="cat-row" method="post" action="/stock/categories/{{ x.c.id }}"><input class="field" name="name" value="{{ x.c.name }}" aria-label="Название">
+          <button class="btn btn-sm btn-gray">Переименовать</button>
+          <button class="btn btn-sm btn-plain" name="action" value="delete" style="color:var(--red)" onclick="return confirm('Удалить «{{ x.c.name }}» вместе с подкатегориями?')">Удалить</button></form>
+        {% for s in x.subs %}
+        <form class="cat-row sub" method="post" action="/stock/categories/{{ s.id }}"><span class="caption">›</span><input class="field" name="name" value="{{ s.name }}" aria-label="Подкатегория">
+          <span class="caption nowrap">{{ used[s.id] }} шт</span>
+          <button class="btn btn-sm btn-gray">✓</button>
+          <button class="btn btn-sm btn-plain" name="action" value="delete" style="color:var(--red)" title="Удалить" onclick="return confirm('Удалить «{{ s.name }}»?')">✕</button></form>
+        {% endfor %}
+        <form class="cat-row sub" method="post" action="/stock/categories"><span class="caption">＋</span>
+          <input type="hidden" name="section" value="{{ sec }}"><input type="hidden" name="parent_id" value="{{ x.c.id }}">
+          <input class="field" name="name" placeholder="Новая подкатегория" required aria-label="Новая подкатегория"><button class="btn btn-sm btn-tinted">Добавить</button></form>
+      </div>
+      {% else %}
+      <div class="cat-ed">{% for s in x.subs %}<div class="caption">› {{ s.name }} · {{ used[s.id] }} шт</div>{% endfor %}</div>
+      {% endif %}
+    </details>
+    {% endfor %}
+    {% if can_edit %}
+    <form class="cat-row" method="post" action="/stock/categories"><input type="hidden" name="section" value="{{ sec }}">
+      <input class="field" name="name" placeholder="Новая категория" required aria-label="Новая категория"><button class="btn btn-sm">＋ Категория</button></form>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

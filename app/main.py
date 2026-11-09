@@ -23,8 +23,10 @@ async def lifespan(_app):
     seed()
     from .db import SessionLocal
     from .services.stock import backfill_categories
+    from .services.stock_cat import backfill_barcodes  # импорт включает и штрихкод у новых позиций
     with SessionLocal() as db:
         backfill_categories(db)
+        backfill_barcodes(db)
         db.commit()
     if DEMO:
         from .demo_data import populate

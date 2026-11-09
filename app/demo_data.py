@@ -123,6 +123,30 @@ def populate():
             ssvc.receive_line(db, branch.id, line, locs[cell].id)
         ssvc.refresh_purchase_status(db, stock_purchase)
 
+        # Склад (10.11.2026): подкатегории и «подходит для» (марка, модель, годы) — для фильтра по машине
+        from .models import PartFit
+        demo_fit = {
+            "Фильтр масляный": ("Фильтры", "Масляные", [("Volkswagen", "Passat B8", 2015, 2023), ("Skoda", "Octavia A7", 2013, 2020)]),
+            "Фильтр воздушный": ("Фильтры", "Воздушные", [("Volkswagen", "Passat B8", 2015, 2023)]),
+            "Фильтр салона угольный": ("Фильтры", "Салонные", [("Skoda", "Octavia A7", 2013, 2020), ("Volkswagen", "Golf VII", 2012, 2020)]),
+            "Масло моторное 5W-30, 4 л": ("Масла", "Моторные", []),
+            "Колодки тормозные передние": ("Тормоза", "Колодки", [("Renault", "Megane IV", 2016, None), ("Renault", "Kadjar", 2015, 2022)]),
+            "Колодки тормозные задние": ("Тормоза", "Колодки", [("Mazda", "CX-5", 2017, None)]),
+            "Диск тормозной передний": ("Тормоза", "Диски", [("Renault", "Megane IV", 2016, None)]),
+            "Свеча зажигания": ("Свечи", "Зажигания", [("Toyota", "Camry", 2011, 2018), ("Toyota", "RAV4", 2013, 2018)]),
+            "Стойка стабилизатора передняя": ("Ходовая и подвеска", "Стойки стабилизатора", [("Volkswagen", "Passat B8", 2015, 2023)]),
+            "Сайлентблок переднего рычага": ("Ходовая и подвеска", "Рычаги и сайлентблоки", [("Hyundai", "Tucson", 2015, 2021), ("Kia", "Sportage", 2016, 2021)]),
+            "Антифриз G12+, 5 л": ("Жидкости", "Антифриз", []),
+        }
+        for name, (cat_, sub_, fits_) in demo_fit.items():
+            c = cats.get(name)
+            if not c:
+                continue
+            c.category, c.subcategory = cat_, sub_
+            for mk, md, y1, y2 in fits_:
+                db.add(PartFit(catalog_id=c.id, make=mk, model=md, year_from=y1, year_to=y2))
+        db.flush()
+
         # --- Наряды на разных этапах ---
         def intake(i, scenario, lift_n=None, partsman=True, works="", complaint="", fuel="50", items=("docs",),
                    note="", photos=("front", "rear", "left")):

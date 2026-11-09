@@ -91,6 +91,27 @@ class PartCatalog(Entity):
     section: Mapped[str] = mapped_column(String(10), default="", index=True)
     # Категория внутри раздела (или категория разбора для б/у)
     category: Mapped[str] = mapped_column(String(60), default="", index=True)
+    subcategory: Mapped[str | None] = mapped_column(String(60), default="", nullable=True, index=True)
+
+
+class StockCategory(Entity):
+    """Дерево категорий склада (10.11.2026): раздел → категория → подкатегория. Правится на «Склад → Категории».
+    У запчасти в справочнике хранится название категории/подкатегории (переименование меняет и их)."""
+    __tablename__ = "stock_categories"
+    section: Mapped[str] = mapped_column(String(10), index=True)       # to / repair
+    name: Mapped[str] = mapped_column(String(60))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("stock_categories.id", ondelete="CASCADE"), nullable=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PartFit(Entity):
+    """Применимость запчасти: марка, модель, годы (для фильтра склада по марке и модели)."""
+    __tablename__ = "part_fits"
+    catalog_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("parts_catalog.id", ondelete="CASCADE"), index=True)
+    make: Mapped[str] = mapped_column(String(60), index=True)
+    model: Mapped[str] = mapped_column(String(60), default="")
+    year_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    year_to: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Location(Entity):
@@ -118,6 +139,8 @@ class StockItem(Entity):
     donor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("donors.id"), nullable=True, index=True)
     code: Mapped[str] = mapped_column(String(20), default="", index=True)   # Р-0001
     description: Mapped[str] = mapped_column(Text, default="")
+    # Штрихкод наклейки (10.11.2026): 12 цифр «20…», у каждой позиции — новой и б/у. Сканер «печатает» его в поиск.
+    barcode: Mapped[str | None] = mapped_column(String(20), default=None, nullable=True, index=True)
 
 
 class StockPhoto(Entity):

@@ -80,9 +80,14 @@ def search_catalog(db: Session, branch_id, q: str, limit: int = 12) -> list[dict
     if len(q) < 2:
         return []
     like = f"%{q}%"
-    rows = db.scalars(select(PartCatalog).where(PartCatalog.branch_id == branch_id, or_(
-        PartCatalog.name.ilike(like), PartCatalog.article.ilike(like), PartCatalog.brand.ilike(like),
-        PartCatalog.fits.ilike(like))).order_by(PartCatalog.name).limit(limit)).all()
+    from .stock_cat import by_barcode
+    hit = by_barcode(db, branch_id, q)   # «пикнули» наклейку сканером — сразу эта деталь
+    if hit:
+        rows = [db.get(PartCatalog, hit.catalog_id)]
+    else:
+        rows = db.scalars(select(PartCatalog).where(PartCatalog.branch_id == branch_id, or_(
+            PartCatalog.name.ilike(like), PartCatalog.article.ilike(like), PartCatalog.brand.ilike(like),
+            PartCatalog.fits.ilike(like))).order_by(PartCatalog.name).limit(limit)).all()
     free = catalog_free(db, branch_id, [r.id for r in rows])
     last = {}
     for r in rows:

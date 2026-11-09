@@ -1,18 +1,27 @@
 {% extends "base.html" %}
+{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="ov-head">
   <a class="back" href="/stock">{{ icon("back") }}Склад</a>
   <div class="ov-title">
     <div><h1 class="title-1">{{ c.name }}</h1>
-      <div class="subhead mono">{% if c.kind == "used" %}{{ c.category or "Прочее" }}{% else %}{{ SECTIONS.get(c.section, "") }}{% if c.category %} · {{ c.category }}{% endif %}{% endif %} · {{ c.brand }} {{ c.article }}{% if c.revision %} · рев. {{ c.revision }}{% endif %} · ячейка {{ loc }}</div></div>
+      <div class="subhead mono">{% if c.kind == "used" %}{{ c.category or "Прочее" }}{% else %}{{ SECTIONS.get(c.section, "") }}{% if c.category %} · {{ c.category }}{% endif %}{% if c.subcategory %} › {{ c.subcategory }}{% endif %}{% endif %} · {{ c.brand }} {{ c.article }}{% if c.revision %} · рев. {{ c.revision }}{% endif %} · ячейка {{ loc }}</div></div>
+    <div class="ov-actions">
+      <form method="get" action="/stock/labels" target="_blank" class="label-form">
+        <input type="hidden" name="ids" value="{{ i.id }}">
+        <input class="field" type="number" name="copies" value="1" min="1" max="50" aria-label="Сколько наклеек">
+        <button class="btn btn-sm">🏷 Наклейка</button>
+      </form>
+    </div>
   </div>
 </header>
+{% if barcode_svg %}<div class="bc-strip" title="Штрихкод для сканера">{{ barcode_svg|safe }}<span class="mono">{{ i.barcode }}</span></div>{% endif %}
 <div class="stats" style="grid-template-columns:repeat(3,1fr)">
   <div class="stat"><span class="footnote">На складе</span><b>{{ b.on_hand|num }}</b></div>
   <div class="stat"><span class="footnote">В резерве</span><b>{{ b.reserved|num }}</b></div>
   <div class="stat"><span class="footnote">Свободно</span><b>{{ b.free|num }}</b></div>
 </div>
-<div class="cl-grid">
+<div class="cl-grid fill item-grid">
   <section class="ov-col on">
     {% if ctx.can("stock.manage", "parts.pick") %}
     <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/category">
@@ -20,12 +29,56 @@
       {% if c.kind == "used" %}
       <select class="field" name="category" aria-label="Категория разбора">{% for k in RAZBOR_CATEGORIES %}<option {% if k == c.category %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
       {% else %}
-      <select class="field" name="section" aria-label="Раздел">{% for k, v in SECTIONS.items() %}<option value="{{ k }}" {% if c.section == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-      <input class="field" name="category" value="{{ c.category }}" list="cat-list" placeholder="Категория: Фильтры, Тормоза…" aria-label="Категория">
-      <datalist id="cat-list">{% for sec, lst in CATEGORIES.items() %}{% for k in lst %}<option value="{{ k }}">{% endfor %}{% endfor %}</datalist>
+      <select class="field" name="section" id="f-sec" aria-label="Раздел">{% for k, v in SECTIONS.items() %}<option value="{{ k }}" {% if c.section == k %}selected{% endif %}>{{ "ТО" if k == "to" else "Запчасти" }}</option>{% endfor %}</select>
+      <div class="form-row">
+        <select class="field" name="category" id="f-cat" aria-label="Категория"></select>
+        <select class="field" name="subcategory" id="f-sub" aria-label="Подкатегория"></select>
+      </div>
+      <a class="caption" href="/stock/categories">Изменить список категорий →</a>
+      <script>
+      (function () {  // Категория → подкатегории (из дерева «Склад → Категории»)
+        const T = {{ tree_json|tojson }}, cur = {{ [c.category or "", c.subcategory or ""]|tojson }};
+        const sec = document.getElementById('f-sec'), cat = document.getElementById('f-cat'), sub = document.getElementById('f-sub');
+        const opt = (v, t, sel) => `<option value="${v.replace(/"/g, '&quot;')}" ${sel ? 'selected' : ''}>${t}</option>`;
+        function fillCat() {
+          const list = T[sec.value] || [];
+          const names = list.map(x => x.name); if (cur[0] && !names.includes(cur[0])) names.push(cur[0]);
+          cat.innerHTML = opt('', 'Без категории', !cur[0]) + names.map(n => opt(n, n, n === cur[0])).join(''); fillSub();
+        }
+        function fillSub() {
+          const x = (T[sec.value] || []).find(x => x.name === cat.value), subs = x ? x.subs.slice() : [];
+          if (cur[1] && cat.value === cur[0] && !subs.includes(cur[1])) subs.push(cur[1]);
+          sub.innerHTML = opt('', subs.length ? 'Без подкатегории' : '—', !cur[1]) + subs.map(n => opt(n, n, n === cur[1] && cat.value === cur[0])).join('');
+          sub.disabled = !subs.length;
+        }
+        sec.addEventListener('change', () => { cur[0] = ''; cur[1] = ''; fillCat(); });
+        cat.addEventListener('change', fillSub); fillCat();
+      })();
+      </script>
       {% endif %}
       <button class="btn btn-sm">Сохранить</button>
     </form>
+    {% if c.kind != "used" %}
+    <div class="card compact form dense">
+      <div class="card-h"><span class="headline">Подходит для · {{ fits|length }}</span></div>
+      {% for f in fits %}
+      <div class="kv"><span>{{ fit_label(f) }}</span>
+        <form method="post" action="/stock/items/{{ i.id }}/fits/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" title="Убрать">✕</button></form></div>
+      {% else %}<p class="footnote" style="margin:0">{{ c.fits or "Пока не указано — по марке и модели склад её не найдёт." }}</p>{% endfor %}
+      <form class="form dense" method="post" action="/stock/items/{{ i.id }}/fits">
+        <div class="form-row">
+          <input class="field" name="make" list="mk-list" placeholder="Марка *" required aria-label="Марка">
+          <input class="field" name="model" placeholder="Модель" aria-label="Модель">
+        </div>
+        <div class="form-row">
+          <input class="field" name="year_from" inputmode="numeric" placeholder="Год с" aria-label="Год с">
+          <input class="field" name="year_to" inputmode="numeric" placeholder="Год по" aria-label="Год по">
+        </div>
+        <datalist id="mk-list">{% for m in makes %}<option value="{{ m }}">{% endfor %}</datalist>
+        <button class="btn btn-sm btn-tinted">Добавить</button>
+      </form>
+    </div>
+    {% endif %}
     {% endif %}
     {% if ctx.can("stock.manage") %}
     <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/adjust">

@@ -5,38 +5,87 @@
   <h1 class="large-title">Склад</h1>
   <div class="ov-actions">
     {% if ctx.can("stock.issue") %}<a class="btn btn-sm {{ '' if new_requests else 'btn-gray' }}" href="/stock/issues">Выдача{% if new_requests %} · {{ new_requests }}{% endif %}</a>{% endif %}
+    <a class="btn btn-sm btn-gray" href="/stock/categories">Категории</a>
     <a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки · {{ n_locations }}</a>
+    <a class="btn btn-sm btn-gray" href="/stock/print?{{ args() }}" target="_blank">🖨 Печать</a>
+    <a class="btn btn-sm btn-gray" href="/stock/export.xlsx?{{ args() }}">⬇ Excel</a>
   </div>
 </header>
-<form class="toolbar-row" method="get">
-  <div class="segmented" style="flex:none">
-    {% for k, v in [("", "Все"), ("to", "ТО"), ("repair", "Для ремонта"), ("used", "Б/у")] %}
-    <a href="?sec={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if only %}&only={{ only }}{% endif %}" aria-pressed="{{ (sec == k)|lower }}" {% if k == "repair" %}title="Запчасти для ремонта"{% endif %}>{{ v }}</a>{% endfor %}
-  </div>
-  <input type="hidden" name="sec" value="{{ sec }}">
-  <input class="field search" name="q" value="{{ q }}" placeholder="Название, артикул, бренд, марка авто" autocomplete="off">
-  {% if cat_list %}<select class="field" name="cat" onchange="this.form.submit()" style="max-width:200px" aria-label="Категория">
-    <option value="">Все категории</option>{% for k in cat_list %}<option {% if k == cat %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>{% endif %}
-  <select class="field" name="only" onchange="this.form.submit()" style="max-width:200px">
+<form class="toolbar-row st-bar" method="get" action="/stock">
+  <nav class="segmented st-sec" aria-label="Раздел">
+    <a href="/stock?sec=to" aria-pressed="{{ (sec == 'to')|lower }}">ТО</a>
+    <a href="/stock?sec=repair" aria-pressed="{{ (sec == 'repair')|lower }}">Запчасти</a>
+  </nav>
+  <input type="hidden" name="sec" value="{{ sec }}"><input type="hidden" name="cat" value="{{ cat }}"><input type="hidden" name="sub" value="{{ sub }}">
+  <input class="field search" name="q" value="{{ q }}" placeholder="Поиск или штрихкод (можно сканером)" autocomplete="off" autofocus>
+  <select class="field st-mcat" aria-label="Категория" onchange="location.href=this.value">
+    <option value="/stock?{{ args(cat='', sub='') }}">Все категории</option>
+    {% for x in tree %}<option value="/stock?{{ args(cat=x.c.name, sub='') }}" {% if cat == x.c.name and not sub %}selected{% endif %}>{{ x.c.name }} · {{ counts.get(x.c.name, 0) }}</option>
+    {% for s in x.subs %}<option value="/stock?{{ args(cat=x.c.name, sub=s.name) }}" {% if sub == s.name and cat == x.c.name %}selected{% endif %}>&nbsp;&nbsp;› {{ s.name }}</option>{% endfor %}{% endfor %}
+  </select>
+  <select class="field" name="make" onchange="this.form.model && (this.form.model.value=''); this.form.submit()" aria-label="Марка">
+    <option value="">Все марки</option>{% for m in makes %}<option {% if m == make %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  {% if make and models %}<select class="field" name="model" onchange="this.form.submit()" aria-label="Модель">
+    <option value="">Все модели</option>{% for m in models %}<option {% if m == model %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>{% endif %}
+  <select class="field" name="only" onchange="this.form.submit()" aria-label="Что показать">
     <option value="">Есть на складе</option><option value="free" {% if only == "free" %}selected{% endif %}>Только свободные</option>
     <option value="all" {% if only == "all" %}selected{% endif %}>Все, включая нулевые</option></select>
 </form>
-<div class="tablewrap fill scroll">
-  <table class="table">
-    <thead><tr><th>Запчасть</th><th>Категория</th><th>Артикул</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
-    <tbody>
-    {% for r in rows %}
-    <tr onclick="location.href='/stock/items/{{ r.i.id }}'" style="cursor:pointer">
-      <td>{{ r.c.name }}{% if r.c.kind == "used" %} <span class="tag">б/у</span>{% endif %}</td>
-      <td class="footnote">{% if r.c.kind == "used" %}{{ r.c.category or "Прочее" }}{% else %}{{ SECTIONS.get(r.c.section, "") }}{% if r.c.category %} · {{ r.c.category }}{% endif %}{% endif %}</td>
-      <td class="mono footnote">{{ r.c.brand }} {{ r.c.article }}</td>
-      <td class="footnote">{{ r.loc }}</td>
-      <td class="num">{{ r.on_hand|num }}</td>
-      <td class="num">{{ r.reserved|num if r.reserved else "—" }}</td>
-      <td class="num"><b>{{ r.free|num }}</b></td>
-    </tr>
-    {% else %}<tr><td colspan="7" class="footnote">{% if q %}Ничего не нашлось{% else %}Склад пуст — запчасти появятся после первого прихода{% endif %}</td></tr>{% endfor %}
-    </tbody>
-  </table>
+
+<div class="st-grid fill">
+  <nav class="group st-tree" aria-label="Категории">
+    <a class="row" href="/stock?{{ args(cat='', sub='') }}" {% if not cat %}aria-current="page"{% endif %}><span class="grow"><b>Все категории</b></span></a>
+    {% for x in tree %}{% set n = counts.get(x.c.name, 0) %}
+    <a class="row" href="/stock?{{ args(cat=x.c.name, sub='') }}" {% if cat == x.c.name and not sub %}aria-current="page"{% endif %}>
+      <span class="grow">{{ x.c.name }}</span><span class="badge-n {% if not n %}zero{% endif %}">{{ n }}</span></a>
+    {% if cat == x.c.name %}{% for s in x.subs %}{% set n2 = counts.get((x.c.name, s.name), 0) %}
+    <a class="row st-sub" href="/stock?{{ args(cat=x.c.name, sub=s.name) }}" {% if sub == s.name %}aria-current="page"{% endif %}>
+      <span class="grow">{{ s.name }}</span><span class="badge-n {% if not n2 %}zero{% endif %}">{{ n2 }}</span></a>
+    {% endfor %}{% endif %}
+    {% endfor %}
+    {% if counts.get("", 0) %}<a class="row" href="/stock?{{ args(cat='-', sub='') }}"><span class="grow footnote">Без категории</span><span class="badge-n">{{ counts.get("", 0) }}</span></a>{% endif %}
+  </nav>
+
+  <div class="st-main">
+    <div class="st-sel" id="selbar" hidden>
+      <span id="seln">0</span> выбрано ·
+      <label>копий <input class="field" type="number" id="copies" value="1" min="1" max="50" style="width:64px"></label>
+      <button type="button" class="btn btn-sm" id="printsel">🏷 Печать наклеек</button>
+      <button type="button" class="btn btn-sm btn-plain" id="clearsel">Снять</button>
+    </div>
+    <div class="tablewrap">
+      <table class="table st-table">
+        <thead><tr><th style="width:30px"><input type="checkbox" id="selall" aria-label="Выбрать все"></th>
+          <th>Запчасть</th><th>Подходит для</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr data-href="/stock/items/{{ r.i.id }}">
+          <td onclick="event.stopPropagation()"><input type="checkbox" class="sel" value="{{ r.i.id }}" aria-label="Выбрать"></td>
+          <td>{{ r.c.name }}<div class="caption">{% if r.c.category %}{{ r.c.category }}{% if r.c.subcategory %} › {{ r.c.subcategory }}{% endif %} · {% endif %}<span class="mono">{{ r.c.brand }} {{ r.c.article }}</span></div></td>
+          <td class="footnote">{% for f in r.fits[:3] %}<span class="fit-chip">{{ fit_label(f) }}</span>{% else %}{{ r.c.fits or "—" }}{% endfor %}{% if r.fits|length > 3 %} <span class="caption">+{{ r.fits|length - 3 }}</span>{% endif %}</td>
+          <td class="footnote nowrap">{{ r.loc }}</td>
+          <td class="num">{{ r.on_hand|num }}</td>
+          <td class="num">{{ r.reserved|num if r.reserved else "—" }}</td>
+          <td class="num"><b>{{ r.free|num }}</b></td>
+        </tr>
+        {% else %}<tr><td colspan="7" class="footnote">{% if q or cat or make %}Ничего не нашлось — попробуйте другую категорию или сбросьте фильтр{% else %}В этом разделе пока пусто — запчасти появятся после прихода{% endif %}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
+<script>
+(function () {
+  document.querySelectorAll('tr[data-href]').forEach(tr => tr.addEventListener('click', () => location.href = tr.dataset.href));
+  const bar = document.getElementById('selbar'), n = document.getElementById('seln'), boxes = [...document.querySelectorAll('.sel')];
+  function sync() { const k = boxes.filter(b => b.checked).length; bar.hidden = !k; n.textContent = k; }
+  boxes.forEach(b => b.addEventListener('change', sync));
+  document.getElementById('selall').addEventListener('change', e => { boxes.forEach(b => b.checked = e.target.checked); sync(); });
+  document.getElementById('clearsel').addEventListener('click', () => { boxes.forEach(b => b.checked = false); document.getElementById('selall').checked = false; sync(); });
+  document.getElementById('printsel').addEventListener('click', () => {
+    const ids = boxes.filter(b => b.checked).map(b => b.value).join(',');
+    window.open('/stock/labels?ids=' + ids + '&copies=' + (document.getElementById('copies').value || 1), '_blank');
+  });
+})();
+</script>
 {% endblock %}

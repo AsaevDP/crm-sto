@@ -295,48 +295,125 @@ def purchase_receive(pid: str, request_ctx: Ctx = Depends(get_ctx), location_id:
 
 
 # ======================= Склад =======================
-@router.get("/stock")
-def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "", cat: str = ""):
-    ctx.need("stock.view")
+def _stock_rows(ctx: Ctx, q: str, only: str, sec: str, cat: str, sub: str, make: str, model: str):
+    """Строки склада с фильтрами. Б/у (разбор) здесь не показываются — они в разделе «Разбор»."""
+    from ..services import stock_cat as sc
     db = ctx.db
     items = db.scalars(select(StockItem).where(StockItem.branch_id == ctx.branch.id)).all()
-    cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.branch_id == ctx.branch.id))}
+    cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.branch_id == ctx.branch.id,
+                                                                  PartCatalog.kind != "used"))}
     locs = {l.id: l for l in db.scalars(select(Location).where(Location.branch_id == ctx.branch.id))}
+    fits = sc.fits_map(db, cats.keys())
     bal = svc.balances(db, ctx.branch.id)
-    rows = []
+    rows, counts = [], {}
     ql = q.strip().lower()
     for i in items:
         c = cats.get(i.catalog_id)
-        if not c:
-            continue
-        if ql and ql not in f"{c.name} {c.article} {c.brand} {c.fits}".lower():
-            continue
-        if sec == "used" and c.kind != "used":
-            continue
-        if sec in ("to", "repair") and (c.kind == "used" or c.section != sec):
-            continue
-        if cat and (c.category or "") != cat:
+        if not c or (c.section or "repair") != sec:
             continue
         b = bal[i.id]
         if only == "free" and b["free"] <= 0:
             continue
         if only != "all" and b["on_hand"] == 0 and b["reserved"] == 0:
             continue
-        rows.append({"i": i, "c": c, "loc": svc.location_label(locs.get(i.location_id)), **b})
-    rows.sort(key=lambda r: (r["c"].name.lower(), r["loc"]))
+        fl = fits.get(c.id, [])
+        if ql and ql not in f"{c.name} {c.article} {c.brand} {c.fits} {i.barcode or ''} {' '.join(sc.fit_label(f) for f in fl)}".lower():
+            continue
+        if make and not any(f.make == make and (not model or f.model == model) for f in fl):
+            continue
+        key = (c.category or "", c.subcategory or "")
+        counts[key[0]] = counts.get(key[0], 0) + 1
+        counts[key] = counts.get(key, 0) + 1
+        if cat and key[0] != ("" if cat == "-" else cat):   # «-» — без категории
+            continue
+        if sub and key[1] != sub:
+            continue
+        rows.append({"i": i, "c": c, "loc": svc.location_label(locs.get(i.location_id)), "fits": fl, **b})
+    rows.sort(key=lambda r: (r["c"].category or "яя", r["c"].subcategory or "", r["c"].name.lower(), r["loc"]))
+    return rows, counts
+
+
+def _stock_args(sec, cat, sub, make, model, q, only):
+    from urllib.parse import urlencode
+    return urlencode({k: v for k, v in dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only).items() if v})
+
+
+@router.get("/stock")
+def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "to", cat: str = "", sub: str = "",
+               make: str = "", model: str = ""):
+    """Склад (10.11.2026): вкладки «ТО» и «Запчасти», дерево категорий, фильтр по марке и модели, штрихкоды."""
+    ctx.need("stock.view")
+    from ..services import stock_cat as sc
+    db = ctx.db
+    sec = sec if sec in SECTIONS else "to"
+    hit = sc.by_barcode(db, ctx.branch.id, q)   # сканер «напечатал» штрихкод — сразу в карточку
+    if hit:
+        return _to(f"/stock/items/{hit.id}")
+    sc.seed(db, ctx.branch.id)
+    db.commit()
+    rows, counts = _stock_rows(ctx, q, only, sec, cat, sub, make, model)
     new_requests = db.scalar(select(func.count()).select_from(IssueRequest)
                              .where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == "new"))
-    used_cats = sorted({c.category for c in cats.values() if c.kind == "used" and c.category})
-    cat_list = CATEGORIES.get(sec, []) if sec in ("to", "repair") else (used_cats if sec == "used" else [])
-    extra = sorted({r["c"].category for r in rows if r["c"].category and r["c"].category not in cat_list})
+    n_locations = db.scalar(select(func.count()).select_from(Location).where(Location.branch_id == ctx.branch.id))
+    mm = sc.makes_models(db, ctx.branch.id)
     return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests,
-                      sec=sec, cat=cat, cat_list=cat_list + extra,
-                      n_locations=len(locs))
+                      sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
+                      counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,
+                      args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))
+
+
+@router.get("/stock/print")
+def stock_print(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "to", cat: str = "", sub: str = "",
+                make: str = "", model: str = ""):
+    """Список склада на A4 с текущими фильтрами (для инвентаризации — графа «Факт»)."""
+    ctx.need("stock.view")
+    from ..services import stock_cat as sc
+    sec = sec if sec in SECTIONS else "to"
+    rows, _ = _stock_rows(ctx, q, only, sec, cat, sub, make, model)
+    filt = " · ".join(x for x in (SECTIONS[sec], cat, sub, " ".join(x for x in (make, model) if x), f"поиск «{q}»" if q else "") if x)
+    return ctx.render("stock/print.html", title=f"Склад — {SECTIONS[sec]}", rows=rows, filt=filt, fit_label=sc.fit_label,
+                      show_cost=ctx.can("prices.view_purchase"), back="/stock?" + _stock_args(sec, cat, sub, make, model, q, only))
+
+
+@router.get("/stock/export.xlsx")
+def stock_xlsx(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "to", cat: str = "", sub: str = "",
+               make: str = "", model: str = ""):
+    """Склад в Excel (.xlsx) — с теми же фильтрами, что на экране."""
+    ctx.need("stock.view")
+    import io
+    from fastapi.responses import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from ..services import stock_cat as sc
+    sec = sec if sec in SECTIONS else "to"
+    rows, _ = _stock_rows(ctx, q, only, sec, cat, sub, make, model)
+    show_cost = ctx.can("prices.view_purchase")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = SECTIONS[sec][:31]
+    head = ["Штрихкод", "Запчасть", "Категория", "Подкатегория", "Бренд", "Артикул", "Подходит для", "Ячейка",
+            "На складе", "Резерв", "Свободно", *(["Закупка, ₴"] if show_cost else [])]
+    ws.append(head)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="EEEEF2")
+    for r in rows:
+        ws.append([r["i"].barcode or "", r["c"].name, r["c"].category, r["c"].subcategory or "", r["c"].brand, r["c"].article,
+                   "; ".join(sc.fit_label(f) for f in r["fits"]) or r["c"].fits, r["loc"], float(r["on_hand"]),
+                   float(r["reserved"]), float(r["free"]), *([float(r["i"].cost or 0)] if show_cost else [])])
+    for col, w in zip("ABCDEFGHIJKL", (15, 36, 18, 18, 12, 16, 30, 12, 10, 9, 10, 12)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="sklad_{sec}.xlsx"'})
 
 
 @router.get("/stock/items/{item_id}")
 def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("stock.view")
+    from ..services import stock_cat as sc
     i = ctx.db.get(StockItem, _uuid(item_id))
     if not i or i.branch_id != ctx.branch.id:
         raise Forbidden()
@@ -345,14 +422,22 @@ def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx)):
                            .order_by(StockMovement.created_at.desc()).limit(200)).all()
     orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([m.work_order_id for m in moves if m.work_order_id])))}
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.id.in_([m.created_by for m in moves if m.created_by])))}
+    sc.seed(ctx.db, ctx.branch.id)
+    ctx.db.commit()
+    from ..services import barcode as bc
     return ctx.render("stock/item.html", title=c.name, i=i, c=c, b=svc.balances(ctx.db, ctx.branch.id, [i.id])[i.id],
                       loc=svc.location_label(ctx.db.get(Location, i.location_id) if i.location_id else None),
-                      moves=moves, orders=orders, people=people, MOVEMENT_TYPES=MOVEMENT_TYPES)
+                      moves=moves, orders=orders, people=people, MOVEMENT_TYPES=MOVEMENT_TYPES,
+                      tree_json={s: [{"name": x["c"].name, "subs": [y.name for y in x["subs"]]}
+                                     for x in sc.tree(ctx.db, ctx.branch.id, s)] for s in SECTIONS},
+                      fits=sc.fits_map(ctx.db, [c.id]).get(c.id, []), fit_label=sc.fit_label,
+                      barcode_svg=bc.svg(i.barcode) if i.barcode else "", makes=osvc.known_makes(ctx.db, ctx.branch.id))
 
 
 @router.post("/stock/items/{item_id}/category")
-def stock_category(item_id: str, ctx: Ctx = Depends(get_ctx), section: str = Form(""), category: str = Form("")):
-    """Раздел (ТО / ремонт) и категория позиции склада."""
+def stock_category(item_id: str, ctx: Ctx = Depends(get_ctx), section: str = Form(""), category: str = Form(""),
+                   subcategory: str = Form("")):
+    """Раздел (ТО / Запчасти), категория и подкатегория позиции склада."""
     ctx.need("stock.manage", "parts.pick")
     i = ctx.db.get(StockItem, _uuid(item_id))
     if not i or i.branch_id != ctx.branch.id:
@@ -361,9 +446,144 @@ def stock_category(item_id: str, ctx: Ctx = Depends(get_ctx), section: str = For
     if c.kind != "used" and section in SECTIONS:
         c.section = section
     c.category = category.strip()[:60]
+    c.subcategory = subcategory.strip()[:60]
     ctx.db.commit()
     flash(ctx.request, "Категория сохранена")
     return _to(f"/stock/items/{item_id}")
+
+
+@router.post("/stock/items/{item_id}/fits")
+def stock_fit_add(item_id: str, ctx: Ctx = Depends(get_ctx), make: str = Form(...), model: str = Form(""),
+                  year_from: str = Form(""), year_to: str = Form("")):
+    """«Подходит для»: марка, модель, годы."""
+    ctx.need("stock.manage", "parts.pick")
+    from ..models import PartFit
+    i = ctx.db.get(StockItem, _uuid(item_id))
+    if not i or i.branch_id != ctx.branch.id or not make.strip():
+        raise Forbidden()
+    yr = lambda v: int(v) if v.strip().isdigit() and 1950 <= int(v) <= 2100 else None  # noqa: E731
+    ctx.db.add(PartFit(catalog_id=i.catalog_id, make=make.strip()[:60], model=model.strip()[:60],
+                       year_from=yr(year_from), year_to=yr(year_to)))
+    ctx.db.commit()
+    return _to(f"/stock/items/{item_id}")
+
+
+@router.post("/stock/items/{item_id}/fits/{fit_id}/delete")
+def stock_fit_delete(item_id: str, fit_id: str, ctx: Ctx = Depends(get_ctx)):
+    ctx.need("stock.manage", "parts.pick")
+    from ..models import PartFit
+    f = ctx.db.get(PartFit, _uuid(fit_id))
+    i = ctx.db.get(StockItem, _uuid(item_id))
+    if f and i and f.catalog_id == i.catalog_id and i.branch_id == ctx.branch.id:
+        ctx.db.delete(f)
+        ctx.db.commit()
+    return _to(f"/stock/items/{item_id}")
+
+
+# ---------- Дерево категорий ----------
+@router.get("/stock/categories")
+def stock_categories(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("stock.view")
+    from ..services import stock_cat as sc
+    sc.seed(ctx.db, ctx.branch.id)
+    ctx.db.commit()
+    trees = {s: sc.tree(ctx.db, ctx.branch.id, s) for s in SECTIONS}
+    used = {}
+    for s in trees.values():
+        for x in s:
+            used[x["c"].id] = sc.usage(ctx.db, x["c"])
+            for y in x["subs"]:
+                used[y.id] = sc.usage(ctx.db, y)
+    return ctx.render("stock/categories.html", title="Категории склада", trees=trees, used=used,
+                      can_edit=ctx.can("stock.manage"))
+
+
+@router.post("/stock/categories")
+def stock_category_add(ctx: Ctx = Depends(get_ctx), section: str = Form(...), name: str = Form(...), parent_id: str = Form("")):
+    ctx.need("stock.manage")
+    from ..models import StockCategory
+    parent = ctx.db.get(StockCategory, _uuid(parent_id)) if parent_id else None
+    if section in SECTIONS and name.strip() and (not parent or parent.branch_id == ctx.branch.id):
+        ctx.db.add(StockCategory(section=parent.section if parent else section, name=name.strip()[:60],
+                                 parent_id=parent.id if parent else None, sort=99))
+        ctx.db.commit()
+        flash(ctx.request, f"Добавлено: {name.strip()}")
+    return _to("/stock/categories")
+
+
+@router.post("/stock/categories/{cid}")
+def stock_category_edit(cid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("rename"), name: str = Form("")):
+    """Переименовать (вместе с запчастями этой категории) или удалить (только пустую)."""
+    ctx.need("stock.manage")
+    from ..models import StockCategory
+    from ..services import stock_cat as sc
+    c = ctx.db.get(StockCategory, _uuid(cid))
+    if not c or c.branch_id != ctx.branch.id:
+        raise Forbidden()
+    if action == "delete":
+        subs = ctx.db.scalars(select(StockCategory).where(StockCategory.parent_id == c.id)).all()
+        n = sc.usage(ctx.db, c) + sum(sc.usage(ctx.db, s) for s in subs)
+        if n:
+            flash(ctx.request, f"Нельзя удалить: в «{c.name}» есть запчасти ({n}). Сначала перенесите их в другую категорию.", "error")
+        else:
+            for s in subs:
+                ctx.db.delete(s)
+            ctx.db.delete(c)
+            ctx.db.commit()
+            flash(ctx.request, f"Удалено: {c.name}")
+    else:
+        sc.rename(ctx.db, c, name)
+        ctx.db.commit()
+        flash(ctx.request, "Переименовано")
+    return _to("/stock/categories")
+
+
+# ---------- Наклейки со штрихкодом ----------
+@router.get("/stock/labels")
+def stock_labels(ctx: Ctx = Depends(get_ctx), ids: str = "", copies: int = 1):
+    """Наклейки: размер и режим (принтер наклеек / лист A4) — в «Настройки → Наклейки». Принтер выбирается
+    в окне печати браузера — когда купите, выберите его там."""
+    ctx.need("stock.view")
+    from ..services import barcode as bc
+    from ..services import stock_cat as sc
+    want = [x for x in (_uuid(v) for v in ids.split(",") if v.strip()) if x]
+    items = [i for i in ctx.db.scalars(select(StockItem).where(StockItem.id.in_(want))) if i.branch_id == ctx.branch.id]
+    labels = []
+    for i in items:
+        if not i.barcode:
+            i.barcode = sc.barcode_for(i.id)
+        c = ctx.db.get(PartCatalog, i.catalog_id)
+        loc = svc.location_label(ctx.db.get(Location, i.location_id) if i.location_id else None)
+        fits = sc.fits_map(ctx.db, [c.id]).get(c.id, [])
+        lab = {"i": i, "c": c, "loc": loc, "svg": bc.svg(i.barcode), "fits": ", ".join(sc.fit_label(f) for f in fits[:2]) or c.fits}
+        labels += [lab] * max(1, min(copies, 50))
+    ctx.db.commit()
+    return ctx.render("stock/labels.html", title="Наклейки", labels=labels, cfg=st.get(ctx.db, ctx.branch.id, "labels"),
+                      back=ctx.request.headers.get("referer", "/stock"))
+
+
+@router.get("/settings/labels")
+def labels_settings(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("settings.access", "stock.manage")
+    return ctx.render("settings/labels.html", title="Наклейки", cfg=st.get(ctx.db, ctx.branch.id, "labels"))
+
+
+@router.post("/settings/labels")
+def labels_save(ctx: Ctx = Depends(get_ctx), size: str = Form("100x70"), width_mm: str = Form(""), height_mm: str = Form(""),
+                mode: str = Form("label"), printer: str = Form(""), show_price: str = Form(""), show_cell: str = Form(""),
+                show_fits: str = Form("")):
+    ctx.need("settings.access", "stock.manage")
+    try:
+        w, h = (int(x) for x in size.split("x")) if size != "custom" else (int(width_mm), int(height_mm))
+    except ValueError:
+        w, h = 100, 70
+    st.put(ctx.db, ctx.branch.id, "labels", {"width_mm": max(20, min(w, 210)), "height_mm": max(15, min(h, 297)),
+                                             "mode": mode if mode in ("label", "sheet") else "label",
+                                             "printer": printer.strip()[:80], "show_price": bool(show_price),
+                                             "show_cell": bool(show_cell), "show_fits": bool(show_fits)})
+    ctx.db.commit()
+    flash(ctx.request, "Настройки наклеек сохранены")
+    return _to("/settings/labels")
 
 
 @router.post("/stock/items/{item_id}/adjust")
