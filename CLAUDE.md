@@ -44,6 +44,9 @@
 - Preview в Claude: `crmsto` (`.claude/launch.json`, только 127.0.0.1, с автоперезагрузкой).
 - База: SQLite `data/crm.db`. Таблицы создаются `create_all` при старте; **Alembic подключить до боевой базы** (шаг 8).
 - Тестовые входы: `docs/test-users.md`. Сброс базы: удалить `data/crm.db`.
+- **С 10.11.2026 рабочая база заполнена ВРЕМЕННЫМИ тестовыми данными** (`scripts/fill_test_data.py`: демо + 3 месяца
+  истории, ~260 нарядов, ~75 клиентов). Вернуть как было (CRM остановить): `.venv\Scripts\python scripts\fill_test_data.py --restore`
+  — берёт последнюю копию `data/backup-before-test-*.db`. Перед боевым запуском — обязательно вернуть.
 - Тесты: `.venv\Scripts\python -m pytest -q` (на временной базе).
 - CSS/JS в шаблонах подключать через `{{ asset('/static/...') }}` — метка версии против кэша iPhone.
 - Docker Compose + Caddy + PostgreSQL в контейнерах — шаг 8.
