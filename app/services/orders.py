@@ -291,6 +291,17 @@ def route_after_intake(db: Session, wo: WorkOrder):
         set_status(db, wo, "diag", "Сценарий Б: на диагностику")
 
 
+def paired_partsman(db: Session, manager_id, partsmen: list):
+    """Запчастист «в паре» с менеджером (11.11.2026). Если их несколько — у кого меньше открытых нарядов."""
+    mine = [p for p in partsmen if p.works_with_id == manager_id]
+    if not mine:
+        return None
+    from sqlalchemy import func as _f
+    load = dict(db.execute(select(WorkOrder.partsman_id, _f.count()).where(
+        WorkOrder.partsman_id.in_([p.id for p in mine]), WorkOrder.status.in_(WO_ACTIVE)).group_by(WorkOrder.partsman_id)).all())
+    return min(mine, key=lambda p: (load.get(p.id, 0), p.full_name))
+
+
 # ---------- Шаги наряда и «что сделать сейчас» (11.11.2026) ----------
 STEPS = [("Приём", "blue"), ("Проблемы", "purple"), ("Согласование", "yellow"), ("Запчасти", "orange"),
          ("Ремонт", "teal"), ("Выдача", "green")]

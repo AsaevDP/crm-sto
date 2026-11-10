@@ -124,8 +124,9 @@ def order_new(ctx: Ctx = Depends(get_ctx), appt: str = ""):
     bid = ctx.branch.id
     from .schedule import prefill_from
     prefill = prefill_from(ctx, appt) if appt else {}
+    partsmen = svc.staff_by_role(ctx.db, bid, "partsman")
     return ctx.render("orders/new.html", title="Приёмка",
-                      partsmen=svc.staff_by_role(ctx.db, bid, "partsman"),
+                      partsmen=partsmen, my_partsman=svc.paired_partsman(ctx.db, ctx.user.id, partsmen),
                       mechanics=svc.staff_by_role(ctx.db, bid, "mechanic"),
                       lifts=svc.lifts_with_load(ctx.db, bid), makes=svc.known_makes(ctx.db, bid),
                       INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS, MAX_PHOTOS=svc.MAX_PHOTOS,
@@ -191,6 +192,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     from ..services import stock as stock_svc
     parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id).order_by(WoPart.created_at)).all()
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([p.catalog_id for p in parts if p.catalog_id])))}
+    people.update(_people(ctx, *[p.created_by for p in parts]))   # подпись «кто добавил» у каждой позиции
     open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
     can_pick = (ctx.can("parts.pick") and wo.status in ("picking", "waiting") and not wo.awaiting_prepay
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
@@ -199,6 +201,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     from ..models.money import PAY_METHODS, PAY_PURPOSES
     from ..services import money as money_svc
     payments = db.scalars(select(Payment).where(Payment.work_order_id == wo.id).order_by(Payment.created_at)).all()
+    people.update(_people(ctx, *[p.created_by for p in payments]))
     pauses = {s.wo_work_id: s for s in db.scalars(select(WoWorkSession).where(
         WoWorkSession.work_order_id == wo.id, WoWorkSession.kind == "pause", WoWorkSession.ended_at.is_(None)))}
     # Запчасти (11.11.2026): варианты на выбор клиенту — группами; менеджер вносит запчасти сам
@@ -220,6 +223,13 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     flow = svc.flow(wo, mc.short_name if mc else "", pm.short_name if pm else "", len(findings), len(works), n_done,
                     options_open)
     is_manager = ctx.can("orders.approve")
+    # Кто ведёт и кто что делал (11.11.2026)
+    from ..services import order_feed
+    feed = order_feed.build(db, wo)
+    mg = people.get(wo.manager_id)
+    managers = svc.staff_by_role(db, ctx.branch.id, "manager") if can_assign else []
+    if can_assign and mg and mg not in managers:
+        managers = [mg, *managers]
     return ctx.render(
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
@@ -231,6 +241,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_route=is_manager and wo.status == "created" and wo.scenario == "B",
         parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
         can_offer=can_offer, can_choose=_can_choose(ctx, wo), flow=flow,
+        feed=feed, last_change=feed[0] if feed else None, managers=managers,
+        team=[("ведёт", mg), ("запчастист", pm), ("слесарь", mc)],
         can_urgent=(wo.status in WO_ACTIVE and (ctx.user.id == wo.mechanic_id or is_manager or ctx.user.role.code == "admin")),
         BRANDS=brands_svc.names(db, ctx.branch.id) if (can_pick or can_offer) else [],
         diag_mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if is_manager and wo.status == "created" else [],
@@ -300,7 +312,7 @@ def order_tool_issue(order_id: str, ctx: Ctx = Depends(get_ctx), tool_id: str = 
 
 @router.post("/orders/{order_id}/assign")
 def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = Form(""),
-                 mechanic_id: str = Form(""), lift_id: str = Form("")):
+                 mechanic_id: str = Form(""), lift_id: str = Form(""), manager_id: str = Form("")):
     ctx.need("orders.assign")
     wo = _order(ctx, order_id)
     bid = ctx.branch.id
@@ -310,6 +322,14 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
         return u.id if u and u.branch_id == bid and u.role.code == role else None
 
     wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), pick(mechanic_id, "mechanic")
+    # Передать наряд другому менеджеру (11.11.2026) — новому приходит сообщение
+    new_mg = ctx.db.get(User, _uuid(manager_id)) if manager_id else None
+    if new_mg and new_mg.branch_id == bid and new_mg.active and new_mg.id != wo.manager_id:
+        wo.manager_id = new_mg.id
+        from ..services import notify as nsvc
+        nsvc.send(ctx.db, [new_mg.id], "handover", "Вам передан наряд",
+                  f"{nsvc.car(ctx.db, wo)} · наряд {wo.number} · передал {ctx.user.short_name}", f"/orders/{wo.id}", wo,
+                  skip=ctx.user.id)
     lift = ctx.db.get(Lift, uuid.UUID(lift_id)) if lift_id else None
     wo.lift_id = lift.id if lift and lift.branch_id == bid else None
     for w in ctx.db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id.is_(None))):
@@ -423,4 +443,5 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
                       st=csvc.one(ctx.db, c), REGULAR_VISITS=csvc.REGULAR_VISITS, show_money=ctx.can("money.view"),
                       STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, events=events,
                       recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
-                      vmap={v.id: v for v in vehicles}, numbers=numbers)
+                      vmap={v.id: v for v in vehicles}, numbers=numbers,
+                      lead=ctx.db.get(User, orders[0].manager_id) if orders and orders[0].manager_id else None)

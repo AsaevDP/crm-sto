@@ -40,6 +40,12 @@
       </label>
       <label>Принят на работу<input class="field" type="date" name="hired_on" value="{{ u.hired_date.isoformat() }}"></label>
     </div>
+    {% if u.role.code == "partsman" %}
+    <label>Работает с менеджером
+      <select class="field" name="works_with_id"><option value="">— с любым —</option>
+        {% for m in managers %}<option value="{{ m.id }}" {% if m.id == u.works_with_id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}</select></label>
+    <p class="hint" style="margin:0">При приёмке у этого менеджера запчастист подставится сам (можно поменять).</p>
+    {% endif %}
     <div><button class="btn btn-sm">Сохранить</button></div>
   </form>
 

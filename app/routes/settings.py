@@ -264,12 +264,14 @@ def user_view(user_id: str, ctx: Ctx = Depends(get_ctx)):
     return ctx.render("settings/user.html", title=u.full_name, u=u, roles=roles, groups=_perm_groups(ctx),
                       n_tools=len(held), n_tools_temp=sum(1 for t in held if not t.is_personal),
                       role_perms=role_perms, overrides=overrides, cards=cards,
+                      managers=[m for m in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True))
+                                                          .order_by(User.full_name)) if m.role.code == "manager"],
                       effective=effective_permissions(ctx.db, u), is_admin=u.role.code == ADMIN_ROLE)
 
 
 @router.post("/users/{user_id}")
 def user_save(user_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Form(...), login: str = Form(...),
-              role_id: str = Form(...), phone: str = Form(""), hired_on: str = Form("")):
+              role_id: str = Form(...), phone: str = Form(""), hired_on: str = Form(""), works_with_id: str = Form("")):
     """Профиль. Увольнение — отдельной кнопкой (страница «Уволить»), тут не меняется."""
     ctx.need("users.manage")
     u = _user(ctx, user_id)
@@ -285,6 +287,14 @@ def user_save(user_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Form(.
     u.full_name, u.login, u.role_id, u.phone = full_name.strip()[:120], login, new_role.id, phone.strip()[:40]
     if (d := _date(hired_on)) and d != u.hired_date:
         u.hired_on = d
+    if new_role.code == "partsman":   # пара «менеджер ↔ запчастист» (11.11.2026)
+        try:
+            m = ctx.db.get(User, uuid.UUID(works_with_id)) if works_with_id else None
+        except ValueError:
+            m = None
+        u.works_with_id = m.id if m and m.branch_id == ctx.branch.id else None
+    else:
+        u.works_with_id = None
     ctx.db.commit()
     flash(ctx.request, "Сохранено")
     return _back(f"/settings/users/{user_id}")

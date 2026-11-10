@@ -1052,3 +1052,29 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
 .side .sidebar.side-extra { flex: none; overflow: visible; }
 .optgroup-h { flex-wrap: wrap; }
 .optgroup-h .chip { flex: none; max-width: none; }
+
+/* ===== Наряд: шаги-кнопки, «кто ведёт», лента действий (11.11.2026) ===== */
+.wo-steps > li { display: contents; }
+a.wo-step { text-decoration: none; cursor: pointer; transition: transform .12s var(--ease, ease), filter .12s; }
+a.wo-step:hover { filter: brightness(.97); transform: translateY(-1px); }
+a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { background: var(--fill); }
+#intake, #problems, #parts, #works, #money, #feed { scroll-margin-top: 16px; }
+.flash-hl { animation: hl-pulse 1.4s ease-out 1; }
+@keyframes hl-pulse { 0% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--sc, var(--accent)) 55%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.wo-who { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.who-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 6px; border-radius: 999px; background: var(--fill-2, var(--fill)); font-size: 13px; white-space: nowrap; }
+.who-chip i, .fd > i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--uc, var(--gray)); }
+.who-chip b { font-weight: 600; }
+.wo-last { margin-left: auto; min-width: 0; }
+.wo-last b { color: var(--text); font-weight: 600; }
+.feed { display: grid; gap: 0; }
+.fd { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; align-items: start; padding: 7px 0; border-bottom: 0.5px solid var(--separator); }
+.fd:last-of-type { border-bottom: 0; }
+.fd > i { margin-top: 5px; }
+.fd-b { display: grid; gap: 1px; min-width: 0; }
+.fd-top { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.fd-t { font-size: 13.5px; overflow-wrap: anywhere; }
+.fd-d { overflow-wrap: anywhere; }
+.fd-all { justify-self: start; margin-top: 4px; }
+.who-at { white-space: nowrap; }
+@media (max-width: 899px) { .wo-last { margin-left: 0; flex-basis: 100%; } }

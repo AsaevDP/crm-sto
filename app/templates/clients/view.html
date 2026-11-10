@@ -8,7 +8,8 @@
     <div><h1 class="title-1">{% if st.regular %}<span class="star" title="Постоянный клиент">★</span> {% endif %}{{ c.full_name }}</h1>
       <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a> · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}
         · визитов: {{ st.visits }}{% if st.last %} · последний {{ st.last_local.strftime("%d.%m.%Y") }}{% endif %}
-        {% if show_money %}· оплачено {{ st.spent|money }} ₴{% if st.debt > 0 %} · <b class="cl-debt">долг {{ st.debt|money }} ₴</b>{% endif %}{% endif %}</div></div>
+        {% if show_money %}· оплачено {{ st.spent|money }} ₴{% if st.debt > 0 %} · <b class="cl-debt">долг {{ st.debt|money }} ₴</b>{% endif %}{% endif %}</div>
+      {% if lead %}<div class="who-chip" style="margin-top:6px" title="Менеджер последнего наряда"><i style="--uc:{{ color_css(lead.role.color) }}"></i><span class="caption">ведёт</span> <b>{{ lead.full_name }}</b></div>{% endif %}</div>
     <div class="ov-actions">
       <form method="post" action="/clients/{{ c.id }}/regular"><button class="btn btn-sm {{ 'btn-tinted' if c.is_regular else 'btn-gray' }}" title="{{ 'Снять отметку' if c.is_regular else 'Постоянным становится и сам — с ' ~ REGULAR_VISITS ~ ' визитов' }}">{{ "★ Постоянный" if c.is_regular else "☆ В постоянные" }}</button></form>
       <a class="btn btn-sm btn-gray" href="/clients/{{ c.id }}/print" target="_blank" title="Все наряды, работы, оплаты — на бумаге">🖨 Папка клиента</a>

@@ -26,6 +26,7 @@
       <form class="inline-form" method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/urgent" style="display:inline">
         <button class="urg-btn" aria-pressed="{{ 'true' if p.urgent else 'false' }}" title="Слесарю деталь нужна срочно — увидят менеджер, запчастист и кладовщик">🔥 {{ "Срочно ✓" if p.urgent else "Срочно" }}</button></form>
       {% endif %}</span>
+    {% set au = people.get(p.created_by) %}{% if au %}<span class="caption who-at" title="Добавил(а) {{ au.full_name }}">{{ au.full_name }} · {{ p.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
     {% if show_price %}<span>{% if p.price %}× <b class="p-price">{{ p.price|money }}</b> ₴ = <b class="p-sum nowrap">{{ (p.price * p.qty)|money }}</b> ₴{% else %}<span class="caption">цену уточнит запчастист</span>{% endif %}</span>{% endif %}
   </div>
   {% if show_cost or (can_offer and p.status in ("need", "option", "declined")) %}

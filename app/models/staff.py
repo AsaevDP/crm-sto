@@ -47,6 +47,8 @@ class User(Entity):
     dismissed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     dismiss_reason: Mapped[str] = mapped_column(Text, default="")
     dismissed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # Запчастист работает в паре с менеджером (11.11.2026): при приёмке у этого менеджера подставляется сам
+    works_with_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     role: Mapped[Role] = relationship(foreign_keys=[role_id], lazy="joined")
 

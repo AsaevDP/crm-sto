@@ -174,7 +174,7 @@ def history():
             return ctx_cache.setdefault(login, type("C", (), {"branch": branch, "user": u, "can": lambda *a: True})())
 
         # Пароли новых слесарей — как у остальных тестовых: логин + 123; все «работают» больше года
-        for login in ("viktor", "taras", "igor", "roman"):
+        for login in ("viktor", "taras", "igor", "roman", "marina", "vasyl", "denys", "yura"):
             users[login].password_hash = hash_secret(f"{login}123")
         for login, u in users.items():
             if login != "roman" and not u.hired_on:

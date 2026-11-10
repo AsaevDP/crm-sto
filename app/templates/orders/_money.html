@@ -15,7 +15,7 @@
 
   {% if payments %}
   <details><summary class="caption">Оплаты · {{ payments|length }}</summary>
-    {% for p in payments %}<div class="kv"><span>{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}</span><b>{{ "%.2f"|format(p.amount) }}</b></div>{% endfor %}
+    {% for p in payments %}<div class="kv"><span>{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}{% if people.get(p.created_by) %} · принял(а) {{ people[p.created_by].short_name }}{% endif %}</span><b>{{ "%.2f"|format(p.amount) }}</b></div>{% endfor %}
   </details>
   {% endif %}
 

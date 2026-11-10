@@ -66,7 +66,7 @@
   </form>
   {% endif %}
   {% if can_approve %}
-  {% if can_offer %}<a class="btn btn-gray btn-block" href="#parts" data-goto="diag">{{ icon("plus") }}Добавить запчасти и варианты фирм</a>{% endif %}
+  {% if can_offer %}<a class="btn btn-gray btn-block" href="#parts" data-goto="diag" data-open>{{ icon("plus") }}Добавить запчасти и варианты фирм</a>{% endif %}
   <form method="post" action="/orders/{{ wo.id }}/approval-done">
     <button class="btn btn-block">Согласование завершено</button>
     <p class="hint" style="margin:6px 0 0">«Да» станут работами, «Нет» — рекомендациями в карте клиента. Запчасти можно добавить и до, и после.</p>
@@ -98,12 +98,18 @@
   </div>
 </header>
 
-{# Шаги наряда: от приёма до выдачи (11.11.2026) #}
+{# Шаги наряда: от приёма до выдачи — нажал, и страница переходит к блоку этого шага (11.11.2026) #}
+{% set STEP_GO = [("intake", "main"), ("problems", "main"), ("problems", "main"), ("parts", "diag"), ("works", "diag"), ("money", "hist")] %}
 <ol class="wo-steps" aria-label="Этапы наряда">
-  {% for s in flow.steps %}
-  <li class="wo-step" data-state="{{ s.state }}" style="--sc:var(--{{ s.color }})"><span class="wo-dot">{{ "✓" if s.state == "done" else s.n }}</span><span class="wo-lbl">{{ s.label }}</span></li>
+  {% for s in flow.steps %}{% set go = STEP_GO[loop.index0] %}
+  <li><a class="wo-step" href="#{{ go[0] }}" data-goto="{{ go[1] }}" data-state="{{ s.state }}" style="--sc:var(--{{ s.color }})" title="Перейти: {{ s.label }}"><span class="wo-dot">{{ "✓" if s.state == "done" else s.n }}</span><span class="wo-lbl">{{ s.label }}</span></a></li>
   {% endfor %}
 </ol>
+{# Кто ведёт и кто последний менял (11.11.2026) #}
+<div class="wo-who">
+  {% for role, u in team %}{% if u %}<span class="who-chip" title="{{ u.full_name }} · {{ u.role.name }}"><i style="--uc:{{ color_css(u.role.color) }}"></i><span class="caption">{{ role }}</span> <b>{{ u.full_name }}</b></span>{% endif %}{% endfor %}
+  {% if last_change %}<span class="wo-last caption">Последнее изменение: <b>{{ last_change.who }}</b> · {{ last_change.ago }} — {{ last_change.text }}</span>{% endif %}
+</div>
 <div class="wo-now" style="--sc:var(--{{ flow.color }})">
   <div class="grow"><b>{{ flow.title }}</b><span class="wo-now-t">{{ flow.text }}</span></div>
   {% if can_route %}
@@ -127,7 +133,7 @@
 <div class="ov-grid fill">
   {# ===== Колонка 1: приём → проблемы → согласование ===== #}
   <section class="ov-col" data-t="main">
-    <div class="card compact step-card {{ 'now' if flow.cur == 0 }}" style="--sc:var(--blue)">
+    <div class="card compact step-card {{ 'now' if flow.cur == 0 }}" id="intake" style="--sc:var(--blue)">
       <div class="card-h"><span class="headline"><span class="stepno">1</span>Приём · фото {{ photos|length }}</span>
         {% if can_add_photo %}<label class="btn btn-plain btn-sm pp-add" id="addph">{{ icon("plus") }}<span id="addtxt">Фото</span><input type="file" id="pinput" accept="image/*" multiple hidden></label>{% endif %}
       </div>
@@ -188,6 +194,8 @@
       <div class="card-h"><span class="headline">Кто и где</span></div>
       {% if can_assign %}
       <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign">
+        <label>Менеджер — ведёт клиента<select class="field" name="manager_id">
+          {% for u in managers %}<option value="{{ u.id }}" {% if u.id == wo.manager_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
         <label>Подъёмник<select class="field" name="lift_id"><option value="">Без поста</option>
           {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
         <label>Слесарь<select class="field" name="mechanic_id"><option value="">Не выбран</option>
@@ -205,15 +213,20 @@
       {% endif %}
     </div>
 
-    <div class="card compact">
-      <div class="card-h"><span class="headline">История</span>
+    {# Лента действий (11.11.2026): кто, что и когда менял в этом наряде — по журналу, сверху новое #}
+    <div class="card compact" id="feed">
+      <div class="card-h"><span class="headline">Лента действий · {{ feed|length }}</span>
         {% if ctx.can("clients.view") %}<a class="btn btn-plain btn-sm" href="/clients/{{ c.id }}">Карта клиента</a>{% endif %}</div>
-      <div class="timeline">
-        {% for h in history|reverse %}
-        {% set who = people.get(h.created_by) %}
-        <div class="tl"><span class="chip" data-s="{{ h.to_status }}">{{ STATUSES.get(h.to_status, h.to_status) }}</span>
-          <span class="caption">{{ h.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ who.short_name if who else "система" }}{% if h.comment %} — {{ h.comment }}{% endif %}</span></div>
-        {% endfor %}
+      <div class="feed">
+        {% for e in feed %}
+        <div class="fd {{ 'more' if loop.index > 8 }}" {% if loop.index > 8 %}hidden{% endif %}>
+          <i style="--uc:{{ e.color }}"></i>
+          <div class="fd-b"><span class="fd-top"><b>{{ e.who }}</b> <span class="caption">{{ e.when }}</span></span>
+            <span class="fd-t">{{ e.text }}</span>
+            {% if e.detail %}<span class="caption fd-d">{{ e.detail }}</span>{% endif %}</div>
+        </div>
+        {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
+        {% if feed|length > 8 %}<button type="button" class="btn btn-plain btn-sm fd-all" onclick="this.parentElement.querySelectorAll('.fd.more').forEach(x => x.hidden = false); this.remove()">Показать всё · {{ feed|length }}</button>{% endif %}
       </div>
     </div>
 
@@ -302,8 +315,13 @@
     if (pr && sm) { pr.textContent = fmt(j.price); sm.textContent = fmt(j.sum); } else location.reload();
   }));
   // «Добавить запчасти» из согласования — на iPhone переключить вкладку
-  document.querySelectorAll('[data-goto]').forEach(a => a.addEventListener('click', () => {
-    show(a.dataset.goto); const d = document.getElementById('addpart'); if (d) d.open = true;
+  // Шаги наверху и ссылки «перейти к…»: на iPhone сначала нужная вкладка, потом прокрутка к блоку
+  document.querySelectorAll('[data-goto]').forEach(a => a.addEventListener('click', e => {
+    show(a.dataset.goto);
+    if (a.hasAttribute('data-open')) { const d = document.getElementById('addpart'); if (d) d.open = true; }
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target.classList.remove('flash-hl'); void target.offsetWidth; target.classList.add('flash-hl'); }
   }));
   {% if can_pick or can_offer %}
   (function () {

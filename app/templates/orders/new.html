@@ -91,7 +91,7 @@
       <div class="form-row">
         <label>Запчастист<span data-only="A" hidden> *</span>
           <select class="field" name="partsman_id"><option value="">Не выбран</option>
-            {% for u in partsmen %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
+            {% for u in partsmen %}<option value="{{ u.id }}" {% if my_partsman and u.id == my_partsman.id %}selected{% endif %}>{{ u.full_name }}{% if u.works_with_id == user.id %} · ваш{% endif %}</option>{% endfor %}</select>
         </label>
         <label>Слесарь
           <select class="field" name="mechanic_id"><option value="">Не выбран</option>

@@ -24,6 +24,9 @@ PHOTOS = Path(__file__).parent / "demo" / "photos"
 EXTRA_MECHANICS = [("viktor", "Виктор Слюсаренко"), ("taras", "Тарас Гайко"), ("igor", "Игорь Мельник"),
                    ("roman", "Роман Шевчук")]  # Роман в конце увольняется — пример для вкладки «Архив»
 FIRED_DAYS_AGO = 10
+EXTRA_OFFICE = [("marina", "Марина Приёмкина", "manager"), ("vasyl", "Василий Деталькин", "partsman"),
+                ("denys", "Денис Подборов", "partsman"), ("yura", "Юрий Каталогов", "partsman")]
+PAIRS = {"oleg": "irina", "vasyl": "irina", "denys": "marina", "yura": "marina"}   # запчастист → менеджер
 
 CLIENTS = [
     # телефон, имя, госномер, марка, модель, год, пробег
@@ -85,6 +88,15 @@ def populate():
             db.add(u)
             db.flush()
             users[login] = u
+        # Второй менеджер и ещё запчастисты — пары «менеджер ↔ запчастист» (11.11.2026)
+        for login, name, role_code in EXTRA_OFFICE:
+            r_ = db.scalar(select(Role).where(Role.code == role_code))
+            u = User(full_name=name, login=login, role_id=r_.id, password_hash=hash_secret(DEMO_PASSWORD))
+            db.add(u)
+            db.flush()
+            users[login] = u
+        for p_login, m_login in PAIRS.items():
+            users[p_login].works_with_id = users[m_login].id
         lifts = {l.number: l for l in db.scalars(select(Lift))}
         names = {1: "Пост 1 · ТО", 2: "Пост 2 · Подвеска", 3: "Пост 3 · Тормоза", 4: "Пост 4 · Двигатель",
                  5: "Пост 5 · Развал", 6: "Пост 6 · Шиномонтаж"}

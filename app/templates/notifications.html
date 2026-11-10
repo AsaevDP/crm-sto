@@ -5,7 +5,7 @@
 <div class="card compact nt-list">
   {% for n in rows %}
   <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
-    <span class="nt-ico">{{ {"parts_ready": "✅", "urgent_in": "🔥", "urgent_ask": "🔥"}.get(n.kind, "•") }}</span>
+    <span class="nt-ico">{{ {"parts_ready": "✅", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤"}.get(n.kind, "•") }}</span>
     <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
     <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
   </a>

@@ -79,8 +79,8 @@
       const j = await r.json(); badge('.sidebar a[href="/stock"], .tabbar a[href="/stock"]', (j.issues || 0) + (j.receive || 0));
       badge('.sidebar a[href="/notifications"]', j.unread);
       (j.notes || []).forEach(n => window.crmToast && window.crmToast({
-        id: 'note-' + n.id, kicker: n.kind === 'parts_ready' ? 'Запчасти' : 'Срочно', title: n.title, text: n.text, href: n.url,
-        tone: n.kind === 'parts_ready' ? 'green' : 'red', readUrl: '/api/notify/' + n.id + '/read',
+        id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', handover: 'Наряд' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,
+        tone: { parts_ready: 'green', handover: 'blue' }[n.kind] || 'red', readUrl: '/api/notify/' + n.id + '/read',
         action: n.request_url ? { label: 'Запросить выдачу', url: n.request_url, done: 'Запрос отправлен кладовщику' } : null }));
       if ((j.notes || []).some(n => !seen.has('n' + n.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
       (j.notes || []).forEach(n => seen.add('n' + n.id));
