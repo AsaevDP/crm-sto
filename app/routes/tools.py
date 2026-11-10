@@ -2,9 +2,9 @@
 import uuid
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..models import Tool, ToolCheck, ToolCheckLine, ToolMove, User
 from ..models.tools import CHECK_KINDS, CHECK_RESULTS, CHECK_STATUS, TOOL_CATEGORIES, TOOL_STATUS
@@ -67,6 +67,16 @@ def _active_orders(ctx: Ctx):
     return [(o, vehicles.get(o.vehicle_id), works.get(o.id, [])) for o in orders]
 
 
+def _shelf_id(ctx: Ctx, raw: str):
+    from ..models import ToolShelf
+    sh = ctx.db.get(ToolShelf, _uuid(raw)) if raw else None
+    return sh.id if sh and sh.branch_id == ctx.branch.id else None
+
+
+def _shelf_options(ctx: Ctx):
+    return [(x["s"].id, f'{c["c"].name} · {x["s"].name}') for c in svc.cabinets(ctx.db, ctx.branch.id) for x in c["shelves"]]
+
+
 async def _photo_from(form) -> str | None:
     f = form.get("photo")
     if f is not None and hasattr(f, "read"):
@@ -76,25 +86,73 @@ async def _photo_from(form) -> str | None:
 
 
 # ---------- Список ----------
+TOOL_VIEWS = {"staff": "Сотрудники", "cabinets": "Шкафы", "spare": "Запасные", "list": "Весь список"}
+
+
+def _tool_overview(ctx: Ctx, all_rows):
+    """Плитки сверху и карточки по сотрудникам (как на «Пульте», только про инструмент)."""
+    from ..models import ToolRequest, WorkOrder
+    db = ctx.db
+    staff = _staff(ctx)
+    live = [t for t in all_rows if t.status not in ("lost", "written_off")]
+    per = {}
+    for t in live:
+        if not t.holder_id:
+            continue
+        p = per.setdefault(t.holder_id, {"personal": [], "temp": [], "sum": Decimal(0), "bad": 0})
+        (p["personal"] if t.is_personal else p["temp"]).append(t)
+        p["sum"] += t.cost
+        p["bad"] += 1 if t.status in ("broken", "worn") else 0
+    wo_nums = {o.id: o.number for o in db.scalars(select(WorkOrder).where(
+        WorkOrder.id.in_([t.work_order_id for t in live if t.work_order_id])))}
+    reqs = db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id, ToolRequest.status == "new")).all()
+    last_check = {}
+    for c in db.scalars(select(ToolCheck).where(ToolCheck.branch_id == ctx.branch.id).order_by(ToolCheck.created_at)):
+        last_check[c.user_id] = c
+    # Карточки: у кого что-то числится + все слесари (даже с пустыми руками)
+    cards = [u for u in staff if u.id in per or u.role.code == "mechanic"]
+    cards.sort(key=lambda u: (-(len(per.get(u.id, {}).get("temp", [])) > 0), u.full_name))
+    shared_live = [t for t in live if not t.is_personal]
+    tiles = {
+        "personal_out": sum(1 for t in live if t.cat == "personal" and t.holder_id),
+        "shared_in": sum(1 for t in shared_live if not t.holder_id),
+        "shared_out": sum(1 for t in shared_live if t.holder_id),
+        "spare_in": sum(1 for t in live if t.is_spare and not t.holder_id),
+        "bad": sum(1 for t in live if t.status in ("broken", "worn")),
+        "reqs": len(reqs),
+        "no_place": sum(1 for t in live if not t.holder_id and not t.shelf_id and not t.is_personal),
+    }
+    return {"per": per, "cards": cards, "wo_nums": wo_nums, "tiles": tiles, "last_check": last_check,
+            "req_by_user": {r.user_id for r in reqs}}
+
+
 @router.get("/tools")
-def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = "", cat: str = ""):
+def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = "", cat: str = "", view: str = "", st: str = ""):
     ctx.need("tools.view", "tools.view_own")
     if not ctx.can("tools.view"):
         return _to(f"/tools/staff/{ctx.user.id}")
     db = ctx.db
+    if view not in TOOL_VIEWS:
+        view = "list" if (q or holder or cat or st) else "staff"
     query = select(Tool).where(Tool.branch_id == ctx.branch.id, Tool.status != "written_off")
     all_rows = db.scalars(query).all()
+    ov = _tool_overview(ctx, all_rows)
     cat_counts = {}
     for t in all_rows:
         cat_counts[t.cat] = cat_counts.get(t.cat, 0) + 1
     if cat == "shared":
         query = query.where(~svc.personal_filter())
     elif cat == "personal":
-        query = query.where(svc.personal_filter())
+        from sqlalchemy import or_
+        query = query.where(or_(Tool.category.is_(None), Tool.category != "spare"), svc.personal_filter())
     elif cat in TOOL_CATEGORIES:
         query = query.where(Tool.category == cat)
+    if st == "bad":
+        query = query.where(Tool.status.in_(("broken", "worn")))
     if holder == "stock":
         query = query.where(Tool.holder_id.is_(None))
+    elif holder == "out":
+        query = query.where(Tool.holder_id.is_not(None))
     elif holder:
         query = query.where(Tool.holder_id == _uuid(holder))
     rows = db.scalars(query.order_by(Tool.inv_no)).all()
@@ -113,11 +171,101 @@ def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = "", cat: 
     from ..models import WorkOrder
     wo_nums = {o.id: o.number for o in db.scalars(select(WorkOrder).where(
         WorkOrder.id.in_([t.work_order_id for t in rows if t.work_order_id])))}
+    cabs = svc.cabinets(db, ctx.branch.id)
+    shelves = [(x["s"], f'{c["c"].name} · {x["s"].name}') for c in cabs for x in c["shelves"]]
+    spares = sorted([t for t in all_rows if t.is_spare], key=lambda t: (t.holder_id is not None, t.name))
+    no_shelf = [t for t in all_rows if not t.shelf_id and not t.is_personal and t.status not in ("lost",)]
     return ctx.render("tools/list.html", title="Инструмент", rows=rows, q=q, holder=holder, cat=cat, staff=staff,
                       people=people, summary=summary, pending=pending, TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS,
                       CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES, cat_counts=cat_counts,
-                      n_all=len(all_rows), n_personal=cat_counts.get("personal", 0), wo_nums=wo_nums,
-                      next_inv=svc.next_inv_no(db, ctx.branch.id))
+                      n_all=len(all_rows), n_personal=cat_counts.get("personal", 0), wo_nums={**wo_nums, **ov["wo_nums"]},
+                      next_inv=svc.next_inv_no(db, ctx.branch.id), view=view, VIEWS=TOOL_VIEWS, ov=ov, cabs=cabs, st=st,
+                      shelves=shelves, spares=spares, no_shelf=no_shelf, fmt_money=lambda x: "{:,.0f}".format(x).replace(",", " "))
+
+
+# ---------- Шкафы и полки (11.11.2026) ----------
+@router.post("/tools/cabinets")
+def cabinet_save(ctx: Ctx = Depends(get_ctx), action: str = Form("add"), cid: str = Form(""), sid: str = Form(""),
+                 name: str = Form(""), shelves: str = Form("4"), note: str = Form("")):
+    """Завести шкаф (сразу с N полками), переименовать, добавить полку, удалить пустую полку или шкаф."""
+    from ..models import ToolCabinet, ToolShelf
+    ctx.need("tools.manage")
+    db = ctx.db
+    back = _to("/tools?view=cabinets")
+
+    def own(obj):
+        if not obj or obj.branch_id != ctx.branch.id:
+            raise Forbidden()
+        return obj
+    if action == "add":
+        n_cabs = db.scalar(select(func.count()).select_from(ToolCabinet).where(ToolCabinet.branch_id == ctx.branch.id)) or 0
+        c = ToolCabinet(name=(name.strip() or f"Шкаф {n_cabs + 1}")[:60], note=note.strip()[:200], sort=n_cabs + 1)
+        db.add(c)
+        db.flush()
+        try:
+            k = max(0, min(30, int(shelves or 0)))
+        except ValueError:
+            k = 4
+        for i in range(1, k + 1):
+            db.add(ToolShelf(cabinet_id=c.id, name=f"Полка {i}", sort=i))
+        flash(ctx.request, f"Заведён «{c.name}»" + (f" с полками: {k}" if k else ""))
+    elif action == "rename":
+        c = own(db.get(ToolCabinet, _uuid(cid)))
+        c.name, c.note = (name.strip() or c.name)[:60], note.strip()[:200]
+        for t in db.scalars(select(Tool).join(ToolShelf, ToolShelf.id == Tool.shelf_id).where(ToolShelf.cabinet_id == c.id)):
+            svc.set_shelf(db, t, t.shelf_id)
+        flash(ctx.request, "Сохранено")
+    elif action == "add_shelf":
+        c = own(db.get(ToolCabinet, _uuid(cid)))
+        n = db.scalar(select(func.count()).select_from(ToolShelf).where(ToolShelf.cabinet_id == c.id)) or 0
+        db.add(ToolShelf(cabinet_id=c.id, name=(name.strip() or f"Полка {n + 1}")[:60], sort=n + 1))
+        flash(ctx.request, "Полка добавлена")
+    elif action == "rename_shelf":
+        s = own(db.get(ToolShelf, _uuid(sid)))
+        s.name = (name.strip() or s.name)[:60]
+        db.flush()
+        for t in db.scalars(select(Tool).where(Tool.shelf_id == s.id)):
+            svc.set_shelf(db, t, s.id)
+        flash(ctx.request, "Сохранено")
+    elif action == "delete_shelf":
+        s = own(db.get(ToolShelf, _uuid(sid)))
+        if db.scalar(select(Tool.id).where(Tool.shelf_id == s.id, Tool.status != "written_off")):
+            flash(ctx.request, "На полке есть инструмент — сначала переложите его", "error")
+            return back
+        db.delete(s)
+        flash(ctx.request, "Полка удалена")
+    elif action == "delete":
+        c = own(db.get(ToolCabinet, _uuid(cid)))
+        sh_ids = list(db.scalars(select(ToolShelf.id).where(ToolShelf.cabinet_id == c.id)))
+        if sh_ids and db.scalar(select(Tool.id).where(Tool.shelf_id.in_(sh_ids), Tool.status != "written_off")):
+            flash(ctx.request, "В шкафу есть инструмент — сначала переложите его", "error")
+            return back
+        for s in db.scalars(select(ToolShelf).where(ToolShelf.cabinet_id == c.id)):
+            db.delete(s)
+        db.delete(c)
+        flash(ctx.request, "Шкаф удалён")
+    db.commit()
+    return back
+
+
+@router.post("/tools/place")
+async def tools_place(request: Request, ctx: Ctx = Depends(get_ctx)):
+    """Разложить по полкам: несколько инструментов сразу на выбранную полку."""
+    from ..models import ToolShelf
+    ctx.need("tools.manage")
+    form = await request.form()
+    sh = ctx.db.get(ToolShelf, _uuid(str(form.get("shelf_id", "")))) if form.get("shelf_id") else None
+    if sh and sh.branch_id != ctx.branch.id:
+        raise Forbidden()
+    n = 0
+    for tid in form.getlist("tool"):
+        t = ctx.db.get(Tool, _uuid(str(tid)))
+        if t and t.branch_id == ctx.branch.id:
+            svc.set_shelf(ctx.db, t, sh.id if sh else None)
+            n += 1
+    ctx.db.commit()
+    flash(request, f"Разложено: {n}" + (f" → {svc.shelf_label(ctx.db, sh.id)}" if sh else ""))
+    return _to(str(form.get("back") or "/tools?view=cabinets"))
 
 
 @router.post("/tools")
@@ -139,9 +287,11 @@ async def tool_add(request: Request, ctx: Ctx = Depends(get_ctx)):
              photo=(await _photo_from(form)) or "", category=category if category in TOOL_CATEGORIES else "personal")
     ctx.db.add(t)
     ctx.db.flush()
+    if form.get("shelf_id"):
+        svc.set_shelf(ctx.db, t, _shelf_id(ctx, str(form.get("shelf_id"))))
     holder = form.get("holder_id")
     u = ctx.db.get(User, _uuid(str(holder))) if holder else None
-    if u and u.branch_id == ctx.branch.id and t.is_personal:  # общий — на склад, выдаётся потом под наряд
+    if u and u.branch_id == ctx.branch.id and t.cat == "personal":  # общий и запасной — в шкаф
         svc.move(ctx.db, t, u, "Личный инструмент: выдан при заведении")
     ctx.db.commit()
     flash(request, f"Инструмент {t.inv_no} заведён")
@@ -167,7 +317,7 @@ def tool_view(tid: str, ctx: Ctx = Depends(get_ctx)):
                       TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS, CHECK_RESULTS=CHECK_RESULTS,
                       TOOL_CATEGORIES=TOOL_CATEGORIES, wo_nums=wo_nums, work_names=work_names,
                       active_orders=_active_orders(ctx) if ctx.can("tools.manage") and not t.is_personal else [],
-                      fmt_plate=osvc.fmt_plate)
+                      fmt_plate=osvc.fmt_plate, shelves=_shelf_options(ctx))
 
 
 @router.post("/tools/{tid}")
@@ -185,9 +335,14 @@ async def tool_edit(tid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         if u and not t.is_personal and not wo:
             flash(request, "Общий инструмент выдаётся под наряд — выберите наряд или работу", "error")
             return _to(back)
-        svc.move(ctx.db, t, u, str(form.get("comment", "")) or (f"Под наряд {wo.number}" if wo else ""),
+        was_spare = t.is_spare and u is not None
+        svc.move(ctx.db, t, u, str(form.get("comment", "")) or (f"Под наряд {wo.number}" if wo else "")
+                 or ("Запасной набор — взамен личного" if was_spare else ""),
                  wo=None if t.is_personal else wo, work=None if t.is_personal else work)
-        flash(request, f"Выдан: {u.full_name}" if u else "Возвращён на склад инструмента")
+        if was_spare:   # запасной выдали взамен сломанного/утерянного — теперь это личный инструмент слесаря
+            t.category = "personal"
+        flash(request, (f"Выдан: {u.full_name}" + (" — теперь это его личный инструмент" if was_spare else ""))
+              if u else "Возвращён на склад инструмента")
         ctx.db.commit()
         return _to(back)
     elif action == "writeoff":
@@ -198,7 +353,9 @@ async def tool_edit(tid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         t.name = str(form.get("name", t.name)).strip()[:200] or t.name
         t.serial = str(form.get("serial", "")).strip()[:80]
         t.description = str(form.get("description", "")).strip()
-        if "place" in form:
+        if "shelf_id" in form:   # выбор полки из справочника
+            svc.set_shelf(ctx.db, t, _shelf_id(ctx, str(form.get("shelf_id") or "")))
+        elif "place" in form:    # шкафов ещё не завели — место текстом
             t.place = str(form.get("place", "")).strip()[:80]
         t.cost = _dec(form.get("cost"))
         if form.get("category") in TOOL_CATEGORIES:

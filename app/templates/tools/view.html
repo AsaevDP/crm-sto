@@ -4,7 +4,7 @@
   <a class="back" href="/tools">{{ icon("back") }}Инструмент</a>
   <div class="ov-title">
     <div><div class="footnote mono">{{ t.inv_no }}{% if t.serial %} · S/N {{ t.serial }}{% endif %}</div><h1 class="title-1">{{ t.name }}</h1>
-      <div class="subhead">{{ TOOL_CATEGORIES[t.cat] }} · {{ "У " ~ people[t.holder_id].full_name if t.holder_id in people else "На складе инструмента" }}{% if t.work_order_id in wo_nums %} · под наряд <a href="/orders/{{ t.work_order_id }}">{{ wo_nums[t.work_order_id] }}</a>{% if t.wo_work_id in work_names %} ({{ work_names[t.wo_work_id] }}){% endif %}{% endif %} · {{ "%.2f"|format(t.cost) }} ₴</div></div>
+      <div class="subhead">{{ TOOL_CATEGORIES[t.cat] }} · {{ "У " ~ people[t.holder_id].full_name if t.holder_id in people else "На складе инструмента" }}{% if t.place %} · место: <a href="/tools?view=cabinets">{{ t.place }}</a>{% endif %}{% if t.work_order_id in wo_nums %} · под наряд <a href="/orders/{{ t.work_order_id }}">{{ wo_nums[t.work_order_id] }}</a>{% if t.wo_work_id in work_names %} ({{ work_names[t.wo_work_id] }}){% endif %}{% endif %} · {{ "%.2f"|format(t.cost) }} ₴</div></div>
     <span class="chip chip-lg" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span>
   </div>
 </header>
@@ -16,6 +16,7 @@
     <form class="card compact form dense" method="post" action="/tools/{{ t.id }}">
       <div class="card-h"><span class="headline">Выдать / вернуть</span></div>
       <input type="hidden" name="action" value="move">
+      {% if t.is_spare and not t.holder_id %}<p class="hint" style="margin:0">Запасной набор: выдайте слесарю взамен сломанного или утерянного личного — он станет его личным инструментом.</p>{% endif %}
       <select class="field" name="to_user"><option value="">Вернуть на склад инструмента</option>
         {% for s in staff %}<option value="{{ s.id }}" {% if s.id == t.holder_id %}selected{% endif %}>Выдать: {{ s.full_name }}</option>{% endfor %}</select>
       {% if not t.is_personal %}
@@ -40,10 +41,15 @@
           <input class="field" name="cost" value="{{ '%.2f'|format(t.cost) }}" inputmode="decimal" aria-label="Стоимость">
           <select class="field" name="status">{% for k, v in TOOL_STATUS.items() if k != "written_off" %}<option value="{{ k }}" {% if k == t.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         <input class="field" name="description" value="{{ t.description }}" placeholder="Состав">
-        <label class="caption">Место в шкафу<input class="field" name="place" value="{{ t.place or '' }}" placeholder="Шкаф 1 · полка 2"></label>
+        <label class="caption">Где лежит (шкаф и полка)
+          {% if shelves %}<select class="field" name="shelf_id"><option value="">— не на полке —</option>
+            {% for sid, label in shelves %}<option value="{{ sid }}" {% if sid == t.shelf_id %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          {% else %}<input class="field" name="place" value="{{ t.place or '' }}" placeholder="Шкаф 1 · полка 2">
+          <span class="hint">Шкафы и полки заводятся в «Инструмент → Шкафы».</span>{% endif %}</label>
         <select class="field" name="category" aria-label="Категория">
           <option value="personal" {% if t.cat == "personal" %}selected{% endif %}>Личный — числится за слесарем</option>
-          <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}" {% if t.cat == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</optgroup></select>
+          <option value="spare" {% if t.cat == "spare" %}selected{% endif %}>Запасной набор — лежит в шкафу, выдаётся взамен личного</option>
+          <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k not in ("personal", "spare") %}<option value="{{ k }}" {% if t.cat == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</optgroup></select>
         <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Новое фото<input type="file" name="photo" accept="image/*" hidden></label>
         <div class="form-row"><button class="btn btn-sm">Сохранить</button>
           <button class="btn btn-sm btn-danger" name="action" value="writeoff" onclick="return confirm('Списать инструмент?')">Списать</button></div>

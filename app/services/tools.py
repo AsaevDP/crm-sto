@@ -49,9 +49,77 @@ def move(db: Session, tool: Tool, to_user: User | None, comment: str = "", wo=No
 
 
 def personal_filter():
-    """Условие «личный инструмент» (у старого инструмента категории нет — он личный)."""
+    """Условие «личный инструмент» (у старого инструмента категории нет — он личный). Запасные наборы — тоже
+    не под наряд, поэтому сюда же."""
     from sqlalchemy import or_
-    return or_(Tool.category == "personal", Tool.category.is_(None), Tool.category == "")
+    return or_(Tool.category.in_(("personal", "spare")), Tool.category.is_(None), Tool.category == "")
+
+
+# ---------- Шкафы и полки (11.11.2026) ----------
+def shelf_label(db: Session, shelf_id) -> str:
+    from ..models import ToolCabinet, ToolShelf
+    sh = db.get(ToolShelf, shelf_id) if shelf_id else None
+    cab = db.get(ToolCabinet, sh.cabinet_id) if sh else None
+    return f"{cab.name} · {sh.name}" if sh and cab else ""
+
+
+def set_shelf(db: Session, tool: Tool, shelf_id):
+    """Положить инструмент на полку (или убрать с полок, shelf_id=None). Подпись места обновляется сама."""
+    had = tool.shelf_id
+    tool.shelf_id = shelf_id or None
+    if tool.shelf_id:
+        tool.place = shelf_label(db, tool.shelf_id)
+    elif had:
+        tool.place = ""
+
+
+def adopt_text_places(db: Session, branch_id) -> int:
+    """Раньше место писали текстом «Шкаф 1 · полка 2». Один раз превращаем такие подписи в шкафы и полки
+    справочника (если шкафов ещё нет), чтобы экран «Шкафы» сразу показал, что где лежит."""
+    from ..models import ToolCabinet, ToolShelf
+    if db.scalar(select(ToolCabinet.id).where(ToolCabinet.branch_id == branch_id)):
+        return 0
+    tools = db.scalars(select(Tool).where(Tool.branch_id == branch_id, Tool.shelf_id.is_(None),
+                                          Tool.place.is_not(None), Tool.place != "")).all()
+    cabs, shelves, n = {}, {}, 0
+    for t in sorted(tools, key=lambda t: t.place):
+        cab_name, _, shelf_name = (t.place or "").partition("·")
+        cab_name, shelf_name = cab_name.strip()[:60], shelf_name.strip()[:60]
+        if not cab_name or not shelf_name:
+            continue
+        if cab_name not in cabs:
+            cabs[cab_name] = ToolCabinet(branch_id=branch_id, name=cab_name, sort=len(cabs) + 1)
+            db.add(cabs[cab_name])
+            db.flush()
+        key = (cab_name, shelf_name.lower())
+        if key not in shelves:
+            shelves[key] = ToolShelf(branch_id=branch_id, cabinet_id=cabs[cab_name].id, name=shelf_name.capitalize(),
+                                     sort=int("".join(ch for ch in shelf_name if ch.isdigit()) or 0))
+            db.add(shelves[key])
+            db.flush()
+        t.shelf_id = shelves[key].id
+        t.place = f"{cab_name} · {shelves[key].name}"
+        n += 1
+    return n
+
+
+def cabinets(db: Session, branch_id) -> list[dict]:
+    """Шкафы → полки → что на полке (вместе с выданным: где он должен лежать)."""
+    from ..models import ToolCabinet, ToolShelf
+    cabs = db.scalars(select(ToolCabinet).where(ToolCabinet.branch_id == branch_id)
+                      .order_by(ToolCabinet.sort, ToolCabinet.name)).all()
+    shelves = db.scalars(select(ToolShelf).where(ToolShelf.branch_id == branch_id).order_by(ToolShelf.sort, ToolShelf.name)).all()
+    tools = db.scalars(select(Tool).where(Tool.branch_id == branch_id, Tool.shelf_id.is_not(None),
+                                          Tool.status != "written_off").order_by(Tool.name)).all()
+    by_shelf = {}
+    for t in tools:
+        by_shelf.setdefault(t.shelf_id, []).append(t)
+    out = []
+    for c in cabs:
+        sh = [{"s": s, "tools": by_shelf.get(s.id, [])} for s in shelves if s.cabinet_id == c.id]
+        n = sum(len(x["tools"]) for x in sh)
+        out.append({"c": c, "shelves": sh, "n": n, "out": sum(1 for x in sh for t in x["tools"] if t.holder_id)})
+    return out
 
 
 def for_order(db: Session, wo_id) -> list[Tool]:

@@ -8,6 +8,7 @@
   <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/purchases">Все закупки</a><a class="btn btn-sm btn-gray" href="/stock/issues">Выдача</a></div>
 </header>
 <p class="footnote rc-hint">Что ждём от поставщиков. Пришло — нажмите «Пришло» у строки или «Принять всё» у поставщика.
+  Привезли не всё — исправьте число в колонке «Шт», остальное будем ждать дальше.
   Ячейка подставлена сама — там, где эта запчасть уже лежит; можно поменять. 🔥 — слесарь просит срочно.</p>
 
 {% if last %}
@@ -33,7 +34,8 @@
     <tr class="{{ 'urgent' if r.urgent }}">
       <td>{% if r.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
         <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
-      <td class="num nowrap">{{ r.l.qty|num }}{% if r.part and r.l.qty > r.part.qty %}<div class="caption">на склад {{ (r.l.qty - r.part.qty)|num }}</div>{% endif %}</td>
+      <td class="num nowrap"><input class="field rc-qty" name="qty_{{ r.l.id }}" value="{{ r.l.left|num }}" inputmode="decimal" aria-label="Сколько пришло">
+        <div class="caption">{% if r.l.got > 0 %}пришло {{ r.l.got|num }} из {{ r.l.qty|num }}{% else %}ждём {{ r.l.left|num }}{% endif %}{% if r.part and r.l.qty > r.part.qty %} · на склад {{ (r.l.qty - r.part.qty)|num }}{% endif %}</div></td>
       <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make }} {{ r.v.model }}</a> <span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>
         <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}</td>
       <td><select class="field rc-cell" name="loc_{{ r.l.id }}" aria-label="Ячейка">

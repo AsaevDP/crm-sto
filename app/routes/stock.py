@@ -278,24 +278,60 @@ def issue_request(order_id: str, ctx: Ctx = Depends(get_ctx), comment: str = For
 
 
 # ======================= Закупки =======================
+PURCHASE_TABS = {"draft": "Черновики", "wait": "Ждём", "arrived": "Пришли", "all": "Все"}
+
+
 @router.get("/purchases")
-def purchases(ctx: Ctx = Depends(get_ctx)):
+def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = ""):
     ctx.need("purchases.view")
-    rows = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id)
-                          .order_by(Purchase.status != "draft", Purchase.created_at.desc()).limit(100)).all()
+    db = ctx.db
+    allp = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id)
+                      .order_by(Purchase.created_at.desc())).all()
+    counts = {"draft": sum(p.status == "draft" for p in allp),
+              "wait": sum(p.status in ("ordered", "partial") for p in allp),
+              "arrived": sum(p.status == "arrived" for p in allp), "all": len(allp)}
+    if tab not in PURCHASE_TABS:
+        tab = "draft" if counts["draft"] else ("wait" if counts["wait"] else "all")
+    rows = [p for p in allp if tab == "all" or (tab == "draft" and p.status == "draft")
+            or (tab == "wait" and p.status in ("ordered", "partial")) or (tab == "arrived" and p.status == "arrived")]
+    if sup:
+        rows = [p for p in rows if str(p.supplier_id) == sup]
+    rows = rows[:200]
     ids = [p.id for p in rows]
-    stats = {pid: (n, total) for pid, n, total in ctx.db.execute(
-        select(PurchaseLine.purchase_id, func.count(), func.sum(PurchaseLine.qty * PurchaseLine.price))
-        .where(PurchaseLine.purchase_id.in_(ids)).group_by(PurchaseLine.purchase_id))} if ids else {}
-    suppliers = {s.id: s for s in ctx.db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id))}
-    return ctx.render("stock/purchases.html", title="Закупки", rows=rows, stats=stats, suppliers=suppliers,
-                      PURCHASE_STATUS=PURCHASE_STATUS)
+    stats = {}
+    if ids:
+        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_(ids))):
+            s = stats.setdefault(l.purchase_id, {"n": 0, "total": Decimal(0), "orders": 0, "urgent": 0, "got": 0})
+            s["n"] += 1
+            s["total"] += l.qty * l.price
+            s["orders"] += 1 if l.wo_part_id else 0
+            s["got"] += 1 if l.received else 0
+        urgent_parts = {x.id for x in db.scalars(select(WoPart).where(WoPart.urgent.is_(True)))}
+        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_(ids), PurchaseLine.received.is_(False),
+                                                       PurchaseLine.wo_part_id.in_(urgent_parts or [uuid.uuid4()]))):
+            stats[l.purchase_id]["urgent"] += 1
+    suppliers = db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all()
+    from datetime import date as _d
+    return ctx.render("stock/purchases.html", title="Закупки", rows=rows, stats=stats,
+                      suppliers={s.id: s for s in suppliers}, supplier_list=suppliers, tab=tab, sup=sup,
+                      counts=counts, TABS=PURCHASE_TABS, PURCHASE_STATUS=PURCHASE_STATUS, today=_d.today())
 
 
 @router.post("/purchases/new")
-def purchase_new(ctx: Ctx = Depends(get_ctx)):
+def purchase_new(ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form("")):
+    """Новая закупка у поставщика. Черновиков может быть сколько угодно — по одному на заказ."""
     ctx.need("purchases.manage")
-    p = svc.draft_purchase(ctx.db, ctx.branch.id)
+    sid = None
+    if supplier_new.strip():
+        s = Supplier(name=supplier_new.strip()[:160])
+        ctx.db.add(s)
+        ctx.db.flush()
+        sid = s.id
+    elif supplier_id:
+        s = ctx.db.get(Supplier, _uuid(supplier_id))
+        sid = s.id if s and s.branch_id == ctx.branch.id else None
+    p = Purchase(status="draft", supplier_id=sid)
+    ctx.db.add(p)
     ctx.db.commit()
     return _to(f"/purchases/{p.id}")
 
@@ -317,107 +353,240 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx)):
     parts = {x.id: x for x in db.scalars(select(WoPart).where(WoPart.id.in_([l.wo_part_id for l in lines if l.wo_part_id])))}
     orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([x.work_order_id for x in parts.values()])))}
     locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id).order_by(Location.rack, Location.shelf, Location.place)).all()
+    vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
+    drafts = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id, Purchase.status == "draft",
+                                               Purchase.id != p.id).order_by(Purchase.created_at)).all()
+    sup_all = db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all()
     from ..services import brands as _br
     return ctx.render("stock/purchase.html", title="Закупка", p=p, lines=lines, cats=cats, parts=parts, orders=orders,
-                      BRANDS=_br.names(db, ctx.branch.id),
-                      suppliers=db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all(),
+                      vehicles=vehicles, BRANDS=_br.names(db, ctx.branch.id), suppliers=sup_all,
+                      sup_names={s.id: s.name for s in sup_all}, drafts=drafts,
                       supplier=db.get(Supplier, p.supplier_id) if p.supplier_id else None,
                       locations=locations, loc_label=svc.location_label, PURCHASE_STATUS=PURCHASE_STATUS,
-                      total=sum((l.qty * l.price for l in lines), Decimal(0)))
+                      cells={l.id: svc.default_location(db, l.catalog_id) for l in lines if not l.received},
+                      fmt_plate=osvc.fmt_plate, total=sum((l.qty * l.price for l in lines), Decimal(0)),
+                      total_got=sum((l.got * l.price for l in lines), Decimal(0)))
+
+
+def _date(v: str):
+    from datetime import date as _d
+    try:
+        return _d.fromisoformat(v) if v else None
+    except ValueError:
+        return None
 
 
 @router.post("/purchases/{pid}")
 def purchase_save(pid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form(""),
-                  supplier_invoice: str = Form(""), note: str = Form(""), action: str = Form("save")):
+                  supplier_invoice: str = Form(""), note: str = Form(""), action: str = Form("save"),
+                  expected_on: str = Form(""), supplier_phone: str = Form("")):
     ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
+    db = ctx.db
+    if action == "delete":
+        if p.status != "draft":
+            raise Forbidden()
+        svc.delete_purchase(db, p)
+        db.commit()
+        flash(ctx.request, "Черновик закупки удалён. Позиции нарядов из него снова ждут решения запчастиста")
+        return _to("/purchases")
+    if action == "back_to_draft":   # отправили по ошибке — пока ничего не пришло, можно вернуть в черновик
+        if p.status == "ordered":
+            p.status = "draft"
+            flash(ctx.request, "Закупка снова черновик — можно править")
+        db.commit()
+        return _to(f"/purchases/{pid}")
     if supplier_new.strip():
-        s = Supplier(name=supplier_new.strip()[:160])
-        ctx.db.add(s)
-        ctx.db.flush()
+        s = Supplier(name=supplier_new.strip()[:160], phone=supplier_phone.strip()[:40])
+        db.add(s)
+        db.flush()
         p.supplier_id = s.id
     elif supplier_id:
-        s = ctx.db.get(Supplier, uuid.UUID(supplier_id))
+        s = db.get(Supplier, _uuid(supplier_id))
         p.supplier_id = s.id if s and s.branch_id == ctx.branch.id else None
+        if s and supplier_phone.strip():
+            s.phone = supplier_phone.strip()[:40]
     p.supplier_invoice, p.note = supplier_invoice.strip()[:80], note.strip()
+    p.expected_on = _date(expected_on)
     if action == "ordered" and p.status == "draft":
-        has_lines = ctx.db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id))
+        has_lines = db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id))
         if not has_lines:
             flash(ctx.request, "В закупке нет строк", "error")
             return _to(f"/purchases/{pid}")
-        p.status = "ordered"
-        flash(ctx.request, "Закупка отправлена поставщику — кладовщик ждёт приход")
-    ctx.db.commit()
+        from datetime import date as _d
+        p.status, p.ordered_on = "ordered", _d.today()
+        flash(ctx.request, "Заказ отправлен поставщику — строки появились у кладовщика в «Приходе»"
+              + ("" if p.supplier_id else ". Поставщик не указан — впишите, чтобы потом знать, у кого брали"))
+    else:
+        flash(ctx.request, "Сохранено")
+    db.commit()
     return _to(f"/purchases/{pid}")
+
+
+def _add_line(ctx: Ctx, p: Purchase, name, article, brand, qty, price, catalog_id="") -> bool:
+    from ..services import brands
+    cat = ctx.db.get(PartCatalog, _uuid(catalog_id)) if catalog_id else None
+    if cat is None:
+        if not (name or "").strip():
+            return False
+        brand = brands.norm(brand)
+        if brand:
+            brands.add(ctx.db, ctx.branch.id, brand)
+        cat = svc.get_or_create_catalog(ctx.db, name, article, brand)
+    ctx.db.add(PurchaseLine(purchase_id=p.id, catalog_id=cat.id, qty=max(Decimal(qty), Decimal("0.01")),
+                            price=svc.money(price), received_qty=0))
+    return True
+
+
+def _editable(p: Purchase) -> bool:
+    """Строки можно добавлять/править в черновике и в заказе, пока он едет (поставщик что-то поменял)."""
+    return p.status in ("draft", "ordered", "partial")
 
 
 @router.post("/purchases/{pid}/lines")
 def purchase_line_add(pid: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(""), name: str = Form(""),
-                      article: str = Form(""), brand: str = Form(""), revision: str = Form(""),
-                      qty: str = Form("1"), price: str = Form("0")):
-    """Строка «на склад» (опт впрок, без наряда)."""
+                      article: str = Form(""), brand: str = Form(""), qty: str = Form("1"), price: str = Form("0"),
+                      paste: str = Form("")):
+    """Строка «на склад» (впрок, без наряда) или сразу список — вставкой из Excel / счёта поставщика."""
     ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
-    if p.status != "draft":
+    if not _editable(p):
         raise Forbidden()
-    cat = ctx.db.get(PartCatalog, uuid.UUID(catalog_id)) if catalog_id else None
-    if cat is None:
-        if not name.strip():
-            flash(ctx.request, "Название обязательно", "error")
-            return _to(f"/purchases/{pid}")
-        cat = svc.get_or_create_catalog(ctx.db, name, article, brand, revision)
-    ctx.db.add(PurchaseLine(purchase_id=p.id, catalog_id=cat.id, qty=max(_dec(qty, "1"), Decimal("0.01")),
-                            price=svc.money(_dec(price))))
+    if paste.strip():
+        rows = svc.parse_paste(paste)
+        for r in rows:
+            _add_line(ctx, p, r["name"], r["article"], r["brand"], r["qty"], r["price"])
+        flash(ctx.request, f"Добавлено строк из списка: {len(rows)}. Проверьте названия и цены" if rows
+              else "Не понял список: нужна строка «Название; Артикул; Бренд; Кол-во; Цена»", "ok" if rows else "error")
+    elif not _add_line(ctx, p, name, article, brand, max(_dec(qty, "1"), Decimal("0.01")), _dec(price), catalog_id):
+        flash(ctx.request, "Название обязательно", "error")
+    svc.refresh_purchase_status(ctx.db, p)
     ctx.db.commit()
-    return _to(f"/purchases/{pid}")
+    return _to(f"/purchases/{pid}#lines")
 
 
 @router.post("/purchases/{pid}/lines/{lid}")
-def purchase_line_edit(pid: str, lid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form(...), price: str = Form(...),
-                       delete: str = Form("")):
+def purchase_line_edit(pid: str, lid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form(""), price: str = Form(""),
+                       delete: str = Form(""), action: str = Form("save"), target: str = Form("")):
     ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
-    line = ctx.db.get(PurchaseLine, _uuid(lid))
-    if p.status != "draft" or not line or line.purchase_id != p.id:
+    db = ctx.db
+    line = db.get(PurchaseLine, _uuid(lid))
+    if not _editable(p) or not line or line.purchase_id != p.id:
         raise Forbidden()
-    part = ctx.db.get(WoPart, line.wo_part_id) if line.wo_part_id else None
+    part = db.get(WoPart, line.wo_part_id) if line.wo_part_id else None
     if delete:
-        if part:
-            part.status = "need"   # позиция наряда снова ждёт решения запчастиста
-        ctx.db.delete(line)
-    else:
-        line.qty = max(_dec(qty, "1"), part.qty if part else Decimal("0.01"))  # под наряд — не меньше нужного
-        line.price = svc.money(_dec(price))
-        if part and part.cost != line.price:
-            part.cost = line.price
-            part.price = svc.sale_price(part.cost, part.markup_pct)
-    ctx.db.commit()
-    return _to(f"/purchases/{pid}")
+        action = "delete"
+    tgt, msg = None, ""
+    if action in ("move", "rest"):
+        if target == "new":
+            tgt = Purchase(status="draft", supplier_id=None)
+            db.add(tgt)
+            db.flush()
+        else:
+            tgt = db.get(Purchase, _uuid(target)) if target else None
+            if not tgt or tgt.branch_id != ctx.branch.id or tgt.status != "draft" or tgt.id == p.id:
+                flash(ctx.request, "Выберите черновик, куда перенести", "error")
+                return _to(f"/purchases/{pid}#lines")
+    if action == "delete":
+        if line.got > 0:
+            flash(ctx.request, "Часть уже пришла — строку удалить нельзя. Остаток можно перенести в другую закупку", "error")
+            return _to(f"/purchases/{pid}#lines")
+        svc.unlink_line(db, line)
+        db.delete(line)
+        msg = "Строка убрана" + (" — позиция наряда снова ждёт решения запчастиста" if part else "")
+    elif action == "move":   # целиком в другой черновик (другой поставщик)
+        if line.got > 0:
+            action = "rest"
+        else:
+            line.purchase_id = tgt.id
+            msg = "Строка перенесена в другую закупку"
+    if action == "rest":   # пришло не всё — остаток в другую закупку
+        svc.move_rest(db, ctx.branch.id, line, tgt)
+        msg = "Остаток перенесён в другую закупку"
+    elif action == "save":
+        floor = max(line.got, Decimal("0.01"))
+        only_line = part and not db.scalar(select(func.count()).select_from(PurchaseLine).where(
+            PurchaseLine.wo_part_id == part.id, PurchaseLine.id != line.id))
+        if only_line and part.status == "ordered":   # под наряд — не меньше, чем нужно наряду
+            floor = max(floor, Decimal(part.qty))
+        new_qty = _dec(qty, str(line.qty))
+        if new_qty < floor:
+            flash(ctx.request, f"Меньше {floor.normalize():f} нельзя: столько нужно наряду или уже пришло", "error")
+            new_qty = floor
+        line.qty = new_qty
+        line.received = line.got >= line.qty
+        if price.strip():
+            line.price = svc.money(_dec(price))
+            if part and part.cost != line.price and part.status in ("need", "ordered"):
+                part.cost = line.price
+                part.price = svc.sale_price(part.cost, part.markup_pct)
+        msg = "Сохранено"
+    db.flush()
+    svc.refresh_purchase_status(db, p)
+    if tgt is not None:
+        svc.refresh_purchase_status(db, tgt)
+    db.commit()
+    flash(ctx.request, msg)
+    return _to(f"/purchases/{pid}#lines")
 
 
 @router.post("/purchases/{pid}/receive")
-def purchase_receive(pid: str, request_ctx: Ctx = Depends(get_ctx), location_id: str = Form(""),
-                     line_id: str = Form("")):
-    """Приход: кладовщик принимает строку (или все) в ячейку. Под наряд — сразу резерв."""
-    ctx = request_ctx
+async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
+    """Приход из карточки закупки: строка (сколько пришло, в какую ячейку) или «Принять всё»."""
     ctx.need("stock.manage")
     p = _purchase(ctx, pid)
     if p.status not in ("ordered", "partial"):
         raise Forbidden()
-    loc = ctx.db.get(Location, uuid.UUID(location_id)) if location_id else None
-    loc_id = loc.id if loc and loc.branch_id == ctx.branch.id else None
-    q = select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))
-    if line_id:
-        q = q.where(PurchaseLine.id == _uuid(line_id))
-    n = 0
-    for line in ctx.db.scalars(q).all():
-        svc.receive_line(ctx.db, ctx.branch.id, line, loc_id)
-        n += 1
-    ctx.db.flush()
-    svc.refresh_purchase_status(ctx.db, p)
-    ctx.db.commit()
-    flash(ctx.request, f"Принято строк: {n}")
-    return _to(f"/purchases/{pid}")
+    form = dict(await ctx.request.form())
+    if not form.get("line_id"):
+        form["all"] = str(p.id)   # без строки — принять всё по этой закупке
+    n, ready = _receive(ctx, form, [p])
+    flash(ctx.request, f"Принято строк: {n}" + (f". Все запчасти на складе: {', '.join(ready)}" if ready else ""))
+    return _to(f"/purchases/{pid}#lines")
+
+
+def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
+    """Общий приход для карточки закупки и экрана «Приход». В форме: line_id (одна строка) или all (вся закупка),
+    loc_<id> — ячейка, qty_<id> — сколько пришло (пусто — всё, что ждём)."""
+    db = ctx.db
+    ids = {p.id for p in purchases}
+    if form.get("line_id"):
+        lines = [db.get(PurchaseLine, _uuid(str(form["line_id"])))]
+    elif form.get("all"):
+        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == _uuid(str(form["all"])),
+                                                      PurchaseLine.received.is_(False))).all()
+    else:
+        lines = []
+    done, ready, item_ids, touched = 0, [], [], set()
+    for l in lines:
+        p = db.get(Purchase, l.purchase_id) if l else None
+        if not l or l.received or not p or p.id not in ids or p.status not in ("ordered", "partial"):
+            continue
+        raw = str(form.get(f"loc_{l.id}", "") or form.get("location_id", ""))
+        loc = db.get(Location, _uuid(raw)) if raw else None
+        q = str(form.get(f"qty_{l.id}", "")).strip()
+        took = svc.receive_line(db, ctx.branch.id, l, loc.id if loc and loc.branch_id == ctx.branch.id else None,
+                                _dec(q) if q else None)
+        if took <= 0:
+            continue
+        db.flush()
+        item = db.scalar(select(StockItem).where(StockItem.catalog_id == l.catalog_id,
+                                                 StockItem.location_id == l.location_id if l.location_id else StockItem.location_id.is_(None)))
+        if item:
+            item_ids.append(str(item.id))
+        if l.wo_part_id:
+            wo = db.get(WorkOrder, db.get(WoPart, l.wo_part_id).work_order_id)
+            if wo.status == "instock" and wo.number not in ready:
+                ready.append(wo.number)
+        touched.add(p.id)
+        done += 1
+    for pid in touched:
+        svc.refresh_purchase_status(db, db.get(Purchase, pid))
+    db.commit()
+    if done:
+        ctx.request.session["last_received"] = {"n": done, "ids": ",".join(dict.fromkeys(item_ids)), "ready": ready}
+    return done, ready
 
 
 # ======================= Склад =======================
@@ -946,39 +1115,9 @@ async def receive_do(ctx: Ctx = Depends(get_ctx)):
     """«Пришло» по строке или «Принять всё» по закупке. Ячейка — выбранная или та, где запчасть уже лежит."""
     ctx.need("stock.manage")
     form = await ctx.request.form()
-    db = ctx.db
-    if form.get("line_id"):
-        lines = [db.get(PurchaseLine, _uuid(str(form["line_id"])))]
-    elif form.get("all"):
-        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == _uuid(str(form["all"])),
-                                                      PurchaseLine.received.is_(False))).all()
-    else:
-        lines = []
-    done, ready, item_ids = 0, [], []
-    touched = set()
-    for l in lines:
-        p = db.get(Purchase, l.purchase_id) if l else None
-        if not l or l.received or not p or p.branch_id != ctx.branch.id or p.status not in ("ordered", "partial"):
-            continue
-        raw = str(form.get(f"loc_{l.id}", ""))
-        loc = db.get(Location, _uuid(raw)) if raw else None
-        svc.receive_line(db, ctx.branch.id, l, loc.id if loc and loc.branch_id == ctx.branch.id else None)
-        db.flush()
-        item = db.scalar(select(StockItem).where(StockItem.catalog_id == l.catalog_id,
-                                                 StockItem.location_id == l.location_id if l.location_id else StockItem.location_id.is_(None)))
-        if item:
-            item_ids.append(str(item.id))
-        if l.wo_part_id:
-            wo = db.get(WorkOrder, db.get(WoPart, l.wo_part_id).work_order_id)
-            if wo.status == "instock" and wo.number not in ready:
-                ready.append(wo.number)
-        touched.add(p.id)
-        done += 1
-    for pid in touched:
-        svc.refresh_purchase_status(db, db.get(Purchase, pid))
-    db.commit()
-    if done:
-        ctx.request.session["last_received"] = {"n": done, "ids": ",".join(dict.fromkeys(item_ids)), "ready": ready}
+    purchases = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
+                                                      Purchase.status.in_(("ordered", "partial")))).all()
+    done, ready = _receive(ctx, form, purchases)
     flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else ""))
     return _to("/stock/receive")
 

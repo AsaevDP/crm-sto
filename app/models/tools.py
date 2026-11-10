@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Entity, UTCDateTime
@@ -17,7 +17,7 @@ CHECK_STATUS = {"draft": "Идёт проверка", "done": "Ждёт реше
 # Категории (решение владельца 09.11.2026). «Личный» выдаётся слесарю при приёме на работу и числится за ним;
 # остальной — общий: выдаётся временно под конкретный наряд и работу, потом возвращается на склад инструмента.
 TOOL_CATEGORIES = {
-    "personal": "Личный", "to": "Для ТО", "engine": "Двигатель", "chassis": "Ходовая", "brakes": "Тормоза",
+    "personal": "Личный", "spare": "Запасной набор", "to": "Для ТО", "engine": "Двигатель", "chassis": "Ходовая", "brakes": "Тормоза",
     "electric": "Электрика и диагностика", "tires": "Шиномонтаж и развал", "body": "Кузов",
     "pneumo": "Пневмо и гайковёрты", "pullers": "Спецсъёмники", "measure": "Измерительный", "other": "Прочее",
 }
@@ -38,6 +38,8 @@ class Tool(Entity):
     status: Mapped[str] = mapped_column(String(12), default="ok")
     holder_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # пусто = склад
     place: Mapped[str | None] = mapped_column(String(80), default="", nullable=True)  # «Шкаф 1 · полка 2» (11.11.2026)
+    # Полка шкафа из справочника (11.11.2026). place — её подпись текстом (для старых экранов и печати)
+    shelf_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("tool_shelves.id", ondelete="SET NULL"), nullable=True)
 
     @property
     def cat(self) -> str:
@@ -46,7 +48,27 @@ class Tool(Entity):
 
     @property
     def is_personal(self) -> bool:
-        return self.cat == "personal"
+        """Личный или запасной набор: выдаётся сотруднику без наряда (запасной — взамен сломанного личного)."""
+        return self.cat in ("personal", "spare")
+
+    @property
+    def is_spare(self) -> bool:
+        return self.cat == "spare"
+
+
+class ToolCabinet(Entity):
+    """Шкаф для инструмента (11.11.2026). Полки — ToolShelf."""
+    __tablename__ = "tool_cabinets"
+    name: Mapped[str] = mapped_column(String(60))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ToolShelf(Entity):
+    __tablename__ = "tool_shelves"
+    cabinet_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tool_cabinets.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))     # «Полка 1», «Ящик 2»
+    sort: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ToolMove(Entity):

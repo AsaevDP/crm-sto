@@ -1,8 +1,9 @@
 """Склад и закупки. Остаток не хранится — считается по stock_movements."""
 import uuid
+from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Entity
@@ -168,6 +169,9 @@ class Purchase(Entity):
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft / ordered / partial / arrived
     supplier_invoice: Mapped[str] = mapped_column(String(80), default="")
     note: Mapped[str] = mapped_column(Text, default="")
+    # 11.11.2026: когда отправили поставщику и когда обещали привезти
+    ordered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expected_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class PurchaseLine(Entity):
@@ -178,8 +182,20 @@ class PurchaseLine(Entity):
     price: Mapped[Decimal] = mapped_column(MONEY, default=0)
     wo_part_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_parts.id"), nullable=True)  # пусто = на склад
     # Купили больше, чем нужно наряду: qty — всего, под наряд уходит wo_part.qty, остальное — на склад
-    received: Mapped[bool] = mapped_column(Boolean, default=False)
+    received: Mapped[bool] = mapped_column(Boolean, default=False)   # пришло всё (got >= qty)
     location_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("locations.id"), nullable=True)
+    # Сколько уже пришло (11.11.2026, приход частями). Старые строки: пусто → «всё» или «ничего» по received
+    received_qty: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=0, nullable=True)
+
+    @property
+    def got(self) -> Decimal:
+        if self.received_qty is None:
+            return Decimal(self.qty) if self.received else Decimal(0)
+        return Decimal(self.received_qty)
+
+    @property
+    def left(self) -> Decimal:
+        return max(Decimal(self.qty) - self.got, Decimal(0))
 
 
 class StockMovement(Entity):

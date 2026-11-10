@@ -32,6 +32,8 @@ async def lifespan(_app):
         from .services import brands
         for b in db.scalars(select(Branch)).all():
             brands.seed(db, b.id)   # справочник брендов: стартовый список (11.11.2026)
+            from .services import tools as tools_svc
+            tools_svc.adopt_text_places(db, b.id)   # «Шкаф 1 · полка 2» текстом → шкафы и полки (11.11.2026)
         db.commit()
     if DEMO:
         from .demo_data import populate

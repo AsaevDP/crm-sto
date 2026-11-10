@@ -1,88 +1,176 @@
 {% extends "base.html" %}
 {% from "_brand.html" import brand_select %}
+{# Закупка (11.11.2026): весь заказ у поставщика — таблицей. Строки добавить / вставить списком / убрать / перенести
+   в другой черновик. Пока заказ едет, строки можно поправить (поставщик что-то заменил). Приход частями. #}
 {% block content %}
 {% set cost_ok = ctx.can("prices.view_purchase") %}
-{% set edit = ctx.can("purchases.manage") and p.status == "draft" %}
+{% set manage = ctx.can("purchases.manage") %}
+{% set edit = manage and p.status in ("draft", "ordered", "partial") %}
 {% set recv = ctx.can("stock.manage") and p.status in ("ordered", "partial") %}
+{% set n_got = lines|selectattr("received")|list|length %}
+{% set n_orders = lines|selectattr("wo_part_id")|list|length %}
 <header class="ov-head">
-  <a class="back" href="/purchases">{{ icon("back") }}Закупки</a>
+  <a class="back" href="/purchases?tab={{ 'draft' if p.status == 'draft' else ('arrived' if p.status == 'arrived' else 'wait') }}">{{ icon("back") }}Закупки</a>
   <div class="ov-title">
-    <div><h1 class="title-1">Закупка · {{ supplier.name if supplier else "поставщик не выбран" }}</h1>
-      <div class="subhead">{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.supplier_invoice %} · накладная {{ p.supplier_invoice }}{% endif %}{% if cost_ok %} · сумма {{ "%.2f"|format(total) }} ₴{% endif %}</div></div>
+    <div><h1 class="title-1">{{ supplier.name if supplier else "Закупка без поставщика" }}</h1>
+      <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div></div>
     <span class="chip chip-lg" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
   </div>
 </header>
 
-<div class="cl-grid fill">
-  <section class="ov-col on">
-    {% if ctx.can("purchases.manage") %}
-    <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}">
-      <div class="card-h"><span class="headline">Поставщик</span></div>
-      <select class="field" name="supplier_id"><option value="">— выбрать —</option>
-        {% for s in suppliers %}<option value="{{ s.id }}" {% if s.id == p.supplier_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select>
-      <input class="field" name="supplier_new" placeholder="или новый поставщик">
-      <input class="field" name="supplier_invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной / заказа поставщика">
-      <input class="field" name="note" value="{{ p.note }}" placeholder="Заметка">
-      <div class="form-row">
-        <button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
-        {% if p.status == "draft" %}<button class="btn btn-sm" name="action" value="ordered">Отправлено поставщику</button>{% endif %}
-      </div>
-    </form>
-    {% endif %}
+<div class="pu-top">
+  <div class="pult-tiles pu-tiles">
+    <span class="ptile {{ 'zero' if not lines }}" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Строк</span><b>{{ lines|length }}</b><span class="ptile-s">под наряды: {{ n_orders }}</span></span>
+    <span class="ptile {{ 'zero' if not n_got }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Пришло</span><b>{{ n_got }}</b><span class="ptile-s">из {{ lines|length }} строк</span></span>
+    {% if cost_ok %}<span class="ptile" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Сумма</span><b class="nowrap">{{ total|money(0) }} ₴</b><span class="ptile-s">пришло на {{ total_got|money(0) }} ₴</span></span>{% endif %}
+  </div>
 
-    {% if edit %}
-    <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}/lines">
-      <div class="card-h"><span class="headline">Строка на склад (впрок)</span></div>
-      <input class="field" name="name" placeholder="Название *" required>
-      <div class="form-row"><input class="field mono" name="article" placeholder="Артикул">{{ brand_select(BRANDS) }}</div>
-      <div class="form-row"><input class="field" name="qty" value="1" inputmode="decimal" aria-label="Количество"><input class="field" name="price" inputmode="decimal" placeholder="Цена за шт, ₴"></div>
-      <button class="btn btn-sm btn-tinted">Добавить строку</button>
-    </form>
-    {% endif %}
-
-    {% if recv %}
-    <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}/receive">
-      <div class="card-h"><span class="headline">Приход — принять всё</span></div>
-      <select class="field" name="location_id"><option value="">— без ячейки —</option>
-        {% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
-      <button class="btn btn-sm">Принять всё в эту ячейку</button>
-      {% if not locations %}<p class="hint">Ячеек ещё нет — <a href="/stock/locations">завести стеллажи</a>.</p>{% endif %}
-    </form>
-    {% endif %}
-  </section>
-
-  <section class="ov-col on">
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Строки · {{ lines|length }}</span></div>
-      {% for l in lines %}
-      {% set c, part = cats.get(l.catalog_id), parts.get(l.wo_part_id) %}
-      <div class="part">
-        <div class="part-main">
-          <span class="part-name">{% if part and part.urgent and not l.received %}<span class="urg-tag">🔥 срочно</span> {% endif %}{{ c.name }}<span class="caption mono" style="display:block">{{ c.brand }} {{ c.article }}</span></span>
-          {% if l.received %}<span class="chip" data-s="ready">принято</span>{% endif %}
-        </div>
-        <div class="part-nums">
-          {% if part %}<span class="tag">под наряд {{ orders[part.work_order_id].number[-6:] }}: {{ part.qty|num }} шт{% if l.qty > part.qty %}, на склад {{ (l.qty - part.qty)|num }}{% endif %}</span>{% else %}<span class="tag">на склад</span>{% endif %}
-        </div>
-        {% if edit %}
-        <form class="part-cost" method="post" action="/purchases/{{ p.id }}/lines/{{ l.id }}">
-          <label class="caption">шт <input class="mini" name="qty" value="{{ l.qty|num }}" inputmode="decimal" size="4"></label>
-          {% if cost_ok %}<label class="caption">₴/шт <input class="mini" name="price" value="{{ '%.2f'|format(l.price) }}" inputmode="decimal" size="7"></label>{% else %}<input type="hidden" name="price" value="{{ l.price }}">{% endif %}
-          <button class="btn btn-plain btn-sm">OK</button>
-          <button class="btn btn-plain btn-sm" name="delete" value="1" style="color:var(--red)">Убрать</button>
-        </form>
-        {% else %}
-        <div class="part-cost"><span class="caption">{{ l.qty|num }} шт{% if cost_ok %} × {{ "%.2f"|format(l.price) }} ₴{% endif %}</span>
-          {% if recv and not l.received %}
-          <form class="inline-form" method="post" action="/purchases/{{ p.id }}/receive"><input type="hidden" name="line_id" value="{{ l.id }}">
-            <select class="mini" name="location_id"><option value="">без ячейки</option>{% for loc in locations %}<option value="{{ loc.id }}">{{ loc_label(loc) }}</option>{% endfor %}</select>
-            <button class="btn btn-plain btn-sm">Принять</button></form>
-          {% endif %}
-        </div>
-        {% endif %}
-      </div>
-      {% else %}<p class="footnote">Строк нет. Добавьте «на склад» слева или «Заказать» из наряда.</p>{% endfor %}
+  {% if manage %}
+  <form class="card compact form dense pu-head" method="post" action="/purchases/{{ p.id }}">
+    <div class="pu-head-grid">
+      <label class="caption">Поставщик
+        <select class="field" name="supplier_id"><option value="">— выбрать —</option>
+          {% for s in suppliers %}<option value="{{ s.id }}" {% if s.id == p.supplier_id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></label>
+      <label class="caption">или новый<input class="field" name="supplier_new" placeholder="Название"></label>
+      <label class="caption">Телефон<input class="field" name="supplier_phone" value="{{ supplier.phone if supplier else '' }}" inputmode="tel" placeholder="+380…"></label>
+      <label class="caption">№ счёта / заказа<input class="field" name="supplier_invoice" value="{{ p.supplier_invoice }}" placeholder="у поставщика"></label>
+      <label class="caption">Привезут<input class="field" type="date" name="expected_on" value="{{ p.expected_on.isoformat() if p.expected_on else '' }}"></label>
+      <label class="caption pu-note">Заметка<input class="field" name="note" value="{{ p.note }}" placeholder="например: доставка до 16:00"></label>
     </div>
-  </section>
+    <div class="form-row pu-head-btns">
+      <button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
+      {% if p.status == "draft" %}
+      <button class="btn btn-sm" name="action" value="ordered">Отправлено поставщику</button>
+      <button class="btn btn-sm btn-plain danger" name="action" value="delete" onclick="return confirm('Удалить этот черновик? Позиции нарядов из него снова будут ждать решения запчастиста.')">Удалить черновик</button>
+      {% elif p.status == "ordered" %}
+      <button class="btn btn-sm btn-plain" name="action" value="back_to_draft">Вернуть в черновик</button>
+      {% endif %}
+    </div>
+  </form>
+  {% endif %}
 </div>
+
+<section class="card compact" id="lines">
+  <div class="card-h"><span class="headline">Что заказываем · {{ lines|length }}</span>
+    {% if recv and n_got < lines|length %}
+    <form method="post" action="/purchases/{{ p.id }}/receive" class="inline-form"><input type="hidden" name="all" value="{{ p.id }}">
+      <button class="btn btn-sm">Принять всё, что ждём</button></form>{% endif %}
+  </div>
+  <div class="tablewrap pu-wrap">
+  <table class="table pu-lines">
+    <thead><tr><th class="num">№</th><th>Запчасть</th><th>Для чего</th><th class="num">Шт</th>{% if cost_ok %}<th class="num">₴ за шт</th><th class="num">Сумма</th>{% endif %}<th>Пришло</th><th></th></tr></thead>
+    <tbody>
+    {% for l in lines %}
+    {% set c, part = cats.get(l.catalog_id), parts.get(l.wo_part_id) %}
+    {% set wo = orders.get(part.work_order_id) if part else None %}
+    {% set v = vehicles.get(wo.vehicle_id) if wo else None %}
+    <tr class="{{ 'urgent' if part and part.urgent and not l.received }} {{ 'done' if l.received }}">
+      <td class="num caption">{{ loop.index }}</td>
+      <td class="pu-name">{% if part and part.urgent and not l.received %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ c.name }}</b>
+        <div class="caption mono">{{ c.brand }} {{ c.article }}</div></td>
+      <td class="pu-for">{% if wo %}<a href="/orders/{{ wo.id }}#parts">{{ v.make if v }} {{ v.model if v }}</a> {% if v %}<span class="ov-plate">{{ fmt_plate(v.plate) }}</span>{% endif %}
+          <div class="caption">наряд {{ wo.number }} · нужно {{ part.qty|num }}{% if l.qty > part.qty %}, на склад {{ (l.qty - part.qty)|num }}{% endif %}</div>
+        {% elif l.wo_part_id %}<span class="caption">позицию убрали из наряда — на склад</span>{% else %}<span class="tag">на склад</span>{% endif %}</td>
+      {% if edit and not l.received and p.status == "draft" %}
+      <td class="num" data-l="шт"><input class="mini" form="lf-{{ l.id }}" name="qty" value="{{ l.qty|num }}" inputmode="decimal" size="4" aria-label="Количество"></td>
+      {% if cost_ok %}<td class="num" data-l="₴ за шт"><input class="mini" form="lf-{{ l.id }}" name="price" value="{{ '%.2f'|format(l.price) }}" inputmode="decimal" size="7" aria-label="Цена за шт"></td>{% endif %}
+      {% else %}
+      <td class="num nowrap" data-l="шт">{{ l.qty|num }}</td>
+      {% if cost_ok %}<td class="num nowrap" data-l="₴ за шт">{{ l.price|money }}</td>{% endif %}
+      {% endif %}
+      {% if cost_ok %}<td class="num nowrap" data-l="сумма"><b>{{ (l.qty * l.price)|money }}</b></td>{% endif %}
+      <td class="pu-got">
+        {% if l.received %}<span class="chip" data-s="ready">✓ {{ l.got|num }}</span>{% if l.location_id %}<div class="caption">{{ loc_label(locations|selectattr("id", "equalto", l.location_id)|first) }}</div>{% endif %}
+        {% elif recv %}
+          <div class="pu-recv">
+            <input class="mini" form="rf-{{ l.id }}" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" size="3" aria-label="Сколько пришло">
+            <select class="mini" form="rf-{{ l.id }}" name="loc_{{ l.id }}" aria-label="Ячейка"><option value="">без ячейки</option>
+              {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == cells.get(l.id) %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select>
+            <button class="btn btn-sm btn-tinted" form="rf-{{ l.id }}">Пришло</button>
+          </div>
+          {% if l.got > 0 %}<div class="caption">пришло {{ l.got|num }} из {{ l.qty|num }}</div>{% endif %}
+        {% elif l.got > 0 %}<span class="caption">{{ l.got|num }} из {{ l.qty|num }}</span>
+        {% else %}<span class="caption">{{ "ещё не заказано" if p.status == "draft" else "ждём" }}</span>{% endif %}
+      </td>
+      <td class="pu-act">
+        {% if edit and not l.received %}
+        {% if p.status == "draft" %}<button class="btn btn-plain btn-sm" form="lf-{{ l.id }}" name="action" value="save">OK</button>{% endif %}
+        <details class="pu-more"><summary class="btn btn-plain btn-sm" aria-label="Ещё">•••</summary>
+          <div class="pu-menu card compact">
+            {% if p.status != "draft" %}
+            <span class="caption">Поставщик изменил заказ</span>
+            <div class="form-row"><label class="caption">шт<input class="field" form="lf-{{ l.id }}" name="qty" value="{{ l.qty|num }}" inputmode="decimal"></label>
+              {% if cost_ok %}<label class="caption">₴ за шт<input class="field" form="lf-{{ l.id }}" name="price" value="{{ '%.2f'|format(l.price) }}" inputmode="decimal"></label>{% endif %}</div>
+            <button class="btn btn-sm btn-gray" form="lf-{{ l.id }}" name="action" value="save">Сохранить</button>
+            {% endif %}
+            <label class="caption">{{ "Остаток" if l.got > 0 else "Перенести" }} в другую закупку
+              <select class="field" form="lf-{{ l.id }}" name="target">
+                {% for d in drafts %}<option value="{{ d.id }}">{{ sup_names.get(d.supplier_id, "Без поставщика") }} · {{ d.created_at.astimezone().strftime("%d.%m") }}</option>{% endfor %}
+                <option value="new">＋ новый черновик</option></select></label>
+            <button class="btn btn-sm btn-gray" form="lf-{{ l.id }}" name="action" value="{{ 'rest' if l.got > 0 else 'move' }}">Перенести</button>
+            {% if l.got == 0 %}<button class="btn btn-sm btn-plain danger" form="lf-{{ l.id }}" name="action" value="delete"
+              onclick="return confirm('Убрать «{{ c.name|e }}» из закупки?{{ ' Позиция наряда снова будет ждать решения запчастиста.' if part }}')">Убрать из закупки</button>{% endif %}
+          </div></details>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="footnote">Строк пока нет. Добавьте ниже по одной, вставьте список из Excel или нажмите «Заказать» в наряде.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% for l in lines %}{% if edit and not l.received %}<form id="lf-{{ l.id }}" method="post" action="/purchases/{{ p.id }}/lines/{{ l.id }}"></form>{% endif %}
+  {% if recv and not l.received %}<form id="rf-{{ l.id }}" method="post" action="/purchases/{{ p.id }}/receive"><input type="hidden" name="line_id" value="{{ l.id }}"></form>{% endif %}{% endfor %}
+
+  {% if edit %}
+  <form class="pu-add" id="fadd" method="post" action="/purchases/{{ p.id }}/lines" autocomplete="off">
+    <input type="hidden" name="catalog_id">
+    <div class="pu-add-name"><input class="field" name="name" id="pfind" placeholder="Запчасть: название или артикул" title="Начните писать — найду в каталоге" required>
+      <div class="results pu-results" id="presults" hidden></div></div>
+    <input class="field mono" name="article" placeholder="Артикул">
+    {{ brand_select(BRANDS) }}
+    <input class="field pu-n" name="qty" value="1" inputmode="decimal" aria-label="Количество" title="Количество">
+    {% if cost_ok %}<input class="field pu-n" name="price" inputmode="decimal" placeholder="₴ за шт">{% endif %}
+    <button class="btn btn-sm">{{ icon("plus") }}Добавить</button>
+  </form>
+  <details class="pu-paste">
+    <summary class="btn btn-plain btn-sm">📋 Вставить список из Excel или счёта</summary>
+    <form method="post" action="/purchases/{{ p.id }}/lines" class="form dense">
+      <p class="footnote" style="margin:0">Скопируйте строки из Excel (или напишите сами) — одна запчасть на строку:
+        <b>Название · Артикул · Бренд · Кол-во · Цена</b>. Колонки — через Tab, «;» или «|». Артикул и числа я узнаю сам, шапку пропущу.</p>
+      <textarea class="field mono" name="paste" rows="6" placeholder="Колодки передние	GDB1550	TRW	2	1450&#10;Фильтр масляный; W 712/75; MANN; 4; 260&#10;Свеча зажигания | BKR6EK | NGK | 8 | 180"></textarea>
+      <div class="form-row"><button class="btn btn-sm">Добавить все строки</button><span class="caption" id="pastecount"></span></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+
+{% if edit %}
+<script>
+(function () {
+  const f = document.getElementById('fadd'), find = document.getElementById('pfind'), res = document.getElementById('presults');
+  let t, found = [];
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  find.addEventListener('input', () => { f.catalog_id.value = ''; clearTimeout(t); t = setTimeout(async () => {
+    if (find.value.trim().length < 2) { res.hidden = true; return; }
+    const r = await fetch('/api/catalog/search?q=' + encodeURIComponent(find.value), { headers: { 'x-requested-with': 'fetch' } });
+    found = (await r.json()).items.filter(x => !x.used);
+    res.innerHTML = found.length ? found.map((x, i) => `<button type="button" class="pu-res" data-i="${i}"><span class="grow"><b>${esc(x.name)}</b>
+      <span class="caption">${esc([x.brand, x.article].filter(Boolean).join(' '))} · на складе свободно: ${x.free}{% if cost_ok %} · последняя закупка ${x.cost.toFixed(2)} ₴{% endif %}</span></span></button>`).join('')
+      : '<div class="pu-res footnote">В каталоге нет — допишите артикул и бренд, позиция создастся сама</div>';
+    res.hidden = false; }, 250); });
+  res.addEventListener('click', e => {
+    const b = e.target.closest('[data-i]'); if (!b) return; const x = found[+b.dataset.i];
+    f.catalog_id.value = x.id; f.name.value = x.name; f.article.value = x.article; window.crmSetBrand && window.crmSetBrand(f.brand, x.brand);
+    {% if cost_ok %}if (x.cost) f.price.value = x.cost.toFixed(2);{% endif %}
+    res.hidden = true; f.qty.focus(); f.qty.select();
+  });
+  f.article.addEventListener('input', () => { f.catalog_id.value = ''; });
+  document.addEventListener('click', e => { if (!res.contains(e.target) && e.target !== find) res.hidden = true; });
+  const ta = document.querySelector('.pu-paste textarea'), cnt = document.getElementById('pastecount');
+  ta && ta.addEventListener('input', () => { const n = ta.value.split('\n').filter(s => s.trim()).length; cnt.textContent = n ? `строк: ${n}` : ''; });
+})();
+</script>
+{% endif %}
 {% endblock %}

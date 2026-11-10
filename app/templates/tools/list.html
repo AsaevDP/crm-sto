@@ -1,79 +1,225 @@
 {% extends "base.html" %}
+{# Инструмент (11.11.2026): плитки как на «Пульте» + 4 вида: по сотрудникам (личный и выданный), шкафы и полки
+   (что где лежит), запасные наборы, весь список с фильтрами. #}
 {% block content %}
+{% set manage = ctx.can("tools.manage") %}
 <header class="page-head">
   <h1 class="large-title">Инструмент</h1>
-  <form class="toolbar-row" method="get" style="flex:1;max-width:820px">
+  <form class="toolbar-row tl-search" method="get" action="/tools">
+    <input type="hidden" name="view" value="list">
     <input class="field search" name="q" value="{{ q }}" placeholder="Инв. №, серийный №, название" autocomplete="off">
-    <select class="field" name="cat" onchange="this.form.submit()" style="max-width:230px" aria-label="Категория">
-      <option value="">Все категории · {{ n_all }}</option>
-      <option value="personal" {% if cat == "personal" %}selected{% endif %}>Личный · {{ n_personal }}</option>
-      <option value="shared" {% if cat == "shared" %}selected{% endif %}>Общий (под наряд) · {{ n_all - n_personal }}</option>
-      <optgroup label="Общий по категориям">
-      {% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}" {% if cat == k %}selected{% endif %}>{{ v }} · {{ cat_counts.get(k, 0) }}</option>{% endfor %}
-      </optgroup></select>
-    <select class="field" name="holder" onchange="this.form.submit()" style="max-width:200px">
-      <option value="">У всех</option><option value="stock" {% if holder == "stock" %}selected{% endif %}>На складе инструмента</option>
-      {% for s in staff %}<option value="{{ s.id }}" {% if holder == s.id|string %}selected{% endif %}>{{ s.full_name }}</option>{% endfor %}</select>
   </form>
+  <div class="ov-actions">
+    {% if ctx.can("stock.issue") or ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/issues?tab=tools">Выдача</a>{% endif %}
+    {% if manage %}<button class="btn btn-sm" type="button" onclick="document.getElementById('tnew').showModal()">{{ icon("plus") }}Инструмент</button>{% endif %}
+  </div>
 </header>
-<div class="cl-grid fill tools-grid">
-  <section class="ov-col on">
-    <div class="tablewrap">
-      <table class="table">
-        <thead><tr><th>Инв. №</th><th>Инструмент</th><th>У кого</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
-        <tbody>
-        {% for t in rows %}
-        <tr onclick="location.href='/tools/{{ t.id }}'" style="cursor:pointer">
-          <td class="mono">{{ t.inv_no }}</td>
-          <td>{{ t.name }}<div class="caption"><span class="tag tool-cat" data-c="{{ t.cat }}">{{ TOOL_CATEGORIES[t.cat] }}</span>{% if t.serial %} <span class="mono">S/N {{ t.serial }}</span>{% endif %}</div></td>
-          <td>{{ people[t.holder_id].short_name if t.holder_id in people else "склад" }}
-            {% if t.work_order_id in wo_nums %}<div class="caption">под наряд {{ wo_nums[t.work_order_id] }}</div>{% endif %}</td>
-          <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td>
-          <td class="num">{{ "%.2f"|format(t.cost) }}</td>
-        </tr>
-        {% else %}<tr><td colspan="5" class="footnote">Инструмента нет{% if q or cat %} по запросу{% endif %}</td></tr>{% endfor %}
-        </tbody>
-      </table>
+
+<div class="pult-tiles tl-tiles">
+  {% set T = ov.tiles %}
+  {% for title, n, sub, color, href in [
+      ("Личный у слесарей", T.personal_out, "числится за людьми", "blue", "/tools?view=staff"),
+      ("Общий в шкафах", T.shared_in, "можно выдать под наряд", "green", "/tools?view=cabinets"),
+      ("Выдан под наряды", T.shared_out, "на руках сейчас", "orange", "/tools?view=list&cat=shared&holder=out"),
+      ("Запасные наборы", T.spare_in, "лежат в шкафу", "teal", "/tools?view=spare"),
+      ("Сломан / износ", T.bad, "проверить, починить", "red", "/tools?view=list&st=bad"),
+      ("Просят / сдают", T.reqs, "ждут кладовщика", "purple", "/stock/issues?tab=tools"),
+      ("Проверки", pending|length, "идут сейчас", "gray", "/tools?view=staff#checks")] %}
+  <a class="ptile {{ 'zero' if not n }}" href="{{ href }}" style="--tc:{{ color_css(color) }}"><span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+
+<nav class="segmented tl-views" aria-label="Как показать">
+  {% for k, v in VIEWS.items() %}<a href="/tools?view={{ k }}" aria-pressed="{{ (view == k)|lower }}">{{ v }}</a>{% endfor %}
+</nav>
+
+{# ===================== По сотрудникам ===================== #}
+{% if view == "staff" %}
+<div class="tl-cards">
+  {% for u in ov.cards %}
+  {% set p = ov.per.get(u.id, {"personal": [], "temp": [], "sum": 0, "bad": 0}) %}
+  {% set lc = ov.last_check.get(u.id) %}
+  <a class="card compact tl-card" href="/tools/staff/{{ u.id }}" style="--mc:{{ color_css(u.role.color or 'gray') }}">
+    <span class="tl-card-h"><span class="tl-ava">{{ u.full_name[:1] }}</span>
+      <span class="grow"><b>{{ u.full_name }}</b><span class="caption">{{ u.role.name }}</span></span>
+      {% if u.id in ov.req_by_user %}<span class="chip" data-s="waiting">запрос</span>{% endif %}</span>
+    <span class="tl-nums">
+      <span class="tl-num"><b>{{ p.personal|length }}</b><span class="caption">личный</span></span>
+      <span class="tl-num {{ 'hot' if p.temp }}"><b>{{ p.temp|length }}</b><span class="caption">выдан под наряд</span></span>
+      <span class="tl-num"><b class="nowrap">{{ fmt_money(p.sum) }} ₴</b><span class="caption">на сумму</span></span>
+    </span>
+    {% if p.temp %}<span class="tl-temp">{% for t in p.temp[:3] %}<span class="tag">{{ t.name }}{% if t.work_order_id in wo_nums %} · {{ wo_nums[t.work_order_id][-6:] }}{% endif %}</span>{% endfor %}{% if p.temp|length > 3 %}<span class="caption">ещё {{ p.temp|length - 3 }}</span>{% endif %}</span>{% endif %}
+    <span class="caption tl-foot">{% if p.bad %}<span class="late">неисправно: {{ p.bad }}</span> · {% endif %}{% if lc %}проверка {{ lc.created_at.astimezone().strftime("%d.%m.%Y") }} · {{ CHECK_STATUS[lc.status]|lower }}{% else %}проверок не было{% endif %}</span>
+  </a>
+  {% else %}<p class="footnote">Пока ни за кем ничего не числится.</p>{% endfor %}
+</div>
+<div class="card compact" id="checks">
+  <div class="card-h"><span class="headline">Проверки в работе · {{ pending|length }}</span><span class="caption">новую — на странице сотрудника</span></div>
+  {% for c in pending %}
+  <a class="kv link" href="/tools/checks/{{ c.id }}"><span>{{ people[c.user_id].full_name if c.user_id in people else "" }} · {{ CHECK_KINDS[c.kind] }}</span><b>{{ CHECK_STATUS[c.status] }}</b></a>
+  {% else %}<p class="footnote" style="margin:0">Нет</p>{% endfor %}
+</div>
+
+{# ===================== Шкафы и полки ===================== #}
+{% elif view == "cabinets" %}
+<div class="tl-cabs">
+  {% for c in cabs %}
+  <section class="card compact tl-cab">
+    <div class="card-h"><span class="headline">🗄 {{ c.c.name }}{% if c.c.note %} <span class="caption">· {{ c.c.note }}</span>{% endif %}</span>
+      <span class="caption nowrap">{{ c.n }} шт{% if c.out %} · {{ c.out }} на руках{% endif %}</span></div>
+    {% for sh in c.shelves %}
+    <div class="tl-shelf">
+      <div class="tl-shelf-h"><b>{{ sh.s.name }}</b><span class="caption">{{ sh.tools|length or "пусто" }}</span></div>
+      {% for t in sh.tools %}
+      <a class="tl-item {{ 'out' if t.holder_id }}" href="/tools/{{ t.id }}">
+        <span class="tl-dot" data-ts="{{ t.status }}"></span>
+        <span class="grow"><span class="tl-iname">{{ t.name }}</span><span class="caption mono">{{ t.inv_no }}{% if t.is_spare %} · запасной{% endif %}</span></span>
+        {% if t.holder_id %}<span class="tl-who">у {{ people[t.holder_id].short_name if t.holder_id in people else "—" }}{% if t.work_order_id in wo_nums %} · {{ wo_nums[t.work_order_id][-6:] }}{% endif %}</span>
+        {% elif t.status != "ok" %}<span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span>{% endif %}
+      </a>
+      {% endfor %}
     </div>
-  </section>
-  <section class="ov-col on">
-    {% if ctx.can("tools.manage") %}
-    <details class="card compact add-finding">
-      <summary class="btn btn-sm btn-block">{{ icon("plus") }}Новый инструмент</summary>
-      <form class="form dense" method="post" action="/tools" enctype="multipart/form-data" data-compress style="margin-top:8px">
-        <input class="field" name="name" placeholder="Название (набор головок 94 пр.) *" required>
-        <div class="form-row three"><input class="field mono" name="inv_no" placeholder="{{ next_inv }}" aria-label="Инвентарный номер">
-          <input class="field mono" name="serial" placeholder="Серийный №"><input class="field" name="cost" inputmode="decimal" placeholder="Стоимость ₴"></div>
-        <input class="field" name="description" placeholder="Состав набора, примечание">
-        <input class="field" name="place" placeholder="Место в шкафу: Шкаф 1 · полка 2" aria-label="Место в шкафу">
-        <select class="field" name="category" id="newcat" aria-label="Категория">
-          <option value="personal">Личный — числится за слесарем</option>
-          <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</optgroup></select>
-        <select class="field" name="holder_id" id="newholder"><option value="">На склад инструмента</option>{% for s in staff %}<option value="{{ s.id }}">Выдать: {{ s.full_name }}</option>{% endfor %}</select>
-        <p class="hint" id="newhint" hidden style="margin:0">Общий инструмент заводится на склад, выдаётся потом в наряде под конкретную работу.</p>
-        <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photo" accept="image/*" hidden></label>
-        <button class="btn btn-sm">Завести</button>
+    {% else %}<p class="footnote" style="margin:0">Полок нет — добавьте ниже.</p>{% endfor %}
+    {% if manage %}
+    <details class="tl-cab-edit"><summary class="caption">Изменить шкаф и полки</summary>
+      <form class="form dense" method="post" action="/tools/cabinets"><input type="hidden" name="cid" value="{{ c.c.id }}">
+        <div class="form-row"><input class="field" name="name" value="{{ c.c.name }}" aria-label="Название шкафа"><input class="field" name="note" value="{{ c.c.note }}" placeholder="Где стоит"></div>
+        <div class="form-row"><button class="btn btn-sm btn-gray" name="action" value="rename">Сохранить</button>
+          <button class="btn btn-sm btn-gray" name="action" value="add_shelf">＋ Полка</button>
+          <button class="btn btn-sm btn-plain danger" name="action" value="delete" onclick="return confirm('Удалить шкаф «{{ c.c.name|e }}»? Только если он пустой.')">Удалить шкаф</button></div>
       </form>
+      {% for sh in c.shelves %}
+      <form class="form-row tl-shelf-edit" method="post" action="/tools/cabinets"><input type="hidden" name="sid" value="{{ sh.s.id }}">
+        <input class="field" name="name" value="{{ sh.s.name }}" aria-label="Название полки">
+        <button class="btn btn-sm btn-plain" name="action" value="rename_shelf">OK</button>
+        {% if not sh.tools %}<button class="btn btn-sm btn-plain danger" name="action" value="delete_shelf">Убрать</button>{% endif %}
+      </form>
+      {% endfor %}
     </details>
     {% endif %}
-    <div class="card compact">
-      <div class="card-h"><span class="headline">За кем числится</span></div>
-      {% for s in staff %}{% set n = summary.get(s.id) %}{% if n %}
-      <a class="kv link" href="/tools/staff/{{ s.id }}"><span>{{ s.full_name }} <span class="caption">{{ s.role.name }}</span></span><b>{{ n[0] }} шт · {{ "{:,.0f}".format(n[1]).replace(",", " ") }} ₴</b></a>
-      {% endif %}{% endfor %}
-      <p class="hint" style="margin:0">Проверку (приём, увольнение, плановую) — на странице сотрудника.</p>
-    </div>
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Проверки в работе · {{ pending|length }}</span></div>
-      {% for c in pending %}
-      <a class="kv link" href="/tools/checks/{{ c.id }}"><span>{{ people[c.user_id].full_name if c.user_id in people else "" }} · {{ CHECK_KINDS[c.kind] }}</span><b>{{ CHECK_STATUS[c.status] }}</b></a>
-      {% else %}<p class="footnote" style="margin:0">Нет</p>{% endfor %}
-    </div>
   </section>
+  {% endfor %}
+
+  {% if manage %}
+  <section class="card compact tl-cab tl-cab-new">
+    <div class="card-h"><span class="headline">＋ Новый шкаф</span></div>
+    <form class="form dense" method="post" action="/tools/cabinets"><input type="hidden" name="action" value="add">
+      <input class="field" name="name" placeholder="Шкаф {{ cabs|length + 1 }}">
+      <input class="field" name="note" placeholder="Где стоит: у подъёмника 3">
+      <label class="caption">Сколько полок<input class="field" name="shelves" value="4" inputmode="numeric"></label>
+      <button class="btn btn-sm">Завести шкаф</button>
+    </form>
+  </section>
+  {% endif %}
 </div>
+
+{% if no_shelf %}
+<section class="card compact">
+  <div class="card-h"><span class="headline">Не разложено по полкам · {{ no_shelf|length }}</span><span class="caption">общий и запасной инструмент без места</span></div>
+  {% if manage and cabs %}
+  <form method="post" action="/tools/place" class="tl-place">
+    <input type="hidden" name="back" value="/tools?view=cabinets">
+    <div class="tl-place-list">
+      {% for t in no_shelf %}<label class="tl-pick"><input type="checkbox" name="tool" value="{{ t.id }}"><span>{{ t.name }} <span class="caption mono">{{ t.inv_no }}</span>{% if t.place %} <span class="caption">· {{ t.place }}</span>{% endif %}</span></label>{% endfor %}
+    </div>
+    <div class="form-row"><select class="field" name="shelf_id" aria-label="Полка">{% for s, label in shelves %}<option value="{{ s.id }}">{{ label }}</option>{% endfor %}</select>
+      <button class="btn btn-sm">Положить отмеченное на полку</button></div>
+  </form>
+  {% else %}
+  <div class="tl-place-list">{% for t in no_shelf %}<a class="tl-pick" href="/tools/{{ t.id }}">{{ t.name }} <span class="caption mono">{{ t.inv_no }}</span></a>{% endfor %}</div>
+  {% if not cabs %}<p class="hint" style="margin:0">Сначала заведите шкаф — справа «Новый шкаф».</p>{% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{# ===================== Запасные наборы ===================== #}
+{% elif view == "spare" %}
+<p class="footnote" style="margin:0">Запасные наборы лежат в шкафу. Сломался или потерялся личный инструмент — выдайте слесарю запасной: он станет его личным, а сломанный сдаётся по проверке.</p>
+<div class="tl-cards">
+  {% for t in spares %}
+  <div class="card compact tl-card tl-spare {{ 'out' if t.holder_id }}">
+    <a class="tl-card-h" href="/tools/{{ t.id }}"><span class="tl-ava">🧰</span>
+      <span class="grow"><b>{{ t.name }}</b><span class="caption mono">{{ t.inv_no }}{% if t.serial %} · S/N {{ t.serial }}{% endif %}</span></span>
+      <span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></a>
+    {% if t.description %}<span class="caption tl-desc">{{ t.description }}</span>{% endif %}
+    <span class="caption">{{ "📍 " ~ t.place if t.place else "место не указано" }} · {{ fmt_money(t.cost) }} ₴</span>
+    {% if manage and not t.holder_id and t.status in ("ok", "worn") %}
+    <form class="form-row" method="post" action="/tools/{{ t.id }}">
+      <input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/tools?view=spare">
+      <select class="field" name="to_user" required aria-label="Кому выдать"><option value="">Выдать взамен личного…</option>
+        {% for s in staff %}<option value="{{ s.id }}">{{ s.full_name }}</option>{% endfor %}</select>
+      <button class="btn btn-sm btn-tinted" onclick="return this.form.to_user.value ? confirm('Выдать запасной набор? Он станет личным инструментом слесаря.') : true">Выдать</button>
+    </form>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="footnote">Запасных наборов пока нет. Заведите инструмент с категорией «Запасной набор» — кнопка «＋ Инструмент» сверху.</p>
+  {% endfor %}
+</div>
+
+{# ===================== Весь список ===================== #}
+{% else %}
+<form class="toolbar-row tl-filters" method="get" action="/tools">
+  <input type="hidden" name="view" value="list"><input type="hidden" name="q" value="{{ q }}">
+  <select class="field" name="cat" onchange="this.form.submit()" aria-label="Категория">
+    <option value="">Все категории · {{ n_all }}</option>
+    <option value="personal" {% if cat == "personal" %}selected{% endif %}>Личный · {{ n_personal }}</option>
+    <option value="spare" {% if cat == "spare" %}selected{% endif %}>Запасные наборы · {{ cat_counts.get("spare", 0) }}</option>
+    <option value="shared" {% if cat == "shared" %}selected{% endif %}>Общий (под наряд) · {{ n_all - n_personal - cat_counts.get("spare", 0) }}</option>
+    <optgroup label="Общий по категориям">
+    {% for k, v in TOOL_CATEGORIES.items() if k not in ("personal", "spare") %}<option value="{{ k }}" {% if cat == k %}selected{% endif %}>{{ v }} · {{ cat_counts.get(k, 0) }}</option>{% endfor %}
+    </optgroup></select>
+  <select class="field" name="holder" onchange="this.form.submit()" aria-label="У кого">
+    <option value="">У всех</option><option value="stock" {% if holder == "stock" %}selected{% endif %}>В шкафах (не выдан)</option>
+    <option value="out" {% if holder == "out" %}selected{% endif %}>На руках</option>
+    {% for s in staff %}<option value="{{ s.id }}" {% if holder == s.id|string %}selected{% endif %}>{{ s.full_name }}</option>{% endfor %}</select>
+  <select class="field" name="st" onchange="this.form.submit()" aria-label="Состояние">
+    <option value="">Любое состояние</option><option value="bad" {% if st == "bad" %}selected{% endif %}>Сломан или износ</option></select>
+</form>
+<div class="tablewrap">
+  <table class="table">
+    <thead><tr><th>Инв. №</th><th>Инструмент</th><th>Где лежит</th><th>У кого</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
+    <tbody>
+    {% for t in rows %}
+    <tr class="row-link" onclick="location.href='/tools/{{ t.id }}'">
+      <td class="mono">{{ t.inv_no }}</td>
+      <td>{{ t.name }}<div class="caption"><span class="tag tool-cat" data-c="{{ t.cat }}">{{ TOOL_CATEGORIES[t.cat] }}</span>{% if t.serial %} <span class="mono">S/N {{ t.serial }}</span>{% endif %}</div></td>
+      <td class="caption">{{ t.place or "—" }}</td>
+      <td>{{ people[t.holder_id].short_name if t.holder_id in people else "в шкафу" }}
+        {% if t.work_order_id in wo_nums %}<div class="caption">под наряд {{ wo_nums[t.work_order_id] }}</div>{% endif %}</td>
+      <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td>
+      <td class="num nowrap">{{ t.cost|money }}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="footnote">Инструмента нет{% if q or cat %} по запросу{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if manage %}
+<dialog id="tnew" class="sheet">
+  <form class="form" method="post" action="/tools" enctype="multipart/form-data" data-compress>
+    <h2 class="title-2">Новый инструмент</h2>
+    <input class="field" name="name" placeholder="Название (набор головок 94 пр.) *" required>
+    <div class="form-row three"><input class="field mono" name="inv_no" placeholder="{{ next_inv }}" aria-label="Инвентарный номер">
+      <input class="field mono" name="serial" placeholder="Серийный №"><input class="field" name="cost" inputmode="decimal" placeholder="Стоимость ₴"></div>
+    <input class="field" name="description" placeholder="Состав набора, примечание">
+    <select class="field" name="category" id="newcat" aria-label="Категория">
+      <option value="personal">Личный — числится за слесарем</option>
+      <option value="spare">Запасной набор — лежит в шкафу</option>
+      <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k not in ("personal", "spare") %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</optgroup></select>
+    <select class="field" name="holder_id" id="newholder"><option value="">В шкаф (не выдавать)</option>{% for s in staff %}<option value="{{ s.id }}">Выдать: {{ s.full_name }}</option>{% endfor %}</select>
+    {% if shelves %}<select class="field" name="shelf_id" id="newshelf" aria-label="Полка"><option value="">Полка — не выбрана</option>{% for s, label in shelves %}<option value="{{ s.id }}">{{ label }}</option>{% endfor %}</select>
+    {% else %}<input class="field" name="place" placeholder="Место: Шкаф 1 · полка 2">{% endif %}
+    <p class="hint" id="newhint" hidden style="margin:0">Общий и запасной инструмент заводится в шкаф. Общий выдаётся потом под наряд, запасной — взамен личного.</p>
+    <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photo" accept="image/*" hidden></label>
+    <div class="form-row"><button class="btn">Завести</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+{% endif %}
 <script src="{{ asset('/static/js/photos.js') }}"></script>
 <script>
-(function () {  // «Выдать» при заведении — только для личного инструмента
+(function () {  // «Выдать» при заведении — только для личного; полка — для общего и запасного
   const c = document.getElementById('newcat'), h = document.getElementById('newholder'), hint = document.getElementById('newhint');
   if (!c) return;
   function sync() { const p = c.value === 'personal'; h.hidden = !p; hint.hidden = p; if (!p) h.value = ''; }

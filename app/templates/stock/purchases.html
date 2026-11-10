@@ -1,25 +1,67 @@
 {% extends "base.html" %}
+{# Закупки (11.11.2026): черновиков сколько угодно — по одному заказу на поставщика.
+   «Заказать» в наряде кладёт строку в черновик поставщика, у которого брали эту деталь, иначе — в общий. #}
 {% block content %}
+{% set cost_ok = ctx.can("prices.view_purchase") %}
 <header class="page-head">
-  <h1 class="large-title">Закупки</h1>
-  {% if ctx.can("purchases.manage") %}<form method="post" action="/purchases/new"><button class="btn btn-sm">{{ icon("plus") }}Закупка на склад</button></form>{% endif %}
+  <div><h1 class="large-title">Закупки</h1></div>
+  <div class="ov-actions">
+    {% if ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход</a>{% endif %}
+    {% if ctx.can("purchases.manage") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('pnew').showModal()">{{ icon("plus") }}Новая закупка</button>{% endif %}
+  </div>
 </header>
-<p class="subhead" style="margin:0">«Заказать» в наряде добавляет строку в текущий черновик. Отправили поставщику → кладовщик ждёт приход.</p>
-<div class="tablewrap fill scroll">
-  <table class="table">
-    <thead><tr><th>Дата</th><th>Поставщик</th><th>Статус</th><th class="num">Строк</th>{% if ctx.can("prices.view_purchase") %}<th class="num">Сумма</th>{% endif %}</tr></thead>
+
+<div class="pult-tiles pu-tiles">
+  {% for key, title, color, sub in [("draft", "Черновики", "gray", "собираем заказ"), ("wait", "Ждём", "orange", "заказано, едет"),
+                                     ("arrived", "Пришли", "green", "приняты на склад"), ("all", "Все", "blue", "за всё время")] %}
+  <a class="ptile {{ 'zero' if not counts[key] }} {{ 'on' if tab == key }}" href="/purchases?tab={{ key }}{% if sup %}&sup={{ sup }}{% endif %}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title }}</span><b>{{ counts[key] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+
+<div class="pu-filter">
+  <form method="get" action="/purchases"><input type="hidden" name="tab" value="{{ tab }}">
+    <select class="field" name="sup" onchange="this.form.submit()" aria-label="Поставщик">
+      <option value="">Все поставщики</option>
+      {% for s in supplier_list %}<option value="{{ s.id }}" {% if sup == s.id|string %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select></form>
+  <p class="footnote" style="margin:0">«Заказать» в наряде кладёт строку в черновик того поставщика, у кого брали эту деталь раньше, иначе — в общий черновик. Строки можно переносить между черновиками.</p>
+</div>
+
+<div class="tablewrap">
+  <table class="table pu-table">
+    <thead><tr><th>Создана</th><th>Поставщик</th><th>Статус</th><th class="num">Строк</th><th class="num">Под наряды</th>{% if cost_ok %}<th class="num">Сумма</th>{% endif %}<th>Привезут</th></tr></thead>
     <tbody>
     {% for p in rows %}
-    {% set n, total = stats.get(p.id, (0, 0)) %}
-    <tr onclick="location.href='/purchases/{{ p.id }}'" style="cursor:pointer">
-      <td class="footnote">{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
-      <td>{{ suppliers[p.supplier_id].name if p.supplier_id in suppliers else "—" }}{% if p.supplier_invoice %}<div class="caption">накл. {{ p.supplier_invoice }}</div>{% endif %}</td>
-      <td><span class="chip" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span></td>
-      <td class="num">{{ n }}</td>
-      {% if ctx.can("prices.view_purchase") %}<td class="num">{{ "%.2f"|format(total or 0) }} ₴</td>{% endif %}
+    {% set s = stats.get(p.id, {"n": 0, "total": 0, "orders": 0, "urgent": 0, "got": 0}) %}
+    <tr class="row-link" onclick="location.href='/purchases/{{ p.id }}'">
+      <td class="footnote nowrap">{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
+      <td><a href="/purchases/{{ p.id }}"><b>{{ suppliers[p.supplier_id].name if p.supplier_id in suppliers else "Без поставщика" }}</b></a>
+        {% if p.supplier_invoice %}<div class="caption">счёт {{ p.supplier_invoice }}</div>{% endif %}
+        {% if p.note %}<div class="caption">{{ p.note }}</div>{% endif %}</td>
+      <td><span class="chip" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
+        {% if s.urgent %}<span class="urg-tag">🔥 {{ s.urgent }}</span>{% endif %}</td>
+      <td class="num nowrap">{% if p.status in ("partial",) %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>
+      <td class="num">{{ s.orders or "—" }}</td>
+      {% if cost_ok %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
+      <td class="nowrap">{% if p.expected_on %}<span class="{{ 'late' if p.status in ('ordered','partial') and p.expected_on < today }}">{{ p.expected_on.strftime("%d.%m") }}</span>{% elif p.status in ("ordered","partial") %}<span class="caption">не указано</span>{% else %}—{% endif %}</td>
     </tr>
-    {% else %}<tr><td colspan="5" class="footnote">Закупок пока нет</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" class="footnote">Здесь пусто{% if tab == "draft" %} — нажмите «Новая закупка» или «Заказать» в наряде{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>
+
+{% if ctx.can("purchases.manage") %}
+<dialog id="pnew" class="sheet">
+  <form method="post" action="/purchases/new" class="form">
+    <h2 class="title-2">Новая закупка</h2>
+    <label class="caption">Поставщик
+      <select class="field" name="supplier_id"><option value="">— выбрать —</option>
+        {% for s in supplier_list %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></label>
+    <input class="field" name="supplier_new" placeholder="или новый поставщик — название">
+    <p class="footnote" style="margin:0">Дальше откроется закупка: добавите строки по одной или вставите весь список из Excel.</p>
+    <div class="form-row"><button class="btn" >Создать</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+{% endif %}
 {% endblock %}

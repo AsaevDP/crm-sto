@@ -81,15 +81,19 @@ def search_catalog(db: Session, branch_id, q: str, limit: int = 12) -> list[dict
     q = (q or "").strip()
     if len(q) < 2:
         return []
-    like = f"%{q}%"
     from .stock_cat import by_barcode
     hit = by_barcode(db, branch_id, q)   # «пикнули» наклейку сканером — сразу эта деталь
     if hit:
         rows = [db.get(PartCatalog, hit.catalog_id)]
     else:
-        rows = db.scalars(select(PartCatalog).where(PartCatalog.branch_id == branch_id, or_(
-            PartCatalog.name.ilike(like), PartCatalog.article.ilike(like), PartCatalog.brand.ilike(like),
-            PartCatalog.fits.ilike(like))).order_by(PartCatalog.name).limit(limit)).all()
+        # SQLite не различает регистр только у латиницы: «фильтр» и «Фильтр» ищем оба варианта
+        conds = []
+        for v in dict.fromkeys((q, q.lower(), q.capitalize(), q.upper())):
+            like = f"%{v}%"
+            conds += [PartCatalog.name.ilike(like), PartCatalog.article.ilike(like), PartCatalog.brand.ilike(like),
+                      PartCatalog.fits.ilike(like)]
+        rows = db.scalars(select(PartCatalog).where(PartCatalog.branch_id == branch_id, or_(*conds))
+                          .order_by(PartCatalog.name).limit(limit)).all()
     free = catalog_free(db, branch_id, [r.id for r in rows])
     last = {}
     for r in rows:
@@ -167,20 +171,35 @@ def unreserve(db: Session, part: WoPart, comment="Снятие резерва"):
         move(db, "unreserve", db.get(StockItem, sid), qty, part, comment=comment)
 
 
-def draft_purchase(db: Session, branch_id) -> Purchase:
-    """Текущая черновая закупка (одна на СТО): в неё падают все «Заказать»."""
-    p = db.scalar(select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft")
-                  .order_by(Purchase.created_at))
+def draft_purchase(db: Session, branch_id, supplier_id=None) -> Purchase:
+    """Черновик закупки. Черновиков может быть несколько — по одному на поставщика (11.11.2026).
+    supplier_id задан — черновик этого поставщика; иначе — общий черновик без поставщика."""
+    q = select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft")
+    q = q.where(Purchase.supplier_id == supplier_id) if supplier_id else q.where(Purchase.supplier_id.is_(None))
+    p = db.scalar(q.order_by(Purchase.created_at))
     if p is None:
-        p = Purchase(status="draft")
+        p = Purchase(status="draft", supplier_id=supplier_id)
         db.add(p)
         db.flush()
     return p
 
 
+def last_supplier(db: Session, catalog_id):
+    """У кого брали эту запчасть в последний раз (для подсказки, в какой черновик класть)."""
+    return db.scalar(select(Purchase.supplier_id).join(PurchaseLine, PurchaseLine.purchase_id == Purchase.id)
+                     .where(PurchaseLine.catalog_id == catalog_id, Purchase.supplier_id.is_not(None),
+                            Purchase.status != "draft").order_by(Purchase.created_at.desc()).limit(1))
+
+
 def order_part(db: Session, branch_id, part: WoPart, qty_total=None) -> PurchaseLine:
-    """Заказать у поставщика: строка закупки «под наряд». qty_total > нужного — излишек пойдёт на склад."""
-    p = draft_purchase(db, branch_id)
+    """Заказать у поставщика: строка закупки «под наряд». qty_total > нужного — излишек пойдёт на склад.
+    Если уже есть черновик у поставщика, у которого брали эту деталь раньше, — строка идёт туда, иначе в общий."""
+    sup = last_supplier(db, part.catalog_id)
+    p = None
+    if sup:
+        p = db.scalar(select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft",
+                                             Purchase.supplier_id == sup).order_by(Purchase.created_at))
+    p = p or draft_purchase(db, branch_id)
     line = PurchaseLine(purchase_id=p.id, catalog_id=part.catalog_id, qty=Decimal(qty_total or part.qty),
                         price=part.cost, wo_part_id=part.id)
     if line.qty < part.qty:
@@ -192,7 +211,7 @@ def order_part(db: Session, branch_id, part: WoPart, qty_total=None) -> Purchase
 
 def release_part(db: Session, part: WoPart, comment: str = "Позицию убрали из наряда"):
     """Снять резерв и убрать из черновой закупки (уже заказанное придёт на свободный остаток)."""
-    if part.status == "reserved":
+    if part.status in ("reserved", "ordered", "need"):   # «заказана» может быть частично в резерве (приход частями)
         unreserve(db, part, comment)
     for line in db.scalars(select(PurchaseLine).where(PurchaseLine.wo_part_id == part.id)):
         if db.get(Purchase, line.purchase_id).status == "draft":
@@ -200,6 +219,19 @@ def release_part(db: Session, part: WoPart, comment: str = "Позицию уб�
         else:
             line.wo_part_id = None
     db.flush()
+
+
+def unlink_line(db: Session, line: PurchaseLine):
+    """Строку убрали из закупки: позиция наряда снова ждёт решения запчастиста («со склада» / «заказать»).
+    Пришедшее частями снимается с резерва и становится свободным — «со склада» его же и возьмёт."""
+    if not line.wo_part_id:
+        return
+    part = db.get(WoPart, line.wo_part_id)
+    others = db.scalar(select(func.count()).select_from(PurchaseLine).where(
+        PurchaseLine.wo_part_id == part.id, PurchaseLine.id != line.id)) if part else 0
+    if part and part.status == "ordered" and not others:
+        unreserve(db, part, "Строку убрали из закупки")
+        part.status = "need"
 
 
 def source_part(db: Session, branch_id, part: WoPart, action: str = "auto") -> str:
@@ -272,37 +304,133 @@ def default_location(db: Session, catalog_id):
     return max(items, key=lambda i: bal[i.id]["on_hand"]).location_id
 
 
-def receive_line(db: Session, branch_id, line: PurchaseLine, location_id):
-    """Приход строки закупки: всё в ячейку, часть под наряд — сразу в резерв.
-    Ячейка не выбрана — кладём туда, где эта запчасть уже лежит."""
-    if line.received:
-        return
+def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=None) -> Decimal:
+    """Приход строки закупки (целиком или частью qty): в ячейку, под наряд — сразу в резерв.
+    Ячейка не выбрана — кладём туда, где эта запчасть уже лежит. Возвращает, сколько принято."""
+    left = line.left
+    if line.received or left <= 0:
+        return D0
+    take = left if qty is None else min(Decimal(qty), left)
+    if take <= 0:
+        return D0
     if location_id is None:
         location_id = default_location(db, line.catalog_id)
     item = get_or_create_item(db, line.catalog_id, location_id)
     item.cost = line.price
-    move(db, "in", item, line.qty, purchase_id=line.purchase_id, comment="Приход по закупке")
-    line.received, line.location_id = True, location_id
+    move(db, "in", item, take, purchase_id=line.purchase_id, comment="Приход по закупке")
+    line.received_qty = line.got + take
+    line.received, line.location_id = line.got >= line.qty, location_id
     if line.wo_part_id:
         part = db.get(WoPart, line.wo_part_id)
         if part and part.status in ("ordered", "need"):
-            move(db, "reserve", item, part.qty, part, comment="Пришло под наряд")
-            part.status = "reserved"
             db.flush()
-            wo = db.get(WorkOrder, part.work_order_id)
-            refresh_order_status(db, wo)
-            if part.urgent and wo.status != "instock":   # срочная пришла, остальное ещё едет — сказать сразу
-                from . import notify
-                notify.send(db, [wo.mechanic_id, wo.manager_id], "urgent_in", f"Срочная деталь пришла: {part.name}",
-                            f"{notify.car(db, wo)} · остальное ещё едет · наряд {wo.number}", f"/orders/{wo.id}#parts", wo)
+            have = sum(reserved_for_part(db, part.id).values(), D0)
+            put = min(take, Decimal(part.qty) - have)
+            if put > 0:
+                move(db, "reserve", item, put, part, comment="Пришло под наряд" + ("" if have + put >= part.qty else " (часть)"))
+            if have + max(put, D0) >= part.qty:
+                part.status = "reserved"
+                db.flush()
+                wo = db.get(WorkOrder, part.work_order_id)
+                refresh_order_status(db, wo)
+                if part.urgent and wo.status != "instock":   # срочная пришла, остальное ещё едет — сказать сразу
+                    from . import notify
+                    notify.send(db, [wo.mechanic_id, wo.manager_id], "urgent_in", f"Срочная деталь пришла: {part.name}",
+                                f"{notify.car(db, wo)} · остальное ещё едет · наряд {wo.number}", f"/orders/{wo.id}#parts", wo)
+    return take
 
 
 def refresh_purchase_status(db: Session, p: Purchase):
     lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)).all()
+    if p.status == "draft":
+        return
     if lines and all(l.received for l in lines):
         p.status = "arrived"
-    elif any(l.received for l in lines):
+    elif any(l.got > 0 for l in lines):
         p.status = "partial"
+    else:
+        p.status = "ordered"
+
+
+def move_rest(db: Session, branch_id, line: PurchaseLine, target: Purchase | None) -> PurchaseLine | None:
+    """Поставщик привёз не всё: остаток строки — в другую закупку (черновик), строка закрывается тем, что пришло.
+    Под наряд — новая строка тоже под этот наряд; резерв досчитается при её приходе."""
+    rest = line.left
+    if rest <= 0:
+        return None
+    target = target or draft_purchase(db, branch_id)
+    new = PurchaseLine(purchase_id=target.id, catalog_id=line.catalog_id, qty=rest, price=line.price,
+                       wo_part_id=line.wo_part_id, received_qty=0)
+    db.add(new)
+    line.qty = line.got
+    line.received = True
+    if line.qty <= 0:   # ничего не пришло — строку просто переносим
+        db.delete(line)
+    db.flush()
+    return new
+
+
+def delete_purchase(db: Session, p: Purchase):
+    """Удалить черновик закупки: позиции нарядов из него снова «нужна»."""
+    for line in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)).all():
+        unlink_line(db, line)
+        db.delete(line)
+    db.flush()
+    db.delete(p)
+
+
+# ---------- Вставка списка (из Excel / счёта поставщика) ----------
+def _num(s: str):
+    s = (s or "").strip().replace(" ", "").replace(" ", "").replace(",", ".")
+    for suf in ("шт", "грн", "₴", "uah"):
+        if s.lower().endswith(suf):
+            s = s[: -len(suf)]
+    try:
+        return Decimal(s) if s else None
+    except Exception:
+        return None
+
+
+def _looks_article(s: str) -> bool:
+    s = s.strip()
+    return bool(s) and " " not in s and len(s) <= 30 and any(ch.isdigit() for ch in s)
+
+
+def parse_paste(text: str) -> list[dict]:
+    """Строки «Название; Артикул; Бренд; Кол-во; Цена» — через Tab (из Excel), «;» или «|».
+    Порядок текстовых колонок угадываем: похожее на артикул (без пробелов, с цифрами) — артикул.
+    Числа в конце строки — количество и цена. Шапку таблицы и пустые строки пропускаем."""
+    out = []
+    for raw in (text or "").splitlines():
+        if not raw.strip():
+            continue
+        sep = "\t" if "\t" in raw else (";" if ";" in raw else ("|" if "|" in raw else None))
+        cells = [c.strip() for c in (raw.split(sep) if sep else [raw])]
+        cells = [c for c in cells if c != ""]
+        nums = []
+        while cells and _num(cells[-1]) is not None and len(nums) < 2:
+            nums.insert(0, _num(cells.pop()))
+        if not cells:
+            continue
+        low = " ".join(cells).lower()
+        if not nums and len(cells) > 1 and any(w in low for w in ("наименование", "название", "артикул")):
+            continue   # шапка
+        name, article, brand = "", "", ""
+        texts = list(cells)
+        arts = [c for c in texts if _looks_article(c)]
+        if arts and len(texts) > 1:
+            article = arts[0]
+            texts.remove(article)
+        name = max(texts, key=len) if texts else article
+        texts = [t for t in texts if t != name]
+        brand = texts[0] if texts else ""
+        qty = nums[0] if nums else Decimal(1)
+        price = nums[1] if len(nums) > 1 else Decimal(0)
+        if len(nums) == 1 and nums[0] != nums[0].to_integral_value():   # одно дробное число — это цена
+            qty, price = Decimal(1), nums[0]
+        out.append({"name": name[:200], "article": article[:80], "brand": brand[:80],
+                    "qty": qty if qty and qty > 0 else Decimal(1), "price": money(price or 0)})
+    return out
 
 
 # ---------- Выдача ----------

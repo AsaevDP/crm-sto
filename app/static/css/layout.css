@@ -1091,3 +1091,119 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
 .place-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap;
   background: color-mix(in srgb, var(--blue) 12%, transparent); color: color-mix(in srgb, var(--blue) 80%, var(--text)); }
 .tool-wait { opacity: .85; }
+
+/* ===== Инструмент (11.11.2026): плитки, сотрудники, шкафы и полки, запасные ===== */
+.tl-search { flex: 1 1 260px; max-width: 420px; }
+.tl-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+@media (min-width: 1200px) { .tl-tiles { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
+.tl-views { align-self: flex-start; }
+.tl-filters { flex-wrap: wrap; }
+.tl-filters .field { width: auto; min-width: 180px; }
+.tl-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.tl-card { display: grid; gap: 10px; align-content: start; text-decoration: none; color: var(--text); box-shadow: var(--shadow-1), inset 0 3px 0 var(--mc, var(--separator)); }
+a.tl-card:hover { background: var(--fill-2); }
+.tl-card-h { display: flex; gap: 10px; align-items: center; color: inherit; text-decoration: none; }
+.tl-card-h .grow { display: grid; min-width: 0; }
+.tl-card-h b { overflow-wrap: anywhere; }
+.tl-ava { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
+  background: color-mix(in srgb, var(--mc, var(--accent)) 16%, var(--surface)); color: color-mix(in srgb, var(--mc, var(--accent)) 80%, var(--text)); }
+.tl-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tl-num { display: grid; gap: 0; padding: 6px 8px; border-radius: var(--r-sm, 10px); background: var(--fill-2); }
+.tl-num b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.tl-num.hot { background: color-mix(in srgb, var(--orange) 14%, var(--surface)); }
+.tl-temp { display: flex; flex-wrap: wrap; gap: 4px; }
+.tl-foot { line-height: 1.3; }
+.tl-cabs { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-items: start; }
+.tl-cab { display: grid; gap: 8px; }
+.tl-shelf { border-radius: var(--r-sm, 10px); background: var(--fill-2); padding: 8px 10px; display: grid; gap: 2px; }
+.tl-shelf-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.tl-item { display: flex; gap: 8px; align-items: center; padding: 6px 4px; border-top: 0.5px solid var(--separator); text-decoration: none; color: var(--text); }
+.tl-item:hover { background: var(--fill-2); }
+.tl-item .grow { display: grid; min-width: 0; }
+.tl-iname { overflow-wrap: anywhere; }
+.tl-item.out { opacity: .78; }
+.tl-who { font-size: 12px; white-space: nowrap; color: color-mix(in srgb, var(--orange) 80%, var(--text)); font-weight: 600; }
+.tl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+.tl-dot[data-ts="worn"] { background: var(--orange); }
+.tl-dot[data-ts="broken"], .tl-dot[data-ts="lost"] { background: var(--red); }
+.tl-cab-edit > summary { cursor: pointer; }
+.tl-cab-edit .form { margin-top: 8px; }
+.tl-shelf-edit { margin-top: 6px; }
+.tl-cab-new { border: 1.5px dashed var(--separator); box-shadow: none; }
+.tl-place { display: grid; gap: 10px; }
+.tl-place-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tl-pick { display: inline-flex; gap: 6px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--fill-2); cursor: pointer;
+  text-decoration: none; color: var(--text); }
+.tl-pick:has(input:checked) { background: color-mix(in srgb, var(--accent) 16%, var(--surface)); }
+.tl-place .form-row .field { width: auto; min-width: 200px; }
+.tl-spare.out { opacity: .7; }
+.tl-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 899px) { .tl-search { max-width: none; } .tl-cards, .tl-cabs { grid-template-columns: 1fr; } }
+
+/* ===== Закупки (11.11.2026): плитки, шапка заказа, таблица строк, вставка списка ===== */
+.ptile.on { outline: 2px solid var(--tc); outline-offset: 1px; }
+span.ptile:hover { background: color-mix(in srgb, var(--tc) 13%, var(--surface)); }
+span.ptile.zero:hover { background: var(--surface); }
+.pu-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.pu-filter { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.pu-filter .field { width: auto; min-width: 200px; }
+.pu-filter .footnote { flex: 1 1 320px; }
+.row-link { cursor: pointer; }
+.pu-table a { color: inherit; text-decoration: none; }
+.row-link:hover td { background: var(--fill-2); }
+.late { color: var(--red); font-weight: 600; }
+.pu-top { display: grid; gap: 14px; }
+@media (min-width: 1100px) { .pu-top { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; } }
+.pu-top .pu-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pu-head-grid { display: grid; gap: 8px 10px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.pu-head-grid label { display: grid; gap: 4px; }
+.pu-head-btns { flex-wrap: wrap; }
+.btn.danger, .danger { color: var(--red); }
+.pu-lines td { vertical-align: middle; }
+.tablewrap.pu-wrap { overflow: visible; }
+.pu-lines tr.urgent td { background: color-mix(in srgb, var(--red) 6%, transparent); }
+.pu-lines tr.done td { color: var(--text-2); }
+.pu-lines tr.done td b { color: var(--text); }
+.pu-name { min-width: 200px; }
+.pu-recv { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
+.pu-recv select.mini { max-width: 130px; }
+.pu-act { white-space: nowrap; text-align: right; }
+.pu-more { display: inline-block; position: relative; }
+.pu-more > summary { list-style: none; }
+.pu-more > summary::-webkit-details-marker { display: none; }
+.pu-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 6; width: 260px; display: grid; gap: 8px; text-align: left;
+  box-shadow: var(--shadow-3); white-space: normal; }
+.pu-menu label { display: grid; gap: 4px; }
+.pu-add { display: grid; gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 0.5px solid var(--separator);
+  grid-template-columns: minmax(220px, 1fr) 150px 170px 80px 110px auto; }
+.pu-add-name { position: relative; }
+.pu-n { text-align: right; }
+.pu-results { max-height: 300px; }
+.pu-res { appearance: none; border: 0; background: none; font: inherit; color: inherit; width: 100%; text-align: left; cursor: pointer;
+  display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 0.5px solid var(--separator); }
+.pu-res:hover { background: var(--fill-2); }
+.pu-res .grow { display: grid; min-width: 0; }
+.pu-paste { margin-top: 8px; }
+.pu-paste > summary { list-style: none; display: inline-flex; }
+.pu-paste > summary::-webkit-details-marker { display: none; }
+.pu-paste form { margin-top: 8px; }
+.pu-paste textarea { resize: vertical; font-size: 13px; }
+.rc-qty { width: 70px; text-align: right; padding-top: 6px; padding-bottom: 6px; }
+dialog.sheet { border: 0; border-radius: var(--r-lg, 18px); padding: 22px; width: min(440px, calc(100vw - 32px)); background: var(--surface);
+  color: var(--text); box-shadow: var(--shadow-3); }
+dialog.sheet::backdrop { background: rgba(0, 0, 0, .35); }
+dialog.sheet .form { display: grid; gap: 10px; }
+dialog.sheet label { display: grid; gap: 4px; }
+@media (max-width: 1199px) { .pu-add { grid-template-columns: 1fr 1fr 1fr; } .pu-add-name { grid-column: 1 / -1; } }
+@media (max-width: 899px) {
+  .pu-table thead, .pu-lines thead { display: none; }
+  .pu-table tr, .pu-lines tr { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 10px 0; border-bottom: 0.5px solid var(--separator); }
+  .pu-table td, .pu-lines td { border: 0; padding: 0; text-align: left; }
+  .pu-lines td:first-child { display: none; }
+  .pu-lines td[data-l] { display: flex; gap: 6px; align-items: center; justify-content: space-between; grid-column: 1 / -1; }
+  .pu-lines td[data-l]::before { content: attr(data-l); font-size: 12px; color: var(--text-2); font-weight: 400; }
+  .pu-lines .pu-name, .pu-lines .pu-for, .pu-lines .pu-got { grid-column: 1 / -1; min-width: 0; }
+  .pu-recv { flex-wrap: wrap; }
+  .pu-add { grid-template-columns: 1fr 1fr; }
+  .pu-menu { right: auto; left: 0; }
+}
