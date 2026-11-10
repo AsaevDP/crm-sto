@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..db import now
 from ..models import Payment, WoPart, WorkOrder, WoWork
 from . import orders as osvc
+from ..models.orders import PART_OFF
 
 D0 = Decimal("0")
 
@@ -41,7 +42,7 @@ class Totals:
 def totals(db: Session, wo: WorkOrder) -> Totals:
     works = sum((w.price for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))), D0)
     parts = sum((p.price * p.qty for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id,
-                                                                            WoPart.status != "returned"))), D0)
+                                                                            WoPart.status.notin_(PART_OFF)))), D0)
     subtotal = money(works + parts)
     discount = money(subtotal * Decimal(wo.discount_pct or 0) / 100)
     paid = money(db.scalar(select(func.sum(Payment.amount)).where(Payment.work_order_id == wo.id)) or 0)

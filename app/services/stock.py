@@ -14,11 +14,13 @@ from sqlalchemy.orm import Session
 from ..models import (IssueRequest, IssueRequestLine, Location, PartCatalog, Purchase, PurchaseLine, StockItem,
                       StockMovement, WoPart, WorkOrder)
 from . import orders as osvc
+from ..models.orders import PART_OFF
 
 D0 = Decimal("0")
 ON_HAND_SIGN = {"in": 1, "return": 1, "issue": -1, "writeoff": -1, "sale": -1, "adjust": 1}
 PART_STATUS_LABEL = {"need": "нужна", "ordered": "заказана", "arrived": "пришла", "reserved": "в резерве",
-                     "issued": "выдана", "installed": "установлена", "returned": "возврат"}
+                     "issued": "выдана", "installed": "установлена", "returned": "возврат",
+                     "option": "вариант", "declined": "не выбран"}
 
 
 def money(x) -> Decimal:
@@ -109,6 +111,9 @@ def get_or_create_catalog(db: Session, name: str, article: str = "", brand: str 
     name, article = name.strip()[:200], article.strip()[:80]
     q = select(PartCatalog).where(PartCatalog.name == name)
     q = q.where(PartCatalog.article == article) if article else q.where(PartCatalog.article == "")
+    if brand.strip() and not article:   # одна деталь разных фирм — разные позиции каталога (11.11.2026)
+        from sqlalchemy import func as _f
+        q = q.where(_f.lower(PartCatalog.brand) == brand.strip().lower())
     p = db.scalar(q)
     if p is None:
         from ..models.stock import guess_category, guess_section
@@ -185,18 +190,63 @@ def order_part(db: Session, branch_id, part: WoPart, qty_total=None) -> Purchase
     return line
 
 
+def release_part(db: Session, part: WoPart, comment: str = "Позицию убрали из наряда"):
+    """Снять резерв и убрать из черновой закупки (уже заказанное придёт на свободный остаток)."""
+    if part.status == "reserved":
+        unreserve(db, part, comment)
+    for line in db.scalars(select(PurchaseLine).where(PurchaseLine.wo_part_id == part.id)):
+        if db.get(Purchase, line.purchase_id).status == "draft":
+            db.delete(line)
+        else:
+            line.wo_part_id = None
+    db.flush()
+
+
+def source_part(db: Session, branch_id, part: WoPart, action: str = "auto") -> str:
+    """Позиция «нужна» → со склада (если есть свободный остаток) или в закупку. Возвращает итог для сообщения."""
+    if action in ("auto", "stock") and reserve_from_stock(db, branch_id, part):
+        return "взято со склада в резерв"
+    if action in ("auto", "order"):
+        order_part(db, branch_id, part)
+        return "добавлено в закупку"
+    return "добавлено — выберите: со склада или заказать"
+
+
+def choose_option(db: Session, branch_id, wo: WorkOrder, part: WoPart) -> str:
+    """Клиент выбрал вариант. Остальные варианты группы → «не выбран». Ошибка или ''."""
+    group = [p for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id,
+                                                       WoPart.option_group == part.option_group)) if p.id != part.id]
+    if any(p.status in ("issued", "installed") for p in group):
+        return "Другой вариант уже выдан слесарю — сначала верните его на склад"
+    for p in group:
+        if p.status not in ("option", "declined"):
+            release_part(db, p, "Клиент выбрал другой вариант")
+        p.status, p.source = "declined", ""
+    if part.status in ("option", "declined"):
+        part.status = "need"
+        # Подбор уже идёт — сразу со склада или в закупку; до подбора позиция ждёт запчастиста
+        if wo.status in ("picking", "waiting", "instock", "work") and part.catalog_id:
+            source_part(db, branch_id, part)
+            if part.status == "ordered" and wo.status == "instock":
+                osvc.set_status(db, wo, "waiting", f"Выбран вариант «{part.name}» — ждём от поставщика")
+    return ""
+
+
 def refresh_order_status(db: Session, wo: WorkOrder):
     """Наряд ждёт запчасти → все пришли и в резерве → «Запчасти на складе»."""
     if wo.status != "waiting":
         return
-    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status != "returned")).all()
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
     if parts and all(p.status in ("reserved", "issued", "installed") for p in parts):
         osvc.set_status(db, wo, "instock", "Все запчасти пришли и в резерве")
 
 
 def finish_picking(db: Session, wo: WorkOrder) -> str:
     """Запчастист закончил подбор. Возвращает ошибку или ''."""
-    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status != "returned")).all()
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
+    waiting_choice = db.scalar(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "option"))
+    if waiting_choice:
+        return f"Клиент ещё не выбрал вариант: «{waiting_choice.name}»"
     if any(p.status == "need" for p in parts):
         return "По каждой запчасти выберите: со склада или заказать"
     if not parts:

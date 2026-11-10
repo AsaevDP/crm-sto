@@ -94,6 +94,12 @@ class PartCatalog(Entity):
     subcategory: Mapped[str | None] = mapped_column(String(60), default="", nullable=True, index=True)
 
 
+class Brand(Entity):
+    """Справочник брендов запчастей (11.11.2026): добавили один раз — выбирают все. Правится в «Настройки → Бренды»."""
+    __tablename__ = "brands"
+    name: Mapped[str] = mapped_column(String(80), index=True)
+
+
 class StockCategory(Entity):
     """Дерево категорий склада (10.11.2026): раздел → категория → подкатегория. Правится на «Склад → Категории».
     У запчасти в справочнике хранится название категории/подкатегории (переименование меняет и их)."""

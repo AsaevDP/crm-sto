@@ -2,6 +2,79 @@
 {% block body_class %}fit{% endblock %}
 {% block content %}
 {% set n_find = findings|length %}
+{% set problems_card %}
+<div class="card compact step-card {{ 'now' if flow.cur in (1, 2) }}" id="problems" style="--sc:var(--{{ 'yellow' if wo.status == 'approve' else 'purple' }})">
+  <div class="card-h">
+    <span class="headline"><span class="stepno">{{ 3 if wo.status == "approve" else 2 }}</span>{{ "Согласование" if wo.status == "approve" else "Проблемы" }} · {{ n_find }}</span>
+    {% if wo.status == "approve" %}<span class="chip" data-s="approve">ждёт клиента</span>{% endif %}
+  </div>
+
+  {% for f in findings %}
+  <div class="finding" data-u="{{ f.urgency }}">
+    <div class="finding-top">
+      <span class="urg" data-u="{{ f.urgency }}">{{ URGENCY.get(f.urgency) }}</span>
+      {% if f.approval == "yes" %}<span class="chip" data-s="ready">согласовано</span>{% elif f.approval == "no" %}<span class="chip" data-s="cancel">отказ</span>{% endif %}
+    </div>
+    <div class="finding-text">{{ f.text }}</div>
+    {% set fp = finding_photos.get(f.id, []) %}
+    {% if fp %}<div class="pgallery xs">{% for p in fp %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>{% endif %}
+    <div class="finding-foot">
+      <span class="caption">{{ people.get(f.created_by).short_name if people.get(f.created_by) else "" }} · {{ f.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+      {% if can_approve %}
+      <div class="segmented yn" data-url="/orders/{{ wo.id }}/findings/{{ f.id }}/approval">
+        <button type="button" data-v="yes" aria-pressed="{{ (f.approval == 'yes')|lower }}">✓ Да</button>
+        <button type="button" data-v="no" aria-pressed="{{ (f.approval == 'no')|lower }}">✕ Нет</button>
+      </div>
+      {% elif can_diag and f.approval == "pending" and wo.status in ("created", "diag", "approve") %}
+      <form method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Удалить</button></form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="footnote">{% if wo.status == "created" and can_route %}Запишите, что говорит клиент — каждую проблему отдельно. Или отправьте машину на диагностику (вверху).
+    {% elif wo.scenario == "A" %}Без диагностики — работы известны заранее.{% elif wo.status == "diag" %}Слесарь ещё не внёс проблемы.{% else %}Проблем нет.{% endif %}</p>
+  {% endfor %}
+
+  {% if can_diag %}
+  <details class="add-finding" {% if (wo.status == "diag" or can_route) and not findings %}open{% endif %}>
+    <summary class="btn btn-tinted btn-block">{{ icon("plus") }}{{ "Записать проблему" if wo.status == "created" else "Добавить проблему" }}</summary>
+    <form class="form" id="ffind" style="margin-top:10px">
+      <textarea class="field" name="text" rows="2" placeholder="{{ 'Со слов клиента: «Скрипят тормоза спереди»' if wo.status == 'created' else 'Что нашли: «Течь масла с прокладки клапанной крышки»' }}" required></textarea>
+      <div class="segmented seg-wide" id="urg">
+        <button type="button" data-v="urgent" aria-pressed="false">🔴 Срочно</button>
+        <button type="button" data-v="soon" aria-pressed="true">🟡 Скоро</button>
+        <button type="button" data-v="advice" aria-pressed="false">⚪ Совет</button>
+      </div>
+      <input type="hidden" name="urgency" value="soon">
+      <div class="pp-grid" id="fgrid"></div>
+      <div class="line" style="display:flex;gap:8px">
+        <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" id="finput" accept="image/*" multiple hidden></label>
+        <button class="btn btn-sm" style="margin-left:auto">Сохранить проблему</button>
+      </div>
+      {% if wo.status == "work" %}<p class="hint warn">Наряд вернётся на согласование с клиентом.</p>{% endif %}
+    </form>
+  </details>
+  {% endif %}
+
+  {% if can_finish_diag %}
+  <form method="post" action="/orders/{{ wo.id }}/diag-done" onsubmit="return {{ 'true' if findings else 'confirm(\'Проблем не найдено — отправить менеджеру?\')' }}">
+    <button class="btn btn-block">{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}</button>
+  </form>
+  {% endif %}
+  {% if can_route and findings %}
+  <form method="post" action="/orders/{{ wo.id }}/to-approve">
+    <button class="btn btn-block">Проблемы записаны → согласование</button>
+  </form>
+  {% endif %}
+  {% if can_approve %}
+  {% if can_offer %}<a class="btn btn-gray btn-block" href="#parts" data-goto="diag">{{ icon("plus") }}Добавить запчасти и варианты фирм</a>{% endif %}
+  <form method="post" action="/orders/{{ wo.id }}/approval-done">
+    <button class="btn btn-block">Согласование завершено</button>
+    <p class="hint" style="margin:6px 0 0">«Да» станут работами, «Нет» — рекомендациями в карте клиента. Запчасти можно добавить и до, и после.</p>
+  </form>
+  {% endif %}
+</div>
+{% endset %}
 <header class="ov-head">
   <a class="back" href="/orders">{{ icon("back") }}Наряды</a>
   <div class="ov-title">
@@ -12,32 +85,67 @@
     </div>
     <div class="ov-actions">
       <span class="chip chip-lg" data-s="{{ wo.status }}">{{ STATUSES[wo.status] }}</span>
-      <a class="btn btn-sm btn-gray" href="/orders/{{ wo.id }}/act/intake" target="_blank">Акт приёма</a>
+      <details class="docs-menu">
+        <summary class="btn btn-sm btn-gray">Документы ▾</summary>
+        <div class="docs-list">
+          <a href="/orders/{{ wo.id }}/act/intake" target="_blank">Акт приёма</a>
+          {% if ctx.can("prices.view_sale", "money.view") %}<a href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a>
+          <a href="/orders/{{ wo.id }}/act/parts" target="_blank">Акт запчастей</a>
+          <a href="/orders/{{ wo.id }}/act/works" target="_blank">Акт выполненных работ</a>{% endif %}
+          {% if wo.status == "closed" %}<a href="/orders/{{ wo.id }}/act/handover" target="_blank">Акт выдачи</a>{% endif %}
+        </div>
+      </details>
     </div>
   </div>
 </header>
 
-{% if wo.status == "cancel" %}<div class="flash error">Отменён: {{ wo.cancel_reason }}</div>{% endif %}
+{# Шаги наряда: от приёма до выдачи (11.11.2026) #}
+<ol class="wo-steps" aria-label="Этапы наряда">
+  {% for s in flow.steps %}
+  <li class="wo-step" data-state="{{ s.state }}" style="--sc:var(--{{ s.color }})"><span class="wo-dot">{{ "✓" if s.state == "done" else s.n }}</span><span class="wo-lbl">{{ s.label }}</span></li>
+  {% endfor %}
+</ol>
+<div class="wo-now" style="--sc:var(--{{ flow.color }})">
+  <div class="grow"><b>{{ flow.title }}</b><span class="wo-now-t">{{ flow.text }}</span></div>
+  {% if can_route %}
+  <form class="wo-now-acts" method="post" action="/orders/{{ wo.id }}/to-diag">
+    <select class="field" name="mechanic_id" required aria-label="Слесарь"><option value="">Слесарь…</option>
+      {% for u in diag_mechanics %}<option value="{{ u.id }}">{{ u.short_name }}</option>{% endfor %}</select>
+    <select class="field" name="lift_id" aria-label="Пост"><option value="">Пост…</option>
+      {% for l, busy in diag_lifts %}<option value="{{ l.id }}">{{ l.number }}{% if busy %} · занят{% endif %}</option>{% endfor %}</select>
+    <button class="btn btn-sm">На диагностику</button>
+  </form>
+  {% endif %}
+</div>
 
-{# На iPhone — вкладки, на ПК всё видно сразу колонками #}
+{# На iPhone — вкладки, на ПК всё видно сразу колонками: слева направо — как идёт работа #}
 <div class="segmented seg-wide ov-tabs" id="ovtabs">
-  <button type="button" data-t="main" aria-pressed="true">Обзор</button>
-  <button type="button" data-t="diag" aria-pressed="false">Проблемы{% if n_find %} · {{ n_find }}{% endif %}</button>
-  <button type="button" data-t="hist" aria-pressed="false">История</button>
+  <button type="button" data-t="main" aria-pressed="true">Проблемы{% if n_find %} · {{ n_find }}{% endif %}</button>
+  <button type="button" data-t="diag" aria-pressed="false">Запчасти</button>
+  <button type="button" data-t="hist" aria-pressed="false">Деньги</button>
 </div>
 
 <div class="ov-grid fill">
-  {# ===== Колонка 1: фото, работы, акт ===== #}
+  {# ===== Колонка 1: приём → проблемы → согласование ===== #}
   <section class="ov-col" data-t="main">
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Фото · {{ photos|length }}</span>
+    <div class="card compact step-card {{ 'now' if flow.cur == 0 }}" style="--sc:var(--blue)">
+      <div class="card-h"><span class="headline"><span class="stepno">1</span>Приём · фото {{ photos|length }}</span>
         {% if can_add_photo %}<label class="btn btn-plain btn-sm pp-add" id="addph">{{ icon("plus") }}<span id="addtxt">Фото</span><input type="file" id="pinput" accept="image/*" multiple hidden></label>{% endif %}
       </div>
       {% if photos %}
       <div class="pgallery sm">{% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>
       {% else %}<p class="footnote">Нет фото</p>{% endif %}
+      {% if wo.complaint %}<p class="ov-text"><span class="footnote">Со слов клиента:</span> {{ wo.complaint }}</p>{% endif %}
+      <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
+      <div class="kv"><span>В машине</span><b class="wrap">{% for i in wo.intake_items or [] %}{{ INTAKE_LABELS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
+      {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}
     </div>
+    {{ problems_card }}
+  </section>
 
+  {# ===== Колонка 2: запчасти → работы ===== #}
+  <section class="ov-col" data-t="diag">
+    {% include "orders/_parts.html" %}
     {% include "orders/_works.html" %}
 
     {% if wo_tools or can_issue_tool %}
@@ -72,85 +180,6 @@
     </div>
     {% endif %}
 
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Акт приёма</span></div>
-      <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
-      <div class="kv"><span>В машине</span><b class="wrap">{% for i in wo.intake_items or [] %}{{ INTAKE_LABELS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
-      {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}
-    </div>
-  </section>
-
-  {# ===== Колонка 2: диагностика и согласование ===== #}
-  <section class="ov-col" data-t="diag">
-    {% set problems_card %}
-    <div class="card compact">
-      <div class="card-h">
-        <span class="headline">Проблемы · {{ n_find }}</span>
-        {% if wo.status == "approve" %}<span class="chip" data-s="approve">ждёт решения клиента</span>{% endif %}
-      </div>
-
-      {% for f in findings %}
-      <div class="finding" data-u="{{ f.urgency }}">
-        <div class="finding-top">
-          <span class="urg" data-u="{{ f.urgency }}">{{ URGENCY.get(f.urgency) }}</span>
-          {% if f.approval == "yes" %}<span class="chip" data-s="ready">согласовано</span>{% elif f.approval == "no" %}<span class="chip" data-s="cancel">отказ</span>{% endif %}
-        </div>
-        <div class="finding-text">{{ f.text }}</div>
-        {% set fp = finding_photos.get(f.id, []) %}
-        {% if fp %}<div class="pgallery xs">{% for p in fp %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>{% endif %}
-        <div class="finding-foot">
-          <span class="caption">{{ people.get(f.created_by).short_name if people.get(f.created_by) else "" }} · {{ f.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
-          {% if can_approve %}
-          <div class="segmented yn" data-url="/orders/{{ wo.id }}/findings/{{ f.id }}/approval">
-            <button type="button" data-v="yes" aria-pressed="{{ (f.approval == 'yes')|lower }}">✓ Да</button>
-            <button type="button" data-v="no" aria-pressed="{{ (f.approval == 'no')|lower }}">✕ Нет</button>
-          </div>
-          {% elif can_diag and f.approval == "pending" and wo.status in ("diag", "approve") %}
-          <form method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Удалить</button></form>
-          {% endif %}
-        </div>
-      </div>
-      {% else %}
-      <p class="footnote">{% if wo.scenario == "A" %}Сценарий А — без диагностики.{% elif wo.status == "diag" %}Слесарь ещё не внёс проблемы.{% else %}Проблем нет.{% endif %}</p>
-      {% endfor %}
-
-      {% if can_diag %}
-      <details class="add-finding" {% if wo.status == "diag" and not findings %}open{% endif %}>
-        <summary class="btn btn-tinted btn-block">{{ icon("plus") }}Добавить проблему</summary>
-        <form class="form" id="ffind" style="margin-top:10px">
-          <textarea class="field" name="text" rows="2" placeholder="Что нашли: «Течь масла с прокладки клапанной крышки»" required></textarea>
-          <div class="segmented seg-wide" id="urg">
-            <button type="button" data-v="urgent" aria-pressed="false">🔴 Срочно</button>
-            <button type="button" data-v="soon" aria-pressed="true">🟡 Скоро</button>
-            <button type="button" data-v="advice" aria-pressed="false">⚪ Совет</button>
-          </div>
-          <input type="hidden" name="urgency" value="soon">
-          <div class="pp-grid" id="fgrid"></div>
-          <div class="line" style="display:flex;gap:8px">
-            <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" id="finput" accept="image/*" multiple hidden></label>
-            <button class="btn btn-sm" style="margin-left:auto">Сохранить проблему</button>
-          </div>
-          {% if wo.status == "work" %}<p class="hint warn">Наряд вернётся на согласование с клиентом.</p>{% endif %}
-        </form>
-      </details>
-      {% endif %}
-
-      {% if can_finish_diag %}
-      <form method="post" action="/orders/{{ wo.id }}/diag-done" onsubmit="return {{ 'true' if findings else 'confirm(\'Проблем не найдено — отправить менеджеру?\')' }}">
-        <button class="btn btn-block">{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}</button>
-      </form>
-      {% endif %}
-      {% if can_approve %}
-      <form method="post" action="/orders/{{ wo.id }}/approval-done">
-        <button class="btn btn-block">Согласование завершено</button>
-        <p class="hint" style="margin:6px 0 0">«Да» уйдут запчастисту в подбор, «Нет» — в рекомендации в карте клиента.</p>
-      </form>
-      {% endif %}
-    </div>
-    {% endset %}
-    {# До согласования важнее проблемы, после — запчасти #}
-    {% if wo.status in ("created", "diag", "approve") %}{{ problems_card }}{% include "orders/_parts.html" %}
-    {% else %}{% include "orders/_parts.html" %}{{ problems_card }}{% endif %}
   </section>
 
   {# ===== Колонка 3: кто и где, история ===== #}
@@ -212,7 +241,7 @@
     try { sessionStorage.setItem(key, t); } catch (e) {}
   }
   tabs.addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(b.dataset.t); });
-  let start = '{{ "diag" if wo.status in ("diag", "approve") else "main" }}';
+  let start = '{{ flow.tab }}';
   try { start = sessionStorage.getItem(key) || start; } catch (e) {}
   show(start);
 
@@ -261,42 +290,63 @@
     f.elements.reason.value = r;
   }));
 
-  // Наценка по позиции — сохраняется сразу, цена пересчитывается
-  document.querySelectorAll('[data-markup-url]').forEach(sel => sel.addEventListener('change', async () => {
-    const r = await fetch(sel.dataset.markupUrl, { method: 'POST', body: new URLSearchParams({ markup_pct: sel.value }), headers: { 'x-requested-with': 'fetch' } });
+  // Закупка и наценка по позиции — сохраняются сразу, цена для клиента пересчитывается
+  document.querySelectorAll('[data-markup-url]').forEach(inp => inp.addEventListener('change', async () => {
+    const row = inp.closest('.part'), cost = row.querySelector('.p-cost'), mk = row.querySelector('.p-markup');
+    const body = new URLSearchParams({ markup_pct: mk ? mk.value : '' });
+    if (cost) body.set('cost', cost.value);
+    const r = await fetch(inp.dataset.markupUrl, { method: 'POST', body, headers: { 'x-requested-with': 'fetch' } });
     if (!r.ok) { alert('Не сохранилось'); return; }
-    const j = await r.json(), row = sel.closest('.part');
-    row.querySelector('.p-price').textContent = (+j.price).toFixed(2); row.querySelector('.p-sum').textContent = (+j.sum).toFixed(2);
+    const j = await r.json(), fmt = v => (+v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (mk && j.markup !== undefined) mk.value = j.markup;
+    const pr = row.querySelector('.p-price'), sm = row.querySelector('.p-sum');
+    if (pr && sm) { pr.textContent = fmt(j.price); sm.textContent = fmt(j.sum); } else location.reload();
   }));
-  {% if can_pick %}
+  // «Добавить запчасти» из согласования — на iPhone переключить вкладку
+  document.querySelectorAll('[data-goto]').forEach(a => a.addEventListener('click', () => {
+    show(a.dataset.goto); const d = document.getElementById('addpart'); if (d) d.open = true;
+  }));
+  {% if can_pick or can_offer %}
   (function () {
     const f = document.getElementById('fpart'), find = document.getElementById('pfind'), res = document.getElementById('presults');
-    const out = document.getElementById('pprice'), free = document.getElementById('pfree');
+    const out = document.getElementById('pprice'), free = document.getElementById('pfree'), costOk = !!f.cost;
+    const optfor = document.getElementById('optfor'), details = document.getElementById('addpart');
     function calc() {
+      if (!costOk) return;
       const c = parseFloat((f.cost.value || '0').replace(',', '.')) || 0, m = +f.markup_pct.value || 0, q = parseFloat((f.qty.value || '1').replace(',', '.')) || 1;
       const p = Math.round(c * (100 + m)) / 100;
       out.textContent = `Цена для клиента: ${p.toFixed(2)} ₴ за шт · ${(p * q).toFixed(2)} ₴ всего · наценка ${(p - c).toFixed(2)} ₴ с шт`;
     }
-    ['cost', 'markup_pct', 'qty'].forEach(n => f[n].addEventListener('input', calc)); calc();
+    if (costOk) { ['cost', 'markup_pct', 'qty'].forEach(n => f[n].addEventListener('input', calc)); calc(); }
+    // «Ещё вариант» у группы: та же деталь, другая фирма
+    document.querySelectorAll('.add-opt').forEach(b => b.addEventListener('click', () => {
+      f.option_group.value = b.dataset.group; f.name.value = b.dataset.name; f.catalog_id.value = '';
+      window.crmSetBrand(f.brand, ''); f.article.value = '';
+      optfor.hidden = false; optfor.textContent = `Ещё вариант к «${b.dataset.name}» — выберите другой бренд и цену`;
+      details.open = true; details.scrollIntoView({ block: 'start', behavior: 'smooth' }); f.brand.focus();
+    }));
+    details.addEventListener('toggle', () => { if (!details.open) { f.option_group.value = ''; optfor.hidden = true; } });
     let t, found = [];
     find.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
       if (find.value.trim().length < 2) { res.hidden = true; return; }
       const r = await fetch('/api/catalog/search?q=' + encodeURIComponent(find.value), { headers: { 'x-requested-with': 'fetch' } });
       found = (await r.json()).items;
       res.innerHTML = found.length ? found.map((x, i) => `<button type="button" class="res" data-i="${i}"><span class="grow"><b>${x.used ? '<span class="tag">б/у ' + esc(x.code) + '</span> ' : ''}${esc(x.name)}</b>
-        <span class="caption">${esc([x.brand, x.article, x.used ? x.fits : ''].filter(Boolean).join(' '))} · свободно: ${x.free} · ${x.used ? 'цена разбора' : 'закупка'} ${x.cost.toFixed(2)} ₴</span></span></button>`).join('')
+        <span class="caption">${esc([x.brand, x.article, x.used ? x.fits : ''].filter(Boolean).join(' '))} · свободно: ${x.free}${costOk ? ' · ' + (x.used ? 'цена разбора' : 'закупка') + ' ' + x.cost.toFixed(2) + ' ₴' : ''}</span></span></button>`).join('')
         : '<div class="res footnote">Нет в каталоге — заполните поля, позиция создастся сама</div>';
       res.hidden = false; }, 250); });
     res.addEventListener('click', e => {
       const b = e.target.closest('[data-i]'); if (!b) return; const x = found[+b.dataset.i];
-      f.catalog_id.value = x.id; f.name.value = x.name; f.article.value = x.article; f.brand.value = x.brand; f.revision.value = x.revision;
-      if (x.cost) f.cost.value = x.cost.toFixed(2);
-      if (x.used) f.markup_pct.value = 0;   // б/у с разбора: клиент платит цену разбора
-      free.hidden = false; free.textContent = x.free > 0 ? `На складе свободно: ${x.free} — возьмём оттуда` : 'На складе нет — будет заказ';
+      f.catalog_id.value = x.id; f.name.value = x.name; f.article.value = x.article; window.crmSetBrand(f.brand, x.brand); f.revision.value = x.revision;
+      if (costOk && x.cost) f.cost.value = x.cost.toFixed(2);
+      if (costOk && x.used) f.markup_pct.value = 0;   // б/у с разбора: клиент платит цену разбора
+      if (!costOk && x.used && f.price) f.price.value = x.cost.toFixed(2);
+      free.hidden = false; free.textContent = x.free > 0 ? `На складе свободно: ${x.free}` : 'На складе нет — будет заказ';
       res.hidden = true; find.value = ''; calc();
     });
-    // Поменяли название руками — это уже другая позиция каталога
-    f.name.addEventListener('input', () => { f.catalog_id.value = ''; free.hidden = true; });
+    // Поменяли название, бренд или артикул руками — это уже другая позиция каталога
+    ['name', 'article'].forEach(n => f[n].addEventListener('input', () => { f.catalog_id.value = ''; free.hidden = true; }));
+    f.brand.addEventListener('change', () => { f.catalog_id.value = ''; free.hidden = true; });
     function esc(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
   })();
   {% endif %}

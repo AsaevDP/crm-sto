@@ -1,0 +1,10 @@
+{# Выбор бренда из общего списка (11.11.2026). «＋ Новый бренд…» — добавить в список для всех (app.js). #}
+{% macro brand_select(brands, value="", name="brand") %}
+{% set low = brands|map("lower")|list %}
+<select class="field" name="{{ name }}" data-brand aria-label="Бренд">
+  <option value="">Бренд…</option>
+  {% if value and value|lower not in low %}<option selected>{{ value }}</option>{% endif %}
+  {% for b in brands %}<option {% if value and b|lower == value|lower %}selected{% endif %}>{{ b }}</option>{% endfor %}
+  <option value="__new">＋ Новый бренд…</option>
+</select>
+{% endmacro %}

@@ -19,6 +19,7 @@ PERMISSIONS = [
     ("orders.diagnose", "Диагностика: находки и фото", "Наряды"),
     ("orders.approve", "Согласование с клиентом", "Наряды"),
     ("orders.cancel", "Отменять наряды", "Наряды"),
+    ("parts.offer", "Добавлять в наряд запчасти и варианты на выбор клиенту (без закупки)", "Наряды"),
     ("orders.assign", "Назначать запчастиста, слесаря, подъёмник", "Наряды"),
     ("clients.view", "Клиенты и авто", "Наряды"),
     ("schedule.view", "Запись клиентов: видеть (слесарь — только свою)", "Наряды"),
@@ -60,7 +61,7 @@ ALL_CODES = [p[0] for p in PERMISSIONS]
 _OWN = ["payroll.view_own", "attendance.view_own", "tools.view_own"]
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
-        "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
+        "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve", "parts.offer",
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
         "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
@@ -80,7 +81,7 @@ DEFAULT_ROLES = {
         "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
-        "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "orders.assign", "clients.view",
+        "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
         "prices.view_sale", "attendance.view_all", "tools.view", *_OWN]),
     "admin": ("Админ", "graphite", ALL_CODES),

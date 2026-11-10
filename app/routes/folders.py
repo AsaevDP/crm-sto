@@ -14,6 +14,7 @@ from ..services import orders as osvc
 from ..services import payroll as psvc
 from ..web import Ctx, Forbidden, get_ctx
 from .orders import _uuid
+from ..models.orders import PART_OFF
 
 router = APIRouter()
 
@@ -35,7 +36,7 @@ def client_folder(client_id: str, ctx: Ctx = Depends(get_ctx)):
         docs.append({
             "wo": wo, "t": msvc.totals(db, wo),
             "works": db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all(),
-            "parts": db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status != "returned")
+            "parts": db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))
                                 .order_by(WoPart.created_at)).all(),
             "findings": db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id)
                                    .order_by(WoFinding.created_at)).all(),

@@ -19,6 +19,7 @@ from ..services import settings as st
 from ..services.staff import staff_for_period
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
+from ..models.orders import PART_OFF
 
 router = APIRouter()
 
@@ -195,7 +196,7 @@ def _print_data(ctx: Ctx, wo: WorkOrder) -> dict:
     db = ctx.db
     return dict(wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
                 works=db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all(),
-                parts=db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status != "returned")
+                parts=db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))
                                  .order_by(WoPart.created_at)).all(),
                 t=msvc.totals(db, wo), manager=db.get(User, wo.manager_id) if wo.manager_id else None,
                 payments=db.scalars(select(Payment).where(Payment.work_order_id == wo.id).order_by(Payment.created_at)).all(),
@@ -208,6 +209,32 @@ def order_print(order_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("prices.view_sale", "money.view")
     wo = _order(ctx, order_id)
     return ctx.render("money/print_order.html", title=f"Заказ-наряд {wo.number}", **_print_data(ctx, wo))
+
+
+@router.get("/orders/{order_id}/act/parts")
+def act_parts(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Акт на запчасти (11.11.2026): что поставили на машину — бренд, артикул, кол-во, цена. Из наряда автоматически."""
+    ctx.need("prices.view_sale", "money.view")
+    wo = _order(ctx, order_id)
+    data = _print_data(ctx, wo)
+    from ..models import PartCatalog
+    cats = {c.id: c for c in ctx.db.scalars(select(PartCatalog).where(
+        PartCatalog.id.in_([p.catalog_id for p in data["parts"] if p.catalog_id])))}
+    return ctx.render("money/act_parts.html", title=f"Акт запчастей {wo.number}", cats=cats,
+                      mechanic=ctx.db.get(User, wo.mechanic_id) if wo.mechanic_id else None, **data)
+
+
+@router.get("/orders/{order_id}/act/works")
+def act_works(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Акт выполненных работ (11.11.2026): работы, исполнитель, нормо-часы, цена. Из наряда автоматически."""
+    ctx.need("prices.view_sale", "money.view")
+    wo = _order(ctx, order_id)
+    data = _print_data(ctx, wo)
+    ids = {w.mechanic_id for w in data["works"] if w.mechanic_id} | ({wo.mechanic_id} if wo.mechanic_id else set())
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.id.in_(ids)))} if ids else {}
+    done = [w.done_at for w in data["works"] if w.done_at]
+    return ctx.render("money/act_works.html", title=f"Акт выполненных работ {wo.number}", people=people,
+                      done_at=max(done) if done else None, **data)
 
 
 @router.get("/orders/{order_id}/act/handover")

@@ -3,12 +3,11 @@
 {% set WCOL = {"todo": "created", "doing": "work", "paused": "waiting", "done": "ready"} %}
 {% from "orders/_card.html" import progress %}
 {% set n_done = works|selectattr("status", "equalto", "done")|list|length %}
-<div class="card compact" id="works">
-  <div class="card-h"><span class="headline">Работы · выполнено {{ n_done }} из {{ works|length }}</span>
-    {% if show_price and works %}<span class="footnote">итого <b>{{ "{:,.2f}".format(t.works).replace(",", " ") }} ₴</b></span>{% endif %}</div>
+<div class="card compact step-card {{ 'now' if flow.cur == 4 }}" id="works" style="--sc:var(--teal)">
+  <div class="card-h"><span class="headline"><span class="stepno">5</span>Работы · {{ n_done }} из {{ works|length }}</span>
+    {% if show_price and works %}<span class="footnote nowrap">итого <b>{{ t.works|money }} ₴</b></span>{% endif %}</div>
   {% if works %}{{ progress({"done": n_done, "total": works|length, "pct": (100 * n_done / works|length)|round|int,
       "level": "all" if n_done == works|length else ("part" if n_done else "zero")}) }}{% endif %}
-  {% if wo.complaint %}<p class="ov-text"><span class="footnote">Жалоба:</span> {{ wo.complaint }}</p>{% endif %}
 
   {% for w in works %}
   {% set mech = people.get(w.mechanic_id) %}

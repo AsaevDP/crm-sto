@@ -12,6 +12,7 @@ from ..models.money import PAY_METHODS
 from . import orders as osvc
 from .money import money
 from .reports import day_range
+from ..models.orders import PART_OFF
 
 D0 = Decimal(0)
 
@@ -69,7 +70,7 @@ def parts(db: Session, bid, d1, d2, fin: bool) -> Report:
     orders = {o.id: o for o in db.scalars(select(WorkOrder).where(
         WorkOrder.branch_id == bid, WorkOrder.paid_at >= s, WorkOrder.paid_at < e,
         WorkOrder.status.in_(("paid", "closed"))))}
-    ps = db.scalars(select(WoPart).where(WoPart.work_order_id.in_(list(orders)), WoPart.status != "returned")
+    ps = db.scalars(select(WoPart).where(WoPart.work_order_id.in_(list(orders)), WoPart.status.notin_(PART_OFF))
                     .order_by(WoPart.created_at)).all() if orders else []
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_({p.catalog_id for p in ps if p.catalog_id})))}
     cols = [("date", "Дата оплаты", ""), ("order", "Наряд", ""), ("name", "Запчасть", ""), ("article", "Артикул / бренд", ""),
@@ -150,7 +151,7 @@ def donors(db: Session, bid, d1, d2, fin: bool) -> Report:
         in_orders = D0
         if items:
             for p in db.scalars(select(WoPart).where(WoPart.catalog_id.in_([i.catalog_id for i in items]),
-                                                     WoPart.status != "returned")):
+                                                     WoPart.status.notin_(PART_OFF))):
                 in_orders += Decimal(p.price or 0) * Decimal(p.qty or 0)
             in_orders = money(in_orders)
         left = [i for i in items if qty_free(db, i) > 0] if items else []

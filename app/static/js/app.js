@@ -101,3 +101,26 @@
     document.querySelectorAll('details.pcal[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
   });
 })();
+// ===== Бренды (11.11.2026): выбор из общего списка, «＋ Новый бренд…» добавляет для всех =====
+(function () {
+  function ensure(sel, name) {
+    if (!name) { sel.value = ''; return; }
+    const low = name.toLowerCase();
+    let opt = [...sel.options].find(o => o.value.toLowerCase() === low);
+    if (!opt) { opt = new Option(name, name); sel.insertBefore(opt, sel.querySelector('option[value="__new"]')); }
+    sel.value = opt.value;
+  }
+  window.crmSetBrand = ensure;
+  document.addEventListener('focusin', e => { const s = e.target.closest && e.target.closest('select[data-brand]'); if (s) s.dataset.prev = s.value; });
+  document.addEventListener('change', async e => {
+    const sel = e.target.closest && e.target.closest('select[data-brand]');
+    if (!sel || sel.value !== '__new') return;
+    const name = (prompt('Новый бренд — появится в списке у всех сотрудников:') || '').trim();
+    if (!name) { sel.value = sel.dataset.prev || ''; return; }
+    const r = await fetch('/api/brands', { method: 'POST', body: new URLSearchParams({ name }), headers: { 'x-requested-with': 'fetch' } });
+    if (!r.ok) { alert('Не сохранилось'); sel.value = sel.dataset.prev || ''; return; }
+    const j = await r.json();
+    document.querySelectorAll('select[data-brand]').forEach(s => { const keep = s.value; ensure(s, j.name); if (s !== sel) s.value = keep === '__new' ? '' : keep; });
+    ensure(sel, j.name);
+  });
+})();

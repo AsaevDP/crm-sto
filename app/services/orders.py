@@ -291,6 +291,59 @@ def route_after_intake(db: Session, wo: WorkOrder):
         set_status(db, wo, "diag", "Сценарий Б: на диагностику")
 
 
+# ---------- Шаги наряда и «что сделать сейчас» (11.11.2026) ----------
+STEPS = [("Приём", "blue"), ("Проблемы", "purple"), ("Согласование", "yellow"), ("Запчасти", "orange"),
+         ("Ремонт", "teal"), ("Выдача", "green")]
+STEP_OF = {"created": 0, "diag": 1, "approve": 2, "picking": 3, "waiting": 3, "instock": 3, "work": 4,
+           "ready": 5, "paid": 5, "closed": 6}
+
+
+def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_works: int = 0, n_done: int = 0,
+         options_open: int = 0) -> dict:
+    """Полоса шагов наверху наряда и подсказка: что сейчас сделать и кому."""
+    cur = STEP_OF.get(wo.status, -1)
+    skip = {1, 2} if wo.scenario == "A" and not n_find else set()
+    steps = [{"n": i + 1, "label": label, "color": color,
+              "state": "skip" if i in skip else ("done" if i < cur else ("now" if i == cur else "todo"))}
+             for i, (label, color) in enumerate(STEPS)]
+    mech, partsman = mech or "слесарь", partsman or "запчастист"
+    s = wo.status
+    if s == "cancel":
+        title, text, color = "Наряд отменён", wo.cancel_reason or "", "red"
+    elif s == "created" and wo.scenario == "B":
+        title, text, color = ("Что с машиной?", "Запишите проблемы со слов клиента — или отправьте машину слесарю на диагностику.",
+                              "purple")
+    elif s == "created":
+        title, text, color = "Назначьте запчастиста", "Работы уже известны (без диагностики) — запчастист подберёт запчасти.", "blue"
+    elif s == "diag":
+        title, text, color = (f"Диагностика · {mech}", "Слесарь записывает проблемы с фото. Закончит — «Диагностика готова», "
+                              "и наряд придёт менеджеру на согласование.", "purple")
+    elif s == "approve":
+        title, text, color = ("Согласуйте с клиентом", "Позвоните клиенту: по каждой проблеме — ✓ Да или ✕ Нет. Тут же добавьте "
+                              "запчасти и варианты разных фирм на выбор.", "yellow")
+    elif s == "picking" and options_open:
+        title, text, color = ("Клиент выбирает запчасти", f"Ждут выбора: {options_open}. Отметьте вариант клиента кнопкой «Выбрать».",
+                              "orange")
+    elif s == "picking":
+        title, text, color = (f"Подбор запчастей · {partsman}", "Со склада или под заказ. Закончит — «Подбор завершён».", "orange")
+    elif s == "waiting":
+        title, text, color = "Ждём запчасти от поставщика", "Придут на склад — наряд сам перейдёт дальше.", "orange"
+    elif s == "instock":
+        title, text, color = "Запчасти на складе", f"{mech.capitalize()} просит выдачу и начинает ремонт.", "teal"
+    elif s == "work":
+        title, text, color = f"Ремонт · {mech}", f"Выполнено работ: {n_done} из {n_works}.", "teal"
+    elif s == "ready":
+        title, text, color = "Машина готова", "Позвоните клиенту, примите оплату и выдайте машину.", "green"
+    elif s == "paid":
+        title, text, color = "Оплачено — выдайте машину", "Заполните акт выдачи в блоке «Деньги и выдача».", "green"
+    else:
+        title = "Выдан клиенту"
+        text = wo.closed_at.astimezone().strftime("%d.%m.%Y %H:%M") if wo.closed_at else ""
+        color = "green"
+    tab = "main" if cur <= 2 else ("diag" if cur <= 4 else "hist")
+    return {"steps": steps, "cur": cur, "title": title, "text": text, "color": color, "tab": tab}
+
+
 # ---------- Хронология клиента ----------
 def event(db: Session, wo: WorkOrder | None, kind: str, text: str = "", client_id=None, vehicle_id=None,
           finding=None, urgency: str = ""):

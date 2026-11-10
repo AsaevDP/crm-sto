@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block body_class %}fit{% endblock %}
+{% from "_brand.html" import brand_select %}
 {% block content %}
 {% set cost_ok = ctx.can("prices.view_purchase") %}
 {% set edit = ctx.can("purchases.manage") and p.status == "draft" %}
@@ -34,7 +35,7 @@
     <form class="card compact form dense" method="post" action="/purchases/{{ p.id }}/lines">
       <div class="card-h"><span class="headline">Строка на склад (впрок)</span></div>
       <input class="field" name="name" placeholder="Название *" required>
-      <div class="form-row"><input class="field mono" name="article" placeholder="Артикул"><input class="field" name="brand" placeholder="Бренд"></div>
+      <div class="form-row"><input class="field mono" name="article" placeholder="Артикул">{{ brand_select(BRANDS) }}</div>
       <div class="form-row"><input class="field" name="qty" value="1" inputmode="decimal" aria-label="Количество"><input class="field" name="price" inputmode="decimal" placeholder="Цена за шт, ₴"></div>
       <button class="btn btn-sm btn-tinted">Добавить строку</button>
     </form>

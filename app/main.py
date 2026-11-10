@@ -27,6 +27,11 @@ async def lifespan(_app):
     with SessionLocal() as db:
         backfill_categories(db)
         backfill_barcodes(db)
+        from sqlalchemy import select
+        from .models import Branch
+        from .services import brands
+        for b in db.scalars(select(Branch)).all():
+            brands.seed(db, b.id)   # справочник брендов: стартовый список (11.11.2026)
         db.commit()
     if DEMO:
         from .demo_data import populate

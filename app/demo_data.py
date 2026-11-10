@@ -221,6 +221,15 @@ def populate():
         find(wo, [("Передние колодки 2 мм, диски с бортиком — менять комплектом", "urgent", "pads"),
                   ("Пыльник наружного ШРУСа левый порван", "soon", "boot"),
                   ("Задние шины: износ протектора ~70 %", "advice", "tyre")])
+        # Менеджер сразу предлагает клиенту колодки трёх фирм — клиент выберет одну (11.11.2026)
+        as_user("irina")
+        grp = uuid.uuid4().hex
+        for brand_, art_, price_ in (("TRW", "GDB1956", "1570"), ("Bosch", "0 986 494 104", "1290"),
+                                     ("Оригинал", "3C0698151A", "3100")):
+            c_ = ssvc.get_or_create_catalog(db, "Колодки тормозные передние", art_, brand_)
+            db.add(WoPart(work_order_id=wo.id, catalog_id=c_.id, name=c_.name, qty=Decimal(1), price=Decimal(price_),
+                          markup_pct=0, status="option", option_group=grp))
+        db.flush()
 
         # 4) Подбор запчастей (сценарий А, пост 1 — ТО)
         intake(0, "A", 1, works="ТО-120: замена масла и фильтров\nЗамена свечей зажигания", fuel="50",

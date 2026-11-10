@@ -1,9 +1,8 @@
 {# Блок «Деньги»: итог, скидка, оплаты, предоплата, выдача авто клиенту. #}
 {% if ctx.can("money.view") %}
-<div class="card compact" id="money">
-  <div class="card-h"><span class="headline">Деньги</span>
-    <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a>
-    {% if wo.status == "closed" %}<a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}/act/handover" target="_blank">Акт выдачи</a>{% endif %}</span></div>
+<div class="card compact step-card {{ 'now' if flow.cur == 5 }}" id="money" style="--sc:var(--green)">
+  <div class="card-h"><span class="headline"><span class="stepno">6</span>Деньги и выдача</span>
+    <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a></span></div>
 
   {% if wo.awaiting_prepay %}<div class="flash error" style="margin:0">Ждёт предоплату {{ "%.2f"|format(wo.prepay_amount) }} ₴ — подбор и закупка заблокированы</div>{% endif %}
 

@@ -1,75 +1,125 @@
-{# Блок «Запчасти» в карточке наряда. Артикул, закупка и наценка — только запчастисту и админу (show_cost). #}
-<div class="card compact" id="parts">
-  <div class="card-h">
-    <span class="headline">Запчасти · {{ parts|length }}</span>
-    {% if show_price and parts %}<span class="footnote">итого <b>{{ "{:,.2f}".format(parts_total).replace(",", " ") }} ₴</b></span>{% endif %}
-  </div>
-
-  {% for p in parts %}
-  {% set cat = cats.get(p.catalog_id) %}
-  <div class="part" data-id="{{ p.id }}">
-    <div class="part-main">
-      <span class="part-name">{{ p.name }}
-        {% if show_cost and cat and (cat.article or cat.brand) %}<span class="caption mono" style="display:block">{{ cat.brand }} {{ cat.article }}{% if cat.revision %} · рев. {{ cat.revision }}{% endif %}</span>{% endif %}
-      </span>
-      <span class="chip part-st" data-ps="{{ p.status }}">{{ PART_STATUS.get(p.status, p.status) }}</span>
-    </div>
-    <div class="part-nums">
-      <span>{{ p.qty|num }} шт</span>
-      {% if show_price %}<span>× <b class="p-price">{{ "%.2f"|format(p.price) }}</b> ₴ = <b class="p-sum">{{ "%.2f"|format(p.price * p.qty) }}</b> ₴</span>{% endif %}
-    </div>
-    {% if show_cost %}
-    <div class="part-cost">
-      <span class="caption">закупка {{ "%.2f"|format(p.cost) }} ₴</span>
-      {% if can_pick and p.status not in ("issued", "installed") %}
-      <label class="caption pct">наценка
-        <input class="mini" type="number" min="0" max="1000" step="1" inputmode="numeric" value="{{ p.markup_pct }}"
-               data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup" aria-label="Наценка, %">%</label>
-      <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать позицию из наряда?')">
-        <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
-      {% else %}<span class="caption">наценка {{ p.markup_pct }}%</span>{% endif %}
-    </div>
+{# Блок «Запчасти» в наряде (11.11.2026).
+   Варианты на выбор клиенту — группой: одна деталь разных фирм, клиент выбирает одну («Выбрать»).
+   Менеджер вносит запчасти и варианты сразу при согласовании, запчастист потом берёт со склада или заказывает.
+   Артикул, закупка и наценка — только запчастисту и админу (show_cost). #}
+{% from "_brand.html" import brand_select %}
+{% macro part_row(p, in_group=False) %}
+{% set cat = cats.get(p.catalog_id) %}
+<div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}">
+  <div class="part-main">
+    <span class="part-name">{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
+      {% if not in_group and cat and cat.brand %}<span class="tag">{{ cat.brand }}</span>{% endif %}
+      {% if show_cost and cat and cat.article %}<span class="caption mono" style="display:block">{{ cat.article }}{% if cat.revision %} · рев. {{ cat.revision }}{% endif %}</span>{% endif %}
+      {% if in_group and p.catalog_id in free %}<span class="caption" style="display:block">{{ "на складе: " ~ (free[p.catalog_id]|num) if free[p.catalog_id] > 0 else "под заказ" }}</span>{% endif %}
+    </span>
+    {% if in_group and p.status == "option" %}
+      {% if can_choose %}<form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/choose"><button class="btn btn-sm btn-tinted">Выбрать</button></form>{% endif %}
+    {% elif in_group and p.status == "declined" %}
+      <span class="chip part-st" data-ps="declined">не выбран</span>
+    {% else %}
+      <span class="chip part-st" data-ps="{{ p.status }}">{% if in_group %}✓ выбран · {% endif %}{{ PART_STATUS.get(p.status, p.status) }}</span>
     {% endif %}
   </div>
-  {% else %}
-  <p class="footnote">{% if wo.status in ("created", "diag", "approve") %}Подбор начнётся после согласования{% else %}Запчасти не добавлены{% endif %}</p>
+  <div class="part-nums">
+    <span>{{ p.qty|num }} шт</span>
+    {% if show_price %}<span>{% if p.price %}× <b class="p-price">{{ p.price|money }}</b> ₴ = <b class="p-sum nowrap">{{ (p.price * p.qty)|money }}</b> ₴{% else %}<span class="caption">цену уточнит запчастист</span>{% endif %}</span>{% endif %}
+  </div>
+  {% if show_cost or (can_offer and p.status in ("need", "option", "declined")) %}
+  <div class="part-cost">
+    {% if show_cost and can_pick and p.status not in ("issued", "installed") %}
+      <label class="caption pct">закупка <input class="mini p-cost" inputmode="decimal" value="{{ '%.2f'|format(p.cost) }}" data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup" aria-label="Закупка, ₴"> ₴</label>
+      <label class="caption pct">наценка <input class="mini p-markup" type="number" min="0" max="1000" step="1" inputmode="numeric" value="{{ p.markup_pct }}"
+               data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup" aria-label="Наценка, %">%</label>
+    {% elif show_cost %}<span class="caption">закупка {{ p.cost|money }} ₴ · наценка {{ p.markup_pct }}%</span>{% endif %}
+    {% if can_pick and p.status == "need" %}
+      <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/source" class="src-form">
+        <button class="btn btn-sm" name="action" value="auto">Со склада / заказать</button>
+        <button class="btn btn-sm btn-gray" name="action" value="order">Заказать</button></form>
+    {% endif %}
+    {% if (can_pick and p.status not in ("issued", "installed")) or (can_offer and p.status in ("need", "option", "declined")) %}
+    <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать позицию из наряда?')">
+      <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="card compact step-card {{ 'now' if flow.cur == 3 }}" id="parts" style="--sc:var(--orange)">
+  <div class="card-h">
+    <span class="headline"><span class="stepno">4</span>Запчасти · {{ n_counted }}</span>
+    {% if show_price and n_counted %}<span class="footnote nowrap">итого <b>{{ parts_total|money }} ₴</b></span>{% endif %}
+  </div>
+
+  {% for p in plain_parts %}{{ part_row(p) }}{% endfor %}
+
+  {% for g, items in groups.items() %}
+  {% set open_ = items|selectattr("status", "equalto", "option")|list|length == items|length %}
+  <div class="optgroup {{ 'open' if open_ }}" data-group="{{ g }}">
+    <div class="optgroup-h">
+      <span class="headline">{{ items[0].name }}</span>
+      <span class="chip" data-s="{{ 'approve' if open_ else 'ready' }}">{{ "выбор из " ~ items|length if open_ else "выбрано" }}</span>
+    </div>
+    {% for p in items|sort(attribute="price") %}{{ part_row(p, True) }}{% endfor %}
+    {% if (can_offer or can_pick) and open_ %}
+    <button type="button" class="btn btn-plain btn-sm add-opt" data-group="{{ g }}" data-name="{{ items[0].name }}">{{ icon("plus") }}Ещё вариант</button>
+    {% endif %}
+  </div>
   {% endfor %}
 
-  {% if can_pick %}
-  <details class="add-finding" {% if not parts and wo.status == "picking" %}open{% endif %}>
+  {% if not parts %}
+  <p class="footnote">{% if can_offer or can_pick %}Добавьте запчасти — сразу при согласовании. Если клиент выбирает между фирмами — «Варианты на выбор».
+    {% elif wo.status in ("created", "diag", "approve") %}Подбор начнётся после согласования{% else %}Запчасти не добавлены{% endif %}</p>
+  {% endif %}
+
+  {% if can_pick or can_offer %}
+  <details class="add-finding" id="addpart" {% if not parts and (wo.status == "picking" or (can_offer and wo.status == "approve")) %}open{% endif %}>
     <summary class="btn btn-tinted btn-block">{{ icon("plus") }}Добавить запчасть</summary>
     <form class="form dense" id="fpart" method="post" action="/orders/{{ wo.id }}/parts" style="margin-top:10px">
+      <p class="hint opt-for" id="optfor" hidden></p>
       <div class="search-box">
-        <input class="field search" id="pfind" placeholder="Найти: название, артикул, марка" autocomplete="off">
+        <input class="field search" id="pfind" placeholder="Найти в каталоге: название, артикул" autocomplete="off">
         <div class="results" id="presults" hidden></div>
       </div>
-      <input type="hidden" name="catalog_id">
+      <input type="hidden" name="catalog_id"><input type="hidden" name="option_group"><input type="hidden" name="revision">
       <input class="field" name="name" placeholder="Название (видит клиент) *" required>
-      <div class="form-row three">
+      <div class="form-row">
+        {{ brand_select(BRANDS) }}
         <input class="field mono" name="article" placeholder="Артикул">
-        <input class="field" name="brand" placeholder="Бренд">
-        <input class="field" name="revision" placeholder="Ревизия">
       </div>
+      {% if show_cost %}
       <div class="form-row three">
         <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
-        <label>Закупка за шт, ₴<input class="field" name="cost" inputmode="decimal" placeholder="0"></label>
+        <label>Закупка, ₴<input class="field" name="cost" inputmode="decimal" placeholder="0"></label>
         <label>Наценка, %<input class="field" type="number" name="markup_pct" min="0" max="1000" step="1" inputmode="numeric" value="{{ default_markup }}"></label>
       </div>
+      <p class="hint" id="pprice">Цена для клиента: —</p>
+      {% else %}
+      <div class="form-row">
+        <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
+        <label>Цена для клиента за шт, ₴<input class="field" name="price" inputmode="decimal" placeholder="можно позже"></label>
+      </div>
+      {% endif %}
       {% if works %}
       <label>К работе<select class="field" name="wo_work_id"><option value="">—</option>{% for w in works %}<option value="{{ w.id }}">{{ w.name[:60] }}</option>{% endfor %}</select></label>
       {% endif %}
-      <p class="hint" id="pprice">Цена для клиента: —</p>
       <p class="hint" id="pfree" hidden></p>
-      <div class="form-row">
+      <div class="add-acts">
+        {% if can_pick %}
         <button class="btn btn-sm" name="action" value="auto">Со склада или заказать</button>
         <button class="btn btn-sm btn-gray" name="action" value="order">Только заказать</button>
+        {% else %}
+        <button class="btn btn-sm" name="action" value="need">В наряд</button>
+        {% endif %}
+        <button class="btn btn-sm btn-tinted opt-btn" name="action" value="option">Вариант на выбор</button>
       </div>
-      <label>Купить всего, шт — излишек на склад<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>
+      <p class="hint" style="margin:0">«Вариант на выбор» — одна деталь разных фирм: добавьте 2–3 варианта, клиент выберет один, остальные не пойдут в счёт.</p>
+      {% if can_pick %}<label>Купить всего, шт — излишек на склад<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>{% endif %}
     </form>
   </details>
-  {% if wo.status == "picking" %}
-  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button></form>
   {% endif %}
+  {% if can_pick and wo.status == "picking" %}
+  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button></form>
   {% endif %}
 
   {% if open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}

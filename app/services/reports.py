@@ -15,6 +15,7 @@ from ..models import (Client, Payment, PayrollAccrual, PayrollPayout, Purchase, 
 from ..models.money import PAY_METHODS
 from .money import money, totals
 from .schedule import day_range
+from ..models.orders import PART_OFF
 
 D0 = Decimal(0)
 MONTHS = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
@@ -120,7 +121,7 @@ def money_for(db: Session, bid, d1: date, d2: date, light: bool = False) -> Mone
         r.billed += t.total
     if paid_orders:
         r.parts_cost = money(sum((Decimal(p.cost or 0) * Decimal(p.qty or 0) for p in db.scalars(select(WoPart).where(
-            WoPart.work_order_id.in_([o.id for o in paid_orders]), WoPart.status != "returned"))), D0))
+            WoPart.work_order_id.in_([o.id for o in paid_orders]), WoPart.status.notin_(PART_OFF)))), D0))
     r.payroll = money(db.scalar(select(func.sum(PayrollAccrual.amount)).where(
         PayrollAccrual.branch_id == bid, PayrollAccrual.status != "cancelled", PayrollAccrual.on_date >= d1,
         PayrollAccrual.on_date <= d2)) or 0)

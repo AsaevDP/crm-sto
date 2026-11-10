@@ -27,7 +27,8 @@ async def finding_add(order_id: str, request: Request, ctx: Ctx = Depends(get_ct
     """Слесарь добавляет найденную проблему: текст, срочность, фото (сжатые на телефоне)."""
     ctx.need("orders.diagnose")
     wo = _order(ctx, order_id)
-    if wo.status not in ("diag", "approve", "work") or not _is_mech(ctx, wo):
+    manager_writes = wo.status == "created" and ctx.can("orders.approve")   # менеджер — со слов клиента (11.11.2026)
+    if (wo.status not in ("diag", "approve", "work") and not manager_writes) or not _is_mech(ctx, wo):
         raise Forbidden()
     form = await request.form(max_files=2 * svc.MAX_PHOTOS + 2)
     text = str(form.get("text", "")).strip()
@@ -51,7 +52,7 @@ def finding_delete(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("orders.diagnose")
     wo = _order(ctx, order_id)
     f = ctx.db.get(WoFinding, _uuid(finding_id))
-    if (f and f.work_order_id == wo.id and f.approval == "pending" and wo.status in ("diag", "approve")
+    if (f and f.work_order_id == wo.id and f.approval == "pending" and wo.status in ("created", "diag", "approve")
             and (f.created_by == ctx.user.id or ctx.can("orders.view_all"))):
         for p in ctx.db.scalars(select(WoPhoto).where(WoPhoto.finding_id == f.id)):
             p.finding_id = None  # фото остаются в наряде
@@ -71,6 +72,42 @@ def diag_done(order_id: str, ctx: Ctx = Depends(get_ctx)):
         svc.finish_diagnosis(ctx.db, wo, n)
         ctx.db.commit()
         flash(ctx.request, "Диагностика отправлена менеджеру на согласование")
+    return _back(order_id)
+
+
+@router.post("/orders/{order_id}/to-diag")
+def to_diag(order_id: str, ctx: Ctx = Depends(get_ctx), mechanic_id: str = Form(""), lift_id: str = Form("")):
+    """Менеджер отправляет машину на диагностику: слесарь (и пост) → статус «Диагностика»."""
+    ctx.need("orders.approve")
+    wo = _order(ctx, order_id)
+    mech = ctx.db.get(User, _uuid(mechanic_id)) if mechanic_id else None
+    if wo.status != "created" or not mech or mech.branch_id != ctx.branch.id:
+        flash(ctx.request, "Выберите слесаря", "error")
+        return _back(order_id)
+    wo.mechanic_id = mech.id
+    if lift_id:
+        from ..models import Lift
+        lift = ctx.db.get(Lift, _uuid(lift_id))
+        if lift and lift.branch_id == ctx.branch.id:
+            wo.lift_id = lift.id
+    svc.set_status(ctx.db, wo, "diag", f"На диагностику: {mech.full_name}")
+    ctx.db.commit()
+    flash(ctx.request, f"Машина отправлена на диагностику: {mech.full_name}")
+    return _back(order_id)
+
+
+@router.post("/orders/{order_id}/to-approve")
+def to_approve(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Менеджер записал проблемы со слов клиента — сразу к согласованию, без диагностики."""
+    ctx.need("orders.approve")
+    wo = _order(ctx, order_id)
+    n = len(ctx.db.scalars(select(WoFinding.id).where(WoFinding.work_order_id == wo.id)).all())
+    if wo.status != "created" or not n:
+        flash(ctx.request, "Сначала запишите хотя бы одну проблему", "error")
+        return _back(order_id)
+    svc.set_status(ctx.db, wo, "approve", f"Проблемы записал менеджер: {n}")
+    svc.event(ctx.db, wo, "status", f"Проблемы со слов клиента: {n}")
+    ctx.db.commit()
     return _back(order_id)
 
 

@@ -43,7 +43,10 @@ FUEL_LEVELS = {0: "Пусто", 25: "¼", 50: "½", 75: "¾", 100: "Полный
 PART_STATUSES = {
     "need": "нужна", "ordered": "заказана", "arrived": "пришла", "reserved": "в резерве",
     "issued": "выдана", "installed": "установлена", "returned": "возврат",
+    "option": "вариант", "declined": "не выбран",
 }
+# Позиции, которые НЕ идут в счёт, подбор и отчёты: возврат, вариант на выбор (клиент ещё не решил), невыбранный вариант
+PART_OFF = ("returned", "option", "declined")
 
 
 class Client(Entity):
@@ -160,6 +163,9 @@ class WoPart(Entity):
     # Деньги (внутреннее: закупка и наценка видят только запчастист и админ). price — цена продажи за единицу.
     cost: Mapped[Decimal] = mapped_column(MONEY, default=0)
     markup_pct: Mapped[int] = mapped_column(Integer, default=25)
+    # Варианты на выбор клиенту (11.11.2026): одна группа = одна деталь разных фирм. Клиент выбирает один —
+    # он идёт в подбор, остальные получают статус «не выбран».
+    option_group: Mapped[str | None] = mapped_column(String(36), default="", nullable=True, index=True)
 
 
 class ClientEvent(Entity):

@@ -46,44 +46,169 @@ def _can_pick(ctx: Ctx, wo: WorkOrder) -> bool:
 # ======================= Подбор в наряде =======================
 @router.get("/api/catalog/search")
 def catalog_search(ctx: Ctx = Depends(get_ctx), q: str = ""):
-    ctx.need("parts.pick", "stock.view", "purchases.manage")
+    ctx.need("parts.pick", "parts.offer", "stock.view", "purchases.manage")
     return {"items": svc.search_catalog(ctx.db, ctx.branch.id, q)}
+
+
+# ======================= Бренды (11.11.2026) =======================
+BRAND_EDIT = ("parts.pick", "parts.offer", "purchases.manage", "stock.manage", "settings.access")
+
+
+@router.get("/api/brands")
+def brands_list(ctx: Ctx = Depends(get_ctx)):
+    ctx.need(*BRAND_EDIT, "stock.view")
+    from ..services import brands
+    return {"items": brands.names(ctx.db, ctx.branch.id)}
+
+
+@router.post("/api/brands")
+def brands_add(ctx: Ctx = Depends(get_ctx), name: str = Form("")):
+    """Новый бренд прямо из окна запчасти — сразу виден всем."""
+    ctx.need(*BRAND_EDIT)
+    from ..services import brands
+    b = brands.add(ctx.db, ctx.branch.id, name)
+    if not b:
+        return JSONResponse({"ok": False, "error": "Пустое название"}, status_code=400)
+    ctx.db.commit()
+    return {"ok": True, "name": b.name}
+
+
+@router.get("/settings/brands")
+def brands_page(ctx: Ctx = Depends(get_ctx), q: str = ""):
+    ctx.need("settings.access", "stock.manage")
+    from ..models import Brand
+    from ..services import brands
+    rows = ctx.db.scalars(select(Brand).where(Brand.branch_id == ctx.branch.id).order_by(func.lower(Brand.name))).all()
+    used = dict(ctx.db.execute(select(PartCatalog.brand, func.count()).where(PartCatalog.brand != "")
+                               .group_by(PartCatalog.brand)).all())
+    return ctx.render("settings/brands.html", title="Бренды запчастей", rows=rows, used=used, q=q, norm=brands.norm)
+
+
+@router.post("/settings/brands")
+def brands_save(ctx: Ctx = Depends(get_ctx), action: str = Form("add"), name: str = Form(""), bid: str = Form("")):
+    ctx.need("settings.access", "stock.manage")
+    from ..models import Brand
+    from ..services import brands
+    if action == "add":
+        if brands.find(ctx.db, ctx.branch.id, name):
+            flash(ctx.request, f"«{brands.norm(name)}» уже есть в списке", "error")
+        elif brands.add(ctx.db, ctx.branch.id, name):
+            flash(ctx.request, f"Добавлен бренд «{brands.norm(name)}»")
+    else:
+        b = ctx.db.get(Brand, _uuid(bid))
+        if not b or b.branch_id != ctx.branch.id:
+            raise Forbidden()
+        if action == "rename":
+            err = brands.rename(ctx.db, b, name)
+            flash(ctx.request, err or f"Переименовано: «{b.name}»", "error" if err else "ok")
+        elif action == "delete":
+            flash(ctx.request, f"Бренд «{b.name}» убран из списка (у запчастей он остаётся)")
+            ctx.db.delete(b)
+    ctx.db.commit()
+    return _to("/settings/brands")
+
+
+OFFER_STATUSES = ("created", "diag", "approve", "picking", "waiting", "instock", "work")
+
+
+def _can_offer(ctx: Ctx, wo: WorkOrder) -> bool:
+    """Менеджер (11.11.2026): сразу при согласовании вносит запчасти и варианты разных фирм — без закупки."""
+    return ctx.can("parts.offer") and wo.status in OFFER_STATUSES
+
+
+def _can_choose(ctx: Ctx, wo: WorkOrder) -> bool:
+    return (ctx.can("orders.approve") or _can_pick(ctx, wo)) and wo.status in OFFER_STATUSES
 
 
 @router.post("/orders/{order_id}/parts")
 def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(""), name: str = Form(""),
              article: str = Form(""), brand: str = Form(""), revision: str = Form(""), qty: str = Form("1"),
-             cost: str = Form("0"), markup_pct: str = Form(""), wo_work_id: str = Form(""),
-             action: str = Form("auto"), order_qty: str = Form("")):
-    """Запчастист добавляет позицию: из каталога или новую (название, артикул, цена закупки, наценка)."""
-    ctx.need("parts.pick")
+             cost: str = Form("0"), markup_pct: str = Form(""), price: str = Form(""), wo_work_id: str = Form(""),
+             action: str = Form("auto"), order_qty: str = Form(""), option_group: str = Form("")):
+    """Запчасть в наряд: из каталога или новая.
+    Запчастист: со склада / заказать / вариант. Менеджер: «в наряд» (подберёт запчастист) или вариант на выбор клиенту."""
+    ctx.need("parts.pick", "parts.offer")
     wo = _order(ctx, order_id)
-    if not _can_pick(ctx, wo):
+    picker, offer = _can_pick(ctx, wo), _can_offer(ctx, wo)
+    if not (picker or offer):
         raise Forbidden()
-    cat = ctx.db.get(PartCatalog, uuid.UUID(catalog_id)) if catalog_id else None
+    if not picker and action in ("auto", "order", "stock"):
+        action = "need"
+    from ..services import brands
+    brand = brands.norm(brand)
+    if brand:
+        brands.add(ctx.db, ctx.branch.id, brand)   # новый бренд — сразу в общий список
+    cat = ctx.db.get(PartCatalog, _uuid(catalog_id)) if catalog_id else None
     if cat is None:
         if not name.strip():
             flash(ctx.request, "Название запчасти обязательно", "error")
             return _to(f"/orders/{order_id}")
         cat = svc.get_or_create_catalog(ctx.db, name, article, brand, revision)
-    q, c, m = max(_dec(qty, "1"), Decimal("0.01")), svc.money(_dec(cost)), _markup(markup_pct, ctx)
-    work = ctx.db.get(WoWork, uuid.UUID(wo_work_id)) if wo_work_id else None
-    part = WoPart(work_order_id=wo.id, catalog_id=cat.id, name=cat.name, qty=q, cost=c, markup_pct=m,
-                  price=svc.sale_price(c, m), picked_by=ctx.user.id,
+    q = max(_dec(qty, "1"), Decimal("0.01"))
+    if ctx.can("prices.view_purchase") and _dec(cost) > 0:
+        c, m = svc.money(_dec(cost)), _markup(markup_pct, ctx)
+        p = svc.sale_price(c, m)
+    else:   # закупку не видит (менеджер) или не знает — пишет цену для клиента, запчастист потом уточнит
+        c, m, p = svc.money(_dec(cost)), 0, svc.money(_dec(price))
+    work = ctx.db.get(WoWork, _uuid(wo_work_id)) if wo_work_id else None
+    part = WoPart(work_order_id=wo.id, catalog_id=cat.id, name=cat.name, qty=q, cost=c, markup_pct=m, price=p,
+                  picked_by=ctx.user.id if picker else None,
                   wo_work_id=work.id if work and work.work_order_id == wo.id else None)
     ctx.db.add(part)
     ctx.db.flush()
-    # Есть свободный остаток — резервируем, иначе заказываем (если не просили иначе)
-    if action in ("auto", "stock") and svc.reserve_from_stock(ctx.db, ctx.branch.id, part):
-        msg = f"«{cat.name}» — взято со склада в резерв"
-    elif action in ("auto", "order"):
-        svc.order_part(ctx.db, ctx.branch.id, part, _dec(order_qty) if order_qty else None)
-        msg = f"«{cat.name}» — добавлено в закупку"
-    else:
-        msg = f"«{cat.name}» — добавлено, выберите: со склада или заказать"
+    label = f"«{cat.name}»{' · ' + cat.brand if cat.brand else ''}"
+    if action == "option":
+        grp = option_group if option_group and ctx.db.scalar(select(WoPart.id).where(
+            WoPart.work_order_id == wo.id, WoPart.option_group == option_group)) else uuid.uuid4().hex
+        part.option_group, part.status = grp, "option"
+        msg = f"{label} — вариант на выбор клиенту"
+    elif action == "need":
+        part.status = "need"
+        msg = f"{label} — в наряде, запчастист подберёт" if not picker else f"{label} — добавлено, выберите: со склада или заказать"
+    else:   # Есть свободный остаток — резервируем, иначе заказываем (если не просили иначе)
+        if action in ("auto", "stock") and svc.reserve_from_stock(ctx.db, ctx.branch.id, part):
+            msg = f"{label} — взято со склада в резерв"
+        elif action in ("auto", "order"):
+            svc.order_part(ctx.db, ctx.branch.id, part, _dec(order_qty) if order_qty else None)
+            msg = f"{label} — добавлено в закупку"
+        else:
+            msg = f"{label} — добавлено, выберите: со склада или заказать"
     ctx.db.commit()
     flash(ctx.request, msg)
-    return _to(f"/orders/{order_id}")
+    return _to(f"/orders/{order_id}#parts")
+
+
+@router.post("/orders/{order_id}/parts/{part_id}/choose")
+def part_choose(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Клиент выбрал вариант: он идёт в подбор, остальные варианты группы — «не выбран»."""
+    ctx.need("orders.approve", "parts.pick")
+    wo = _order(ctx, order_id)
+    part = ctx.db.get(WoPart, _uuid(part_id))
+    if not _can_choose(ctx, wo) or not part or part.work_order_id != wo.id or not part.option_group:
+        raise Forbidden()
+    err = svc.choose_option(ctx.db, ctx.branch.id, wo, part)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"Клиент выбрал: «{part.name}»")
+    return _to(f"/orders/{order_id}#parts")
+
+
+@router.post("/orders/{order_id}/parts/{part_id}/source")
+def part_source(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), action: str = Form("auto")):
+    """Запчастист решает по позиции «нужна» (её внёс менеджер): со склада или заказать."""
+    ctx.need("parts.pick")
+    wo = _order(ctx, order_id)
+    part = ctx.db.get(WoPart, _uuid(part_id))
+    if not _can_pick(ctx, wo) or not part or part.work_order_id != wo.id or part.status != "need":
+        raise Forbidden()
+    part.picked_by = part.picked_by or ctx.user.id
+    msg = svc.source_part(ctx.db, ctx.branch.id, part, action if action in ("auto", "order") else "auto")
+    ctx.db.commit()
+    flash(ctx.request, f"«{part.name}» — {msg}")
+    return _to(f"/orders/{order_id}#parts")
 
 
 @router.post("/orders/{order_id}/parts/{part_id}/markup")
@@ -95,33 +220,32 @@ def part_markup(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), markup
     part = ctx.db.get(WoPart, _uuid(part_id))
     if not part or part.work_order_id != wo.id or not ctx.can("prices.view_purchase"):
         return JSONResponse({"ok": False}, status_code=400)
+    new_markup = _markup(markup_pct, ctx)
+    # Цену клиенту назвал менеджер (закупки ещё нет): первая закупка не меняет цену — считаем наценку из неё
+    keep_price = (cost.strip() and part.cost == 0 and part.price > 0 and new_markup == part.markup_pct)
     if cost.strip():
         part.cost = svc.money(_dec(cost))
-    part.markup_pct = _markup(markup_pct, ctx)
-    part.price = svc.sale_price(part.cost, part.markup_pct)
+    if keep_price and part.cost > 0:
+        part.markup_pct = max(0, min(1000, int(round((part.price / part.cost - 1) * 100))))
+    else:
+        part.markup_pct = new_markup
+        part.price = svc.sale_price(part.cost, part.markup_pct)
     ctx.db.commit()
-    return {"ok": True, "price": str(part.price), "sum": str(svc.money(part.price * part.qty))}
+    return {"ok": True, "price": str(part.price), "sum": str(svc.money(part.price * part.qty)), "markup": part.markup_pct}
 
 
 @router.post("/orders/{order_id}/parts/{part_id}/delete")
 def part_delete(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
-    ctx.need("parts.pick")
+    ctx.need("parts.pick", "parts.offer")
     wo = _order(ctx, order_id)
     part = ctx.db.get(WoPart, _uuid(part_id))
-    if not _can_pick(ctx, wo) or not part or part.work_order_id != wo.id or part.status in ("issued", "installed"):
+    allowed = _can_pick(ctx, wo) or (_can_offer(ctx, wo) and part is not None and part.status in ("need", "option", "declined"))
+    if not allowed or not part or part.work_order_id != wo.id or part.status in ("issued", "installed"):
         raise Forbidden()
-    if part.status == "reserved":
-        svc.unreserve(ctx.db, part, "Позицию убрали из наряда")
-    for line in ctx.db.scalars(select(PurchaseLine).where(PurchaseLine.wo_part_id == part.id)):
-        p = ctx.db.get(Purchase, line.purchase_id)
-        if p.status == "draft":
-            ctx.db.delete(line)
-        else:
-            line.wo_part_id = None  # уже заказано — придёт на свободный остаток
-    ctx.db.flush()
+    svc.release_part(ctx.db, part)
     ctx.db.delete(part)
     ctx.db.commit()
-    return _to(f"/orders/{order_id}")
+    return _to(f"/orders/{order_id}#parts")
 
 
 @router.post("/orders/{order_id}/picking-done")
@@ -193,7 +317,9 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx)):
     parts = {x.id: x for x in db.scalars(select(WoPart).where(WoPart.id.in_([l.wo_part_id for l in lines if l.wo_part_id])))}
     orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([x.work_order_id for x in parts.values()])))}
     locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id).order_by(Location.rack, Location.shelf, Location.place)).all()
+    from ..services import brands as _br
     return ctx.render("stock/purchase.html", title="Закупка", p=p, lines=lines, cats=cats, parts=parts, orders=orders,
+                      BRANDS=_br.names(db, ctx.branch.id),
                       suppliers=db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all(),
                       supplier=db.get(Supplier, p.supplier_id) if p.supplier_id else None,
                       locations=locations, loc_label=svc.location_label, PURCHASE_STATUS=PURCHASE_STATUS,

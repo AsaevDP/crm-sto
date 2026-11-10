@@ -197,20 +197,46 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     payments = db.scalars(select(Payment).where(Payment.work_order_id == wo.id).order_by(Payment.created_at)).all()
     pauses = {s.wo_work_id: s for s in db.scalars(select(WoWorkSession).where(
         WoWorkSession.work_order_id == wo.id, WoWorkSession.kind == "pause", WoWorkSession.ended_at.is_(None)))}
+    # Запчасти (11.11.2026): варианты на выбор клиенту — группами; менеджер вносит запчасти сам
+    from ..models.orders import PART_OFF
+    from ..services import brands as brands_svc
+    from .stock import _can_choose, _can_offer
+    groups: dict[str, list] = {}
+    for p in parts:
+        if p.option_group:
+            groups.setdefault(p.option_group, []).append(p)
+    plain = [p for p in parts if not p.option_group]
+    options_open = sum(1 for g in groups.values() if any(p.status == "option" for p in g)
+                       and not any(p.status not in ("option", "declined") for p in g))
+    can_offer = _can_offer(ctx, wo)
+    counted = [p for p in parts if p.status not in PART_OFF]
+    free = stock_svc.catalog_free(db, ctx.branch.id, [p.catalog_id for p in parts if p.catalog_id]) if groups else {}
+    n_done = sum(1 for w in works if w.status == "done")
+    mc, pm = people.get(wo.mechanic_id), people.get(wo.partsman_id)
+    flow = svc.flow(wo, mc.short_name if mc else "", pm.short_name if pm else "", len(findings), len(works), n_done,
+                    options_open)
+    is_manager = ctx.can("orders.approve")
     return ctx.render(
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
         finding_photos={f.id: [p for p in photos if p.finding_id == f.id] for f in findings}, URGENCY=URGENCY,
-        can_diag=ctx.can("orders.diagnose") and is_mech and wo.status in ("diag", "approve", "work"),
+        can_diag=ctx.can("orders.diagnose") and is_mech and (wo.status in ("diag", "approve", "work")
+                                                              or (wo.status == "created" and is_manager)),
         can_finish_diag=ctx.can("orders.diagnose") and is_mech and wo.status == "diag",
         can_approve=ctx.can("orders.approve") and wo.status == "approve",
-        parts=parts, cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,
+        can_route=is_manager and wo.status == "created" and wo.scenario == "B",
+        parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
+        can_offer=can_offer, can_choose=_can_choose(ctx, wo), flow=flow,
+        BRANDS=brands_svc.names(db, ctx.branch.id) if (can_pick or can_offer) else [],
+        diag_mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if is_manager and wo.status == "created" else [],
+        diag_lifts=svc.lifts_with_load(db, ctx.branch.id) if is_manager and wo.status == "created" else [],
+        cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,
         show_cost=ctx.can("prices.view_purchase"), show_price=ctx.can("prices.view_sale") or ctx.can("prices.view_purchase"),
         default_markup=st_.get(db, ctx.branch.id, "pricing")["default_markup"], open_issue=open_issue,
         can_request_issue=(ctx.can("stock.request_issue") and not open_issue and wo.status in ("instock", "work")
                            and any(p.status == "reserved" for p in parts)
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id)),
-        parts_total=sum((p.price * p.qty for p in parts), 0),
+        parts_total=sum((p.price * p.qty for p in counted), 0), n_counted=len(counted),
         t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES,
         can_money=ctx.can("money.accept") and wo.status not in ("closed", "cancel"),
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),

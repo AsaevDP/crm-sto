@@ -1,0 +1,32 @@
+{% extends "money/_print_base.html" %}
+{# Акт выполненных работ (11.11.2026): заполняется из наряда сам. #}
+{% block doc_title %}АКТ ВЫПОЛНЕННЫХ РАБОТ{% endblock %}
+{% block body %}
+<p class="muted" style="margin:0 0 4px">Исполнитель выполнил, а заказчик принял работы по заказ-наряду № {{ wo.number }}.</p>
+<table>
+  <tr><th style="width:5%">№</th><th>Наименование работы</th><th style="width:20%">Исполнитель</th>
+    <th class="num" style="width:10%">Кол-во</th><th class="num" style="width:12%">Цена, ₴</th><th class="num" style="width:13%">Сумма, ₴</th></tr>
+  {% for w in works %}{% set m = people.get(w.mechanic_id or wo.mechanic_id) %}
+  <tr><td>{{ loop.index }}</td><td>{{ w.name }}{% if w.status != "done" %} <span class="muted">(не завершена)</span>{% endif %}</td>
+    <td>{{ m.full_name if m else "" }}</td>
+    <td class="num">{% if w.pricing == "hours" %}{{ ((w.hours or 0) * (w.qty or 1))|num }} н/ч{% else %}{{ (w.qty or 1)|num }}{% endif %}</td>
+    <td class="num">{{ w.rate|money }}</td><td class="num">{{ w.price|money }}</td></tr>
+  {% else %}<tr><td colspan="6" class="muted">Работ нет</td></tr>{% endfor %}
+</table>
+<table class="sum" style="width:55%;margin-left:auto">
+  <tr class="big"><td>Итого работы</td><td class="num">{{ t.works|money }} ₴</td></tr>
+  {% if t.parts %}<tr><td>Запчасти (см. акт на запчасти)</td><td class="num">{{ t.parts|money }} ₴</td></tr>{% endif %}
+  {% if t.discount %}<tr><td>Скидка {{ wo.discount_pct|num }} %</td><td class="num">−{{ t.discount|money }} ₴</td></tr>{% endif %}
+  <tr><td><b>Всего по наряду</b></td><td class="num"><b>{{ t.total|money }} ₴</b></td></tr>
+</table>
+<h2>Гарантия на работы</h2>
+<p>______ месяцев или ______ км пробега (что наступит раньше). Гарантия не распространяется на запчасти заказчика и на работы,
+  от которых заказчик отказался.</p>
+<p class="muted">Работы выполнены{% if done_at %} {{ done_at.astimezone().strftime("%d.%m.%Y") }}{% endif %} в полном объёме.
+  Заказчик претензий по объёму, качеству и срокам не имеет.</p>
+<div class="sign">
+  <div>Принял (заказчик): ________ / {{ c.full_name }}</div>
+  <div>Сдал (СТО): ________ / {{ manager.full_name if manager else "" }}</div>
+</div>
+<p class="muted" style="margin-top:8mm">Дата: {{ (wo.closed_at or done_at or wo.created_at).astimezone().strftime("%d.%m.%Y") }}</p>
+{% endblock %}
