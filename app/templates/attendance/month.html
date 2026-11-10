@@ -1,11 +1,20 @@
 {% extends "base.html" %}
 {% from "_period.html" import period_bar %}
+{% from "_tiles.html" import tiles with context %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Табель</h1>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
-{% set on = namespace(n=0) %}{% for s in staff %}{% if now_on[s.id] and now_on[s.id].direction == "in" %}{% set on.n = on.n + 1 %}{% endif %}{% endfor %}
+{% set on = namespace(n=0, out=0, none=0, mins=0, open=0) %}
+{% for s in staff %}{% set e = now_on[s.id] %}{% if e and e.direction == "in" %}{% set on.n = on.n + 1 %}{% elif e %}{% set on.out = on.out + 1 %}{% else %}{% set on.none = on.none + 1 %}{% endif %}
+  {% for d, day in grid[s.id].items() %}{% set on.mins = on.mins + day.minutes %}{% if day.open and not (today.year == y and today.month == mo and today.day == d) %}{% set on.open = on.open + 1 %}{% endif %}{% endfor %}{% endfor %}
+{{ tiles([
+  {"t": "Сейчас на месте", "n": on.n ~ " из " ~ staff|length, "c": "green", "s": "отметились картой", "zero": not on.n},
+  {"t": "Ушли", "n": on.out, "c": "blue", "s": "сегодня уже ушли"},
+  {"t": "Не отмечались", "n": on.none, "c": "gray", "s": "сегодня"},
+  {"t": "Часов за месяц", "n": ((on.mins / 60)|round(0)|int)|num, "c": "teal", "s": month_name ~ " · все сотрудники", "zero": not on.mins},
+  {"t": "Забыли отметить уход", "n": on.open, "c": "red" if on.open else "gray", "s": "дни со знаком «?»"}]) }}
 <div class="onsite">
   <span class="footnote">Сейчас на месте · {{ on.n }} из {{ staff|length }}</span>
   {% for s in staff %}{% set e = now_on[s.id] %}
