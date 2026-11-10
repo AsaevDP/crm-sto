@@ -6,7 +6,7 @@ from .staff import (  # noqa: F401
 )
 from .payroll import (  # noqa: F401
     PayScheme, PaySchemeLine, UserPayScheme, PartGroup, PartGroupItem,
-    PayrollAccrual, PayrollPayout,
+    PayrollAccrual, PayrollPayout, PayWeek,
 )
 from .orders import (  # noqa: F401
     Client, Vehicle, WorkOrder, WoStatusHistory, WoPhoto, WoFinding,

@@ -47,6 +47,9 @@ PERMISSIONS = [
     ("payroll.view_own", "Своя зарплата", "Сотрудники"),
     ("payroll.view_all", "Зарплата всех", "Сотрудники"),
     ("payroll.manage", "Схемы зарплаты и выплаты", "Сотрудники"),
+    ("payroll.check", "Зарплата: проверять неделю (бухгалтер)", "Сотрудники"),
+    ("payroll.pay", "Зарплата: отмечать выдачу денег за неделю", "Сотрудники"),
+    ("payroll.edit", "Зарплата: исправлять начисления, добавлять премии и штрафы (даёт админ)", "Сотрудники"),
     ("staff.dismiss", "Увольнять и возвращать сотрудников, архив уволенных", "Сотрудники"),
     ("tools.view", "Инструмент всех сотрудников", "Инструмент"),
     ("tools.view_own", "Свой инструмент", "Инструмент"),
@@ -84,6 +87,10 @@ DEFAULT_ROLES = {
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
         "prices.view_sale", "attendance.view_all", "tools.view", *_OWN]),
+    # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
+    "accountant": ("Бухгалтер", "teal", [
+        "reports.view", "money.view", "attendance.view_all", "payroll.view_all", "payroll.check", "payroll.pay",
+        "orders.view_all", *_OWN]),
     "admin": ("Админ", "graphite", ALL_CODES),
 }
 ADMIN_ROLE = "admin"

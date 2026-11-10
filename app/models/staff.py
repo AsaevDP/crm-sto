@@ -49,6 +49,10 @@ class User(Entity):
     dismissed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     # Запчастист работает в паре с менеджером (11.11.2026): при приёмке у этого менеджера подставляется сам
     works_with_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # Куда платить зарплату (11.11.2026): наличными / на карту / на счёт; номер карты или IBAN, банк
+    pay_method: Mapped[str | None] = mapped_column(String(10), default="cash", nullable=True)
+    pay_account: Mapped[str | None] = mapped_column(String(64), default="", nullable=True)
+    pay_bank: Mapped[str | None] = mapped_column(String(60), default="", nullable=True)
 
     role: Mapped[Role] = relationship(foreign_keys=[role_id], lazy="joined")
 

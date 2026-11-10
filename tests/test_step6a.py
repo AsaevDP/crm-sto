@@ -60,7 +60,8 @@ def test_tool_lifecycle_check_and_deduction(client):
     _as(client, "admin")
     client.post(f"/tools/checks/{c.id}/approve", data={"approve": str(key.id)})
     with SessionLocal() as db:
-        a = db.scalar(select(PayrollAccrual).where(PayrollAccrual.user_id == sergey, PayrollAccrual.kind == "deduction"))
+        a = db.scalar(select(PayrollAccrual).where(PayrollAccrual.user_id == sergey, PayrollAccrual.kind == "deduction",
+                                                   PayrollAccrual.note.like("%Динамометрический%")))
     assert a.amount == Decimal("-3100.00") and "Динамометрический ключ" in a.note
     _as(client, "sergey")
     assert "Удержание" in client.get("/payroll").text

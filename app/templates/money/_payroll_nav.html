@@ -1,0 +1,8 @@
+{# Переключатель разделов зарплаты (11.11.2026): по неделям (выплаты) / за период (сводка) / схемы. #}
+{% macro payroll_nav(active) %}
+<nav class="segmented pw-nav" aria-label="Зарплата">
+  <a href="/payroll/weeks" aria-pressed="{{ (active == 'weeks')|lower }}">По неделям</a>
+  <a href="/payroll?p=month" aria-pressed="{{ (active == 'period')|lower }}">{{ "За период" if ctx.can("payroll.view_all") else "Моя зарплата" }}</a>
+  {% if ctx.can("settings.access") %}<a href="/settings/payroll" aria-pressed="{{ (active == 'schemes')|lower }}">Схемы и оклад</a>{% endif %}
+</nav>
+{% endmacro %}

@@ -117,7 +117,7 @@ def test_schedule_booking_to_intake(client):
 def test_payroll_detail_payout_print(client):
     _as(client, "admin")
     andrey = _uid("andrey")
-    page = client.get("/payroll")
+    page = client.get("/payroll?p=month")   # сводка за период (главный экран с 11.11.2026 — недели)
     assert page.status_code == 200 and "К выплате" in page.text
     client.post("/payroll/payouts", data={"user_id": str(andrey), "amount": "100", "method": "cash", "note": "аванс"})
     page = client.get(f"/payroll?user={andrey}").text

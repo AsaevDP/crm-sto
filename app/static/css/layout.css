@@ -1092,6 +1092,58 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
   background: color-mix(in srgb, var(--blue) 12%, transparent); color: color-mix(in srgb, var(--blue) 80%, var(--text)); }
 .tool-wait { opacity: .85; }
 
+/* ===== Зарплата по неделям (11.11.2026) ===== */
+.pw-nav { align-self: flex-start; }
+.pw-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pw-step { display: grid; gap: 1px; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1), inset 0 3px 0 var(--separator); }
+.pw-step.done { box-shadow: var(--shadow-1), inset 0 3px 0 var(--green); }
+.pw-step.done b::after { content: " ✓"; color: var(--green); }
+.pw-step.now { box-shadow: var(--shadow-1), inset 0 3px 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.pw-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pw-acts .form-row { display: flex; gap: 6px; align-items: center; }
+.pw-acts .field { width: auto; min-width: 240px; }
+.pw-note { margin: 0; }
+.pw-tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.pw-list { display: grid; gap: 10px; }
+.pw-user > summary { list-style: none; cursor: pointer; }
+.pw-user > summary::-webkit-details-marker { display: none; }
+.pw-sum { display: grid; gap: 8px 14px; align-items: center; grid-template-columns: minmax(160px, 220px) minmax(0, 1fr) auto auto; }
+.pw-who { display: grid; min-width: 0; }
+.pw-who b::before { content: "›"; display: inline-block; margin-right: 6px; color: var(--text-2); transition: transform .15s; }
+.pw-user[open] .pw-who b::before { transform: rotate(90deg); }
+.pw-cols { display: flex; gap: 6px; flex-wrap: wrap; }
+.pw-col { display: grid; padding: 3px 8px; border-radius: 8px; background: var(--fill-2); font-variant-numeric: tabular-nums; }
+.pw-col b { font-size: 14px; }
+.pw-col.neg b, .neg { color: var(--red); }
+.pw-col.wait { background: color-mix(in srgb, var(--purple) 10%, var(--surface)); }
+.pw-total { display: grid; text-align: right; }
+.pw-total b { font-size: 17px; white-space: nowrap; }
+.pw-state { display: grid; gap: 2px; justify-items: end; }
+.pw-body { display: grid; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--separator); }
+.tablewrap:has(.pw-items) { overflow: visible; }
+.pw-items td { vertical-align: middle; }
+.pw-items a { color: var(--accent); text-decoration: none; }
+.pw-wait td { color: var(--text-2); background: color-mix(in srgb, var(--purple) 5%, transparent); }
+.pw-fix { text-align: right; white-space: nowrap; }
+.pw-fix .pu-menu { width: 280px; }
+.pw-foot { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; }
+.pw-paid { display: grid; gap: 2px; }
+.pw-paid .inline-form { display: inline; }
+.pw-payform { display: flex; gap: 6px; align-items: center; }
+.pw-payform .field { width: auto; max-width: 150px; }
+.pw-edit { display: grid; gap: 6px; padding-top: 8px; border-top: 0.5px dashed var(--separator); }
+.pw-edit .form-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pw-edit .field { width: auto; flex: 1 1 150px; }
+.pw-edit .btn { flex: none; }
+@media (max-width: 899px) {
+  .pw-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pw-sum { grid-template-columns: 1fr auto; }
+  .pw-cols { grid-column: 1 / -1; order: 3; }
+  .pw-state { grid-column: 1 / -1; justify-items: start; order: 4; }
+  .pw-acts .field { min-width: 0; flex: 1 1 160px; }
+  .tablewrap:has(.pw-items) { overflow-x: auto; }
+}
+
 /* ===== Разбор (11.11.2026): дерево марок, категории, продажи и отправки, справочник ===== */
 .chip[data-rs="sent"], .chip[data-us="sent"] { --c: var(--purple); }
 .chip[data-rs="service"] { --c: var(--teal); }

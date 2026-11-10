@@ -327,6 +327,8 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
 @router.get("/payroll")
 def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("payroll.view_own", "payroll.view_all")
+    if not (user or f or t or p or d):   # 11.11.2026: главный экран зарплаты — недельные ведомости
+        return _to("/payroll/weeks")
     from ..services.periods import Bar
     db = ctx.db
     per = _per(f, t, p, d)
@@ -341,6 +343,221 @@ def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: st
     tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
     return ctx.render("money/payroll_all.html", title="Зарплата", staff=staff, summ=summ, tot=tot, d1=d1, d2=d2,
                       COLS=psvc.COLS, pq=per.qs, bar=Bar(per, "/payroll", {}))
+
+
+# ======================= Недельная зарплата (11.11.2026) =======================
+def _week_start(d: str, own: bool = False) -> date:
+    from ..services import payweek as wsvc
+    try:
+        x = date.fromisoformat(d) if d else None
+    except ValueError:
+        x = None
+    if x is None:
+        # Сотрудник видит свою текущую неделю. Бухгалтер и админ в будни — прошлую (её выплачивают),
+        # в выходные — текущую (её как раз проверяют)
+        x = date.today() if own or date.today().weekday() >= 5 else date.today() - timedelta(days=7)
+    return wsvc.monday(x)
+
+
+def _week_users(ctx: Ctx, start: date):
+    if ctx.can("payroll.view_all"):
+        return staff_for_period(ctx.db, ctx.branch.id, start)
+    return [ctx.user]
+
+
+@router.get("/payroll/weeks")
+def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = ""):
+    ctx.need("payroll.view_own", "payroll.view_all")
+    from ..models.payroll import WEEK_STATUS
+    from ..services import payweek as wsvc
+    db = ctx.db
+    start = _week_start(d, own=not ctx.can("payroll.view_all"))
+    users = _week_users(ctx, start)
+    data = wsvc.week_data(db, ctx.branch.id, start, users)
+    all_ids = set()
+    for r in data["rows"].values():
+        all_ids |= r["orders"]
+        all_ids |= {x[1].id for x in r["pending"]}
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_(list(all_ids))))}
+    vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
+    works = {w.id: w for w in db.scalars(select(WoWork).where(WoWork.id.in_(
+        [a.wo_work_id for r in data["rows"].values() for a in r["items"] if a.wo_work_id])))}
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    hist = wsvc.history(db, ctx.branch.id, users, start, 6) if ctx.can("payroll.view_all") else []
+    return ctx.render("money/payroll_weeks.html", title="Зарплата · неделя", start=start, end=data["end"], data=data,
+                      users=users, orders=orders, vehicles=vehicles, works=works, people=people, hist=hist,
+                      WEEK_STATUS=WEEK_STATUS, COLS=wsvc.COLS, PAY_METHODS=PAY_METHODS, PAY_TO=PAY_TO,
+                      prev=(start - timedelta(days=7)).isoformat(), next=(start + timedelta(days=7)).isoformat(),
+                      this_week=wsvc.monday(date.today()), open_user=open_user, fmt_plate=osvc.fmt_plate,
+                      column_of=psvc.column_of, mask=_mask_account)
+
+
+PAY_TO = {"cash": "Наличными", "card": "На карту", "account": "На счёт (IBAN)"}
+
+
+def _mask_account(v: str | None) -> str:
+    v = (v or "").replace(" ", "")
+    return f"•••• {v[-4:]}" if len(v) > 4 else v
+
+
+def _week_back(start: date, uid=None) -> str:
+    return f"/payroll/weeks?d={start.isoformat()}" + (f"&open_user={uid}#u-{uid}" if uid else "")
+
+
+def _week_of(ctx: Ctx, d: str):
+    from ..services import payweek as wsvc
+    start = _week_start(d)
+    return start, wsvc.get_week(ctx.db, ctx.branch.id, start, create=True)
+
+
+@router.post("/payroll/weeks/{d}/status")
+def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), note: str = Form("")):
+    """Проверено (бухгалтер) → Утверждено (админ / кому дали право) ; вернуть на доработку — тоже админ."""
+    from ..services import payweek as wsvc
+    start, w = _week_of(ctx, d)
+    need = {"checked": "payroll.check", "approved": "payroll.edit", "open": "payroll.edit"}.get(status)
+    if not need:
+        raise Forbidden()
+    ctx.need(need)
+    if status == "approved" and w.status not in ("checked", "open"):
+        flash(ctx.request, "Неделя уже утверждена", "error")
+        return _to(_week_back(start))
+    wsvc.set_status(ctx.db, w, status, ctx.user)
+    if note.strip():
+        w.note = (w.note + "\n" if w.note else "") + f"{date.today():%d.%m} {ctx.user.short_name}: {note.strip()}"
+    if status == "approved":
+        wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, start))
+    ctx.db.commit()
+    flash(ctx.request, {"checked": "Неделя проверена — ждёт утверждения админа", "approved": "Утверждено — можно выдавать",
+                        "open": "Неделя снова открыта для правок"}[status])
+    return _to(_week_back(start))
+
+
+@router.post("/payroll/weeks/{d}/pay")
+async def payroll_week_pay(d: str, ctx: Ctx = Depends(get_ctx)):
+    """Выдать зарплату за неделю: одному (user_id) или всем, у кого «к выдаче» больше нуля (all=1)."""
+    from ..services import payweek as wsvc
+    ctx.need("payroll.pay")
+    start, w = _week_of(ctx, d)
+    if w.status not in ("approved", "paid"):
+        flash(ctx.request, "Сначала бухгалтер проверяет неделю, потом админ утверждает — тогда выдача", "error")
+        return _to(_week_back(start))
+    form = await ctx.request.form()
+    users = staff_for_period(ctx.db, ctx.branch.id, start)
+    data = wsvc.week_data(ctx.db, ctx.branch.id, start, users)
+    targets = [u for u in users if data["rows"][u.id]["due"] > 0] if form.get("all") else \
+        [u for u in users if str(u.id) == str(form.get("user_id", ""))]
+    n, total = 0, Decimal(0)
+    for u in targets:
+        due = data["rows"][u.id]["due"]
+        amount = msvc.money(_dec(form.get("amount"))) if (form.get("amount") and not form.get("all")) else due
+        if amount <= 0:
+            continue
+        method = str(form.get("method") or u.pay_method or "cash")
+        method = method if method in PAY_TO else "cash"
+        wsvc.pay(ctx.db, w, u, amount, method="cash" if method == "cash" else "card",
+                 account="" if method == "cash" else f"{PAY_TO[method]} {u.pay_account or ''} {u.pay_bank or ''}".strip(),
+                 note=str(form.get("note", "")).strip())
+        n, total = n + 1, total + amount
+    ctx.db.flush()
+    wsvc.refresh_paid(ctx.db, w, users)
+    ctx.db.commit()
+    flash(ctx.request, f"Выдано: {n} чел. на {msvc.money(total)} ₴" if n else "Выдавать некому — всё уже выдано", "ok" if n else "error")
+    return _to(_week_back(start, targets[0].id if len(targets) == 1 else None))
+
+
+def _edit_guard(ctx: Ctx):
+    """Исправлять зарплату — только админ или кому админ дал право «payroll.edit»."""
+    ctx.need("payroll.edit")
+
+
+@router.post("/payroll/weeks/{d}/adjust")
+def payroll_week_adjust(d: str, ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), amount: str = Form(...),
+                        kind: str = Form("bonus"), note: str = Form(""), on_date: str = Form("")):
+    """Премия (+), штраф/удержание (−) или исправление за эту неделю."""
+    _edit_guard(ctx)
+    from ..services import payweek as wsvc
+    start, w = _week_of(ctx, d)
+    u = ctx.db.get(User, _uuid(user_id))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    a = msvc.money(_dec(amount))
+    if a == 0 or not note.strip():
+        flash(ctx.request, "Нужны сумма и причина", "error")
+        return _to(_week_back(start, u.id))
+    a = -abs(a) if kind == "fine" else abs(a)
+    try:
+        day = date.fromisoformat(on_date) if on_date else start + timedelta(days=6)
+    except ValueError:
+        day = start + timedelta(days=6)
+    day = min(max(day, start), start + timedelta(days=6))
+    ctx.db.add(PayrollAccrual(user_id=u.id, base_amount=abs(a), rate=0, amount=a, on_date=day,
+                              kind="deduction" if kind == "fine" else "adjust",
+                              note=f"{'Штраф' if kind == 'fine' else 'Премия'}: {note.strip()}"[:300]))
+    ctx.db.flush()
+    wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, start))
+    ctx.db.commit()
+    flash(ctx.request, f"{'Штраф' if a < 0 else 'Премия'} {a} ₴ — {u.short_name}")
+    return _to(_week_back(start, u.id))
+
+
+@router.post("/payroll/accruals/{aid}")
+def payroll_accrual_edit(aid: str, ctx: Ctx = Depends(get_ctx), amount: str = Form(""), reason: str = Form(""),
+                         action: str = Form("save"), d: str = Form("")):
+    """Исправить сумму начисления или отменить его. Причина обязательна — видна в строке и в журнале."""
+    _edit_guard(ctx)
+    from ..services import payweek as wsvc
+    a = ctx.db.get(PayrollAccrual, _uuid(aid))
+    if not a or a.branch_id != ctx.branch.id:
+        raise Forbidden()
+    start = wsvc.monday(a.on_date)
+    if not reason.strip():
+        flash(ctx.request, "Напишите причину исправления", "error")
+        return _to(_week_back(start, a.user_id))
+    if action == "cancel":
+        a.status = "cancelled"
+        a.note = f"{a.note} · отменено: {reason.strip()}"[:300]
+        msg = "Начисление отменено"
+    else:
+        new = msvc.money(_dec(amount))
+        a.note = f"{a.note} · было {a.amount} ₴: {reason.strip()}"[:300]
+        a.amount = new
+        msg = f"Исправлено: {new} ₴"
+    ctx.db.flush()
+    w = wsvc.get_week(ctx.db, ctx.branch.id, start)
+    if w:
+        wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, start))
+    ctx.db.commit()
+    flash(ctx.request, msg)
+    return _to(_week_back(start, a.user_id))
+
+
+@router.post("/payroll/weeks/{d}/salary")
+def payroll_week_salary(d: str, ctx: Ctx = Depends(get_ctx)):
+    """Начислить дневной оклад за неделю по табелю (кто был на месте)."""
+    _edit_guard(ctx)
+    from ..services import payweek as wsvc
+    start, w = _week_of(ctx, d)
+    total = wsvc.accrue_week_salary(ctx.db, ctx.branch.id, start, staff_for_period(ctx.db, ctx.branch.id, start))
+    ctx.db.commit()
+    flash(ctx.request, f"Оклад за неделю начислен: {msvc.money(total)} ₴" if total else "Начислять нечего: нет дневных окладов или уже начислено")
+    return _to(_week_back(start))
+
+
+@router.post("/payroll/account/{uid}")
+def payroll_account(uid: str, ctx: Ctx = Depends(get_ctx), pay_method: str = Form("cash"), pay_account: str = Form(""),
+                    pay_bank: str = Form(""), back: str = Form("")):
+    """Куда платить сотруднику: наличными / на карту / на счёт, номер карты или IBAN, банк."""
+    _edit_guard(ctx)
+    u = ctx.db.get(User, _uuid(uid))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    u.pay_method = pay_method if pay_method in PAY_TO else "cash"
+    u.pay_account = "".join(ch for ch in pay_account.upper() if ch.isalnum())[:64]
+    u.pay_bank = pay_bank.strip()[:60]
+    ctx.db.commit()
+    flash(ctx.request, f"Реквизиты {u.short_name} сохранены")
+    return _to(back if back.startswith("/") and not back.startswith("//") else "/payroll/weeks")
 
 
 @router.get("/payroll/print")
@@ -405,13 +622,22 @@ def payroll_payout(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), amount
 
 @router.post("/payroll/payouts/{pid}/delete")
 def payroll_payout_delete(pid: str, ctx: Ctx = Depends(get_ctx)):
-    ctx.need("payroll.manage")
-    from ..models import PayrollPayout
+    """Удалить ошибочную выплату — только админ или кому дано право исправлять зарплату."""
+    ctx.need("payroll.edit")
+    from ..models import PayrollPayout, PayWeek
     p = ctx.db.get(PayrollPayout, _uuid(pid))
     if not p or p.branch_id != ctx.branch.id:
         raise Forbidden()
-    uid = p.user_id
+    uid, wid = p.user_id, p.week_id
     ctx.db.delete(p)
+    ctx.db.flush()
+    if wid:
+        from ..services import payweek as wsvc
+        w = ctx.db.get(PayWeek, wid)
+        wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, w.week_start))
+        ctx.db.commit()
+        flash(ctx.request, "Выплата удалена — сумма снова «к выдаче»")
+        return _to(_week_back(w.week_start, uid))
     ctx.db.commit()
     flash(ctx.request, "Выплата удалена")
     return _to(f"/payroll?user={uid}")

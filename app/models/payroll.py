@@ -1,12 +1,12 @@
 """Зарплата: конструктор схем (см. docs/schema.md, раздел 2а)."""
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Uuid
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Entity
+from ..db import Entity, UTCDateTime
 
 MONEY = Numeric(12, 2)
 
@@ -76,3 +76,22 @@ class PayrollPayout(Entity):
     paid_on: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)   # когда выдали деньги
     method: Mapped[str] = mapped_column(String(10), default="cash")
     note: Mapped[str] = mapped_column(String(300), default="")
+    # 11.11.2026: выплата по недельной ведомости и куда перевели (карта / счёт — снимок на момент выплаты)
+    week_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("pay_weeks.id"), nullable=True, index=True)
+    account: Mapped[str | None] = mapped_column(String(80), default="", nullable=True)
+
+
+# Недельная зарплата (11.11.2026): работали пн–вс, в выходные бухгалтер проверяет, в понедельник выплата.
+WEEK_STATUS = {"open": "Идёт / не проверена", "checked": "Проверена бухгалтером", "approved": "Утверждена к выплате",
+               "paid": "Выплачена"}
+
+
+class PayWeek(Entity):
+    __tablename__ = "pay_weeks"
+    week_start: Mapped[date] = mapped_column(Date, index=True)     # понедельник
+    status: Mapped[str] = mapped_column(String(10), default="open")
+    checked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")

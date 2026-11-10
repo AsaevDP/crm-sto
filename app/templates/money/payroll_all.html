@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% from "_period.html" import period_bar %}
+{% from "money/_payroll_nav.html" import payroll_nav with context %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Зарплата</h1>
   <div class="ov-actions">
     <a class="btn btn-sm btn-gray" href="/payroll/print?{{ pq }}" target="_blank">🖨 Ведомость</a>
     <a class="btn btn-sm btn-gray" href="/payroll/export.csv?{{ pq }}">Excel</a>
-    {% if user.role.code == "admin" %}<a class="btn btn-sm btn-tinted" href="/settings/payroll">Схемы и оклад</a>{% endif %}</div>
+  </div>
 </header>
+{{ payroll_nav("period") }}
 {{ period_bar(bar) }}
 <div class="stats">
   <div class="stat"><span class="footnote">Начислено {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ tot.accrued|money }} ₴</b></div>

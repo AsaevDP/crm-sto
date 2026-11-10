@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_period.html" import period_bar %}
+{% from "money/_payroll_nav.html" import payroll_nav with context %}
 {% block content %}
 {% set q = "user=" ~ u.id ~ "&" ~ pq %}
 <header class="page-head">
@@ -9,6 +10,7 @@
     <a class="btn btn-sm btn-gray" href="/payroll/print?{{ q }}" target="_blank">🖨 Расчётный лист</a>
     <a class="btn btn-sm btn-gray" href="/staff/{{ u.id }}/print?f={{ d1 }}&t={{ d2 }}" target="_blank">🖨 Папка</a></div>
 </header>
+{% if not see_all %}{{ payroll_nav("period") }}{% endif %}
 {{ period_bar(bar) }}
 <div class="stats">
   <div class="stat"><span class="footnote">Начислено {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ s.accrued|money }} ₴</b></div>

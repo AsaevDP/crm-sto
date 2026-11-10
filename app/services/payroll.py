@@ -93,6 +93,13 @@ def _best(lines, bases, part: WoPart | None, groups: set):
     return best
 
 
+def _local_day(dt) -> date | None:
+    if not dt:
+        return None
+    from .attendance import _aware, local_tz
+    return _aware(dt).astimezone(local_tz()).date()
+
+
 # ---------- Начисление по наряду ----------
 def accrue_for_order(db: Session, wo: WorkOrder):
     """Начислить зарплату по наряду. Повторно не начисляет (идемпотентно)."""
@@ -120,9 +127,10 @@ def accrue_for_order(db: Session, wo: WorkOrder):
             continue
         base = money(Decimal(w.price) * factor)
         amount = money(base * line.rate / 100) if line.kind == "percent" else money(line.rate * Decimal(w.qty or 1))
+        # Неделя зарплаты — по дню, когда слесарь отметил работу «выполнено» (решение 11.11.2026)
         db.add(PayrollAccrual(user_id=uid, work_order_id=wo.id, wo_work_id=w.id, scheme_line_id=line.id,
-                              base_amount=base, rate=line.rate, amount=amount, on_date=today, kind=line.kind,
-                              note=w.name[:300]))
+                              base_amount=base, rate=line.rate, amount=amount, on_date=_local_day(w.done_at) or today,
+                              kind=line.kind, note=w.name[:300]))
 
     # Запчастист: подобранные им и выданные запчасти
     for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.in_(("issued", "installed")))):
