@@ -134,6 +134,32 @@ def populate():
             cell = next(s[5] for s in STOCK if s[0] == name)
             ssvc.receive_line(db, branch.id, line, locs[cell].id)
         ssvc.refresh_purchase_status(db, stock_purchase)
+        # Закупки (11.11.2026): заказ у второго поставщика едет — пришёл частями; черновик списком из Excel
+        as_user("oleg")
+        from datetime import date as _date, timedelta as _td
+        p2 = Purchase(supplier_id=sup2.id, status="ordered", supplier_invoice="ЭУ-78040", ordered_on=_date.today() - _td(days=2),
+                      expected_on=_date.today() + _td(days=1), note="Доставка до 16:00")
+        db.add(p2)
+        db.flush()
+        p2_lines = []
+        for r in ssvc.parse_paste("Амортизатор передний\t334842\tKYB\t4\t1850\nОпора амортизатора\tSM5226\tSasic\t2\t620\n"
+                                  "Пыльник с отбойником\t910191\tKYB\t2\t340"):
+            c = ssvc.get_or_create_catalog(db, r["name"], r["article"], r["brand"])
+            ln = PurchaseLine(purchase_id=p2.id, catalog_id=c.id, qty=r["qty"], price=r["price"], received_qty=0)
+            db.add(ln)
+            p2_lines.append(ln)
+        db.flush()
+        as_user("pavel")
+        ssvc.receive_line(db, branch.id, p2_lines[0], locs["A / 2 / 1"].id, Decimal(2))   # привезли 2 из 4
+        ssvc.refresh_purchase_status(db, p2)
+        as_user("oleg")
+        draft = Purchase(supplier_id=sup.id, status="draft", note="Заказ на следующую неделю")
+        db.add(draft)
+        db.flush()
+        for r in ssvc.parse_paste("Свеча зажигания; BKR6EK; NGK; 8; 180\nЩётка стеклоочистителя 600 мм; 3397008538; Bosch; 4; 420"):
+            c = ssvc.get_or_create_catalog(db, r["name"], r["article"], r["brand"])
+            db.add(PurchaseLine(purchase_id=draft.id, catalog_id=c.id, qty=r["qty"], price=r["price"], received_qty=0))
+        db.flush()
 
         # Склад (10.11.2026): подкатегории и «подходит для» (марка, модель, годы) — для фильтра по машине
         from .models import PartFit
@@ -259,7 +285,7 @@ def populate():
         as_user("oleg")
         ssvc.finish_picking(db, wo)
         p = ssvc.draft_purchase(db, branch.id)
-        p.supplier_id, p.status, p.supplier_invoice = sup2.id, "ordered", "ЭУ-77812"
+        p.supplier_id, p.status, p.supplier_invoice = sup2.id, "ordered", "ЭУ-78040"
 
         # 6) Запчасти на складе, слесарь просит выдать → у кладовщика окошко (пост 5)
         wo = intake(3, "A", 5, works="Замена передних тормозных колодок\nЗамена передних тормозных дисков",
@@ -440,6 +466,14 @@ def populate():
         # Андрей: плановая проверка начата кладовщиком (можно открыть и провести самому)
         as_user("pavel")
         tsvc.open_check(db, users["andrey"], "planned")
+        # Запасные наборы (11.11.2026) — лежат в шкафу, выдаются взамен сломанного личного
+        for name, cost, desc in (("Набор головок 1/2\" 94 пр. (запасной)", "4200", "Полный комплект, в кейсе"),
+                                 ("Набор рожково-накидных ключей 8–24 (запасной)", "2650", "12 ключей")):
+            n += 1
+            db.add(Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), description=desc,
+                        category="spare", place="Шкаф 1 · полка 4"))
+        db.flush()
+        tsvc.adopt_text_places(db, branch.id)   # «Шкаф 1 · полка 2» → шкафы и полки справочника
 
         # ---- Разбор (шаг 7): доноры, б/у детали, продажи ----
         from .models import Donor, DonorPhoto, StockPhoto
@@ -465,10 +499,12 @@ def populate():
               ("Капот", "3800", "fair", "", "front", "Скол краски"),
               ("Фонарь задний левый", "1600", "excellent", "B / 2 / 3", "rear", "")]),
         ]
-        sold_plan = {"Блок управления двигателем DDE": ("Андрей К.", "0671234500", "np", "20450123456789", "card"),
-                     "Коробка передач АКПП U250E": ("СТО «Мотор» (Киев)", "0442223344", "np", "20450987654321", "card"),
+        sold_plan = {"Коробка передач АКПП U250E": ("СТО «Мотор» (Киев)", "0442223344", "np", "20450987654321", "card"),
                      "Капот": ("Сергей", "0501112233", "pickup", "", "cash")}
-        reserve_plan = {"Фара передняя левая, ксенон": ("Олег М.", "0633332211", "np")}
+        reserve_plan = {"Фара передняя левая, ксенон": ("Олег М.", "0633332211", "np"),
+                        "Генератор 180A": ("Василий", "0991112200", "pickup")}
+        # 11.11.2026: посылка в пути — наложенный платёж, ждём деньги
+        sent_plan = {"Блок управления двигателем DDE": ("Андрей К.", "0671234500", "Львов, отд. 7", "20450123456789")}
         for info, d_photos, parts in demo_donors:
             d = Donor(code=rsvc.next_donor_code(db, branch.id), bought_on=date.today() - timedelta(days=20), **info)
             db.add(d)
@@ -488,7 +524,14 @@ def populate():
                     rsvc.sell_now(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, dl, pm, ttn)
                 elif name in reserve_plan:
                     bn, bp, dl = reserve_plan[name]
-                    rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price), bn, bp, dl)
+                    rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price), bn, bp, dl,
+                                           np_address="Киев, отд. 112" if dl == "np" else "", channel="olx" if dl == "np" else "phone")
+                elif name in sent_plan:
+                    bn, bp, addr, ttn = sent_plan[name]
+                    s = rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, "np", "card",
+                                               np_address=addr, cod=True, channel="site")
+                    db.flush()
+                    rsvc.ship(db, s, ttn, cod=True)
 
         # ---- Табель: отметки по картам за прошлый и текущий месяц ----
         import random
@@ -570,6 +613,21 @@ def populate():
                 db.add(PayrollPayout(user_id=users[login].id, period_from=today.replace(day=1), period_to=today,
                                      amount=Decimal(amount), paid_on=today.replace(day=min(5, today.day)), method="cash",
                                      note="Аванс"))
+        # Недельная зарплата (11.11.2026): часть начислений — прошлая неделя, её уже проверил бухгалтер (ждёт админа)
+        from .models import PayrollAccrual
+        from .services import payweek as wsvc
+        db.flush()
+        last_mon = wsvc.monday(today) - timedelta(days=7)
+        for k, a in enumerate(db.scalars(select(PayrollAccrual).where(PayrollAccrual.wo_work_id.is_not(None))
+                                         .order_by(PayrollAccrual.created_at)).all()):
+            if k % 2 == 0:
+                a.on_date = last_mon + timedelta(days=k % 6)
+        if "buh" in users:
+            w = wsvc.get_week(db, branch.id, last_mon, create=True)
+            wsvc.set_status(db, w, "checked", users["buh"])
+            w.note = f"{today:%d.%m} Оксана: сверила с нарядами, всё сходится"
+        users["andrey"].pay_method, users["andrey"].pay_account, users["andrey"].pay_bank = "card", "4149000000001234", "ПриватБанк"
+        users["sergey"].pay_method = "cash"
 
         # ---- Уволенный слесарь Роман: сделал наряд, получил расчёт, сдал инструмент → «Архив» ----
         from .services import staff as stsvc
