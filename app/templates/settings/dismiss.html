@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="ov-head">
   <a class="back" href="{{ '/settings/users/' ~ u.id if ctx.can('users.manage') else '/settings/users' }}">{{ icon("back") }}{{ u.full_name if ctx.can('users.manage') else "Сотрудники" }}</a>

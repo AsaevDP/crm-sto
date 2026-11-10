@@ -111,7 +111,7 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 
 /* Карточки нарядов */
 .ocards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-@media (max-width: 400px) { .ocards { grid-template-columns: 1fr; } }
+@media (max-width: 400px) { .ocards { grid-template-columns: minmax(0, 1fr); } }
 .ocard { display: flex; gap: 12px; padding: 12px; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-2);
   color: inherit; text-decoration: none; transition: transform .15s var(--ease); }
 .ocard:active { transform: scale(.98); }
@@ -169,12 +169,14 @@ select.field { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 .form label.btn { display: inline-flex; color: var(--accent); font-size: 17px; }
 a.btn { text-decoration: none; }
 
-/* ===== Шаг 4: «в один экран» ===== */
+/* ===== ПК (11.11.2026): страница листается обычной прокруткой, контент широкий и свободный.
+   Режим «всё в один экран» (body.fit) отключён по решению владельца — правила body.fit ниже не действуют. ===== */
 .title-1 { font-family: var(--font-display); font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 0; line-height: 1.15; }
 @media (min-width: 900px) {
-  .content { padding: 22px 28px 32px; max-width: 1440px; gap: 14px; }
+  .content { padding: 26px 32px 56px; max-width: 1680px; gap: 20px; }
   .large-title { font-size: 30px; }
 }
+@media (min-width: 1600px) { .content { padding: 30px 48px 64px; gap: 22px; } }
 
 /* Шапка наряда/клиента */
 .ov-head { display: grid; gap: 4px; }
@@ -190,15 +192,24 @@ a.btn { text-decoration: none; }
 .ov-col { display: none; gap: 12px; align-content: start; }
 .ov-col.on { display: grid; }
 .ov-tabs { position: sticky; top: calc(4px + env(safe-area-inset-top)); z-index: 3; }
+/* ПК (11.11.2026): слева широкая лента по шагам (приём → проблемы → запчасти → работы), справа «Деньги / Кто и где /
+   История» — не уезжает при прокрутке. На больших мониторах лента делится на две колонки. */
 @media (min-width: 900px) {
   .ov-tabs { display: none; }
-  .ov-col { display: grid; }
-  .ov-grid { grid-template-columns: 1fr 1fr; }
-  .ov-grid > .ov-col[data-t="hist"] { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+  .ov-col { display: grid; gap: 16px; }
+  .ov-grid { grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; }
+  .ov-grid > [data-t="main"] { grid-column: 1; grid-row: 1; }
+  .ov-grid > [data-t="diag"] { grid-column: 1; grid-row: 2; }
+  .ov-grid > [data-t="hist"] { grid-column: 2; grid-row: 1 / 3; position: sticky; top: 16px; align-self: start;
+    max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; padding: 2px 4px 6px 2px; scrollbar-width: thin; }
+  .ov-grid > [data-t="hist"] .timeline { max-height: none; }
 }
-@media (min-width: 1280px) {
-  .ov-grid { grid-template-columns: 1fr 1.15fr .9fr; }
-  .ov-grid > .ov-col[data-t="hist"] { grid-column: auto; grid-template-columns: 1fr; }
+@media (min-width: 1200px) { .ov-grid { grid-template-columns: minmax(0, 1fr) 360px; } }
+@media (min-width: 1600px) {
+  .ov-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 380px; }
+  .ov-grid > [data-t="main"] { grid-column: 1; grid-row: 1; }
+  .ov-grid > [data-t="diag"] { grid-column: 2; grid-row: 1; }
+  .ov-grid > [data-t="hist"] { grid-column: 3; grid-row: 1; }
 }
 .cl-grid { display: grid; gap: 14px; align-items: start; }
 @media (min-width: 900px) { .cl-grid { grid-template-columns: minmax(300px, .9fr) 1.3fr; } }
@@ -984,3 +995,20 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
   .wo-now-t { font-size: 12.5px; }
 }
 #urg button { padding-left: 4px; padding-right: 4px; font-size: 13px; white-space: nowrap; }
+
+/* ===== Прокрутка страницы на ПК (11.11.2026): шапки длинных таблиц и боковые списки «прилипают» ===== */
+@media (min-width: 1200px) {
+  .tablewrap:not(:has(.ts)) { overflow: clip; }
+  .tablewrap:not(:has(.ts)) thead th { position: sticky; top: 0; z-index: 2; background: var(--surface); }
+}
+@media (min-width: 900px) {
+  .st-tree { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow: auto; scrollbar-width: thin; }
+}
+.ocard-car { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+@media (min-width: 900px) {
+  .stats { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+  .audit-people { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow: auto; scrollbar-width: thin; }
+}
+.pbar-kinds { min-width: 0; max-width: 100%; }
+@media (max-width: 899px) { .pbar > * { min-width: 0; max-width: 100%; } }
+@media (min-width: 900px) and (max-width: 1365px) { .dense-table th, .dense-table td { padding-left: 6px; padding-right: 6px; } }

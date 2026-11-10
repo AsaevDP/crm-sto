@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block body_class %}fit{% endblock %}
 {% block content %}
 <header class="ov-head">
   <a class="back" href="/settings/users{{ '' if u.active else '?tab=archive' }}">{{ icon("back") }}{{ "Сотрудники" if u.active else "Архив" }}</a>
