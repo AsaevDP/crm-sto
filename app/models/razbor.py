@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db import Entity, UTCDateTime
@@ -13,8 +13,37 @@ MONEY = Numeric(12, 2)
 
 DONOR_STATUS = {"dismantling": "На разборке", "done": "Разобран", "scrapped": "Утилизирован"}
 CONDITIONS = {"excellent": "Отличное", "good": "Хорошее", "fair": "Удовлетворительное", "repair": "Под восстановление"}
-SALE_STATUS = {"reserved": "В резерве", "sold": "Продано", "cancelled": "Отменено"}
+SALE_STATUS = {"reserved": "В резерве", "sent": "Отправлено", "sold": "Продано", "returned": "Возврат",
+               "cancelled": "Отменено"}
 DELIVERY = {"pickup": "Самовывоз", "np": "Нова Пошта", "other": "Другая доставка"}
+# Откуда пришёл покупатель (11.11.2026) — чтобы видеть, где продаётся лучше
+CHANNELS = {"phone": "Звонок", "site": "Сайт", "olx": "OLX", "social": "Соцсети", "walkin": "Пришёл сам", "other": "Другое"}
+# Состояние детали на складе разбора (считается по движениям и продажам)
+ITEM_STATES = {"stock": "В наличии", "reserved": "В резерве", "sent": "Отправлено", "sold": "Продано",
+               "service": "В наряд СТО", "writeoff": "Списано", "out": "Нет в наличии"}
+
+
+class RazborMake(Entity):
+    """Справочник марок разбора (11.11.2026): марка → модели. Можно добавлять и удалять."""
+    __tablename__ = "razbor_makes"
+    name: Mapped[str] = mapped_column(String(60))
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class RazborModel(Entity):
+    __tablename__ = "razbor_models"
+    make_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("razbor_makes.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    years: Mapped[str] = mapped_column(String(40), default="")     # «2015–2020», для подсказки
+
+
+class RazborCategory(Entity):
+    """Категории деталей разбора: раздел → подкатегория (как дерево склада). parent_id пусто — раздел."""
+    __tablename__ = "razbor_categories"
+    name: Mapped[str] = mapped_column(String(60))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("razbor_categories.id", ondelete="CASCADE"),
+                                                        nullable=True, index=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Donor(Entity):
@@ -57,3 +86,11 @@ class UsedSale(Entity):
     status: Mapped[str] = mapped_column(String(10), default="reserved")
     sold_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     comment: Mapped[str] = mapped_column(Text, default="")
+    # 11.11.2026: отправки почтой. Резерв → «Отправлено» (деталь ушла со склада, ждём получение и деньги)
+    # → «Продано» (получили деньги) или «Возврат» (деталь вернулась на склад).
+    np_address: Mapped[str | None] = mapped_column(String(200), default="", nullable=True)  # город, отделение
+    cod: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)         # наложенный платёж
+    paid: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)        # деньги получены
+    sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)       # возврат / отмена
+    channel: Mapped[str | None] = mapped_column(String(10), default="", nullable=True)    # CHANNELS

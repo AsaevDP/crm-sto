@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "razbor/_catsub.html" import catsub_select %}
 {% block content %}
-{% set ST = {"stock": "в наличии", "reserved": "резерв", "sold": "продано"} %}
+{% set ST = ITEM_STATES %}
 {% set can = ctx.can("razbor.manage") %}
 <header class="ov-head">
   <a class="back" href="/razbor">{{ icon("back") }}Разбор</a>
@@ -41,7 +42,7 @@
       <summary class="btn btn-sm btn-block">{{ icon("plus") }}Снять деталь с донора</summary>
       <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}/parts" enctype="multipart/form-data" data-compress style="margin-top:8px">
         <input class="field" name="name" placeholder="Название (видит покупатель): Фара передняя левая *" required>
-        <select class="field" name="category" aria-label="Категория"><option value="">Категория — подберу по названию</option>{% for k in RAZBOR_CATEGORIES %}<option>{{ k }}</option>{% endfor %}</select>
+        {{ catsub_select(ref) }}
         <div class="form-row three"><input class="field" name="price" inputmode="decimal" placeholder="Цена ₴"><input class="field" name="qty" value="1" inputmode="decimal" aria-label="Кол-во">
           <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         <div class="form-row"><select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>

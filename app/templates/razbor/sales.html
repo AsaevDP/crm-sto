@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{# Разбор · продажи и отправки (11.11.2026). Путь детали к покупателю:
+   Резерв → (самовывоз) Продано | (почта) Отправить с ТТН → В пути → Получено и оплачено = Продано | Возврат на склад. #}
+{% block content %}
+{% set sell = ctx.can("razbor.sell") %}
+<header class="page-head">
+  <div><a class="back" href="/razbor">{{ icon("back") }}Разбор</a><h1 class="large-title">Продажи и отправки</h1></div>
+  <form class="toolbar-row rz-search" method="get" action="/razbor/sales"><input type="hidden" name="tab" value="{{ tab }}">
+    <input class="field search" name="q" value="{{ q }}" placeholder="Код, деталь, покупатель, телефон, ТТН" autocomplete="off"></form>
+  <div class="ov-actions">{% if sell %}<button class="btn btn-sm" type="button" onclick="document.getElementById('snew').showModal()">{{ icon("plus") }}Новая продажа</button>{% endif %}</div>
+</header>
+
+<div class="pult-tiles rz-tiles">
+  {% for key, color, sub in [("reserved", "orange", "самовывоз, ждём покупателя"), ("ship", "indigo", "упаковать и отправить"),
+                              ("sent", "purple", sums.sent|money(0) ~ " ₴ в пути"), ("sold", "green", sums.sold30|money(0) ~ " ₴ за 30 дней"),
+                              ("returned", "red", "вернулись на склад"), ("cancelled", "gray", "резерв снят")] %}
+  <a class="ptile {{ 'zero' if not counts[key] }} {{ 'on' if tab == key }}" href="/razbor/sales?tab={{ key }}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ TABS[key] }}</span><b>{{ counts[key] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+{% if tab == "sent" and sums.sent_cod %}<p class="footnote" style="margin:0">Наложенным платежом ещё должны прийти: <b>{{ sums.sent_cod|money }} ₴</b>. Когда покупатель забрал и деньги пришли — «Получено».</p>{% endif %}
+
+<div class="rz-sales">
+  {% for s in rows %}{% set i = items[s.stock_item_id] %}{% set c = cats[i.catalog_id] %}
+  <div class="card compact rz-sale" data-st="{{ s.status }}">
+    <div class="rz-sale-h">
+      <a class="grow" href="/razbor/parts/{{ i.id }}"><span class="mono caption">{{ i.code }}</span> <b>{{ c.name }}</b>
+        <span class="caption" style="display:block">{{ i.donor_make }} {{ i.donor_model }}{% if i.donor_year %} {{ i.donor_year }}{% endif %}</span></a>
+      <b class="nowrap rz-sum">{{ s.price|money }} ₴</b>
+    </div>
+    <div class="rz-sale-who">
+      <span>👤 {{ s.buyer_name or "покупатель" }}{% if s.buyer_phone %} · <a href="tel:+{{ s.buyer_phone }}">{{ fmt_phone(s.buyer_phone) }}</a>{% endif %}</span>
+      <span class="caption">{{ DELIVERY.get(s.delivery, s.delivery) }}{% if s.np_address %} · {{ s.np_address }}{% endif %}{% if s.ttn %} · ТТН <span class="mono">{{ s.ttn }}</span>{% endif %}
+        {% if s.cod %} · наложенный платёж{% endif %}{% if s.paid and s.status == "sent" %} · оплачено заранее{% endif %}{% if s.channel %} · {{ CHANNELS.get(s.channel, "") }}{% endif %}</span>
+      <span class="caption">{% if s.status == "reserved" %}в резерве с {{ s.created_at.astimezone().strftime("%d.%m %H:%M") }}{% elif s.status == "sent" %}отправлено {{ s.sent_at.astimezone().strftime("%d.%m") if s.sent_at else "" }}{% elif s.status == "sold" %}продано {{ s.sold_at.astimezone().strftime("%d.%m.%Y") if s.sold_at else "" }} · {{ PAY_METHODS.get(s.pay_method, "") }}{% elif s.closed_at %}{{ SALE_STATUS[s.status]|lower }} {{ s.closed_at.astimezone().strftime("%d.%m") }}{% endif %}</span>
+      {% if s.comment %}<span class="caption">💬 {{ s.comment }}</span>{% endif %}
+    </div>
+    {% if sell %}
+    <div class="rz-sale-acts">
+      {% if s.status == "reserved" and s.delivery == "pickup" %}
+      <form method="post" action="/razbor/sales/{{ s.id }}" class="form-row"><input type="hidden" name="back" value="/razbor/sales?tab={{ tab }}">
+        <select class="field" name="pay_method" aria-label="Как заплатил">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}" {% if k == s.pay_method %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+        <button class="btn btn-sm" name="action" value="sold">Забрал, оплатил</button></form>
+      {% elif s.status == "reserved" %}
+      <form method="post" action="/razbor/sales/{{ s.id }}" class="form-row rz-ship"><input type="hidden" name="back" value="/razbor/sales?tab=sent">
+        <input class="field mono" name="ttn" placeholder="Номер ТТН" {% if s.delivery == "np" %}required{% endif %} inputmode="numeric">
+        <label class="rz-check"><input type="checkbox" name="cod" value="1" {% if s.cod %}checked{% endif %}> наложка</label>
+        <label class="rz-check"><input type="checkbox" name="paid" value="1"> оплачено заранее</label>
+        <button class="btn btn-sm" name="action" value="ship">Отправлено</button></form>
+      {% elif s.status == "sent" %}
+      <form method="post" action="/razbor/sales/{{ s.id }}" class="form-row"><input type="hidden" name="back" value="/razbor/sales?tab=sent">
+        <select class="field" name="pay_method" aria-label="Как пришли деньги">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}" {% if k == ("card" if s.cod else s.pay_method) %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+        <button class="btn btn-sm" name="action" value="complete">Получено, деньги есть</button></form>
+      {% endif %}
+      {% if s.status in ("sent", "sold") %}
+      <details class="rz-more"><summary class="btn btn-plain btn-sm">Возврат…</summary>
+        <form method="post" action="/razbor/sales/{{ s.id }}" class="form-row"><input type="hidden" name="back" value="/razbor/sales?tab=returned">
+          <input class="field" name="note" placeholder="Почему: не забрал, не подошла…"><button class="btn btn-sm btn-gray" name="action" value="return">Деталь вернулась на склад</button></form></details>
+      {% endif %}
+      {% if s.status == "reserved" %}
+      <form method="post" action="/razbor/sales/{{ s.id }}" onsubmit="return confirm('Снять резерв? Деталь снова будет свободна.')"><input type="hidden" name="back" value="/razbor/sales?tab={{ tab }}">
+        <button class="btn btn-sm btn-plain danger" name="action" value="cancel">Снять резерв</button></form>
+      {% endif %}
+      {% if s.status in ("reserved", "sent") %}
+      <details class="rz-more"><summary class="btn btn-plain btn-sm">Изменить</summary>
+        <form method="post" action="/razbor/sales/{{ s.id }}" class="form dense"><input type="hidden" name="back" value="/razbor/sales?tab={{ tab }}">
+          <div class="form-row"><input class="field" name="buyer_name" value="{{ s.buyer_name }}" placeholder="Покупатель"><input class="field" name="buyer_phone" value="{{ fmt_phone(s.buyer_phone) if s.buyer_phone else '' }}" placeholder="Телефон"></div>
+          <div class="form-row"><input class="field" name="np_address" value="{{ s.np_address or '' }}" placeholder="Город, отделение"><input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН"></div>
+          <div class="form-row"><input class="field" name="price" value="{{ '%.2f'|format(s.price) }}" inputmode="decimal" aria-label="Цена"><button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button></div>
+        </form></details>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">{{ {"reserved": "Резервов на самовывоз нет.", "ship": "Отправлять нечего.", "sent": "В пути ничего нет.",
+      "sold": "Продаж пока нет.", "returned": "Возвратов не было.", "cancelled": "Отменённых нет."}[tab] }}
+    {% if sell and tab in ("reserved", "ship") %}Нажмите «Новая продажа» — найдите деталь по коду или названию.{% endif %}</p></div>
+  {% endfor %}
+</div>
+
+{% if sell %}
+<dialog id="snew" class="sheet sheet-wide">
+  <form class="form" method="post" action="/razbor/sales/new" id="fsale" autocomplete="off">
+    <h2 class="title-2">Новая продажа</h2>
+    <input type="hidden" name="item_id" required>
+    <div class="pu-add-name"><input class="field" id="sfind" placeholder="Деталь: код Р-0001, название, марка" aria-label="Найти деталь">
+      <div class="results pu-results" id="sresults" hidden></div></div>
+    <div class="picked" id="spicked" hidden></div>
+    <div class="form-row"><input class="field" name="buyer_name" placeholder="Покупатель"><input class="field" name="buyer_phone" type="tel" inputmode="tel" placeholder="Телефон"></div>
+    <div class="form-row">
+      <select class="field" name="delivery" id="sdeliv" aria-label="Доставка">{% for k, v in DELIVERY.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+      <select class="field" name="channel" aria-label="Откуда покупатель"><option value="">Откуда узнал…</option>{% for k, v in CHANNELS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+    </div>
+    <div class="form-row" id="sship" hidden><input class="field" name="np_address" placeholder="Город, отделение НП"><label class="rz-check"><input type="checkbox" name="cod" value="1"> наложенный платёж</label></div>
+    <div class="form-row"><input class="field" name="price" inputmode="decimal" placeholder="Цена ₴" aria-label="Цена">
+      <select class="field" name="pay_method" aria-label="Оплата">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+    <input class="field" name="comment" placeholder="Заметка: что спрашивал, когда приедет">
+    <div class="form-row"><button class="btn" name="action" value="reserve">В резерв</button>
+      <button class="btn btn-gray" name="action" value="sold" id="ssold">Продано сразу</button>
+      <button class="btn btn-plain" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+<script>
+(function () {
+  const f = document.getElementById('fsale'), find = document.getElementById('sfind'), res = document.getElementById('sresults'),
+        picked = document.getElementById('spicked'), deliv = document.getElementById('sdeliv'), ship = document.getElementById('sship'),
+        sold = document.getElementById('ssold');
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  let t, found = [];
+  find.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
+    if (find.value.trim().length < 2) { res.hidden = true; return; }
+    found = (await (await fetch('/api/razbor/free?q=' + encodeURIComponent(find.value), { headers: { 'x-requested-with': 'fetch' } })).json()).items;
+    res.innerHTML = found.length ? found.map((x, i) => `<button type="button" class="pu-res" data-i="${i}"><span class="grow"><b><span class="mono">${esc(x.code)}</span> ${esc(x.name)}</b>
+      <span class="caption">${esc(x.car)} · ${x.price.toFixed(0)} ₴${x.loc ? ' · ' + esc(x.loc) : ''}</span></span></button>`).join('')
+      : '<div class="pu-res footnote">Свободной детали не нашёл</div>';
+    res.hidden = false; }, 250); });
+  res.addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (!b) return; const x = found[+b.dataset.i];
+    f.item_id.value = x.id; f.price.value = x.price.toFixed(2);
+    picked.innerHTML = `<span class="grow"><b class="mono">${esc(x.code)}</b> ${esc(x.name)} <span class="caption">${esc(x.car)}</span></span>`;
+    picked.hidden = false; res.hidden = true; find.value = ''; f.buyer_name.focus(); });
+  function sync() { const p = deliv.value !== 'pickup'; ship.hidden = !p; sold.hidden = p; }
+  deliv.addEventListener('change', sync); sync();
+  f.addEventListener('submit', e => { if (!f.item_id.value) { e.preventDefault(); find.focus(); find.placeholder = 'Сначала выберите деталь'; } });
+})();
+</script>
+{% endif %}
+{% endblock %}

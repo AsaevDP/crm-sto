@@ -34,10 +34,19 @@ async def lifespan(_app):
             brands.seed(db, b.id)   # справочник брендов: стартовый список (11.11.2026)
             from .services import tools as tools_svc
             tools_svc.adopt_text_places(db, b.id)   # «Шкаф 1 · полка 2» текстом → шкафы и полки (11.11.2026)
+            from .services import razbor as razbor_svc
+            razbor_svc.seed_refs(db, b.id)          # справочники разбора: категории, марки и модели (11.11.2026)
         db.commit()
     if DEMO:
         from .demo_data import populate
         populate()  # демо: выдуманные клиенты, наряды на всех этапах, склад
+        with SessionLocal() as db:   # после демо-доноров — марки и модели в справочник разбора
+            from sqlalchemy import select
+            from .models import Branch
+            from .services import razbor as razbor_svc
+            for b in db.scalars(select(Branch)).all():
+                razbor_svc.seed_refs(db, b.id)
+            db.commit()
     yield
 
 

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{# Справочник разбора (11.11.2026): марки → модели, категории → подкатегории. Добавить, переименовать, удалить.
+   Удалить можно только то, к чему не привязаны детали; переименование меняет подпись и у деталей. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/razbor">{{ icon("back") }}Разбор</a><h1 class="large-title">Марки и категории</h1></div>
+</header>
+<p class="footnote" style="margin:0">Детали на складе разбора раскладываются: <b>марка → модель → категория → подкатегория</b>.
+  Удалить можно только пустое — если к марке или категории уже привязаны детали, её можно переименовать.</p>
+
+<div class="rf-grid">
+  <section class="card compact" id="makes">
+    <div class="card-h"><span class="headline">Марки и модели · {{ ref.makes|length }}</span></div>
+    <form class="form-row rf-add" method="post" action="/razbor/refs"><input type="hidden" name="action" value="add_make">
+      <input class="field" name="name" placeholder="Новая марка: BMW" required><button class="btn btn-sm">＋ Марка</button></form>
+    {% for mk in ref.makes %}{% set n = used_make.get(mk.m.name|lower, 0) %}
+    <details class="rf-node">
+      <summary><b>{{ mk.m.name }}</b><span class="caption">{{ mk.models|length }} мод. · {{ n }} дет.</span></summary>
+      <div class="rf-body">
+        <form class="form-row" method="post" action="/razbor/refs"><input type="hidden" name="rid" value="{{ mk.m.id }}">
+          <input class="field" name="name" value="{{ mk.m.name }}" aria-label="Название марки">
+          <button class="btn btn-sm btn-gray" name="action" value="rename_make">Переименовать</button>
+          {% if not n %}<button class="btn btn-sm btn-plain danger" name="action" value="del_make" onclick="return confirm('Удалить марку «{{ mk.m.name|e }}» и её модели?')">Удалить</button>{% endif %}</form>
+        {% for md in mk.models %}{% set k = used_make.get((mk.m.name ~ "|" ~ md.name)|lower, 0) %}
+        <form class="form-row rf-child" method="post" action="/razbor/refs"><input type="hidden" name="rid" value="{{ md.id }}">
+          <input class="field" name="name" value="{{ md.name }}" aria-label="Модель"><input class="field rf-years" name="years" value="{{ md.years }}" placeholder="годы">
+          <span class="caption nowrap">{{ k }} дет.</span>
+          <button class="btn btn-sm btn-plain" name="action" value="rename_model">OK</button>
+          {% if not k %}<button class="btn btn-sm btn-plain danger" name="action" value="del_model">Убрать</button>{% endif %}</form>
+        {% endfor %}
+        <form class="form-row rf-child" method="post" action="/razbor/refs"><input type="hidden" name="action" value="add_model"><input type="hidden" name="rid" value="{{ mk.m.id }}">
+          <input class="field" name="name" placeholder="Новая модель {{ mk.m.name }}" required><input class="field rf-years" name="years" placeholder="2015–2020">
+          <button class="btn btn-sm btn-tinted">＋ Модель</button></form>
+      </div>
+    </details>
+    {% else %}<p class="footnote" style="margin:0">Марок пока нет — добавьте выше или заведите донора.</p>{% endfor %}
+  </section>
+
+  <section class="card compact" id="cats">
+    <div class="card-h"><span class="headline">Категории деталей · {{ ref.cats|length }}</span></div>
+    <form class="form-row rf-add" method="post" action="/razbor/refs"><input type="hidden" name="action" value="add_cat">
+      <input class="field" name="name" placeholder="Новая категория: Электрика" required><button class="btn btn-sm">＋ Категория</button></form>
+    {% for c in ref.cats %}{% set n = used_cat.get(c.c.name|lower, 0) %}
+    <details class="rf-node">
+      <summary><b>{{ c.c.name }}</b><span class="caption">{{ c.subs|length }} подкат. · {{ n }} дет.</span></summary>
+      <div class="rf-body">
+        <form class="form-row" method="post" action="/razbor/refs"><input type="hidden" name="rid" value="{{ c.c.id }}">
+          <input class="field" name="name" value="{{ c.c.name }}" aria-label="Категория">
+          <button class="btn btn-sm btn-gray" name="action" value="rename_cat">Переименовать</button>
+          {% if not n %}<button class="btn btn-sm btn-plain danger" name="action" value="del_cat" onclick="return confirm('Удалить категорию «{{ c.c.name|e }}» с подкатегориями?')">Удалить</button>{% endif %}</form>
+        {% for s in c.subs %}{% set k = used_cat.get((c.c.name ~ "|" ~ s.name)|lower, 0) %}
+        <form class="form-row rf-child" method="post" action="/razbor/refs"><input type="hidden" name="rid" value="{{ s.id }}">
+          <input class="field" name="name" value="{{ s.name }}" aria-label="Подкатегория"><span class="caption nowrap">{{ k }} дет.</span>
+          <button class="btn btn-sm btn-plain" name="action" value="rename_cat">OK</button>
+          {% if not k %}<button class="btn btn-sm btn-plain danger" name="action" value="del_cat">Убрать</button>{% endif %}</form>
+        {% endfor %}
+        <form class="form-row rf-child" method="post" action="/razbor/refs"><input type="hidden" name="action" value="add_sub"><input type="hidden" name="rid" value="{{ c.c.id }}">
+          <input class="field" name="name" placeholder="Новая подкатегория" required><button class="btn btn-sm btn-tinted">＋ Подкатегория</button></form>
+      </div>
+    </details>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

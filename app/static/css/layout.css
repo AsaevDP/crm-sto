@@ -1092,6 +1092,80 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
   background: color-mix(in srgb, var(--blue) 12%, transparent); color: color-mix(in srgb, var(--blue) 80%, var(--text)); }
 .tool-wait { opacity: .85; }
 
+/* ===== Разбор (11.11.2026): дерево марок, категории, продажи и отправки, справочник ===== */
+.chip[data-rs="sent"], .chip[data-us="sent"] { --c: var(--purple); }
+.chip[data-rs="service"] { --c: var(--teal); }
+.chip[data-rs="writeoff"], .chip[data-us="returned"] { --c: var(--red); }
+.chip[data-rs="out"] { --c: var(--gray); }
+.rz-search { flex: 1 1 260px; max-width: 460px; }
+.rz-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@media (min-width: 1200px) { .rz-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.rz-layout { display: grid; gap: 14px; align-items: start; }
+@media (min-width: 1000px) { .rz-layout { grid-template-columns: 280px minmax(0, 1fr); } .rz-tree { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; } }
+.rz-tree { display: grid; gap: 2px; }
+.rz-mk > summary { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; cursor: pointer; list-style: none; }
+.rz-mk > summary::-webkit-details-marker { display: none; }
+.rz-mk > summary::before { content: "›"; color: var(--text-2); transition: transform .15s; display: inline-block; margin-right: 4px; }
+.rz-mk[open] > summary::before { transform: rotate(90deg); }
+.rz-mk > summary a { flex: 1; color: var(--text); text-decoration: none; font-weight: 600; }
+.rz-mk > summary.on, .rz-md.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.rz-md { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px 5px 26px; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; }
+.rz-md:hover, .rz-mk > summary:hover { background: var(--fill-2); }
+.rz-donors { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 0.5px solid var(--separator); }
+.rz-main { display: grid; gap: 10px; min-width: 0; }
+.rz-crumbs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.rz-crumbs a { color: var(--accent); text-decoration: none; }
+.rz-crumbs span { color: var(--text-2); }
+.rz-cats { display: flex; gap: 6px; flex-wrap: wrap; }
+.rz-cat { display: inline-flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1);
+  color: var(--text); text-decoration: none; font-size: 14px; white-space: nowrap; }
+.rz-cat b { font-size: 12px; color: var(--text-2); }
+.rz-cat:hover { background: var(--fill-2); }
+.rz-cat.on { background: var(--accent); color: #fff; }
+.rz-cat.on b { color: #fff; }
+.rz-cat.zero { opacity: .55; }
+.rz-cat.back { background: transparent; box-shadow: none; color: var(--accent); }
+.rz-table td { vertical-align: middle; }
+.rz-sales { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); align-items: start; }
+.rz-sale { display: grid; gap: 8px; border-left: 4px solid var(--orange); }
+.rz-sale[data-st="sent"] { border-left-color: var(--purple); }
+.rz-sale[data-st="sold"] { border-left-color: var(--green); }
+.rz-sale[data-st="returned"], .rz-sale[data-st="cancelled"] { border-left-color: var(--gray); opacity: .85; }
+.rz-sale-h { display: flex; gap: 10px; align-items: flex-start; }
+.rz-sale-h a { color: var(--text); text-decoration: none; min-width: 0; flex: 1; }
+.rz-sale-who a { color: var(--accent); text-decoration: none; }
+.rz-sum { font-size: 17px; }
+.rz-sale-who { display: grid; gap: 2px; }
+.rz-sale-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.rz-sale-acts > form, .rz-sale-acts .form-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.rz-sale-acts > form.rz-ship, .rz-sale-acts > form.form-row { flex: 1 1 100%; }
+.rz-sale-acts .field { width: auto; min-width: 120px; flex: 1 1 140px; }
+.rz-sale-acts .btn { flex: none; }
+.rz-ship .field { min-width: 150px; max-width: 220px; }
+.rz-more .form-row { display: flex; }
+.rz-check { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; white-space: nowrap; }
+.rz-more { flex-basis: 100%; }
+.rz-more > summary { list-style: none; display: inline-flex; }
+.rz-more > summary::-webkit-details-marker { display: none; }
+.rz-more form { margin-top: 6px; }
+.cab-to-sales { align-self: center; justify-self: start; }
+dialog.sheet.sheet-wide { width: min(560px, calc(100vw - 32px)); }
+.rf-grid { display: grid; gap: 14px; align-items: start; }
+@media (min-width: 1000px) { .rf-grid { grid-template-columns: 1fr 1fr; } }
+.rf-grid .form-row { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }
+.rf-grid .form-row .field { flex: 1 1 140px; min-width: 0; width: auto; }
+.rf-grid .form-row .btn, .rf-grid .form-row .caption { flex: none; }
+.rf-add { margin-bottom: 6px; }
+.rf-node { border-top: 0.5px solid var(--separator); }
+.rf-node > summary { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px; cursor: pointer; list-style: none; }
+.rf-node > summary::-webkit-details-marker { display: none; }
+.rf-node[open] > summary { color: var(--accent); }
+.rf-body { display: grid; gap: 6px; padding: 0 0 10px 8px; }
+.rf-grid .rf-child { padding-left: 14px; }
+.rf-grid .form-row .rf-years { flex: 0 1 110px; }
+@media (max-width: 599px) { .rf-grid .form-row { flex-wrap: wrap; } }
+@media (max-width: 899px) { .rz-sales { grid-template-columns: 1fr; } }
+
 /* ===== Запись (11.11.2026): по мастерам / по датам, месяц-календарь, тепловая карта, загрузка ===== */
 .sc-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .sc-bar .sched-sum { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }

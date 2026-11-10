@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% from "razbor/_catsub.html" import catsub_select %}
 {% block content %}
-{% set ST = {"stock": "в наличии", "reserved": "в резерве", "sold": "продано"} %}
+{% set ST = ITEM_STATES %}
 <header class="ov-head">
   <a class="back" href="{{ '/razbor/donors/' ~ i.donor_id if i.donor_id else '/razbor' }}">{{ icon("back") }}{{ r.d.code ~ " " ~ r.d.make ~ " " ~ r.d.model if r.d else "Разбор" }}</a>
   <div class="ov-title">
@@ -23,7 +24,7 @@
     <details class="card compact work-edit"><summary class="caption">Изменить: цена, состояние, ячейка, фото, «на сайт»</summary>
       <form class="form dense" method="post" action="/razbor/parts/{{ i.id }}" enctype="multipart/form-data" data-compress>
         <input class="field" name="name" value="{{ r.c.name }}" aria-label="Название">
-        <select class="field" name="category" aria-label="Категория">{% for k in RAZBOR_CATEGORIES %}<option {% if k == r.c.category %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+        {{ catsub_select(ref, r.c.category or "", r.c.subcategory or "") }}
         <div class="form-row three"><input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal" aria-label="Цена">
           <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == i.condition %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
           <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}" {% if l.id == i.location_id %}selected{% endif %}>{{ loc_label(l) }}</option>{% endfor %}</select></div>
@@ -43,29 +44,56 @@
       <div class="form-row three"><label>Цена ₴<input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal"></label>
         <label>Кол-во<input class="field" name="qty" value="1" inputmode="decimal"></label>
         <label>Оплата<select class="field" name="pay_method">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div>
-      <div class="form-row"><select class="field" name="delivery">{% for k, v in DELIVERY.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
-        <input class="field mono" name="ttn" placeholder="ТТН (если отправили)"></div>
+      <div class="form-row"><select class="field" name="delivery" id="pdeliv">{% for k, v in DELIVERY.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+        <select class="field" name="channel" aria-label="Откуда покупатель"><option value="">Откуда узнал…</option>{% for k, v in CHANNELS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+      <div class="form-row" id="pship" hidden><input class="field" name="np_address" placeholder="Город, отделение НП"><label class="rz-check"><input type="checkbox" name="cod" value="1"> наложенный платёж</label></div>
+      <p class="hint" style="margin:0" id="pshiphint" hidden>Почтой: сначала «В резерв», потом на экране «Продажи → Отправить» впишете ТТН.</p>
       <div class="form-row"><button class="btn btn-sm btn-tinted" name="action" value="reserve">В резерв под покупателя</button>
-        <button class="btn btn-sm" name="action" value="sold">Продано сейчас</button></div>
+        <button class="btn btn-sm" name="action" value="sold" id="psold">Продано сейчас</button></div>
     </form>
+    <script>(function () { const d = document.getElementById('pdeliv'); if (!d) return;
+      const s = () => { const p = d.value !== 'pickup'; document.getElementById('pship').hidden = !p; document.getElementById('pshiphint').hidden = !p; document.getElementById('psold').hidden = p; };
+      d.addEventListener('change', s); s(); })();</script>
     {% endif %}
     <div class="card compact">
-      <div class="card-h"><span class="headline">Продажи и резервы</span></div>
+      <div class="card-h"><span class="headline">Продажи и резервы</span><a class="caption" href="/razbor/sales">все продажи →</a></div>
       {% for s in sales %}
       <div class="sale">
-        <div class="kv"><span>{{ s.buyer_name or "Покупатель" }}{% if s.buyer_phone %} · {{ fmt_phone(s.buyer_phone) }}{% endif %} · {{ DELIVERY.get(s.delivery) }}{% if s.ttn %} · ТТН {{ s.ttn }}{% endif %}</span>
-          <b>{{ "%.0f"|format(s.price) }} ₴ <span class="chip" data-us="{{ s.status }}">{{ SALE_STATUS.get(s.status, s.status) }}</span></b></div>
-        {% if s.status == "reserved" and ctx.can("razbor.sell") %}
+        <div class="kv"><span>{{ s.buyer_name or "Покупатель" }}{% if s.buyer_phone %} · {{ fmt_phone(s.buyer_phone) }}{% endif %} · {{ DELIVERY.get(s.delivery) }}{% if s.np_address %} · {{ s.np_address }}{% endif %}{% if s.ttn %} · ТТН {{ s.ttn }}{% endif %}{% if s.cod %} · наложка{% endif %}</span>
+          <b class="nowrap">{{ s.price|money(0) }} ₴ <span class="chip" data-us="{{ s.status }}">{{ SALE_STATUS.get(s.status, s.status) }}</span></b></div>
+        {% if ctx.can("razbor.sell") %}
+        {% if s.status == "reserved" and s.delivery == "pickup" %}
         <form class="note-form" method="post" action="/razbor/sales/{{ s.id }}">
-          <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН">
           <select class="field" name="pay_method" style="max-width:130px">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}" {% if k == s.pay_method %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-          <button class="btn btn-sm" name="action" value="sold">Продано</button>
-          <button class="btn btn-sm btn-gray" name="action" value="cancel">Отменить</button>
+          <button class="btn btn-sm" name="action" value="sold">Забрал, оплатил</button>
+          <button class="btn btn-sm btn-gray" name="action" value="cancel">Снять резерв</button>
         </form>
+        {% elif s.status == "reserved" %}
+        <form class="note-form" method="post" action="/razbor/sales/{{ s.id }}">
+          <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН" {% if s.delivery == "np" %}required{% endif %}>
+          <label class="rz-check"><input type="checkbox" name="paid" value="1"> оплачено заранее</label>
+          <button class="btn btn-sm" name="action" value="ship">Отправлено</button>
+          <button class="btn btn-sm btn-gray" name="action" value="cancel" formnovalidate>Снять резерв</button>
+        </form>
+        {% elif s.status == "sent" %}
+        <form class="note-form" method="post" action="/razbor/sales/{{ s.id }}">
+          <select class="field" name="pay_method" style="max-width:130px">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}" {% if k == s.pay_method %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <button class="btn btn-sm" name="action" value="complete">Получено, деньги есть</button>
+          <button class="btn btn-sm btn-gray" name="action" value="return" onclick="return confirm('Посылка вернулась? Деталь снова будет на складе.')">Возврат</button>
+        </form>
+        {% endif %}
         {% endif %}
       </div>
       {% else %}<p class="footnote" style="margin:0">Продаж не было</p>{% endfor %}
     </div>
+    {% if ctx.can("razbor.manage") and r.b.free > 0 %}
+    <details class="card compact work-edit"><summary class="caption">Списать (разбилась, не годится)</summary>
+      <form class="form-row" method="post" action="/razbor/parts/{{ i.id }}/writeoff" style="margin-top:8px">
+        <input class="field" name="qty" value="1" inputmode="decimal" style="max-width:80px" aria-label="Сколько">
+        <input class="field" name="reason" placeholder="Причина" required>
+        <button class="btn btn-sm btn-danger" onclick="return confirm('Списать деталь?')">Списать</button></form>
+    </details>
+    {% endif %}
     <div class="card compact">
       <div class="card-h"><span class="headline">Движения</span></div>
       {% for m in moves %}<div class="kv"><span>{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ MOVEMENT_TYPES.get(m.type) }}{% if m.comment %} — {{ m.comment }}{% endif %}</span><b>{{ m.qty|num }}</b></div>{% endfor %}

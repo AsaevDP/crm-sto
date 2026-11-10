@@ -1,68 +1,111 @@
 {% extends "base.html" %}
+{# Разбор (11.11.2026): плитки по состояниям, слева дерево «марка → модель», сверху категории и подкатегории,
+   в таблице — что где лежит и в каком состоянии. Продажи и отправки — отдельный экран «Продажи». #}
 {% block content %}
-{% set ST = {"stock": "в наличии", "reserved": "резерв", "sold": "продано"} %}
+{% set ST_CHIP = {"stock": "ready", "reserved": "waiting", "sent": "diag", "sold": "closed", "service": "instock", "writeoff": "cancel", "out": "created"} %}
 <header class="page-head">
   <h1 class="large-title">Разбор</h1>
+  <form class="toolbar-row rz-search" method="get" action="/razbor">
+    {% for k, v in [("f", f), ("make", make), ("model", model), ("cat", cat), ("sub", sub), ("donor", donor)] if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <input class="field search" name="q" value="{{ q }}" placeholder="Код Р-0001, деталь, марка, модель, VIN" autocomplete="off">
+  </form>
   <div class="ov-actions">
-    {% if ctx.can("razbor.export") %}
-    <a class="btn btn-sm" href="/razbor/export.zip" title="Excel + CSV + JSON + фото в одном архиве">⤓ Экспорт для сайта · {{ n_site }}</a>
-    <a class="btn btn-sm btn-gray" href="/razbor/export.xlsx">Excel</a>
-    {% endif %}
+    <a class="btn btn-sm" href="/razbor/sales">🛒 Продажи и отправки{% if n_sales.reserved + n_sales.sent %} · {{ n_sales.reserved + n_sales.sent }}{% endif %}</a>
+    {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/refs">Марки и категории</a>{% endif %}
+    {% if ctx.can("razbor.export") %}<a class="btn btn-sm btn-gray" href="/razbor/export.zip" title="Excel + CSV + JSON + фото в одном архиве">⤓ Для сайта · {{ n_site }}</a>{% endif %}
   </div>
 </header>
-<form class="toolbar-row" method="get">
-  <input class="field search" name="q" value="{{ q }}" placeholder="Код Р-0001, деталь, марка, модель, VIN" autocomplete="off">
-  <input type="hidden" name="donor" value="{{ donor }}"><input type="hidden" name="f" value="{{ f }}">
-  <select class="field" name="cat" onchange="this.form.submit()" style="max-width:230px" aria-label="Категория">
-    <option value="">Все категории</option>
-    {% for k in RAZBOR_CATEGORIES %}<option value="{{ k }}" {% if k == cat %}selected{% endif %}>{{ k }}{% if cat_counts.get(k) %} · {{ cat_counts[k] }}{% endif %}</option>{% endfor %}</select>
-  <div class="segmented" style="flex:none">
-    {% for k, v in [("", "Все"), ("stock", "В наличии"), ("site", "На сайте"), ("reserved", "Резерв · " ~ n_reserved), ("sold", "Продано")] %}
-    <a href="?f={{ k }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if donor %}&donor={{ donor }}{% endif %}{% if cat %}&cat={{ cat|urlencode }}{% endif %}" aria-pressed="{{ (f == k)|lower }}">{{ v }}</a>{% endfor %}
-  </div>
-</form>
-<div class="cl-grid fill razbor-grid">
-  <section class="ov-col on">
-    <div class="tablewrap">
-      <table class="table">
-        <thead><tr><th></th><th>Код</th><th>Деталь</th><th class="num">Цена</th><th>Статус</th></tr></thead>
-        <tbody>
-        {% for r in rows %}
-        <tr onclick="location.href='/razbor/parts/{{ r.i.id }}'" style="cursor:pointer" class="{{ 'muted' if r.state == 'sold' }}">
-          <td class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% endif %}</td>
-          <td class="mono">{{ r.i.code }}</td>
-          <td>{{ r.c.name }}<div class="caption">{{ r.c.category or "Прочее" }} · {{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }} · {{ r.loc }}</div></td>
-          <td class="num nowrap">{{ "{:,.0f}".format(r.i.sale_price).replace(",", " ") }} ₴</td>
-          <td class="nowrap"><span class="chip" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if r.i.publish_on_site and r.state == "stock" %} <span class="tag" title="Уходит в экспорт для сайта">сайт</span>{% endif %}</td>
-        </tr>
-        {% else %}<tr><td colspan="5" class="footnote">Деталей нет{% if q or f %} по фильтру{% endif %}</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-  <section class="ov-col on">
-    {% if ctx.can("razbor.manage") %}
-    <details class="card compact add-finding">
-      <summary class="btn btn-sm btn-block">{{ icon("plus") }}Новый донор (авто на разбор)</summary>
-      <form class="form dense" method="post" action="/razbor/donors" enctype="multipart/form-data" data-compress style="margin-top:8px">
-        <div class="form-row three"><input class="field" name="make" placeholder="Марка *" required><input class="field" name="model" placeholder="Модель *" required><input class="field" name="year" inputmode="numeric" placeholder="Год"></div>
-        <div class="form-row three"><input class="field mono" name="vin" placeholder="VIN"><input class="field" name="mileage" inputmode="numeric" placeholder="Пробег"><input class="field" name="purchase_price" inputmode="decimal" placeholder="Купили за ₴"></div>
-        <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото донора<input type="file" name="photos" accept="image/*" hidden></label>
-        <button class="btn btn-sm">Завести донора</button>
-      </form>
+
+<div class="pult-tiles rz-tiles">
+  {% for key, title, color, sub in [("stock", "В наличии", "green", tiles.stock_sum|money(0) ~ " ₴ по ценам"), ("reserved", "В резерве", "orange", "ждут покупателя"),
+      ("sent", "Отправлено", "purple", "в пути, ждём деньги"), ("sold", "Продано", "blue", "за всё время"),
+      ("service", "В наряды СТО", "teal", "поставили клиентам"), ("out", "Нет в наличии", "gray", "продано, списано")] %}
+  {% set n = tiles[key] if key != "out" else tiles.sold + tiles.service + tiles.writeoff + tiles.out %}
+  <a class="ptile {{ 'zero' if not n }} {{ 'on' if f == key }}" href="{{ link(f=('' if f == key else key), make='', model='', cat='', sub='') }}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+
+<div class="rz-layout">
+  <aside class="card compact rz-tree">
+    <div class="card-h"><span class="headline">Марки и модели</span>{% if make or model %}<a class="caption" href="{{ link(make='', model='', cat='', sub='') }}">все</a>{% endif %}</div>
+    {% for mk, x in mk_tree.items() %}
+    <details class="rz-mk" {% if mk == make %}open{% endif %}>
+      <summary class="{{ 'on' if mk == make and not model }}"><a href="{{ link(make=mk, model='', cat='', sub='') }}">{{ mk }}</a><span class="caption">{{ x.n }}</span></summary>
+      {% for md, n in x.models|dictsort %}
+      <a class="rz-md {{ 'on' if mk == make and md == model }}" href="{{ link(make=mk, model=md, cat='', sub='') }}"><span>{{ md }}</span><span class="caption">{{ n }}</span></a>
+      {% endfor %}
     </details>
-    {% endif %}
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Доноры · окупаемость</span>{% if donor %}<a class="btn btn-plain btn-sm" href="/razbor">все</a>{% endif %}</div>
+    {% else %}<p class="footnote" style="margin:0">Пусто{% if f %} в этом состоянии{% endif %}</p>{% endfor %}
+    <div class="rz-donors">
+      <div class="card-h"><span class="headline">Доноры · окупаемость</span>{% if donor %}<a class="caption" href="{{ link(donor='') }}">все</a>{% endif %}</div>
       {% for d in donors %}{% set e = eco[d.id] %}
       <a class="donor-row" href="/razbor/donors/{{ d.id }}">
         <span class="donor-top"><b>{{ d.code }} · {{ d.make }} {{ d.model }}{% if d.year %} {{ d.year }}{% endif %}</b><span class="caption">{{ DONOR_STATUS[d.status] }}</span></span>
         <span class="payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></span>
-        <span class="caption">{{ "{:,.0f}".format(e.earned).replace(",", " ") }} из {{ "{:,.0f}".format(e.invested).replace(",", " ") }} ₴ · {{ e.pct }}% · на полке ещё {{ "{:,.0f}".format(e.on_shelf).replace(",", " ") }} ₴</span>
+        <span class="caption">{{ e.earned|money(0) }} из {{ e.invested|money(0) }} ₴ · {{ e.pct }}%</span>
       </a>
       {% else %}<p class="footnote" style="margin:0">Доноров пока нет</p>{% endfor %}
+      {% if ctx.can("razbor.manage") %}<button class="btn btn-sm btn-gray btn-block" type="button" onclick="document.getElementById('dnew').showModal()">{{ icon("plus") }}Новый донор</button>{% endif %}
+    </div>
+  </aside>
+
+  <section class="rz-main">
+    <div class="rz-crumbs">
+      <a href="{{ link(make='', model='', cat='', sub='') }}">Все марки</a>
+      {% if make %}<span>›</span><a href="{{ link(model='', cat='', sub='') }}">{{ make }}</a>{% endif %}
+      {% if model %}<span>›</span><a href="{{ link(cat='', sub='') }}">{{ model }}</a>{% endif %}
+      {% if cat %}<span>›</span><a href="{{ link(sub='') }}">{{ cat }}</a>{% endif %}
+      {% if sub %}<span>›</span><b>{{ sub }}</b>{% endif %}
+      {% if f %}<span class="chip">{{ FILTERS[f] }}</span>{% endif %}
+    </div>
+    <div class="rz-cats">
+      {% if not cat %}
+      {% for c in ref.cats %}{% set n = cat_counts.get(c.c.name, 0) %}{% if n %}<a class="rz-cat" href="{{ link(cat=c.c.name, sub='') }}">{{ c.c.name }} <b>{{ n }}</b></a>{% endif %}{% endfor %}
+      {% for k, n in cat_counts.items() if k not in ref.cats|map(attribute="c")|map(attribute="name")|list %}<a class="rz-cat" href="{{ link(cat=k, sub='') }}">{{ k }} <b>{{ n }}</b></a>{% endfor %}
+      {% else %}
+      {% for c in ref.cats if c.c.name == cat %}{% for s in c.subs %}{% set n = sub_counts.get(s.name, 0) %}
+      <a class="rz-cat {{ 'on' if sub == s.name }} {{ 'zero' if not n }}" href="{{ link(sub=('' if sub == s.name else s.name)) }}">{{ s.name }}{% if n %} <b>{{ n }}</b>{% endif %}</a>{% endfor %}{% endfor %}
+      <a class="rz-cat back" href="{{ link(cat='', sub='') }}">← все категории</a>
+      {% endif %}
+    </div>
+    <div class="tablewrap">
+      <table class="table rz-table">
+        <thead><tr><th></th><th>Код</th><th>Деталь</th><th>Где</th><th class="num">Цена</th><th>Состояние</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr class="row-link {{ 'muted' if r.state in ('sold', 'service', 'writeoff', 'out') }}" onclick="location.href='/razbor/parts/{{ r.i.id }}'">
+          <td class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% endif %}</td>
+          <td class="mono nowrap">{{ r.i.code }}</td>
+          <td><b>{{ r.c.name }}</b><div class="caption">{{ r.c.category or "Прочее" }}{% if r.c.subcategory %} › {{ r.c.subcategory }}{% endif %} · {{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }}</div></td>
+          <td class="caption nowrap">{{ r.loc or "—" }}</td>
+          <td class="num nowrap">{{ r.i.sale_price|money(0) }} ₴</td>
+          <td class="nowrap"><span class="chip" data-s="{{ ST_CHIP[r.state] }}">{{ ITEM_STATES[r.state] }}</span>{% if r.b.on_hand > 1 %} <span class="caption">{{ r.b.on_hand|num }} шт</span>{% endif %}{% if r.i.publish_on_site and r.state == "stock" %} <span class="tag" title="Уходит в экспорт для сайта">сайт</span>{% endif %}</td>
+        </tr>
+        {% else %}<tr><td colspan="6" class="footnote">Деталей нет{% if q or f or make or cat %} по фильтру{% endif %}</td></tr>{% endfor %}
+        </tbody>
+      </table>
     </div>
   </section>
 </div>
+
+{% if ctx.can("razbor.manage") %}
+<dialog id="dnew" class="sheet">
+  <form class="form" method="post" action="/razbor/donors" enctype="multipart/form-data" data-compress>
+    <h2 class="title-2">Новый донор</h2>
+    <div class="form-row">
+      <input class="field" name="make" list="rz-makes" placeholder="Марка *" required value="{{ make }}">
+      <input class="field" name="model" list="rz-models" placeholder="Модель *" required value="{{ model if model != '—' else '' }}">
+    </div>
+    <datalist id="rz-makes">{% for m in ref.makes %}<option value="{{ m.m.name }}">{% endfor %}</datalist>
+    <datalist id="rz-models">{% for m in ref.makes %}{% for x in m.models %}<option value="{{ x.name }}">{{ m.m.name }}</option>{% endfor %}{% endfor %}</datalist>
+    <div class="form-row three"><input class="field" name="year" inputmode="numeric" placeholder="Год"><input class="field mono" name="vin" placeholder="VIN"><input class="field" name="mileage" inputmode="numeric" placeholder="Пробег"></div>
+    <input class="field" name="purchase_price" inputmode="decimal" placeholder="Купили за ₴">
+    <p class="hint" style="margin:0">Новая марка или модель сама попадёт в справочник.</p>
+    <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото донора<input type="file" name="photos" accept="image/*" hidden></label>
+    <div class="form-row"><button class="btn">Завести донора</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+{% endif %}
 <script src="{{ asset('/static/js/photos.js') }}"></script>
 {% endblock %}

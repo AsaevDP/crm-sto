@@ -1,0 +1,14 @@
+{# Выбор «категория › подкатегория» одним списком из справочника разбора (11.11.2026). Значение: «Категория||Подкатегория». #}
+{% macro catsub_select(ref, cat="", sub="") %}
+<select class="field" name="catsub" aria-label="Категория">
+  <option value="">Категория — угадать по названию</option>
+  {% set known = [] %}
+  {% for c in ref.cats %}
+  <optgroup label="{{ c.c.name }}">
+    <option value="{{ c.c.name }}||" {% if cat == c.c.name and not sub %}selected{% endif %}>{{ c.c.name }} — вся</option>
+    {% for s in c.subs %}<option value="{{ c.c.name }}||{{ s.name }}" {% if cat == c.c.name and sub == s.name %}selected{% endif %}>{{ c.c.name }} › {{ s.name }}</option>{% endfor %}
+  </optgroup>
+  {% endfor %}
+  {% if cat and cat not in ref.cats|map(attribute="c")|map(attribute="name")|list %}<option value="{{ cat }}||{{ sub }}" selected>{{ cat }}{% if sub %} › {{ sub }}{% endif %}</option>{% endif %}
+</select>
+{% endmacro %}

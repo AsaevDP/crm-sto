@@ -18,5 +18,5 @@ from .stock import (  # noqa: F401
 )
 from .money import Payment, AuditLog  # noqa: F401
 from .tools import Tool, ToolMove, ToolCheck, ToolCheckLine, ToolRequest, ToolCabinet, ToolShelf  # noqa: F401
-from .razbor import Donor, DonorPhoto, UsedSale  # noqa: F401
+from .razbor import Donor, DonorPhoto, UsedSale, RazborMake, RazborModel, RazborCategory  # noqa: F401
 from .schedule import Appointment  # noqa: F401
