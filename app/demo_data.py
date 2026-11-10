@@ -404,7 +404,8 @@ def populate():
                                 ("Сепаратор тормозных цилиндров", "700", "brakes"), ("Гайковёрт аккумуляторный 1/2\"", "6800", "pneumo"),
                                 ("Мультиметр", "950", "measure"), ("Фиксатор распредвалов (набор)", "2100", "engine")):
             n += 1
-            t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), category=cat)
+            t = Tool(inv_no=f"И-{n:04d}", name=name, serial=f"SN{2400 + n * 7}", cost=Decimal(cost), category=cat,
+                     place=f"Шкаф {1 + n % 2} · полка {1 + n % 4}")   # общий инструмент — в шкафу на складе
             db.add(t)
             shared[name] = t
         db.flush()
@@ -413,6 +414,12 @@ def populate():
         tsvc.move(db, shared["Стяжки пружин (пара)"], users["andrey"], f"Под наряд {hy.number}", wo=hy, work=hy_works[0])
         tsvc.move(db, shared["Съёмник ступиц универсальный"], users["andrey"], f"Под наряд {hy.number}", wo=hy)
         tsvc.move(db, shared["Мультиметр"], users["viktor"], f"Под наряд {done_wo.number}", wo=done_wo)
+        db.flush()
+        # Запросы слесарей (11.11.2026): Игорь просит тестер под Renault, Андрей сдаёт съёмник — окошки у кладовщика
+        as_user("igor")
+        tsvc.request_issue(db, shared["Тестер аккумуляторов"], users["igor"], by_plate[P("ВІ 3344 ОО")])
+        as_user("andrey")
+        tsvc.request_return(db, shared["Съёмник ступиц универсальный"], users["andrey"])
         db.flush()
         # Виктор: проверка при приёме — всё исправно
         c1 = tsvc.open_check(db, users["viktor"], "hire")

@@ -153,19 +153,42 @@
     {% include "orders/_parts.html" %}
     {% include "orders/_works.html" %}
 
-    {% if wo_tools or can_issue_tool %}
-    <div class="card compact">
+    {% if wo_tools or can_issue_tool or can_request_tool or tool_pending %}
+    <div class="card compact" id="tools">
       <div class="card-h"><span class="headline">Инструмент под наряд · {{ wo_tools|length }}</span></div>
-      {% for t in wo_tools %}{% set h = tool_holders.get(t.holder_id) %}{% set w = works_by_id.get(t.wo_work_id) %}
+      {% for t in wo_tools %}{% set h = tool_holders.get(t.holder_id) %}{% set w = works_by_id.get(t.wo_work_id) %}{% set pr = tool_pending_ids.get(t.id) %}
       <div class="kv tool-kv">
         <span><a href="/tools/{{ t.id }}">{{ t.name }}</a> <span class="caption mono">{{ t.inv_no }}</span>
           <div class="caption">{{ h.full_name if h else "" }}{% if w %} · {{ w.name }}{% endif %}</div></span>
-        {% if ctx.can("tools.manage") %}
+        {% if pr %}<span class="chip" data-s="waiting">сдаёт · ждёт кладовщика</span>
+        {% elif t.holder_id == user.id %}
+        <form method="post" action="/tools/{{ t.id }}/return-request?back=/orders/{{ wo.id }}%23tools"><button class="btn btn-sm btn-tinted">Сдаю</button></form>
+        {% elif ctx.can("tools.manage") %}
         <form method="post" action="/tools/{{ t.id }}"><input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/orders/{{ wo.id }}">
           <button class="btn btn-plain btn-sm">Вернуть</button></form>
         {% endif %}
       </div>
       {% else %}<p class="footnote" style="margin:0">Общий инструмент под этот наряд не выдавался.</p>{% endfor %}
+      {% for r in tool_pending if r.kind == "issue" %}{% set t = tool_names.get(r.tool_id) %}
+      <div class="kv tool-kv tool-wait">
+        <span>{{ t.name if t else "" }} <span class="caption mono">{{ t.inv_no if t else "" }}</span>
+          <div class="caption">попросил {{ tool_holders[r.user_id].full_name if tool_holders.get(r.user_id) else "" }} · {{ r.created_at.astimezone().strftime("%H:%M") }}</div></span>
+        <span class="chip" data-s="waiting">ждёт кладовщика</span>
+      </div>
+      {% endfor %}
+      {% if can_request_tool %}
+      <details class="add-finding">
+        <summary class="btn btn-sm btn-tinted btn-block">{{ icon("plus") }}Попросить инструмент</summary>
+        <form class="form dense" method="post" action="/orders/{{ wo.id }}/tool-requests" style="margin-top:8px">
+          <select class="field" name="tool_id" required aria-label="Инструмент"><option value="">Какой инструмент нужен…</option>
+            {% for t in tool_req_free %}<option value="{{ t.id }}">{{ TOOL_CATEGORIES[t.cat] }} · {{ t.name }}{% if t.place %} · {{ t.place }}{% endif %}</option>{% endfor %}</select>
+          {% if works %}<select class="field" name="work_id" aria-label="Под какую работу"><option value="">Весь наряд</option>
+            {% for w in works %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}</select>{% endif %}
+          <button class="btn btn-sm">Попросить у кладовщика</button>
+          {% if not tool_req_free %}<p class="hint" style="margin:0">Свободного общего инструмента сейчас нет — всё на руках.</p>{% endif %}
+        </form>
+      </details>
+      {% endif %}
       {% if can_issue_tool %}
       <details class="add-finding">
         <summary class="btn btn-sm btn-tinted btn-block">{{ icon("plus") }}Выдать инструмент</summary>

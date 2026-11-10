@@ -84,6 +84,13 @@
         action: n.request_url ? { label: 'Запросить выдачу', url: n.request_url, done: 'Запрос отправлен кладовщику' } : null }));
       if ((j.notes || []).some(n => !seen.has('n' + n.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
       (j.notes || []).forEach(n => seen.add('n' + n.id));
+      // Инструмент: «просит выдать» / «сдаёт» — окошко с кнопкой прямо в нём (11.11.2026)
+      if (location.pathname !== '/stock/issues') (j.tools || []).forEach(x => window.crmToast && window.crmToast({
+        id: 'tool-' + x.id, kicker: x.kind === 'issue' ? 'Инструмент — выдать' : 'Инструмент — сдают',
+        title: x.who + (x.kind === 'issue' ? ' просит: ' : ' сдаёт: ') + x.text,
+        text: x.order ? 'Наряд ' + x.order + (x.plate ? ' · ' + x.plate : '') : '', href: '/stock/issues?tab=tools', tone: 'blue',
+        action: { label: x.kind === 'issue' ? 'Выдать' : 'Принял — исправен', url: x.done_url, done: x.kind === 'issue' ? 'Выдано' : 'Принято' } }));
+      (j.tools || []).forEach(x => seen.add(x.id));
       const fresh = (j.items || []).filter(x => !seen.has(x.id));
       if (location.pathname !== '/stock/issues') {
         // Окошко висит, пока его не закроют крестиком (и на других страницах тоже)

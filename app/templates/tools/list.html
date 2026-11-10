@@ -45,6 +45,7 @@
         <div class="form-row three"><input class="field mono" name="inv_no" placeholder="{{ next_inv }}" aria-label="Инвентарный номер">
           <input class="field mono" name="serial" placeholder="Серийный №"><input class="field" name="cost" inputmode="decimal" placeholder="Стоимость ₴"></div>
         <input class="field" name="description" placeholder="Состав набора, примечание">
+        <input class="field" name="place" placeholder="Место в шкафу: Шкаф 1 · полка 2" aria-label="Место в шкафу">
         <select class="field" name="category" id="newcat" aria-label="Категория">
           <option value="personal">Личный — числится за слесарем</option>
           <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</optgroup></select>

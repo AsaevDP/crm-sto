@@ -40,6 +40,7 @@
           <input class="field" name="cost" value="{{ '%.2f'|format(t.cost) }}" inputmode="decimal" aria-label="Стоимость">
           <select class="field" name="status">{% for k, v in TOOL_STATUS.items() if k != "written_off" %}<option value="{{ k }}" {% if k == t.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         <input class="field" name="description" value="{{ t.description }}" placeholder="Состав">
+        <label class="caption">Место в шкафу<input class="field" name="place" value="{{ t.place or '' }}" placeholder="Шкаф 1 · полка 2"></label>
         <select class="field" name="category" aria-label="Категория">
           <option value="personal" {% if t.cat == "personal" %}selected{% endif %}>Личный — числится за слесарем</option>
           <optgroup label="Общий — выдаётся под наряд">{% for k, v in TOOL_CATEGORIES.items() if k != "personal" %}<option value="{{ k }}" {% if t.cat == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</optgroup></select>

@@ -135,6 +135,7 @@ async def tool_add(request: Request, ctx: Ctx = Depends(get_ctx)):
     category = str(form.get("category", "personal"))
     t = Tool(inv_no=inv, name=name[:200], serial=str(form.get("serial", "")).strip()[:80],
              description=str(form.get("description", "")).strip(), cost=_dec(form.get("cost")),
+             place=str(form.get("place", "")).strip()[:80],
              photo=(await _photo_from(form)) or "", category=category if category in TOOL_CATEGORIES else "personal")
     ctx.db.add(t)
     ctx.db.flush()
@@ -197,6 +198,8 @@ async def tool_edit(tid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         t.name = str(form.get("name", t.name)).strip()[:200] or t.name
         t.serial = str(form.get("serial", "")).strip()[:80]
         t.description = str(form.get("description", "")).strip()
+        if "place" in form:
+            t.place = str(form.get("place", "")).strip()[:80]
         t.cost = _dec(form.get("cost"))
         if form.get("category") in TOOL_CATEGORIES:
             t.category = str(form.get("category"))
@@ -340,3 +343,80 @@ def check_print(cid: str, ctx: Ctx = Depends(get_ctx)):
     c = _check(ctx, cid)
     return ctx.render("tools/check_print.html", title="Акт проверки инструмента", **_check_data(ctx, c),
                       fmt_phone=osvc.fmt_phone)
+
+
+# ======================= Запросы слесаря (11.11.2026) =======================
+def _back(ctx: Ctx, default: str):
+    b = ctx.request.query_params.get("back") or default
+    return _to(b if b.startswith("/") else default)
+
+
+@router.post("/orders/{order_id}/tool-requests")
+async def tool_request_issue(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Слесарь просит общий инструмент под наряд — у кладовщика окошко «Выдать»."""
+    ctx.need("orders.view_own", "orders.view_all")
+    from ..models import WorkOrder, WoWork
+    form = await ctx.request.form()
+    wo = ctx.db.get(WorkOrder, _uuid(order_id))
+    if not wo or wo.branch_id != ctx.branch.id or not (ctx.user.id == wo.mechanic_id or ctx.user.role.code == "admin"):
+        raise Forbidden()
+    t = ctx.db.get(Tool, _uuid(str(form.get("tool_id", ""))))
+    w = ctx.db.get(WoWork, _uuid(str(form["work_id"]))) if form.get("work_id") else None
+    if not t or t.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = svc.request_issue(ctx.db, t, ctx.user, wo, w if w and w.work_order_id == wo.id else None, str(form.get("comment", "")))
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"Попросили «{t.name}» — кладовщик увидит окошко")
+    return _to(f"/orders/{order_id}#tools")
+
+
+@router.post("/tools/{tid}/return-request")
+def tool_request_return(tid: str, ctx: Ctx = Depends(get_ctx)):
+    """Слесарь: «Сдаю» — кладовщик принимает в шкаф."""
+    t = _tool(ctx, tid)
+    err = svc.request_return(ctx.db, t, ctx.user)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"«{t.name}» — отмечено «Сдаю», кладовщик примет")
+    return _back(ctx, f"/tools/{tid}")
+
+
+@router.post("/tool-requests/{rid}/done")
+async def tool_request_done(rid: str, ctx: Ctx = Depends(get_ctx)):
+    """Кладовщик: «Выдать» (issue) или «Принял» / «Принял — поломка» (return)."""
+    ctx.need("tools.manage")
+    from ..models import ToolRequest
+    form = await ctx.request.form()
+    r = ctx.db.get(ToolRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = svc.complete_request(ctx.db, r, ctx.user, str(form.get("result", "ok")), str(form.get("note", "")))
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        t = ctx.db.get(Tool, r.tool_id)
+        ctx.db.commit()
+        flash(ctx.request, f"«{t.name}» — " + ("выдан" if r.kind == "issue" else "принят в шкаф"))
+    if ctx.request.headers.get("x-requested-with") == "fetch":
+        return {"ok": not err, "error": err}
+    return _back(ctx, "/stock/issues?tab=tools")
+
+
+@router.post("/tool-requests/{rid}/cancel")
+def tool_request_cancel(rid: str, ctx: Ctx = Depends(get_ctx)):
+    from ..models import ToolRequest
+    r = ctx.db.get(ToolRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id or r.status != "new" or not (r.user_id == ctx.user.id or ctx.can("tools.manage")):
+        raise Forbidden()
+    r.status = "cancel"
+    ctx.db.commit()
+    flash(ctx.request, "Запрос отменён")
+    return _back(ctx, "/stock/issues?tab=tools")

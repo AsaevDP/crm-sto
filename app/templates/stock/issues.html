@@ -1,9 +1,18 @@
 {% extends "base.html" %}
+{# Выдача (11.11.2026): вкладки «Запчасти» и «Инструмент». Кладовщик видит, что выдать, что сдают, что на руках. #}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Выдача запчастей</h1></div>
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Выдача</h1></div>
+  {% if can_tools %}
+  <nav class="segmented iss-tabs" aria-label="Что выдаём">
+    <a href="/stock/issues?tab=parts" aria-pressed="{{ (tab == 'parts')|lower }}">Запчасти{% if n_parts %} · {{ n_parts }}{% endif %}</a>
+    <a href="/stock/issues?tab=tools" aria-pressed="{{ (tab == 'tools')|lower }}">Инструмент{% if n_tools %} · {{ n_tools }}{% endif %}</a>
+  </nav>
+  {% endif %}
 </header>
-<div class="cl-grid fill">
+
+{% if tab == "parts" %}
+<div class="cl-grid">
   <section class="ov-col on">
     <div class="group-title">Ждут выдачи · {{ new|length }}</div>
     {% for x in new %}
@@ -17,7 +26,7 @@
       {% endfor %}
       <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block">Выдано</button></form>
     </div>
-    {% else %}<div class="card compact"><p class="footnote">Новых запросов нет</p></div>{% endfor %}
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Новых запросов нет</p></div>{% endfor %}
   </section>
   <section class="ov-col on">
     <div class="group-title">Недавно выдано</div>
@@ -28,4 +37,64 @@
     </div>
   </section>
 </div>
+
+{% else %}
+{% macro tool_line(x) %}
+  <span class="grow"><b>{{ x.tool.name if x.tool else "" }}</b> <span class="caption mono">{{ x.tool.inv_no if x.tool else "" }}</span>
+    {% if x.tool and x.tool.place %}<span class="place-tag">📍 {{ x.tool.place }}</span>{% endif %}
+    <span class="caption" style="display:block">{{ x.who.full_name if x.who else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} {{ fmt_plate(x.v.plate) }}{% endif %}{% endif %}
+      · {{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></span>
+{% endmacro %}
+<div class="cl-grid">
+  <section class="ov-col on">
+    <div class="group-title">Просят выдать · {{ t_issue|length }}</div>
+    {% for x in t_issue %}
+    <div class="card compact tool-req">
+      {{ tool_line(x) }}
+      {% if can_manage %}
+      <div class="tool-req-acts">
+        <form method="post" action="/tool-requests/{{ x.r.id }}/done?back=/stock/issues%3Ftab%3Dtools"><button class="btn btn-sm">Выдать</button></form>
+        <form method="post" action="/tool-requests/{{ x.r.id }}/cancel?back=/stock/issues%3Ftab%3Dtools" onsubmit="return confirm('Отменить запрос?')"><button class="btn btn-plain btn-sm">Отменить</button></form>
+      </div>{% endif %}
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Никто ничего не просит</p></div>{% endfor %}
+
+    <div class="group-title">Сдают — принять в шкаф · {{ t_return|length }}</div>
+    {% for x in t_return %}
+    <div class="card compact tool-req ret">
+      {{ tool_line(x) }}
+      {% if can_manage %}
+      <div class="tool-req-acts">
+        <form method="post" action="/tool-requests/{{ x.r.id }}/done?back=/stock/issues%3Ftab%3Dtools"><button class="btn btn-sm">Принял — исправен</button></form>
+        <details class="tool-broken"><summary class="btn btn-plain btn-sm" style="color:var(--red)">Есть поломка…</summary>
+          <form class="form dense" method="post" action="/tool-requests/{{ x.r.id }}/done?back=/stock/issues%3Ftab%3Dtools">
+            <input type="hidden" name="result" value="broken">
+            <input class="field" name="note" placeholder="Что сломано" required>
+            <button class="btn btn-sm btn-danger">Принял — сломан</button></form></details>
+      </div>{% endif %}
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Никто ничего не сдаёт</p></div>{% endfor %}
+  </section>
+
+  <section class="ov-col on">
+    <div class="group-title">На руках под наряды · {{ t_out|length }}</div>
+    <div class="card compact">
+      {% for x in t_out %}
+      <div class="kv"><span><a href="/tools/{{ x.t.id }}">{{ x.t.name }}</a> <span class="caption mono">{{ x.t.inv_no }}</span>
+        <span class="caption" style="display:block">{{ x.who.full_name if x.who else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}</span></span>
+        <b class="nowrap">{{ "с " ~ x.since.astimezone().strftime("%d.%m %H:%M") if x.since else "" }}</b></div>
+      {% else %}<p class="footnote" style="margin:0">Весь общий инструмент в шкафу</p>{% endfor %}
+    </div>
+    <div class="group-title">Недавно</div>
+    <div class="card compact">
+      {% for x in t_done %}
+      <div class="kv"><span>{{ "Выдан" if x.r.kind == "issue" else "Сдан" }}: {{ x.tool.name if x.tool else "" }}
+        <span class="caption" style="display:block">{{ x.who.full_name if x.who else "" }}{% if x.by %} · {{ "выдал" if x.r.kind == "issue" else "принял" }} {{ x.by.full_name }}{% endif %}
+          {% if x.r.result == "broken" %} · <span style="color:var(--red)">сломан: {{ x.r.result_note }}</span>{% endif %}</span></span>
+        <b class="nowrap">{{ x.r.done_at.astimezone().strftime("%d.%m %H:%M") if x.r.done_at else "" }}</b></div>
+      {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endif %}
 {% endblock %}

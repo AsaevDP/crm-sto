@@ -1078,3 +1078,16 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
 .fd-all { justify-self: start; margin-top: 4px; }
 .who-at { white-space: nowrap; }
 @media (max-width: 899px) { .wo-last { margin-left: 0; flex-basis: 100%; } }
+
+/* ===== Выдача инструмента (11.11.2026) ===== */
+.toast[data-tone="blue"] { border-left-color: var(--blue); }
+.iss-tabs { align-self: center; }
+.tool-req { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-left: 4px solid var(--blue); }
+.tool-req.ret { border-left-color: var(--teal); }
+.tool-req .grow { min-width: 0; flex: 1 1 260px; }
+.tool-req-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.tool-broken[open] { flex-basis: 100%; }
+.tool-broken form { margin-top: 6px; }
+.place-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  background: color-mix(in srgb, var(--blue) 12%, transparent); color: color-mix(in srgb, var(--blue) 80%, var(--text)); }
+.tool-wait { opacity: .85; }

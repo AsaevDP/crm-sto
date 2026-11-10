@@ -4,7 +4,7 @@
   <h1 class="large-title">Склад</h1>
   <div class="ov-actions">
     {% if ctx.can("stock.manage") %}<a class="btn btn-sm {{ '' if to_receive else 'btn-gray' }}" href="/stock/receive">Приход{% if to_receive %} · {{ to_receive }}{% endif %}</a>{% endif %}
-    {% if ctx.can("stock.issue") %}<a class="btn btn-sm {{ '' if new_requests else 'btn-gray' }}" href="/stock/issues">Выдача{% if new_requests %} · {{ new_requests }}{% endif %}</a>{% endif %}
+    {% if ctx.can("stock.issue", "tools.manage") %}<a class="btn btn-sm {{ '' if new_requests else 'btn-gray' }}" href="/stock/issues">Выдача{% if new_requests %} · {{ new_requests }}{% endif %}</a>{% endif %}
     <a class="btn btn-sm btn-gray" href="/stock/categories">Категории</a>
     <a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки · {{ n_locations }}</a>
     <a class="btn btn-sm btn-gray" href="/stock/print?{{ args() }}" target="_blank">🖨 Печать</a>

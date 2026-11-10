@@ -275,16 +275,28 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
 
 def _order_tools(ctx: Ctx, wo, works) -> dict:
     """Общий инструмент под этот наряд: что выдано и (кладовщику) — что можно выдать."""
+    from ..models import Tool
     from ..models.tools import TOOL_CATEGORIES
     from ..services import tools as tsvc
     if not ctx.can("tools.view", "tools.manage", "tools.view_own", "orders.view_all"):
-        return {"wo_tools": [], "can_issue_tool": False}
+        return {"wo_tools": [], "can_issue_tool": False, "can_request_tool": False, "tool_pending": []}
     can_issue = ctx.can("tools.manage") and wo.status in WO_ACTIVE
     staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True))
                            .order_by(User.full_name)).all() if can_issue else []
     holders = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    return {"wo_tools": tsvc.for_order(ctx.db, wo.id), "can_issue_tool": can_issue,
-            "free_tools": tsvc.available_shared(ctx.db, ctx.branch.id) if can_issue else [],
+    # Слесарь сам просит инструмент и сдаёт его (11.11.2026) — у кладовщика всплывает окошко
+    from ..models import ToolRequest
+    can_req = wo.status in WO_ACTIVE and (ctx.user.id == wo.mechanic_id or ctx.user.role.code == "admin")
+    pending = ctx.db.scalars(select(ToolRequest).where(ToolRequest.work_order_id == wo.id, ToolRequest.status == "new")
+                             .order_by(ToolRequest.created_at)).all()
+    asked = {r.tool_id for r in ctx.db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id,
+                                                                         ToolRequest.status == "new"))}
+    free = tsvc.available_shared(ctx.db, ctx.branch.id) if (can_issue or can_req) else []
+    return {"wo_tools": tsvc.for_order(ctx.db, wo.id), "can_issue_tool": can_issue, "can_request_tool": can_req,
+            "tool_pending": pending, "tool_pending_ids": {r.tool_id: r for r in pending},
+            "tool_req_free": [t for t in free if t.id not in asked],
+            "tool_names": {t.id: t for t in ctx.db.scalars(select(Tool).where(Tool.id.in_([r.tool_id for r in pending])))} if pending else {},
+            "free_tools": free if can_issue else [],
             "tool_staff": staff, "tool_holders": holders, "TOOL_CATEGORIES": TOOL_CATEGORIES,
             "works_by_id": {w.id: w for w in works}}
 

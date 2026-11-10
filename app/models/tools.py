@@ -37,6 +37,7 @@ class Tool(Entity):
     photo: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(12), default="ok")
     holder_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # пусто = склад
+    place: Mapped[str | None] = mapped_column(String(80), default="", nullable=True)  # «Шкаф 1 · полка 2» (11.11.2026)
 
     @property
     def cat(self) -> str:
@@ -58,6 +59,26 @@ class ToolMove(Entity):
     comment: Mapped[str] = mapped_column(Text, default="")
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
     wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)
+
+
+TOOL_REQ_KINDS = {"issue": "Просит выдать", "return": "Сдаёт"}
+
+
+class ToolRequest(Entity):
+    """Запрос по общему инструменту (11.11.2026): слесарь просит выдать под наряд или сдаёт обратно.
+    У кладовщика всплывает окошко (как с запчастями): «Выдать» / «Принял»."""
+    __tablename__ = "tool_requests"
+    tool_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tools.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)   # кто просит / сдаёт
+    kind: Mapped[str] = mapped_column(String(8), default="issue")                          # issue / return
+    status: Mapped[str] = mapped_column(String(8), default="new", index=True)              # new / done / cancel
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
+    wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)
+    comment: Mapped[str] = mapped_column(String(300), default="")
+    done_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    result: Mapped[str] = mapped_column(String(8), default="")       # при возврате: ok / broken
+    result_note: Mapped[str] = mapped_column(String(300), default="")
 
 
 class ToolCheck(Entity):

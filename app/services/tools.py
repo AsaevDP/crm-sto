@@ -67,6 +67,86 @@ def available_shared(db: Session, branch_id) -> list[Tool]:
                       .order_by(Tool.category, Tool.name)).all()
 
 
+# ---------- Запросы слесаря (11.11.2026): «Попросить инструмент» / «Сдаю» → окошко у кладовщика ----------
+def open_request(db: Session, tool_id):
+    from ..models import ToolRequest
+    return db.scalar(select(ToolRequest).where(ToolRequest.tool_id == tool_id, ToolRequest.status == "new"))
+
+
+def request_issue(db: Session, tool: Tool, user: User, wo=None, work=None, comment: str = "") -> str:
+    """Слесарь просит общий инструмент под наряд. Ошибка или ''."""
+    from ..models import ToolRequest
+    if tool.is_personal or tool.holder_id or tool.status not in ("ok", "worn"):
+        return f"«{tool.name}» сейчас нельзя выдать — занят или неисправен"
+    if open_request(db, tool.id):
+        return f"«{tool.name}» уже кто-то попросил — ждёт кладовщика"
+    db.add(ToolRequest(tool_id=tool.id, user_id=user.id, kind="issue", work_order_id=wo.id if wo else None,
+                       wo_work_id=work.id if work else None, comment=comment.strip()[:300]))
+    return ""
+
+
+def request_return(db: Session, tool: Tool, user: User, comment: str = "") -> str:
+    """Слесарь сдаёт общий инструмент обратно в шкаф. Кладовщик подтверждает «Принял»."""
+    from ..models import ToolRequest
+    if tool.is_personal or tool.holder_id != user.id:
+        return "Сдать можно только общий инструмент, который числится за вами"
+    if open_request(db, tool.id):
+        return "Уже отмечено «Сдаю» — ждёт кладовщика"
+    db.add(ToolRequest(tool_id=tool.id, user_id=user.id, kind="return", work_order_id=tool.work_order_id,
+                       wo_work_id=tool.wo_work_id, comment=comment.strip()[:300]))
+    return ""
+
+
+def complete_request(db: Session, req, by: User, result: str = "ok", note: str = "") -> str:
+    """Кладовщик: выдал (issue) или принял (return, ok / broken с комментарием)."""
+    from ..models import WorkOrder, WoWork
+    tool = db.get(Tool, req.tool_id)
+    who = db.get(User, req.user_id)
+    if req.status != "new" or not tool or not who:
+        return "Запрос уже закрыт"
+    if req.kind == "issue":
+        if tool.holder_id:
+            return f"«{tool.name}» уже на руках — сначала его должны сдать"
+        wo = db.get(WorkOrder, req.work_order_id) if req.work_order_id else None
+        work = db.get(WoWork, req.wo_work_id) if req.wo_work_id else None
+        move(db, tool, who, f"По запросу слесаря{' · наряд ' + wo.number if wo else ''}", wo=wo, work=work)
+    else:
+        move(db, tool, None, "Сдал в шкаф" + (f" · поломка: {note.strip()}" if result == "broken" else ""))
+        if result == "broken":
+            tool.status = "broken"
+        req.result, req.result_note = ("broken" if result == "broken" else "ok"), note.strip()[:300]
+    req.status, req.done_by, req.done_at = "done", by.id, now()
+    return ""
+
+
+def requests_list(db: Session, branch_id, status: str = "new", limit: int = 50) -> list[dict]:
+    """Запросы для экрана «Выдача → Инструмент»: инструмент, кто, наряд, машина, место в шкафу."""
+    from ..models import ToolRequest, Vehicle, WorkOrder
+    q = select(ToolRequest).where(ToolRequest.branch_id == branch_id, ToolRequest.status == status)
+    q = q.order_by(ToolRequest.created_at if status == "new" else ToolRequest.done_at.desc()).limit(limit)
+    out = []
+    for r in db.scalars(q):
+        wo = db.get(WorkOrder, r.work_order_id) if r.work_order_id else None
+        out.append({"r": r, "tool": db.get(Tool, r.tool_id), "who": db.get(User, r.user_id), "wo": wo,
+                    "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
+                    "by": db.get(User, r.done_by) if r.done_by else None})
+    return out
+
+
+def out_on_orders(db: Session, branch_id) -> list[dict]:
+    """Общий инструмент на руках под наряды: кто, с какого числа, какой наряд."""
+    from ..models import WorkOrder
+    out = []
+    for t in db.scalars(select(Tool).where(Tool.branch_id == branch_id, Tool.holder_id.is_not(None), ~personal_filter())
+                        .order_by(Tool.inv_no)):
+        last = db.scalar(select(ToolMove).where(ToolMove.tool_id == t.id, ToolMove.kind == "issue")
+                         .order_by(ToolMove.created_at.desc()))
+        out.append({"t": t, "who": db.get(User, t.holder_id), "since": last.created_at if last else None,
+                    "wo": db.get(WorkOrder, t.work_order_id) if t.work_order_id else None})
+    out.sort(key=lambda x: x["since"] or now())
+    return out
+
+
 def holding(db: Session, user_id) -> list[Tool]:
     return db.scalars(select(Tool).where(Tool.holder_id == user_id, Tool.status.not_in(("lost", "written_off")))
                       .order_by(Tool.inv_no)).all()

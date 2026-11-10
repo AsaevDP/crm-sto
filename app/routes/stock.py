@@ -480,6 +480,10 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
     rows, counts = _stock_rows(ctx, q, only, sec, cat, sub, make, model)
     new_requests = db.scalar(select(func.count()).select_from(IssueRequest)
                              .where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == "new"))
+    if ctx.can("tools.manage"):   # + запросы по инструменту (11.11.2026)
+        from ..models import ToolRequest
+        new_requests = (new_requests or 0) + (db.scalar(select(func.count()).select_from(ToolRequest).where(
+            ToolRequest.branch_id == ctx.branch.id, ToolRequest.status == "new")) or 0)
     n_locations = db.scalar(select(func.count()).select_from(Location).where(Location.branch_id == ctx.branch.id))
     mm = sc.makes_models(db, ctx.branch.id)
     return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests,
@@ -786,10 +790,24 @@ def _requests(ctx: Ctx, status="new"):
 
 
 @router.get("/stock/issues")
-def issues(ctx: Ctx = Depends(get_ctx)):
-    ctx.need("stock.issue", "stock.view")
-    return ctx.render("stock/issues.html", title="Выдача", new=_requests(ctx, "new"), done=_requests(ctx, "issued")[:15],
-                      fmt_plate=osvc.fmt_plate)
+def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
+    """Выдача: вкладки «Запчасти» и «Инструмент» (11.11.2026) — что выдать, что сдают, что на руках."""
+    ctx.need("stock.issue", "stock.view", "tools.manage")
+    from ..services import tools as tsvc
+    can_tools = ctx.can("tools.manage", "tools.view")
+    tool_new = tsvc.requests_list(ctx.db, ctx.branch.id, "new") if can_tools else []
+    new = _requests(ctx, "new")
+    if tab not in ("parts", "tools") or (tab == "tools" and not can_tools):
+        tab = "parts"
+    data = dict(tab=tab, new=new, n_parts=len(new), can_tools=can_tools, n_tools=len(tool_new),
+                fmt_plate=osvc.fmt_plate)
+    if tab == "tools":
+        data.update(t_issue=[x for x in tool_new if x["r"].kind == "issue"], t_return=[x for x in tool_new if x["r"].kind == "return"],
+                    t_out=tsvc.out_on_orders(ctx.db, ctx.branch.id), t_done=tsvc.requests_list(ctx.db, ctx.branch.id, "done", 15),
+                    can_manage=ctx.can("tools.manage"))
+    else:
+        data["done"] = _requests(ctx, "issued")[:15]
+    return ctx.render("stock/issues.html", title="Выдача", **data)
 
 
 @router.post("/stock/issues/{rid}/issue")
@@ -819,14 +837,25 @@ def notify(ctx: Ctx = Depends(get_ctx)):
         notes.append({"id": str(n.id), "kind": n.kind, "title": n.title, "text": n.text, "url": n.url,
                       "request_url": f"/orders/{wo.id}/issue-request" if can_req else ""})
     unread_n = len(notes)
+    # Инструмент (11.11.2026): кладовщику — «просит выдать» / «сдаёт», как запросы на запчасти
+    tools_items = []
+    if ctx.can("tools.manage"):
+        from ..services import tools as tsvc
+        for x in tsvc.requests_list(ctx.db, ctx.branch.id, "new", 10):
+            r, t = x["r"], x["tool"]
+            tools_items.append({"id": "t" + str(r.id), "kind": r.kind, "who": x["who"].full_name if x["who"] else "",
+                                "text": (t.name if t else "") + (f" · {t.place}" if t and t.place else ""),
+                                "order": x["wo"].number if x["wo"] else "", "plate": osvc.fmt_plate(x["v"].plate) if x["v"] else "",
+                                "done_url": f"/tool-requests/{r.id}/done"})
     if not ctx.can("stock.issue"):
-        return {"issues": 0, "items": [], "notes": notes, "unread": unread_n}
+        return {"issues": len(tools_items), "items": [], "tools": tools_items, "notes": notes, "unread": unread_n}
     items = []
     for x in _requests(ctx, "new")[:5]:
         names = ", ".join(("🔥 " if l["urgent"] else "") + l["name"] for l in x["lines"][:3]) + ("…" if len(x["lines"]) > 3 else "")
         items.append({"id": str(x["r"].id), "who": x["who"].full_name if x["who"] else "",
                       "text": names, "order": x["wo"].number, "plate": osvc.fmt_plate(x["v"].plate)})
-    return {"issues": len(_requests(ctx, "new")), "items": items, "notes": notes, "unread": unread_n,
+    return {"issues": len(_requests(ctx, "new")) + len(tools_items), "items": items, "tools": tools_items,
+            "notes": notes, "unread": unread_n,
             "receive": _receive_count(ctx) if ctx.can("stock.manage") else 0}
 
 
