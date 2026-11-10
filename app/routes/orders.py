@@ -47,7 +47,11 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
     n_photos = dict(ctx.db.execute(select(WoPhoto.work_order_id, func.count()).where(WoPhoto.work_order_id.in_(ids))
                                    .group_by(WoPhoto.work_order_id)).all())
     prog = svc.work_progress(ctx.db, ids)
+    from ..models import WoPart
+    urgent = set(ctx.db.scalars(select(WoPart.work_order_id).where(   # слесарь просит срочно — видно на карточке
+        WoPart.work_order_id.in_(ids), WoPart.urgent.is_(True), WoPart.status.in_(("need", "ordered", "arrived", "reserved")))))
     return [{
+        "urgent": o.id in urgent,
         "o": o, "v": vehicles.get(o.vehicle_id), "prog": prog.get(o.id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
         "mechanic": people.get(o.mechanic_id), "partsman": people.get(o.partsman_id),
         "photo": first_photo.get(o.id), "n_photos": n_photos.get(o.id, 0),
@@ -227,6 +231,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_route=is_manager and wo.status == "created" and wo.scenario == "B",
         parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
         can_offer=can_offer, can_choose=_can_choose(ctx, wo), flow=flow,
+        can_urgent=(wo.status in WO_ACTIVE and (ctx.user.id == wo.mechanic_id or is_manager or ctx.user.role.code == "admin")),
         BRANDS=brands_svc.names(db, ctx.branch.id) if (can_pick or can_offer) else [],
         diag_mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if is_manager and wo.status == "created" else [],
         diag_lifts=svc.lifts_with_load(db, ctx.branch.id) if is_manager and wo.status == "created" else [],

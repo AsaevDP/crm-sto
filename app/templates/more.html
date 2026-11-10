@@ -10,6 +10,10 @@
 </div>
 
 <div class="group">
+  <a class="row chevron" href="/notifications"><span class="tile" style="background:var(--red)">🔔</span><span class="grow">Сообщения</span></a>
+</div>
+
+<div class="group">
   {% for m in menu %}
   <a class="row chevron" href="{{ m.href }}"><span class="tile">{{ icon(m.icon) }}</span><span class="grow">{{ m.title }}</span></a>
   {% endfor %}

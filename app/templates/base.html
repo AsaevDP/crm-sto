@@ -31,6 +31,9 @@
       <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}{{ m.title }}</a>
       {% endfor %}
     </nav>
+    <nav class="sidebar side-extra" aria-label="Личное">
+      <a class="nav-bell" href="/notifications" {% if active.startswith("/notifications") %}aria-current="page"{% endif %}><span class="ic bell-ic">🔔</span>Сообщения</a>
+    </nav>
     <div class="side-user">
       <span class="avatar">{{ user.initials }}</span>
       <span class="grow"><span class="side-user-name">{{ user.full_name }}</span><span class="caption">{{ user.login }}</span></span>
@@ -57,13 +60,12 @@
   <a href="/more" {% if active == "/more" %}aria-current="page"{% endif %}>{{ icon("more") }}<span>Ещё</span></a>
 </nav>
 <script src="{{ asset('/static/js/app.js') }}"></script>
-{% if ctx.can("stock.issue") %}
 <script>
-// Окошко у кладовщика: раз в 15 секунд спрашиваем, нет ли новых запросов на выдачу
+// Раз в 15 секунд: сообщения сотруднику («Все запчасти на складе», «срочно») и — кладовщику — запросы на выдачу
 (function () {
   let seen; try { seen = new Set(JSON.parse(sessionStorage.getItem('seen-issues') || '[]')); } catch (e) { seen = new Set(); }
-  function badge(n) {
-    document.querySelectorAll('a[href="/stock"]').forEach(a => {
+  function badge(sel, n) {
+    document.querySelectorAll(sel).forEach(a => {
       let b = a.querySelector('.nbadge');
       if (!n) { b && b.remove(); return; }
       if (!b) { b = document.createElement('span'); b.className = 'nbadge'; a.appendChild(b); }
@@ -74,8 +76,15 @@
     try {
       const r = await fetch('/api/notify', { headers: { 'x-requested-with': 'fetch' } });
       if (!r.ok) return;
-      const j = await r.json(); badge(j.issues);
-      const fresh = j.items.filter(x => !seen.has(x.id));
+      const j = await r.json(); badge('.sidebar a[href="/stock"], .tabbar a[href="/stock"]', (j.issues || 0) + (j.receive || 0));
+      badge('.sidebar a[href="/notifications"]', j.unread);
+      (j.notes || []).forEach(n => window.crmToast && window.crmToast({
+        id: 'note-' + n.id, kicker: n.kind === 'parts_ready' ? 'Запчасти' : 'Срочно', title: n.title, text: n.text, href: n.url,
+        tone: n.kind === 'parts_ready' ? 'green' : 'red', readUrl: '/api/notify/' + n.id + '/read',
+        action: n.request_url ? { label: 'Запросить выдачу', url: n.request_url, done: 'Запрос отправлен кладовщику' } : null }));
+      if ((j.notes || []).some(n => !seen.has('n' + n.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
+      (j.notes || []).forEach(n => seen.add('n' + n.id));
+      const fresh = (j.items || []).filter(x => !seen.has(x.id));
       if (location.pathname !== '/stock/issues') {
         // Окошко висит, пока его не закроют крестиком (и на других страницах тоже)
         fresh.forEach(x => window.crmToast && window.crmToast({
@@ -83,13 +92,12 @@
           text: 'Наряд ' + x.order + ' · ' + x.plate, href: '/stock/issues'}));
         if (fresh.length) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
       }
-      j.items.forEach(x => seen.add(x.id));
+      (j.items || []).forEach(x => seen.add(x.id));
       try { sessionStorage.setItem('seen-issues', JSON.stringify([...seen])); } catch (e) {}
     } catch (e) {}
   }
   poll(); setInterval(poll, 15000);
 })();
 </script>
-{% endif %}
 </body>
 </html>

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{# Приход (11.11.2026): всё, что ждём от поставщиков, на одном экране. «Пришло» — одна кнопка.
+   Ячейка подставляется сама (где эта запчасть уже лежит). Под наряд — сразу в резерв; когда по наряду пришло всё,
+   менеджер, слесарь и запчастист получают сообщение «Все запчасти на складе». #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Приход</h1></div>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/purchases">Все закупки</a><a class="btn btn-sm btn-gray" href="/stock/issues">Выдача</a></div>
+</header>
+<p class="footnote rc-hint">Что ждём от поставщиков. Пришло — нажмите «Пришло» у строки или «Принять всё» у поставщика.
+  Ячейка подставлена сама — там, где эта запчасть уже лежит; можно поменять. 🔥 — слесарь просит срочно.</p>
+
+{% if last %}
+<div class="card compact rc-done">
+  <span class="grow"><b>Только что принято: {{ last.n }}</b>
+    {% if last.ready %}<span class="caption">Все запчасти на складе: {{ last.ready|join(", ") }} — сообщение ушло менеджеру и слесарю</span>{% endif %}</span>
+  {% if last.ids %}<a class="btn btn-sm" href="/stock/labels?ids={{ last.ids }}" target="_blank">🏷 Напечатать наклейки</a>{% endif %}
+</div>
+{% endif %}
+
+{% for g in groups %}
+<form class="card compact rc-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
+  <div class="card-h">
+    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.p.supplier_invoice %} <span class="caption">· счёт {{ g.p.supplier_invoice }}</span>{% endif %}</span>
+    <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/purchases/{{ g.p.id }}">Закупка</a>
+      <button class="btn btn-sm" name="all" value="{{ g.p.id }}">Принять всё · {{ g.rows|length }}</button></span>
+  </div>
+  <div class="tablewrap">
+  <table class="table rc-table">
+    <thead><tr><th>Запчасть</th><th class="num">Шт</th><th>Под наряд</th><th>Ячейка</th><th></th></tr></thead>
+    <tbody>
+    {% for r in g.rows %}
+    <tr class="{{ 'urgent' if r.urgent }}">
+      <td>{% if r.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
+        <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
+      <td class="num nowrap">{{ r.l.qty|num }}{% if r.part and r.l.qty > r.part.qty %}<div class="caption">на склад {{ (r.l.qty - r.part.qty)|num }}</div>{% endif %}</td>
+      <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make }} {{ r.v.model }}</a> <span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>
+        <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}</td>
+      <td><select class="field rc-cell" name="loc_{{ r.l.id }}" aria-label="Ячейка">
+          <option value="">— без ячейки —</option>
+          {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == r.cell %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select></td>
+      <td><button class="btn btn-sm btn-tinted nowrap" name="line_id" value="{{ r.l.id }}">Пришло</button></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{% else %}
+<div class="card compact"><p class="footnote" style="margin:0">Ничего не ждём — все заказанные запчасти приняты. Новые заказы появятся здесь, когда закупку отметят «Заказана».</p></div>
+{% endfor %}
+{% endblock %}

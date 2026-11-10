@@ -66,10 +66,28 @@
       const x = document.createElement(cls === 'b' ? 'b' : 'span'); if (cls !== 'b') x.className = cls;
       x.textContent = txt; body.appendChild(x);
     });
+    if (t.tone) el.dataset.tone = t.tone;
     const close = document.createElement('button');
     close.className = 'toast-x'; close.type = 'button'; close.title = 'Закрыть'; close.setAttribute('aria-label', 'Закрыть'); close.textContent = '×';
-    close.addEventListener('click', () => { save(load().filter(x => x.id !== t.id)); el.remove(); });
-    el.append(body, close); stack().appendChild(el);
+    const done = () => {
+      save(load().filter(x => x.id !== t.id)); el.remove();
+      if (t.readUrl) fetch(t.readUrl, { method: 'POST', headers: { 'x-requested-with': 'fetch' } }).catch(() => {});
+    };
+    close.addEventListener('click', done);
+    el.append(body, close);
+    // Кнопка действия прямо в окошке (11.11.2026): например, слесарю — «Запросить выдачу» одним кликом
+    if (t.action && t.action.url) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn btn-sm toast-act'; b.textContent = t.action.label;
+      b.addEventListener('click', async () => {
+        b.disabled = true; b.textContent = 'Отправляю…';
+        try { await fetch(t.action.url, { method: 'POST', headers: { 'x-requested-with': 'fetch' } }); b.textContent = t.action.done || 'Готово'; }
+        catch (e) { b.textContent = 'Не получилось'; }
+        setTimeout(done, 1200);
+      });
+      el.appendChild(b);
+    }
+    stack().appendChild(el);
   }
   window.crmToast = function (t) {
     if (!t || !t.id) return;

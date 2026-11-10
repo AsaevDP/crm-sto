@@ -58,7 +58,7 @@
       {% set c, part = cats.get(l.catalog_id), parts.get(l.wo_part_id) %}
       <div class="part">
         <div class="part-main">
-          <span class="part-name">{{ c.name }}<span class="caption mono" style="display:block">{{ c.brand }} {{ c.article }}</span></span>
+          <span class="part-name">{% if part and part.urgent and not l.received %}<span class="urg-tag">🔥 срочно</span> {% endif %}{{ c.name }}<span class="caption mono" style="display:block">{{ c.brand }} {{ c.article }}</span></span>
           {% if l.received %}<span class="chip" data-s="ready">принято</span>{% endif %}
         </div>
         <div class="part-nums">

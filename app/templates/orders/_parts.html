@@ -5,9 +5,9 @@
 {% from "_brand.html" import brand_select %}
 {% macro part_row(p, in_group=False) %}
 {% set cat = cats.get(p.catalog_id) %}
-<div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}">
+<div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}" data-urgent="{{ 1 if p.urgent else 0 }}">
   <div class="part-main">
-    <span class="part-name">{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
+    <span class="part-name">{% if p.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
       {% if not in_group and cat and cat.brand %}<span class="tag">{{ cat.brand }}</span>{% endif %}
       {% if show_cost and cat and cat.article %}<span class="caption mono" style="display:block">{{ cat.article }}{% if cat.revision %} · рев. {{ cat.revision }}{% endif %}</span>{% endif %}
       {% if in_group and p.catalog_id in free %}<span class="caption" style="display:block">{{ "на складе: " ~ (free[p.catalog_id]|num) if free[p.catalog_id] > 0 else "под заказ" }}</span>{% endif %}
@@ -21,7 +21,11 @@
     {% endif %}
   </div>
   <div class="part-nums">
-    <span>{{ p.qty|num }} шт</span>
+    <span>{{ p.qty|num }} шт
+      {% if can_urgent and p.status in ("need", "ordered", "arrived", "reserved") %}
+      <form class="inline-form" method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/urgent" style="display:inline">
+        <button class="urg-btn" aria-pressed="{{ 'true' if p.urgent else 'false' }}" title="Слесарю деталь нужна срочно — увидят менеджер, запчастист и кладовщик">🔥 {{ "Срочно ✓" if p.urgent else "Срочно" }}</button></form>
+      {% endif %}</span>
     {% if show_price %}<span>{% if p.price %}× <b class="p-price">{{ p.price|money }}</b> ₴ = <b class="p-sum nowrap">{{ (p.price * p.qty)|money }}</b> ₴{% else %}<span class="caption">цену уточнит запчастист</span>{% endif %}</span>{% endif %}
   </div>
   {% if show_cost or (can_offer and p.status in ("need", "option", "declined")) %}

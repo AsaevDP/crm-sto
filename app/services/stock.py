@@ -239,6 +239,8 @@ def refresh_order_status(db: Session, wo: WorkOrder):
     parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
     if parts and all(p.status in ("reserved", "issued", "installed") for p in parts):
         osvc.set_status(db, wo, "instock", "Все запчасти пришли и в резерве")
+        from . import notify
+        notify.parts_ready(db, wo)   # одно сообщение, когда пришло ВСЁ (11.11.2026)
 
 
 def finish_picking(db: Session, wo: WorkOrder) -> str:
@@ -253,16 +255,30 @@ def finish_picking(db: Session, wo: WorkOrder) -> str:
         osvc.set_status(db, wo, "work", "Запчасти не нужны")
     elif all(p.status in ("reserved", "issued") for p in parts):
         osvc.set_status(db, wo, "instock", "Все запчасти в резерве на складе")
+        from . import notify
+        notify.parts_ready(db, wo)
     else:
         osvc.set_status(db, wo, "waiting", "Ждём запчасти от поставщика")
     return ""
 
 
 # ---------- Приход ----------
+def default_location(db: Session, catalog_id):
+    """Куда класть пришедшее: в ячейку, где эта запчасть уже лежит (больше всего штук), иначе — никуда."""
+    items = db.scalars(select(StockItem).where(StockItem.catalog_id == catalog_id, StockItem.location_id.is_not(None))).all()
+    if not items:
+        return None
+    bal = balances(db, items[0].branch_id, [i.id for i in items])
+    return max(items, key=lambda i: bal[i.id]["on_hand"]).location_id
+
+
 def receive_line(db: Session, branch_id, line: PurchaseLine, location_id):
-    """Приход строки закупки: всё в ячейку, часть под наряд — сразу в резерв."""
+    """Приход строки закупки: всё в ячейку, часть под наряд — сразу в резерв.
+    Ячейка не выбрана — кладём туда, где эта запчасть уже лежит."""
     if line.received:
         return
+    if location_id is None:
+        location_id = default_location(db, line.catalog_id)
     item = get_or_create_item(db, line.catalog_id, location_id)
     item.cost = line.price
     move(db, "in", item, line.qty, purchase_id=line.purchase_id, comment="Приход по закупке")
@@ -273,7 +289,12 @@ def receive_line(db: Session, branch_id, line: PurchaseLine, location_id):
             move(db, "reserve", item, part.qty, part, comment="Пришло под наряд")
             part.status = "reserved"
             db.flush()
-            refresh_order_status(db, db.get(WorkOrder, part.work_order_id))
+            wo = db.get(WorkOrder, part.work_order_id)
+            refresh_order_status(db, wo)
+            if part.urgent and wo.status != "instock":   # срочная пришла, остальное ещё едет — сказать сразу
+                from . import notify
+                notify.send(db, [wo.mechanic_id, wo.manager_id], "urgent_in", f"Срочная деталь пришла: {part.name}",
+                            f"{notify.car(db, wo)} · остальное ещё едет · наряд {wo.number}", f"/orders/{wo.id}#parts", wo)
 
 
 def refresh_purchase_status(db: Session, p: Purchase):

@@ -166,6 +166,21 @@ class WoPart(Entity):
     # Варианты на выбор клиенту (11.11.2026): одна группа = одна деталь разных фирм. Клиент выбирает один —
     # он идёт в подбор, остальные получают статус «не выбран».
     option_group: Mapped[str | None] = mapped_column(String(36), default="", nullable=True, index=True)
+    # «Срочно нужна» (11.11.2026): ставит слесарь; видят менеджер, запчастист, кладовщик — по всей цепочке
+    urgent: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+
+
+class Notification(Entity):
+    """Сообщение сотруднику (11.11.2026): «Все запчасти на складе», «Срочная деталь пришла», «Слесарь просит срочно».
+    Показывается окошком в углу, пока не закроют; список — по колокольчику. Клиенту ничего не отправляется."""
+    __tablename__ = "notifications"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    text: Mapped[str] = mapped_column(String(400), default="")
+    url: Mapped[str] = mapped_column(String(200), default="")
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
+    read_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
 
 
 class ClientEvent(Entity):

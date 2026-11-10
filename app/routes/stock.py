@@ -483,6 +483,7 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
     n_locations = db.scalar(select(func.count()).select_from(Location).where(Location.branch_id == ctx.branch.id))
     mm = sc.makes_models(db, ctx.branch.id)
     return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests,
+                      to_receive=_receive_count(ctx) if ctx.can("stock.manage") else 0,
                       sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
                       counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,
                       args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))
@@ -778,7 +779,7 @@ def _requests(ctx: Ctx, status="new"):
                 si = db.get(StockItem, sid)
                 cells.append(f"{svc.location_label(db.get(Location, si.location_id) if si.location_id else None)} × {qty.normalize()}")
             lines.append({"name": part.name if part else "?", "article": cat.article if cat else "", "qty": l.qty,
-                          "cells": cells, "status": part.status if part else ""})
+                          "cells": cells, "status": part.status if part else "", "urgent": bool(part and part.urgent)})
         out.append({"r": r, "wo": wo, "v": db.get(Vehicle, wo.vehicle_id), "who": db.get(User, r.created_by),
                     "lines": lines})
     return out
@@ -804,15 +805,153 @@ def issue_do(rid: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/api/notify")
 def notify(ctx: Ctx = Depends(get_ctx)):
-    """Окошко у кладовщика: новые запросы на выдачу (опрос раз в 15 секунд)."""
+    """Опрос раз в 15 секунд. Кладовщику — новые запросы на выдачу; всем — их сообщения
+    («Все запчасти на складе», «Срочная деталь пришла», «Слесарь просит срочно»)."""
+    from ..services import notify as nsvc
+    notes = []
+    for n in nsvc.unread(ctx.db, ctx.user.id):
+        wo = ctx.db.get(WorkOrder, n.work_order_id) if n.work_order_id else None
+        can_req = bool(wo and wo.status in ("instock", "work") and ctx.can("stock.request_issue")
+                       and ctx.user.id == wo.mechanic_id
+                       and not ctx.db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == wo.id,
+                                                                            IssueRequest.status == "new"))
+                       and ctx.db.scalar(select(WoPart.id).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved")))
+        notes.append({"id": str(n.id), "kind": n.kind, "title": n.title, "text": n.text, "url": n.url,
+                      "request_url": f"/orders/{wo.id}/issue-request" if can_req else ""})
+    unread_n = len(notes)
     if not ctx.can("stock.issue"):
-        return {"issues": 0, "items": []}
+        return {"issues": 0, "items": [], "notes": notes, "unread": unread_n}
     items = []
     for x in _requests(ctx, "new")[:5]:
-        names = ", ".join(l["name"] for l in x["lines"][:3]) + ("…" if len(x["lines"]) > 3 else "")
+        names = ", ".join(("🔥 " if l["urgent"] else "") + l["name"] for l in x["lines"][:3]) + ("…" if len(x["lines"]) > 3 else "")
         items.append({"id": str(x["r"].id), "who": x["who"].full_name if x["who"] else "",
                       "text": names, "order": x["wo"].number, "plate": osvc.fmt_plate(x["v"].plate)})
-    return {"issues": len(_requests(ctx, "new")), "items": items}
+    return {"issues": len(_requests(ctx, "new")), "items": items, "notes": notes, "unread": unread_n,
+            "receive": _receive_count(ctx) if ctx.can("stock.manage") else 0}
+
+
+@router.post("/api/notify/{nid}/read")
+def notify_read(nid: str, ctx: Ctx = Depends(get_ctx)):
+    from ..services import notify as nsvc
+    nsvc.mark_read(ctx.db, ctx.user.id, None if nid == "all" else _uuid(nid))
+    ctx.db.commit()
+    return {"ok": True}
+
+
+@router.get("/notifications")
+def notifications(ctx: Ctx = Depends(get_ctx)):
+    """Колокольчик: последние сообщения сотруднику."""
+    from ..services import notify as nsvc
+    rows = nsvc.recent(ctx.db, ctx.user.id)
+    nsvc.mark_read(ctx.db, ctx.user.id)
+    ctx.db.commit()
+    return ctx.render("notifications.html", title="Сообщения", rows=rows)
+
+
+# ======================= Срочная деталь (11.11.2026) =======================
+@router.post("/orders/{order_id}/parts/{part_id}/urgent")
+def part_urgent(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Слесарь (или менеджер) отмечает: деталь нужна срочно. Видят все по цепочке; запчастисту и менеджеру — сообщение."""
+    ctx.need("orders.view_own", "orders.view_all")
+    wo = _order(ctx, order_id)
+    part = ctx.db.get(WoPart, _uuid(part_id))
+    allowed = ctx.user.id == wo.mechanic_id or ctx.can("orders.approve") or ctx.user.role.code == "admin"
+    if not allowed or not part or part.work_order_id != wo.id or part.status in ("issued", "installed", "declined", "returned"):
+        raise Forbidden()
+    part.urgent = not part.urgent
+    if part.urgent:
+        from ..services import notify as nsvc
+        nsvc.send(ctx.db, [wo.partsman_id, wo.manager_id, wo.mechanic_id], "urgent_ask",
+                  f"Срочно нужна: {part.name}", f"{ctx.user.short_name} · {nsvc.car(ctx.db, wo)} · наряд {wo.number}",
+                  f"/orders/{wo.id}#parts", wo, skip=ctx.user.id)
+    ctx.db.commit()
+    if ctx.request.headers.get("x-requested-with") == "fetch":
+        return {"ok": True, "urgent": bool(part.urgent)}
+    flash(ctx.request, f"«{part.name}» — {'срочно' if part.urgent else 'пометка «срочно» снята'}")
+    return _to(f"/orders/{order_id}#parts")
+
+
+# ======================= Приход у кладовщика (11.11.2026) =======================
+def _receive_lines(ctx: Ctx):
+    """Что ждём от поставщиков: непринятые строки заказанных закупок, по закупкам; срочное — сверху."""
+    db = ctx.db
+    purchases = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
+                                                  Purchase.status.in_(("ordered", "partial"))).order_by(Purchase.created_at)).all()
+    groups = []
+    for p in purchases:
+        rows = []
+        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))):
+            part = db.get(WoPart, l.wo_part_id) if l.wo_part_id else None
+            wo = db.get(WorkOrder, part.work_order_id) if part else None
+            rows.append({"l": l, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo,
+                         "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
+                         "mech": db.get(User, wo.mechanic_id) if wo and wo.mechanic_id else None,
+                         "urgent": bool(part and part.urgent), "cell": svc.default_location(db, l.catalog_id)})
+        if rows:
+            rows.sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["c"].name if r["c"] else ""))
+            groups.append({"p": p, "sup": db.get(Supplier, p.supplier_id) if p.supplier_id else None, "rows": rows,
+                           "urgent": any(r["urgent"] for r in rows)})
+    groups.sort(key=lambda g: not g["urgent"])
+    return groups
+
+
+def _receive_count(ctx: Ctx) -> int:
+    return ctx.db.scalar(select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+                         .where(Purchase.branch_id == ctx.branch.id, Purchase.status.in_(("ordered", "partial")),
+                                PurchaseLine.received.is_(False))) or 0
+
+
+@router.get("/stock/receive")
+def receive_page(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("stock.manage")
+    db = ctx.db
+    locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
+                           .order_by(Location.rack, Location.shelf, Location.place)).all()
+    last = ctx.request.session.pop("last_received", None)
+    return ctx.render("stock/receive.html", title="Приход", groups=_receive_lines(ctx), locations=locations,
+                      last=last, loc_label=svc.location_label, fmt_plate=osvc.fmt_plate)
+
+
+@router.post("/stock/receive")
+async def receive_do(ctx: Ctx = Depends(get_ctx)):
+    """«Пришло» по строке или «Принять всё» по закупке. Ячейка — выбранная или та, где запчасть уже лежит."""
+    ctx.need("stock.manage")
+    form = await ctx.request.form()
+    db = ctx.db
+    if form.get("line_id"):
+        lines = [db.get(PurchaseLine, _uuid(str(form["line_id"])))]
+    elif form.get("all"):
+        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == _uuid(str(form["all"])),
+                                                      PurchaseLine.received.is_(False))).all()
+    else:
+        lines = []
+    done, ready, item_ids = 0, [], []
+    touched = set()
+    for l in lines:
+        p = db.get(Purchase, l.purchase_id) if l else None
+        if not l or l.received or not p or p.branch_id != ctx.branch.id or p.status not in ("ordered", "partial"):
+            continue
+        raw = str(form.get(f"loc_{l.id}", ""))
+        loc = db.get(Location, _uuid(raw)) if raw else None
+        svc.receive_line(db, ctx.branch.id, l, loc.id if loc and loc.branch_id == ctx.branch.id else None)
+        db.flush()
+        item = db.scalar(select(StockItem).where(StockItem.catalog_id == l.catalog_id,
+                                                 StockItem.location_id == l.location_id if l.location_id else StockItem.location_id.is_(None)))
+        if item:
+            item_ids.append(str(item.id))
+        if l.wo_part_id:
+            wo = db.get(WorkOrder, db.get(WoPart, l.wo_part_id).work_order_id)
+            if wo.status == "instock" and wo.number not in ready:
+                ready.append(wo.number)
+        touched.add(p.id)
+        done += 1
+    for pid in touched:
+        svc.refresh_purchase_status(db, db.get(Purchase, pid))
+    db.commit()
+    if done:
+        ctx.request.session["last_received"] = {"n": done, "ids": ",".join(dict.fromkeys(item_ids)), "ready": ready}
+    flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else ""))
+    return _to("/stock/receive")
 
 
 # ======================= Настройки цен =======================

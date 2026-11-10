@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head"><div><h1 class="large-title">Сообщения</h1>
+  <p class="footnote" style="margin:4px 0 0">Сюда приходит: «Все запчасти на складе», «Срочная деталь пришла», «Срочно нужна деталь».</p></div></header>
+<div class="card compact nt-list">
+  {% for n in rows %}
+  <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
+    <span class="nt-ico">{{ {"parts_ready": "✅", "urgent_in": "🔥", "urgent_ask": "🔥"}.get(n.kind, "•") }}</span>
+    <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
+    <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+  </a>
+  {% else %}<p class="footnote" style="margin:0">Сообщений пока нет</p>{% endfor %}
+</div>
+{% endblock %}
