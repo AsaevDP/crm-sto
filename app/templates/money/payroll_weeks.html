@@ -30,7 +30,8 @@
   {% for key, title, sub in [("open", "Неделя", "пн–вс, работы и наряды"), ("checked", "Проверка", "бухгалтер, в выходные"),
                              ("approved", "Утверждение", "админ"), ("paid", "Выдача", "понедельник")] %}
   {% set order = ["open", "checked", "approved", "paid"] %}
-  <li class="pw-step {{ 'done' if order.index(st) > loop.index0 or st == 'paid' }} {{ 'now' if st == key and st != 'paid' }}">
+  {% set cur = 0 if (st == "open" and start >= this_week) else order.index(st) + 1 %}
+  <li class="pw-step {{ 'done' if loop.index0 < cur }} {{ 'now' if loop.index0 == cur }}">
     <b>{{ loop.index }}. {{ title }}</b><span class="caption">{{ sub }}</span>
     {% if key == "checked" and w and w.checked_at %}<span class="caption">✓ {{ people[w.checked_by].short_name if w.checked_by in people else "" }} {{ w.checked_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
     {% if key == "approved" and w and w.approved_at %}<span class="caption">✓ {{ people[w.approved_by].short_name if w.approved_by in people else "" }} {{ w.approved_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
