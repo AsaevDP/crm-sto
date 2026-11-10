@@ -173,6 +173,35 @@ def writeoff(db: Session, branch_id, item: StockItem, qty, reason: str) -> str:
     return ""
 
 
+def deletable(db: Session, items) -> set:
+    """Какие детали можно удалить совсем: были только приходы (заведена по ошибке), ни продаж, ни резервов."""
+    from ..models import StockMovement
+    ids = [i.id for i in items]
+    if not ids:
+        return set()
+    busy = set(db.scalars(select(StockMovement.stock_item_id).where(StockMovement.stock_item_id.in_(ids),
+                                                                     StockMovement.type != "in")))
+    busy |= set(db.scalars(select(UsedSale.stock_item_id).where(UsedSale.stock_item_id.in_(ids))))
+    return {i for i in ids if i not in busy}
+
+
+def delete_part(db: Session, item: StockItem):
+    """Удалить ошибочную деталь вместе с приходом и фото (в журнале остаётся запись об удалении)."""
+    from ..models import StockMovement
+    for m in db.scalars(select(StockMovement).where(StockMovement.stock_item_id == item.id)).all():
+        db.delete(m)
+    for p in db.scalars(select(StockPhoto).where(StockPhoto.stock_item_id == item.id)).all():
+        db.delete(p)
+    cat_id = item.catalog_id
+    db.delete(item)
+    db.flush()
+    if not db.scalar(select(StockItem.id).where(StockItem.catalog_id == cat_id)):
+        from ..models import PurchaseLine, WoPart
+        if not db.scalar(select(WoPart.id).where(WoPart.catalog_id == cat_id)) and \
+                not db.scalar(select(PurchaseLine.id).where(PurchaseLine.catalog_id == cat_id)):
+            db.delete(db.get(PartCatalog, cat_id))
+
+
 def item_states(db: Session, branch_id, items, bal=None) -> dict:
     """Состояние каждой детали: в наличии / в резерве / отправлено / продано / в наряд СТО / списано / нет."""
     from ..models import StockMovement

@@ -170,14 +170,15 @@ def refs_page(ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/razbor/refs")
 def refs_save(ctx: Ctx = Depends(get_ctx), action: str = Form(...), rid: str = Form(""), name: str = Form(""),
-              years: str = Form("")):
+              years: str = Form(""), ret: str = Form("")):
     """Добавить / переименовать / удалить марку, модель, категорию, подкатегорию.
     Переименование меняет подпись и у деталей; удалить можно только то, что не используется."""
     from ..models import RazborCategory, RazborMake, RazborModel
     ctx.need("razbor.manage")
     db, bid = ctx.db, ctx.branch.id
     name = name.strip()[:60]
-    back = _to("/razbor/refs" + ("#cats" if "cat" in action or "sub" in action else "#makes"))
+    back = _to(ret if ret.startswith("/") and not ret.startswith("//") else
+               "/razbor/refs" + ("#cats" if "cat" in action or "sub" in action else "#makes"))
 
     def own(obj):
         if not obj or obj.branch_id != bid:
@@ -363,18 +364,107 @@ def _donor(ctx: Ctx, did: str) -> Donor:
     return d
 
 
+TILE_COLORS = ["blue", "orange", "green", "purple", "teal", "indigo", "red", "yellow", "graphite"]
+
+
 @router.get("/razbor/donors/{did}")
-def donor_view(did: str, ctx: Ctx = Depends(get_ctx)):
+def donor_view(did: str, ctx: Ctx = Depends(get_ctx), cat: str = "", empty: str = ""):
+    """Машина-донор (11.11.2026): как «Пульт» — плитки категорий; открыл плитку — детали этой категории."""
     ctx.need("razbor.view")
     d = _donor(ctx, did)
     db = ctx.db
     rows = _item_rows(ctx, db.scalars(select(StockItem).where(StockItem.donor_id == d.id).order_by(StockItem.code)).all())
     photos = db.scalars(select(DonorPhoto).where(DonorPhoto.donor_id == d.id).order_by(DonorPhoto.created_at)).all()
     from ..models.razbor import ITEM_STATES
+    ref = svc.tree(db, ctx.branch.id)
+    # Плитки: все категории справочника + те, что есть у деталей, но не в справочнике
+    names = [c["c"].name for c in ref["cats"]]
+    for r in rows:
+        if (r["c"].category or "Прочее") not in names:
+            names.append(r["c"].category or "Прочее")
+    tiles = []
+    for k, name in enumerate(names):
+        mine = [r for r in rows if (r["c"].category or "Прочее") == name]
+        tiles.append({"name": name, "n": len(mine), "color": TILE_COLORS[k % len(TILE_COLORS)],
+                      "stock": sum(1 for r in mine if r["state"] in ("stock", "reserved")),
+                      "sold": sum(1 for r in mine if r["state"] in ("sold", "sent", "service")),
+                      "sum": sum((r["i"].sale_price * max(r["b"]["on_hand"], 0) for r in mine), Decimal(0)),
+                      "ref": next((c for c in ref["cats"] if c["c"].name == name), None)})
+    # Сколько деталей в категории у ВСЕХ машин — убрать можно только пустую везде
+    used = {}
+    for c, in db.execute(select(PartCatalog.category).join(StockItem, StockItem.catalog_id == PartCatalog.id)
+                         .where(StockItem.branch_id == ctx.branch.id, PartCatalog.kind == "used")):
+        used[c or "Прочее"] = used.get(c or "Прочее", 0) + 1
+    if cat and cat not in names:
+        cat = ""
+    open_rows = [r for r in rows if (r["c"].category or "Прочее") == cat] if cat else []
+    subs = {}
+    for r in open_rows:
+        subs.setdefault(r["c"].subcategory or "", []).append(r)
+    can_delete = svc.deletable(db, [r["i"] for r in open_rows]) if open_rows else set()
     return ctx.render("razbor/donor.html", title=f"{d.code} {d.make} {d.model}", d=d, rows=rows, photos=photos,
                       e=svc.economy(db, ctx.branch.id, d), locations=_locations(ctx), CONDITIONS=CONDITIONS,
-                      DONOR_STATUS=DONOR_STATUS, loc_label=ssvc.location_label, ref=svc.tree(db, ctx.branch.id),
-                      ITEM_STATES=ITEM_STATES)
+                      DONOR_STATUS=DONOR_STATUS, loc_label=ssvc.location_label, ref=ref, ITEM_STATES=ITEM_STATES,
+                      tiles=tiles, cat=cat, show_empty=bool(empty), used=used, open_rows=open_rows,
+                      subs=dict(sorted(subs.items(), key=lambda x: (x[0] == "", x[0]))), can_delete=can_delete,
+                      open_tile=next((t for t in tiles if t["name"] == cat), None))
+
+
+def _donor_back(d: Donor, cat: str = "") -> str:
+    from urllib.parse import quote
+    return f"/razbor/donors/{d.id}" + (f"?cat={quote(cat)}#cat" if cat else "")
+
+
+@router.post("/razbor/donors/{did}/parts/bulk")
+def parts_bulk(did: str, ctx: Ctx = Depends(get_ctx), lines: str = Form(""), category: str = Form(""),
+               subcategory: str = Form(""), condition: str = Form("good"), location_id: str = Form("")):
+    """Несколько деталей сразу, по строке: «Название; цена; кол-во» (цена и кол-во — по желанию)."""
+    ctx.need("razbor.manage")
+    d = _donor(ctx, did)
+    loc = ctx.db.get(Location, _uuid(location_id)) if location_id else None
+    n = 0
+    for raw in lines.splitlines():
+        parts = [x.strip() for x in raw.replace("\t", ";").split(";")]
+        if not parts or not parts[0]:
+            continue
+        price = _dec(parts[1]) if len(parts) > 1 and parts[1] else Decimal(0)
+        qty = _dec(parts[2], "1") if len(parts) > 2 and parts[2] else Decimal(1)
+        svc.add_part(ctx.db, ctx.branch.id, d, parts[0], max(qty, Decimal(1)), price, condition,
+                     loc.id if loc and loc.branch_id == ctx.branch.id else None, publish=True,
+                     category=category, subcategory=subcategory)
+        n += 1
+    ctx.db.commit()
+    flash(ctx.request, f"Добавлено деталей: {n} — подпишите бирки и сфотографируйте" if n else "Список пуст", "ok" if n else "error")
+    return _to(_donor_back(d, category))
+
+
+@router.post("/razbor/parts/{iid}/move")
+def part_move(iid: str, ctx: Ctx = Depends(get_ctx), catsub: str = Form(""), back: str = Form("")):
+    """Перенести деталь в другую категорию / подкатегорию."""
+    ctx.need("razbor.manage")
+    i = _item(ctx, iid)
+    c = ctx.db.get(PartCatalog, i.catalog_id)
+    cat, _, sub = catsub.partition("||")
+    if cat.strip():
+        c.category, c.subcategory = cat.strip()[:60], sub.strip()[:60]
+        ctx.db.commit()
+        flash(ctx.request, f"{i.code} → {c.category}{' › ' + c.subcategory if c.subcategory else ''}")
+    return _to(back if back.startswith("/") and not back.startswith("//") else f"/razbor/parts/{iid}")
+
+
+@router.post("/razbor/parts/{iid}/delete")
+def part_delete(iid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """Удалить деталь, заведённую по ошибке: только если её не продавали, не резервировали, не ставили в наряд."""
+    ctx.need("razbor.manage")
+    i = _item(ctx, iid)
+    if i.id not in svc.deletable(ctx.db, [i]):
+        flash(ctx.request, "С деталью уже были продажи, резерв или выдача — удалить нельзя, только «Списать»", "error")
+        return _to(f"/razbor/parts/{iid}")
+    code = i.code
+    svc.delete_part(ctx.db, i)
+    ctx.db.commit()
+    flash(ctx.request, f"Деталь {code} удалена")
+    return _to(back if back.startswith("/") and not back.startswith("//") else "/razbor")
 
 
 @router.post("/razbor/donors/{did}")
@@ -420,7 +510,7 @@ async def part_add(did: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         ctx.db.add(StockPhoto(stock_item_id=item.id, file=p))
     ctx.db.commit()
     flash(request, f"Деталь {item.code} добавлена — подпишите бирку")
-    return _to(f"/razbor/donors/{did}")
+    return _to(_donor_back(d, ctx.db.get(PartCatalog, item.catalog_id).category or ""))
 
 
 # ======================= Деталь =======================

@@ -1092,6 +1092,55 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
   background: color-mix(in srgb, var(--blue) 12%, transparent); color: color-mix(in srgb, var(--blue) 80%, var(--text)); }
 .tool-wait { opacity: .85; }
 
+/* ===== Разбор · машина-донор как «Пульт» (11.11.2026) ===== */
+.dn-top { display: grid; gap: 12px; align-items: stretch; }
+@media (min-width: 1000px) { .dn-top:has(.dn-photos) { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } }
+.dn-photos .pgallery { margin: 0; }
+.dn-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.dn-payback { height: 6px; }
+.dn-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.dn-addcat { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+.dn-addcat .field { width: 200px; }
+.dn-tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.dn-tile { position: relative; border-radius: var(--r-md); background: color-mix(in srgb, var(--tc) 12%, var(--surface));
+  box-shadow: var(--shadow-1), inset 0 3px 0 var(--tc); min-width: 0; }
+.dn-tile:hover { background: color-mix(in srgb, var(--tc) 19%, var(--surface)); }
+.dn-tile.zero { background: var(--surface); box-shadow: var(--shadow-1), inset 0 3px 0 color-mix(in srgb, var(--tc) 35%, transparent); }
+.dn-tile.zero b { color: var(--text-2); }
+.dn-tile.on { outline: 2px solid var(--tc); outline-offset: 1px; }
+.dn-tile-a { display: grid; gap: 2px; padding: 10px 14px; color: var(--text); text-decoration: none; }
+.dn-tile-a b { font: 700 26px/1.1 var(--font-display, inherit); font-variant-numeric: tabular-nums; }
+.dn-tile .ptile-s { white-space: normal; line-height: 1.25; }
+.dn-tile-del { position: absolute; top: 4px; right: 4px; }
+.dn-tile:has(.dn-tile-del) .ptile-t { padding-right: 24px; }
+.dn-tile-del .btn { padding: 2px 8px; color: var(--text-2); }
+.dn-cat { display: grid; gap: 4px; box-shadow: var(--shadow-1), inset 0 3px 0 var(--tc); }
+.dn-sub { margin-top: 8px; font-weight: 600; font-size: 14px; color: color-mix(in srgb, var(--tc) 70%, var(--text)); }
+.dn-part { display: flex; gap: 6px; align-items: center; border-top: 0.5px solid var(--separator); }
+.dn-part-a { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: center; padding: 8px 4px; color: var(--text); text-decoration: none; }
+.dn-part-a:hover { background: var(--fill-2); }
+.dn-part-a .grow { display: grid; min-width: 0; flex: 1; }
+.dn-part-a .grow b { overflow-wrap: anywhere; }
+.dn-part .thumb-cell { flex: none; width: 44px; height: 44px; border-radius: 8px; overflow: hidden; display: grid; place-items: center; background: var(--fill-2); }
+.dn-part .thumb-cell img { width: 100%; height: 100%; object-fit: cover; }
+.dn-nophoto { opacity: .4; }
+.dn-part.muted .dn-part-a { opacity: .6; }
+.dn-more .pu-menu { width: 300px; }
+.dn-add { display: grid; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--separator); }
+.dn-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.dn-row .field { flex: 1 1 160px; width: auto; min-width: 0; }
+.dn-row .dn-n { flex: 0 1 100px; }
+.dn-row .btn, .dn-row label.row { flex: none; }
+.dn-bulk > summary { list-style: none; display: inline-flex; }
+.dn-bulk > summary::-webkit-details-marker { display: none; }
+.dn-bulk form { margin-top: 6px; }
+@media (max-width: 899px) {
+  .dn-addcat { margin-left: 0; width: 100%; } .dn-addcat .field { flex: 1; width: auto; }
+  .dn-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dn-part-a { flex-wrap: wrap; } .dn-part-a .grow { flex: 1 1 60%; }
+  .dn-more .pu-menu { left: auto; right: 0; width: min(300px, calc(100vw - 40px)); }
+}
+
 /* ===== Зарплата по неделям (11.11.2026) ===== */
 .pw-nav { align-self: flex-start; }
 .pw-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
