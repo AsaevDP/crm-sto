@@ -2,39 +2,135 @@
 {% from "_period.html" import period_bar %}
 {% block content %}
 {% set e = editing %}
+{% set ST_ICON = {"booked": "•", "arrived": "✓", "noshow": "✕", "cancel": "✕"} %}
+{% set MON = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"] %}
+{% macro li(a, d, show_mech=true, show_date=false) %}{% set m = people.get(a.mechanic_id) %}
+  <a class="appt-li" data-st="{{ a.status }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}" href="/schedule?d={{ d }}&p={{ 'day' if view in ('list', 'custom') else view }}&by={{ by }}&edit={{ a.id }}">
+    <span>{% if show_date %}<b class="nowrap">{{ WEEKDAYS[d.weekday()] }} {{ d.strftime("%d.%m") }}</b> · {% endif %}<b>{{ local(a.start_at).strftime("%H:%M") }}</b> <span class="st-ico" data-st="{{ a.status }}">{{ ST_ICON.get(a.status) }}</span> {{ a.client_name or fmt_phone(a.phone) }}</span>
+    <span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}{% if m and show_mech %} · {{ m.short_name }}{% endif %}{% if a.status in ("noshow", "cancel") %} · {{ APPT_STATUS[a.status]|lower }}{% endif %}</span></a>
+{% endmacro %}
 <header class="page-head">
-  <div><p class="footnote">{{ WEEKDAYS[day.weekday()] }}, {{ day.strftime("%d.%m.%Y") }}{% if day == today %} · сегодня{% endif %}</p>
+  <div><p class="footnote">{% if view == "list" %}{{ "Будущие записи · 60 дней вперёд" if show == "future" else "Прошлые записи · 90 дней" }}{% else %}{{ WEEKDAYS[day.weekday()] }}, {{ day.strftime("%d.%m.%Y") }}{% if day == today %} · сегодня{% endif %}{% endif %}</p>
     <h1 class="large-title">Запись</h1></div>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 
-<div class="cl-grid fill sched-wrap {{ 'no-form' if not can_manage }}">
+<div class="sc-bar">
+  <nav class="segmented" aria-label="Как сгруппировать">
+    {% for k, v in BY.items() %}<a href="{{ bar.url(**per.params()) if view != 'list' else '/schedule?show=' ~ show }}&by={{ k }}" aria-pressed="{{ (by == k)|lower }}">{{ v }}</a>{% endfor %}
+  </nav>
+  <nav class="segmented" aria-label="Списки">
+    <a href="/schedule?show=future&by={{ by }}" aria-pressed="{{ (show == 'future')|lower }}">Будущие</a>
+    <a href="/schedule?show=past&by={{ by }}" aria-pressed="{{ (show == 'past')|lower }}">Прошлые</a>
+  </nav>
+  <span class="sched-sum">
+    <span class="chip">Записей: {{ summary.all }}</span>
+    {% if summary.booked %}<span class="chip" data-st="booked">Ждём: {{ summary.booked }}</span>{% endif %}
+    {% if summary.arrived %}<span class="chip" data-st="arrived">Приехали: {{ summary.arrived }}</span>{% endif %}
+    {% if summary.noshow %}<span class="chip" data-st="noshow">Не приехали: {{ summary.noshow }}</span>{% endif %}
+  </span>
+</div>
+
+<div class="cl-grid fill sched-wrap {{ 'no-form' if not can_manage and not pl is defined }} {{ 'wide' if by == 'mech' and view in ('week', 'month', 'custom') }}">
   <section class="ov-col on sched-main">
-    {% set ST_ICON = {"booked": "•", "arrived": "✓", "noshow": "✕", "cancel": "✕"} %}
-    {% if view == "week" %}
+    {% if view == "list" %}
+    {# ===== Будущие / прошлые — списком ===== #}
+    {% for g in groups %}
+    <div class="card compact sc-group">
+      <div class="card-h">{% if by == "mech" %}<span class="headline" style="--mc:{{ color_css(colors.get(g.mech, 'gray')) }}"><i class="sc-dot"></i>{{ g.title }}</span>
+        {% else %}<a class="headline" href="/schedule?d={{ g.title }}&p=day">{{ WEEKDAYS[g.title.weekday()] }}, {{ g.title.day }} {{ MON[g.title.month - 1] }}{% if g.title == today %} · сегодня{% endif %}</a>{% endif %}
+        <span class="caption">{{ g.rows|length }}</span></div>
+      <div class="sc-list">{% for a in g.rows %}{{ li(a, local(a.start_at).date(), by != "mech", by == "mech") }}{% endfor %}</div>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">{{ "Записей вперёд нет" if show == "future" else "За 90 дней записей не было" }}.</p></div>{% endfor %}
+
+    {% elif view == "week" and by == "date" %}
     {% if mechanics|length > 1 %}<div class="mech-legend">{% for m in mechanics %}<span style="--mc:{{ color_css(colors.get(m.id, 'gray')) }}"><i></i>{{ m.short_name }}</span>{% endfor %}</div>{% endif %}
-    <div class="week fill scroll">
+    <div class="week">
       {% for d in days %}{% set list = by_day.get(d, []) %}
-      <div class="card compact week-day {{ 'is-today' if d == today }}">
-        <a class="card-h" href="?d={{ d }}&view=day"><span class="headline">{{ WEEKDAYS[loop.index0] }} {{ d.strftime("%d.%m") }}</span>
+      <div class="card compact week-day {{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }}">
+        <a class="card-h" href="/schedule?d={{ d }}&p=day"><span class="headline">{{ WEEKDAYS[d.weekday()] }} {{ d.strftime("%d.%m") }}</span>
           <span class="footnote nowrap">{% if list %}{{ list|length }} · {{ hours[d]|round(1)|num }} ч{% endif %}</span></a>
         <div class="loadbar" title="Загрузка мастеров ~{{ load[d] }}%"><i style="width:{{ load[d] }}%"></i></div>
-        {% for a in list %}{% set m = people.get(a.mechanic_id) %}
-        <a class="appt-li" data-st="{{ a.status }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}" href="?d={{ d }}&view=week&edit={{ a.id }}">
-          <span><b>{{ local(a.start_at).strftime("%H:%M") }}</b> <span class="st-ico" data-st="{{ a.status }}">{{ ST_ICON.get(a.status) }}</span> {{ a.client_name or fmt_phone(a.phone) }}</span>
-          <span class="caption">{{ a.car }} {{ fmt_plate(a.plate) }}{% if m %} · {{ m.short_name }}{% endif %}</span></a>
-        {% else %}<p class="caption" style="margin:0">свободно</p>{% endfor %}
+        {% for a in list %}{{ li(a, d) }}{% else %}<p class="caption" style="margin:0">{{ "выходной" if d.weekday() in days_off else "свободно" }}</p>{% endfor %}
       </div>
       {% endfor %}
     </div>
-    {% else %}
-    <div class="sched-sum">
-      <span class="chip">Записей: {{ summary.all }}</span>
-      {% if summary.booked %}<span class="chip" data-st="booked">Ждём: {{ summary.booked }}</span>{% endif %}
-      {% if summary.arrived %}<span class="chip" data-st="arrived">Приехали: {{ summary.arrived }}</span>{% endif %}
-      {% if summary.noshow %}<span class="chip" data-st="noshow">Не приехали: {{ summary.noshow }}</span>{% endif %}
+
+    {% elif view == "week" and by == "mech" %}
+    {# ===== Неделя по мастерам: строки — мастера, колонки — дни ===== #}
+    <div class="tablewrap sc-mx-wrap">
+      <table class="sc-mx">
+        <thead><tr><th>Мастер</th>{% for d in days %}<th class="{{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }}"><a href="/schedule?d={{ d }}&p=day&by=mech">{{ WEEKDAYS[d.weekday()] }} {{ d.strftime("%d.%m") }}</a></th>{% endfor %}<th class="num">Итого</th></tr></thead>
+        <tbody>
+        {% for m in mechanics %}{% set L = pl[m.id] %}
+        <tr style="--mc:{{ color_css(colors.get(m.id, 'gray')) }}">
+          <th class="sc-mx-who"><i class="sc-dot"></i>{{ m.short_name }}</th>
+          {% for d in days %}{% set mins = L.by_day.get(d, 0) %}
+          <td class="{{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }}">
+            {% for a in by_day.get(d, []) if a.mechanic_id == m.id %}{{ li(a, d, false) }}{% endfor %}
+            {% if mins %}<span class="sc-h">{{ (mins / 60)|round(1)|num }} ч из {{ day_h }}</span>{% endif %}
+          </td>{% endfor %}
+          <td class="num nowrap"><b>{{ L.hours|round(1)|num }} ч</b><div class="caption">{{ L.pct }}%</div></td>
+        </tr>
+        {% endfor %}
+        {% if no_mech %}<tr><th class="sc-mx-who">Без мастера</th>{% for d in days %}<td>{% for a in by_day.get(d, []) if not a.mechanic_id %}{{ li(a, d, false) }}{% endfor %}</td>{% endfor %}<td></td></tr>{% endif %}
+        </tbody>
+      </table>
     </div>
-    <div class="sched fill scroll">
+
+    {% elif view == "month" and by == "date" %}
+    {# ===== Месяц: календарь ===== #}
+    <div class="sc-cal">
+      {% for w in WEEKDAYS %}<div class="sc-cal-h {{ 'off' if loop.index0 in days_off }}">{{ w }}</div>{% endfor %}
+      {% for wk in weeks %}{% for d in wk %}
+      {% if d < per.d1 or d > per.d2 %}<div class="sc-day out"></div>
+      {% else %}{% set list = by_day.get(d, []) %}
+      <a class="sc-day {{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }} {{ 'past' if d < today }}" href="/schedule?d={{ d }}&p=day&by=mech">
+        <span class="sc-day-h"><b>{{ d.day }}</b>{% if list %}<span class="caption nowrap">{{ list|length }} · {{ hours[d]|round(1)|num }} ч</span><span class="sc-day-n">{{ list|length }}</span>{% endif %}</span>
+        {% if list %}<span class="loadbar" title="Загрузка ~{{ load[d] }}%"><i style="width:{{ load[d] }}%"></i></span>{% endif %}
+        {% for a in list[:3] %}<span class="sc-day-a" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}" data-st="{{ a.status }}"><b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or a.car }}</span>{% endfor %}
+        {% if list|length > 3 %}<span class="caption">ещё {{ list|length - 3 }}</span>{% endif %}
+      </a>{% endif %}
+      {% endfor %}{% endfor %}
+    </div>
+
+    {% elif view in ("month", "custom") and by == "mech" %}
+    {# ===== Месяц / период по мастерам: тепловая карта загрузки по дням ===== #}
+    <div class="tablewrap sc-heat-wrap">
+      <table class="sc-heat">
+        <thead><tr><th>Мастер</th>{% for d in days %}<th class="{{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }}" title="{{ WEEKDAYS[d.weekday()] }} {{ d.strftime('%d.%m') }}"><a href="/schedule?d={{ d }}&p=day&by=mech">{{ d.day }}</a></th>{% endfor %}<th class="num">Итого</th></tr></thead>
+        <tbody>
+        {% for m in mechanics %}{% set L = pl[m.id] %}
+        <tr style="--mc:{{ color_css(colors.get(m.id, 'gray')) }}">
+          <th class="sc-mx-who"><i class="sc-dot"></i>{{ m.short_name }}</th>
+          {% for d in days %}{% set mins = L.by_day.get(d, 0) %}{% set k = [((mins / 60) / day_h * 100)|round|int, 100]|min %}
+          <td class="{{ 'off' if d.weekday() in days_off }} {{ 'is-today' if d == today }}"><a class="sc-heat-c" href="/schedule?d={{ d }}&p=day&by=mech" style="--k:{{ k }}%" title="{{ m.short_name }} · {{ d.strftime('%d.%m') }} · {{ (mins / 60)|round(1)|num }} ч из {{ day_h }}">{{ (mins / 60)|round(1)|num if mins else "" }}</a></td>
+          {% endfor %}
+          <td class="num nowrap"><b>{{ L.hours|round(1)|num }} ч</b><div class="caption">{{ L.pct }}% · {{ L.n }} зап.</div></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote" style="margin:0">Цифра — часов записано у мастера в этот день (рабочий день — {{ day_h }} ч). Чем темнее, тем плотнее. Нажмите на день — откроется сетка дня.</p>
+
+    {% elif view == "custom" %}
+    {% for d in days if by_day.get(d) %}
+    <div class="card compact sc-group">
+      <div class="card-h"><a class="headline" href="/schedule?d={{ d }}&p=day">{{ WEEKDAYS[d.weekday()] }}, {{ d.day }} {{ MON[d.month - 1] }}</a><span class="caption">{{ by_day[d]|length }} · {{ hours[d]|round(1)|num }} ч</span></div>
+      <div class="sc-list">{% for a in by_day[d] %}{{ li(a, d) }}{% endfor %}</div>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">За период записей нет.</p></div>{% endfor %}
+
+    {% elif view == "day" and by == "date" %}
+    <div class="card compact sc-group">
+      <div class="card-h"><span class="headline">По времени</span><span class="caption">{{ appts|length }}</span></div>
+      <div class="sc-list">{% for a in appts %}{{ li(a, day) }}{% else %}<p class="footnote" style="margin:0">На этот день записей нет.</p>{% endfor %}</div>
+    </div>
+
+    {% else %}
+    <div class="sched">
       <div class="sgrid" style="grid-template-columns: 52px repeat({{ columns|length }}, minmax(112px, 1fr)); grid-template-rows: 54px repeat({{ g.slots|length }}, 30px);">
         <div class="sg-corner"></div>
         {% for c in columns %}{% set ld = load[c.id] %}{% set lf = own_lift.get(c.id) %}
@@ -50,7 +146,7 @@
         {% else %}<div class="sg-cell {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }};grid-column:{{ loop.index + 1 }}"></div>{% endif %}
         {% endfor %}{% endfor %}
         {% for b in g.blocks %}{% set a = b.a %}
-        <a class="appt" data-st="{{ a.status }}" href="?d={{ day }}&edit={{ a.id }}" style="grid-row:{{ b.row }} / span {{ b.span }};grid-column:{{ b.col }};--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}"
+        <a class="appt" data-st="{{ a.status }}" href="?d={{ day }}&p=day&by=mech&edit={{ a.id }}" style="grid-row:{{ b.row }} / span {{ b.span }};grid-column:{{ b.col }};--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}"
            title="{{ b.time }}–{{ b.end }} {{ a.client_name }} {{ a.car }} {{ a.work }}">
           <span class="appt-t"><span class="st-ico" data-st="{{ a.status }}">{{ ST_ICON.get(a.status) }}</span> {{ b.time }}–{{ b.end }}</span>
           <b>{{ a.client_name or fmt_phone(a.phone) }}</b>
@@ -64,9 +160,23 @@
     {% endif %}
   </section>
 
-  {% if can_manage or e %}
-  <section class="ov-col on">
-    {% if can_manage and not e and view != "week" and day >= today %}
+  {% if can_manage or e or pl is defined %}
+  <section class="ov-col on sc-side">
+    {% if pl is defined and not e %}
+    <div class="card compact sc-load">
+      <div class="card-h"><span class="headline">Загрузка мастеров</span><span class="caption">{{ per.label }}</span></div>
+      {% for m in mechanics|sort(attribute="full_name") %}{% set L = pl[m.id] %}
+      <a class="sc-load-row" href="{{ bar.url(**per.params()) }}&by=mech" style="--mc:{{ color_css(colors.get(m.id, 'gray')) }}">
+        <span class="sc-load-who"><i class="sc-dot"></i><b>{{ m.short_name }}</b></span>
+        <span class="loadbar"><i style="width:{{ L.pct }}%"></i></span>
+        <span class="caption nowrap sc-load-n"><b>{{ L.pct }}%</b> · {{ L.hours|round(1)|num }} из {{ L.cap }} ч</span>
+        <span class="caption sc-load-sub">записей {{ L.n }}{% if L.noshow %} · не приехали {{ L.noshow }}{% endif %}</span>
+      </a>
+      {% endfor %}
+      <p class="hint" style="margin:0">Часы работы: {{ day_h }} ч в день, выходной — {% for x in days_off|sort %}{{ WEEKDAYS[x]|lower }}{{ ", " if not loop.last }}{% else %}нет{% endfor %}.</p>
+    </div>
+    {% endif %}
+    {% if can_manage and not e and view == "day" and day >= today %}
     <div class="card compact free-card">
       <div class="card-h"><span class="headline">Свободные окна</span><span class="caption">от 1 часа · нажмите — подставится в форму</span></div>
       {% for c in columns %}{% set ld = load[c.id] %}{% if c.id %}
@@ -104,7 +214,7 @@
       <textarea class="field" name="work" rows="2" placeholder="Что делать: ТО, стук спереди…" aria-label="Что делать">{{ e.work if e else '' }}</textarea>
       <input class="field" name="note" placeholder="Заметка (необязательно)" value="{{ e.note if e else '' }}" aria-label="Заметка">
       {% if can_manage %}<div class="form-row"><button class="btn btn-sm">{{ "Сохранить" if e else "Записать" }}</button>
-        {% if e %}<a class="btn btn-sm btn-gray" href="?d={{ day }}&view={{ view }}">Новая запись</a>{% endif %}</div>{% endif %}
+        {% if e %}<a class="btn btn-sm btn-gray" href="?d={{ day }}&p={{ view }}&by={{ by }}">Новая запись</a>{% endif %}</div>{% endif %}
     </form>
     {% if e and can_manage %}
     <div class="card compact appt-actions">

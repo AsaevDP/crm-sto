@@ -1092,6 +1092,74 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
   background: color-mix(in srgb, var(--blue) 12%, transparent); color: color-mix(in srgb, var(--blue) 80%, var(--text)); }
 .tool-wait { opacity: .85; }
 
+/* ===== Запись (11.11.2026): по мастерам / по датам, месяц-календарь, тепловая карта, загрузка ===== */
+.sc-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.sc-bar .sched-sum { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.sc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--mc, var(--gray)); margin-right: 6px; vertical-align: 1px; }
+.sc-group .card-h a { color: inherit; text-decoration: none; }
+.sc-list { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.week-day.off, .sc-mx th.off, .sc-mx td.off { background: color-mix(in srgb, var(--fill-2) 70%, transparent); }
+.tablewrap.sc-mx-wrap, .tablewrap.sc-heat-wrap { overflow-x: auto; min-width: 0; max-width: 100%; }
+.sched-main { min-width: 0; }
+@media (min-width: 1100px) {
+  .sched-wrap.wide { grid-template-columns: minmax(0, 1fr); }
+  .sched-wrap.wide .sc-side { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+}
+.sc-mx { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; min-width: 900px; }
+.sc-mx th, .sc-mx td { border-bottom: 0.5px solid var(--separator); padding: 6px; vertical-align: top; text-align: left; }
+.sc-mx thead th { font-size: 12px; font-weight: 600; color: var(--text-2); position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.sc-mx thead th a { color: inherit; text-decoration: none; }
+.sc-mx th:first-child { width: 120px; }
+.sc-mx th:last-child, .sc-mx td:last-child { width: 80px; text-align: right; }
+.sc-mx td { display: table-cell; }
+.sc-mx td .appt-li { display: grid; width: 100%; box-sizing: border-box; margin-bottom: 4px; font-size: 13px; padding: 4px 6px; }
+.sc-mx td .appt-li .caption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-mx .is-today { box-shadow: inset 0 2px 0 var(--accent); }
+.sc-mx-who { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-h { display: block; font-size: 11px; color: var(--text-2); }
+.sc-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.sc-cal-h { font-size: 12px; font-weight: 600; color: var(--text-2); padding: 0 6px; }
+.sc-cal-h.off { color: var(--red); }
+.sc-day { display: grid; gap: 3px; align-content: start; min-height: 104px; padding: 6px 8px; border-radius: var(--r-sm, 10px); background: var(--surface);
+  box-shadow: var(--shadow-1); color: var(--text); text-decoration: none; min-width: 0; overflow: hidden; }
+a.sc-day:hover { background: var(--fill-2); }
+.sc-day.out { background: transparent; box-shadow: none; }
+.sc-day.off { background: color-mix(in srgb, var(--fill-2) 60%, var(--surface)); }
+.sc-day.past { opacity: .7; }
+.sc-day.is-today { outline: 2px solid var(--accent); outline-offset: -2px; opacity: 1; }
+.sc-day-h { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.sc-day .loadbar { flex: none; width: 100%; }
+.sc-day-n { display: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 11px; font-weight: 700;
+  place-items: center; background: color-mix(in srgb, var(--accent) 18%, var(--surface)); color: var(--accent); }
+.sc-day-a { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 6px; border-left: 3px solid var(--mc); }
+.sc-day-a[data-st="noshow"] { opacity: .55; text-decoration: line-through; }
+.sc-heat { border-collapse: separate; border-spacing: 2px; width: 100%; }
+.sc-heat th { font-size: 11px; font-weight: 600; color: var(--text-2); text-align: center; padding: 2px; }
+.sc-heat th a { color: inherit; text-decoration: none; }
+.sc-heat th.off { color: var(--red); }
+.sc-heat th.is-today { color: var(--accent); }
+.sc-heat tbody th { text-align: left; font-size: 13px; color: var(--text); padding-right: 8px; white-space: nowrap; }
+.sc-heat td { padding: 0; }
+.sc-heat td:last-child { padding-left: 8px; text-align: right; }
+.sc-heat-c { display: grid; place-items: center; min-width: 26px; height: 30px; border-radius: 6px; font-size: 11px; font-weight: 600; text-decoration: none;
+  color: var(--text); background: color-mix(in srgb, var(--mc, var(--accent)) var(--k, 0%), var(--fill-2)); }
+.sc-heat td.off .sc-heat-c { background: repeating-linear-gradient(45deg, var(--fill-2), var(--fill-2) 3px, transparent 3px, transparent 6px); }
+.sc-heat td.is-today .sc-heat-c { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sc-load { display: grid; gap: 4px; }
+.sc-load-row { display: grid; grid-template-columns: 110px minmax(40px, 1fr) auto; gap: 2px 10px; align-items: center; padding: 6px 4px;
+  border-bottom: 0.5px solid var(--separator); color: var(--text); text-decoration: none; }
+.sc-load-row:hover { background: var(--fill-2); }
+.sc-load-who { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-load-sub { grid-column: 2 / -1; }
+@media (max-width: 899px) {
+  .sc-bar .sched-sum { margin-left: 0; }
+  .sc-cal { gap: 3px; }
+  .sc-day { min-height: 54px; padding: 4px; }
+  .sc-day-a, .sc-day .caption, .sc-day .loadbar { display: none; }
+  .sc-day-h { flex-direction: column; gap: 2px; align-items: flex-start; }
+  .sc-day-n { display: inline-grid; }
+}
+
 /* ===== Инструмент (11.11.2026): плитки, сотрудники, шкафы и полки, запасные ===== */
 .tl-search { flex: 1 1 260px; max-width: 420px; }
 .tl-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }

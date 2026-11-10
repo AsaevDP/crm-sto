@@ -97,6 +97,29 @@ def mech_colors(mechanics) -> dict:
     return {m.id: MECH_COLORS[i % len(MECH_COLORS)] for i, m in enumerate(mechanics)}
 
 
+def period_load(db: Session, branch_id, d1: date, d2: date, mechanics, appts: list[Appointment]) -> dict:
+    """Загрузка мастеров за период (11.11.2026): по каждому — записей, часов записано, часов работы
+    (рабочие дни × часы дня из настроек), % и минуты по дням (для тепловой карты месяца)."""
+    cfg = st.get(db, branch_id, "schedule")
+    day_h = max(1, int(cfg.get("day_end", 19)) - int(cfg.get("day_start", 8)))
+    off = set(cfg.get("days_off", [6]) or [])
+    n_days = sum(1 for i in range((d2 - d1).days + 1) if (d1 + timedelta(days=i)).weekday() not in off)
+    cap = max(1, n_days) * day_h
+    out = {}
+    for m in mechanics:
+        mine = [a for a in appts if a.mechanic_id == m.id and a.status in ("booked", "arrived")]
+        by_day = {}
+        for a in mine:
+            k = local(a.start_at).date()
+            by_day[k] = by_day.get(k, 0) + (a.duration_min or 30)
+        hours = sum(by_day.values()) / 60
+        out[m.id] = {"n": len(mine), "hours": hours, "cap": cap, "pct": min(100, round(hours * 100 / cap)),
+                     "by_day": by_day, "noshow": sum(1 for a in appts if a.mechanic_id == m.id and a.status == "noshow")}
+    out["_day_h"] = day_h
+    out["_off"] = off
+    return out
+
+
 def _busy(appts) -> list[tuple[datetime, datetime]]:
     out = []
     for a in appts:
