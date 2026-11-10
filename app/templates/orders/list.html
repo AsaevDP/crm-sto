@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "orders/_card.html" import order_card %}
 {% from "_period.html" import period_bar %}
+{% from "_tiles.html" import tiles with context %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Наряды</h1>
@@ -17,15 +18,19 @@
   {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
 </header>
 
-<form class="toolbar-row" method="get">
-  <input class="field search" name="q" value="{{ q }}" placeholder="Номер, госномер, телефон, клиент" autocomplete="off">
-  <input type="hidden" name="tab" value="{{ tab }}">{% for k, v in per.params().items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-</form>
-<div class="orders-bars">{{ period_bar(bar) }}</div>
-<div class="segmented seg-wide">
-  <a href="?tab=active{% if q %}&q={{ q|urlencode }}{% endif %}&{{ per.qs }}" aria-pressed="{{ (tab == 'active')|lower }}">На СТО</a>
-  <a href="?tab=all{% if q %}&q={{ q|urlencode }}{% endif %}&{{ per.qs }}" aria-pressed="{{ (tab != 'active')|lower }}">Все</a>
+<div class="vs-bar">
+  <form class="toolbar-row vs-search" method="get">
+    <input class="field search" name="q" value="{{ q }}" placeholder="Номер, госномер, телефон, клиент" autocomplete="off">
+    <input type="hidden" name="tab" value="{{ tab }}">{% for k, v in per.params().items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  </form>
+  <div class="orders-bars">{{ period_bar(bar) }}</div>
 </div>
+{% set qq = ("&q=" ~ q|urlencode if q else "") ~ "&" ~ per.qs %}
+{% set items = [] %}
+{% for k, v in STAGES.items() %}{% set _ = items.append({"t": v[0], "n": stage_counts[k], "c": v[1], "href": "?tab=" ~ k ~ qq, "on": tab == k,
+    "s": "в работе сейчас" if k == "active" else ""}) %}{% endfor %}
+{% set _ = items.append({"t": "Все", "n": stage_counts.all, "c": "gray", "href": "?tab=all" ~ qq, "on": tab == "all", "s": "за период" if per.kind != "all" else "за всё время"}) %}
+{{ tiles(items, "ord-tiles") }}
 
 {% if cards %}
 <div class="ocards fill scroll">

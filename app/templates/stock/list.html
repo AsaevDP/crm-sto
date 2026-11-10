@@ -1,21 +1,25 @@
 {% extends "base.html" %}
+{% from "_tiles.html" import tiles as tiles_m with context %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Склад</h1>
   <div class="ov-actions">
-    {% if ctx.can("stock.manage") %}<a class="btn btn-sm {{ '' if to_receive else 'btn-gray' }}" href="/stock/receive">Приход{% if to_receive %} · {{ to_receive }}{% endif %}</a>{% endif %}
-    {% if ctx.can("stock.issue", "tools.manage") %}<a class="btn btn-sm {{ '' if new_requests else 'btn-gray' }}" href="/stock/issues">Выдача{% if new_requests %} · {{ new_requests }}{% endif %}</a>{% endif %}
     <a class="btn btn-sm btn-gray" href="/stock/categories">Категории</a>
     <a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки · {{ n_locations }}</a>
     <a class="btn btn-sm btn-gray" href="/stock/print?{{ args() }}" target="_blank">🖨 Печать</a>
     <a class="btn btn-sm btn-gray" href="/stock/export.xlsx?{{ args() }}">⬇ Excel</a>
   </div>
 </header>
+{% set it = [
+  {"t": "ТО", "n": tiles.sec.get("to", 0), "c": "blue", "s": "масла, фильтры, свечи", "href": "/stock?sec=to", "on": sec == "to"},
+  {"t": "Запчасти", "n": tiles.sec.get("repair", 0), "c": "indigo", "s": "для ремонта", "href": "/stock?sec=repair", "on": sec == "repair"},
+  {"t": "В резерве", "n": tiles.reserved, "c": "orange", "s": "позиций под наряды", "zero": not tiles.reserved}]
+%}
+{% if ctx.can("stock.manage") %}{% set _ = it.append({"t": "Приход", "n": to_receive, "c": "green", "s": "ждём от поставщиков", "href": "/stock/receive"}) %}{% endif %}
+{% if ctx.can("stock.issue", "tools.manage") %}{% set _ = it.append({"t": "Выдача", "n": new_requests or 0, "c": "red" if new_requests else "gray", "s": "просят слесари", "href": "/stock/issues"}) %}{% endif %}
+{% if ctx.can("prices.view_purchase") %}{% set _ = it.append({"t": "На складе на", "n": tiles.sum|money(0) ~ " ₴", "c": "teal", "s": "по закупочным ценам", "zero": false}) %}{% endif %}
+{{ tiles_m(it, "st-tiles") }}
 <form class="toolbar-row st-bar" method="get" action="/stock">
-  <nav class="segmented st-sec" aria-label="Раздел">
-    <a href="/stock?sec=to" aria-pressed="{{ (sec == 'to')|lower }}">ТО</a>
-    <a href="/stock?sec=repair" aria-pressed="{{ (sec == 'repair')|lower }}">Запчасти</a>
-  </nav>
   <input type="hidden" name="sec" value="{{ sec }}"><input type="hidden" name="cat" value="{{ cat }}"><input type="hidden" name="sub" value="{{ sub }}">
   <input class="field search" name="q" value="{{ q }}" placeholder="Поиск или штрихкод (можно сканером)" autocomplete="off" autofocus>
   <select class="field st-mcat" aria-label="Категория" onchange="location.href=this.value">

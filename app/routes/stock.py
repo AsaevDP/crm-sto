@@ -655,7 +655,14 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
             ToolRequest.branch_id == ctx.branch.id, ToolRequest.status == "new")) or 0)
     n_locations = db.scalar(select(func.count()).select_from(Location).where(Location.branch_id == ctx.branch.id))
     mm = sc.makes_models(db, ctx.branch.id)
-    return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests,
+    # Плитки как на «Пульте» (11.11.2026): позиций в разделах, в резерве под наряды, сумма склада (по закупке)
+    other = {s: (rows if s == sec and not (q or only or cat or make) else _stock_rows(ctx, "", "", s, "", "", "", "")[0])
+             for s in SECTIONS}
+    tiles = {"sec": {s: len(v) for s, v in other.items()},
+             "reserved": sum(1 for v in other.values() for r in v if r["reserved"] > 0),
+             "sum": sum((r["i"].cost * max(r["on_hand"], 0) for v in other.values() for r in v), Decimal(0))}
+    return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests, tiles=tiles,
+                      SECTIONS=SECTIONS,
                       to_receive=_receive_count(ctx) if ctx.can("stock.manage") else 0,
                       sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
                       counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,

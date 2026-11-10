@@ -56,7 +56,7 @@ def test_receive_all_parts_notifies_team_once(client):
     client.post("/stock/locations", data={"rack": "R", "shelves": "1", "places": "1"})
     page = client.get("/stock/receive").text
     assert "Приход" in page and "🔥 срочно" in page and page.index("Ремень (тест прихода)") < page.index("Фильтр (тест прихода)")
-    assert "Приход · " in client.get("/stock").text
+    assert 'href="/stock/receive"' in client.get("/stock").text   # плитка «Приход» на складе
     with SessionLocal() as db:
         loc = db.scalar(select(Location).where(Location.rack == "R"))
         belt_line = db.scalar(select(PurchaseLine).where(PurchaseLine.wo_part_id == belt.id))

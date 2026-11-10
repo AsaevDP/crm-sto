@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_tiles.html" import tiles with context %}
 {% block content %}
 <header class="page-head">
   <h1 class="large-title">Клиенты</h1>
@@ -15,9 +16,12 @@
   </form>
 </header>
 
-<nav class="segmented cl-tabs" aria-label="Группы клиентов">
-  {% for k, v in tabs.items() %}<a href="{{ link(tab=k) }}" aria-pressed="{{ (tab == k)|lower }}">{{ v }} · {{ counts[k] }}</a>{% endfor %}
-</nav>
+{% set CL = {"all": ("gray", "в базе"), "regular": ("green", "от нескольких визитов"), "debt": ("red", "должны за ремонт"),
+              "lost": ("orange", "больше полугода не были"), "new": ("blue", "первый визит, 30 дней")} %}
+{% set items_t = [] %}
+{% for k, v in tabs.items() if k in CL %}{% set _ = items_t.append({"t": v, "n": counts[k], "c": CL[k][0], "s": CL[k][1],
+    "href": link(tab=k), "on": tab == k, "zero": not counts[k]}) %}{% endfor %}
+{{ tiles(items_t, "cl-tiles") }}
 {% if tab in ("regular", "lost", "new") %}
 <p class="footnote cl-hint">{{ {"regular": "Постоянные — от " ~ REGULAR_VISITS ~ " визитов или отмеченные вручную (★ в карточке клиента).",
   "lost": "Давно не были — больше полугода. Можно позвонить и пригласить на ТО.", "new": "Первый визит — за последние 30 дней."}[tab] }}</p>

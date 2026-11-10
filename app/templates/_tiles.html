@@ -1,0 +1,15 @@
+{# Плитки как на «Пульте» (11.11.2026) — один образец для всех разделов.
+   items: список словарей {t: заголовок, n: число/текст, s: подпись, c: цвет (blue/green/orange/red/purple/teal/gray/indigo),
+   href: ссылка (необязательно), on: выбрана, zero: серая (нечего показать)}.
+   Цвет по смыслу: зелёный — готово/в наличии, оранжевый — ждём, красный — проблема/долг, синий — в работе, серый — всего. #}
+{% macro tiles(items, cls="") %}
+<div class="pult-tiles vs-tiles {{ cls }}">
+  {% for x in items %}
+  {% set zero = x.zero if x.zero is defined else (not x.n) %}
+  {% if x.href %}<a class="ptile {{ 'zero' if zero }} {{ 'on' if x.on }}" href="{{ x.href }}" style="--tc:{{ color_css(x.c or 'blue') }}">
+  {% else %}<span class="ptile {{ 'zero' if zero }}" style="--tc:{{ color_css(x.c or 'blue') }}">{% endif %}
+    <span class="ptile-t">{{ x.t }}</span><b class="nowrap">{{ x.n }}</b>{% if x.s %}<span class="ptile-s">{{ x.s }}</span>{% endif %}
+  {% if x.href %}</a>{% else %}</span>{% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}

@@ -59,6 +59,18 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
 
 
 # ---------- Список ----------
+# Этапы для плиток списка нарядов: ключ → (заголовок, цвет, статусы)
+ORDER_STAGES = {
+    "active": ("На СТО", "blue", WO_ACTIVE),
+    "intake": ("Приём и диагностика", "purple", ("created", "diag")),
+    "approve": ("Согласование", "yellow", ("approve",)),
+    "parts": ("Запчасти", "orange", ("picking", "waiting", "instock")),
+    "work": ("В работе", "teal", ("work",)),
+    "ready": ("Готовы к выдаче", "green", ("ready", "paid")),
+    "closed": ("Закрыты", "gray", ("closed",)),
+}
+
+
 @router.get("/orders")
 def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", status: str = "",
                 p: str = "", d: str = "", f: str = "", t: str = ""):
@@ -71,7 +83,15 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         from datetime import timedelta
         query = query.where(WorkOrder.created_at >= day_bounds(per.d1)[0],
                             WorkOrder.created_at < day_bounds(per.d2)[0] + timedelta(days=1))
-    if status in WO_STATUSES:
+    # Плитки этапов как на «Пульте» (11.11.2026): сколько нарядов на каждом этапе (с учётом периода, без поиска)
+    by_status = {}
+    for st_, in ctx.db.execute(query.with_only_columns(WorkOrder.status)):
+        by_status[st_] = by_status.get(st_, 0) + 1
+    stage_counts = {k: sum(by_status.get(s, 0) for s in v[2]) for k, v in ORDER_STAGES.items()}
+    stage_counts["all"] = sum(by_status.values())
+    if tab in ORDER_STAGES:
+        query = query.where(WorkOrder.status.in_(ORDER_STAGES[tab][2]))
+    elif status in WO_STATUSES:
         query = query.where(WorkOrder.status == status)
     elif tab == "active":
         query = query.where(WorkOrder.status.in_(WO_ACTIVE))
@@ -91,6 +111,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
+                      STAGES=ORDER_STAGES, stage_counts=stage_counts,
                       bar=periods.Bar(per, "/orders", {"tab": tab, "q": q, "status": status}))
 
 

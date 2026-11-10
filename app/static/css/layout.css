@@ -1450,3 +1450,34 @@ dialog.sheet label { display: grid; gap: 4px; }
   .pu-add { grid-template-columns: 1fr 1fr; }
   .pu-menu { right: auto; left: 0; }
 }
+
+/* ===== Единый стиль «как на Пульте» (11.11.2026) =====
+   Все блоки-цифры (.stat) выглядят как плитки Пульта: цветная полоска сверху, лёгкая подложка, подпись цветом.
+   Цвет по смыслу: --tc задаётся в шаблоне (style="--tc:…"), иначе — по порядку. tone-ok — зелёный, tone-bad — красный. */
+.stats { gap: 10px; }
+.stat { --tc: var(--blue); background: color-mix(in srgb, var(--tc) 10%, var(--surface));
+  box-shadow: var(--shadow-1), inset 0 3px 0 var(--tc); padding: 10px 14px; min-width: 0; }
+.stats > .stat:nth-child(5n+2) { --tc: var(--green); }
+.stats > .stat:nth-child(5n+3) { --tc: var(--orange); }
+.stats > .stat:nth-child(5n+4) { --tc: var(--purple); }
+.stats > .stat:nth-child(5n+5) { --tc: var(--teal); }
+.stats > .stat.tone-ok { --tc: var(--green); }
+.stats > .stat.tone-bad { --tc: var(--red); }
+.stat > .footnote:first-child { display: block; font-size: 13px; font-weight: 600; color: color-mix(in srgb, var(--tc) 70%, var(--text)); }
+.stat b { font: 700 24px/1.15 var(--font-display, inherit); letter-spacing: -.02em; white-space: nowrap; }
+.stat .caption { color: var(--text-2); }
+a.stat { color: var(--text); text-decoration: none; }
+a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
+/* Плитки-фильтры (макрос tiles в _tiles.html): нажатая — с обводкой */
+.ptile.on { outline: 2px solid var(--tc); outline-offset: 1px; }
+.vs-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@media (min-width: 1200px) { .ord-tiles { grid-template-columns: repeat(8, minmax(0, 1fr)); } }/* Шапка раздела: заголовок, поиск, кнопки — в одну линию, на телефоне переносится */
+.page-head { gap: 12px 16px; }
+.vs-search { flex: 1 1 320px; max-width: 520px; }
+.vs-search .field.search, .vs-search .field { width: 100%; flex: 1; }
+.vs-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.vs-bar .field { width: auto; }
+@media (max-width: 600px) { .stat b { font-size: 19px; } .stat { padding: 8px 10px; } }
+/* Обычные ссылки в тексте — цветом акцента, без подчёркивания (подчёркивание — при наведении) */
+main a:not([class]) { color: var(--accent); text-decoration: none; }
+main a:not([class]):hover { text-decoration: underline; }
