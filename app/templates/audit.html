@@ -59,6 +59,7 @@
       <div class="ev-top">
         <span class="ev-time">{{ it.row.created_at.astimezone().strftime("%H:%M") }}</span>
         {% if not chosen %}<b class="ev-who">{{ it.who }}</b>{% endif %}
+        {% if it.via %}<span class="via-admin" title="Сделано админом в режиме «Глазами сотрудника»">👑 через админа {{ it.via }}</span>{% endif %}
         <span class="ev-verb">{{ it.verb }}</span>
         <span class="ev-what">{{ it.what|lower if it.row.action in ("create", "update", "delete") else "" }}</span>
         {% if it.target %}<b class="ev-target">{{ it.target }}</b>{% endif %}

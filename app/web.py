@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from .config import DEMO, ROOT
-from .db import current_branch_id, current_user_id, get_db
+from .db import acting_admin_id, current_branch_id, current_user_id, get_db
 from .models import Branch, User
 from .permissions import SYSTEM_COLORS, effective_permissions, menu_for
 from .services import settings as st
@@ -25,13 +25,14 @@ class Forbidden(Exception):
 
 
 class ViewOnly(Exception):
-    """Админ смотрит глазами сотрудника: менять ничего нельзя."""
+    """Админ работает глазами сотрудника, а это действие ему так делать нельзя (пароль / PIN сотрудника)."""
     def __init__(self, back: str = "/"):
         self.back = back
 
 
-# Эти адреса работают и в режиме просмотра (выйти из него, выйти из CRM)
-VIEW_ONLY_ALLOWED = ("/view-as/stop", "/logout")
+# 12.11.2026: «Глазами сотрудника» — админ может всё, что может этот сотрудник; записи идут от имени сотрудника
+# с пометкой «через админа» (AuditLog.via_admin_id). Нельзя только менять пароль и PIN.
+VIEW_AS_BLOCKED_SUFFIX = ("/secret",)
 
 
 def accent_style(color: str) -> str:
@@ -153,10 +154,10 @@ async def get_ctx(request: Request, db: Session = Depends(get_db)) -> Ctx:
         raise NotLoggedIn()
     request.session["seen"] = now
 
-    current_user_id.set(user.id)          # все записи в журнал — от имени настоящего пользователя
     current_branch_id.set(user.branch_id)
 
-    # «Глазами сотрудника»: только главный админ, только просмотр
+    # «Глазами сотрудника»: только главный админ. Действует как сотрудник (его права, его имя в записях),
+    # а в журнале у каждой записи — кто из админов это сделал на самом деле.
     real_user = None
     as_uid = request.session.get("as_uid")
     if as_uid:
@@ -165,7 +166,9 @@ async def get_ctx(request: Request, db: Session = Depends(get_db)) -> Ctx:
             real_user, user = user, target
         else:
             request.session.pop("as_uid", None)
-    if real_user and request.method != "GET" and request.url.path not in VIEW_ONLY_ALLOWED:
+    current_user_id.set(user.id)
+    acting_admin_id.set(real_user.id if real_user else None)
+    if real_user and request.method != "GET" and request.url.path.endswith(VIEW_AS_BLOCKED_SUFFIX):
         raise ViewOnly(request.headers.get("referer") or "/")
 
     perms = effective_permissions(db, user)

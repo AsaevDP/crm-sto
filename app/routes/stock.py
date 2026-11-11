@@ -1165,6 +1165,8 @@ def notify(ctx: Ctx = Depends(get_ctx)):
 @router.post("/api/notify/{nid}/read")
 def notify_read(nid: str, ctx: Ctx = Depends(get_ctx)):
     from ..services import notify as nsvc
+    if ctx.viewing_as:   # админ смотрит глазами сотрудника — его сообщения не трогаем, пусть увидит сам
+        return {"ok": True}
     nsvc.mark_read(ctx.db, ctx.user.id, None if nid == "all" else _uuid(nid))
     ctx.db.commit()
     return {"ok": True}
@@ -1175,8 +1177,9 @@ def notifications(ctx: Ctx = Depends(get_ctx)):
     """Колокольчик: последние сообщения сотруднику."""
     from ..services import notify as nsvc
     rows = nsvc.recent(ctx.db, ctx.user.id)
-    nsvc.mark_read(ctx.db, ctx.user.id)
-    ctx.db.commit()
+    if not ctx.viewing_as:   # глазами сотрудника — не отмечаем его сообщения прочитанными
+        nsvc.mark_read(ctx.db, ctx.user.id)
+        ctx.db.commit()
     return ctx.render("notifications.html", title="Сообщения", rows=rows)
 
 

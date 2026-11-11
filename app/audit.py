@@ -11,7 +11,7 @@ from decimal import Decimal
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
 
-from .db import Entity, current_branch_id, current_user_id
+from .db import Entity, acting_admin_id, current_branch_id, current_user_id
 from .models import AuditLog
 
 # Эти поля в журнал не пишем (только отметку, что поменялись)
@@ -39,7 +39,8 @@ def _snapshot(obj) -> dict:
 
 def write(session: Session, table: str, record_id, action: str, changes: dict | None = None):
     """Ручная запись в журнал (вход/выход и т.п.)."""
-    session.add(AuditLog(table=table, record_id=str(record_id), action=action, changes=changes or {}))
+    session.add(AuditLog(table=table, record_id=str(record_id), action=action, changes=changes or {},
+                         via_admin_id=acting_admin_id.get()))
 
 
 @event.listens_for(Session, "before_flush")
@@ -85,8 +86,10 @@ def _before_flush(session: Session, flush_context, instances):
             logs.append(AuditLog(table=obj.__tablename__, record_id=str(obj.id), action="delete",
                                  changes=_snapshot(obj)))
 
+    via = acting_admin_id.get()
     for log in logs:
         log.id = uuid.uuid4()
         log.created_by = uid
         log.branch_id = bid
+        log.via_admin_id = via      # админ работал «глазами сотрудника»
         session.add(log)

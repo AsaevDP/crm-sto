@@ -1578,3 +1578,7 @@ main a:not([class]):hover { text-decoration: underline; }
 .cr-row.off { opacity: .6; }
 .cr-row .form-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .cr-row .field { flex: 1 1 160px; width: auto; }
+
+/* «Глазами сотрудника» (12.11.2026): отметка в журнале и ленте — сделал админ за сотрудника */
+.via-admin { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); white-space: nowrap; }

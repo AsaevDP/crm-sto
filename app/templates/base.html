@@ -14,7 +14,8 @@
 <body class="{% block body_class %}{% endblock %}">
 {% if ctx.viewing_as %}
 <div class="viewas-bar">
-  <span>👁 Вы смотрите глазами: <b>{{ user.full_name }}</b> · {{ user.role.name }} — только просмотр</span>
+  <span>👁 Вы работаете как <b>{{ user.full_name }}</b> · {{ user.role.name }} — действия записываются от его имени
+    с пометкой «👑 через админа {{ ctx.real_user.full_name }}»</span>
   <span class="viewas-actions"><a href="/view-as">Другой сотрудник</a>
     <form method="post" action="/view-as/stop"><button>Вернуться к себе</button></form></span>
 </div>

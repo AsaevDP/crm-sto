@@ -28,6 +28,8 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 # Нужно, чтобы автоматически проставлять created_by / branch_id и писать журнал.
 current_user_id: ContextVar[uuid.UUID | None] = ContextVar("current_user_id", default=None)
 current_branch_id: ContextVar[uuid.UUID | None] = ContextVar("current_branch_id", default=None)
+# Админ работает «глазами сотрудника» — его id попадает в журнал рядом с именем сотрудника (12.11.2026)
+acting_admin_id: ContextVar[uuid.UUID | None] = ContextVar("acting_admin_id", default=None)
 
 
 def now() -> datetime:

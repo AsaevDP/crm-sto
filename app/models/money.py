@@ -28,3 +28,5 @@ class AuditLog(Entity):
     record_id: Mapped[str] = mapped_column(String(40), index=True)
     action: Mapped[str] = mapped_column(String(10))  # create / update / delete / login / logout
     changes: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 12.11.2026: сделал админ «глазами сотрудника» (created_by — сотрудник, тут — кто из админов на самом деле)
+    via_admin_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)

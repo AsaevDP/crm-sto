@@ -94,6 +94,7 @@ class Filters:
     limit: int = PAGE
     p: str = ""           # общая панель дат (10.11.2026)
     d: str = ""
+    via: str = ""         # "admin" — только то, что админ сделал «глазами сотрудника» (12.11.2026)
 
     def per(self):
         from . import periods
@@ -105,7 +106,7 @@ class Filters:
         return per.d1, per.d2
 
     def keep(self) -> dict:
-        return {"user": self.user, "section": self.section, "action": self.action}
+        return {"user": self.user, "section": self.section, "action": self.action, "via": self.via}
 
     def query_string(self, **over) -> str:
         from urllib.parse import urlencode
@@ -127,6 +128,8 @@ def base_query(bid, flt: Filters, with_user=True):
         q = q.where(AuditLog.created_at <= _utc(d2, end=True))
     if flt.section in SECTIONS:
         q = q.where(AuditLog.table.in_(SECTIONS[flt.section][1]))
+    if flt.via == "admin":
+        q = q.where(AuditLog.via_admin_id.is_not(None))
     if flt.action == "login":
         q = q.where(AuditLog.action.in_(("login", "logout", "view_as", "view_as_stop")))
     elif flt.action in ACTION_FILTERS:
@@ -213,7 +216,8 @@ class Item:
     what: str
     target: str
     section: str
-    changes: list = field(default_factory=list)   # [(поле, было, стало)] или [(поле, None, значение)]
+    changes: list = field(default_factory=list)
+    via: str = ""          # «через админа Стас» — сделано «глазами сотрудника»   # [(поле, было, стало)] или [(поле, None, значение)]
 
 
 def describe(db: Session, rows: list[AuditLog]) -> list[Item]:
@@ -309,7 +313,8 @@ def describe(db: Session, rows: list[AuditLog]) -> list[Item]:
                 ch.append((FIELD_NAMES.get(k, k), None, fmt(k, v)))
         out.append(Item(row=r, who=u.full_name if u else "Система", who_id=u.id if u else None,
                         verb=ACTIONS.get(r.action, r.action), what=TABLE_NAMES.get(r.table, r.table), target=target,
-                        section=SECTIONS.get(TABLE_SECTION.get(r.table, ""), ("",))[0], changes=ch))
+                        section=SECTIONS.get(TABLE_SECTION.get(r.table, ""), ("",))[0], changes=ch,
+                        via=users[r.via_admin_id].full_name if r.via_admin_id in users else ""))
     return out
 
 

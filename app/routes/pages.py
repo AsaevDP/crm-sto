@@ -104,19 +104,21 @@ def more(ctx: Ctx = Depends(get_ctx)):
 
 
 # ---------- Журнал действий ----------
-def _audit_filters(user: str, section: str, action: str, period: str, f: str, t: str, limit: int, p: str = "", d: str = ""):
+def _audit_filters(user: str, section: str, action: str, period: str, f: str, t: str, limit: int, p: str = "", d: str = "",
+                   via: str = ""):
     from ..services import audit_view as av
     return av.Filters(user=user, section=section, action=action, period=period if period in av.PERIODS else "week",
-                      f=f, t=t, limit=max(av.PAGE, min(limit or av.PAGE, 3000)), p=p, d=d)
+                      f=f, t=t, limit=max(av.PAGE, min(limit or av.PAGE, 3000)), p=p, d=d,
+                      via="admin" if via == "admin" else "")
 
 
 @router.get("/audit")
 def audit_view(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", action: str = "", period: str = "week",
-               f: str = "", t: str = "", limit: int = 0, p: str = "", d: str = ""):
+               f: str = "", t: str = "", limit: int = 0, p: str = "", d: str = "", via: str = ""):
     """Журнал: слева сотрудники (сколько действий), справа лента карточек «было → стало», сверху фильтры."""
     ctx.need("audit.view")
     from ..services import audit_view as av
-    flt = _audit_filters(user, section, action, period, f, t, limit, p, d)
+    flt = _audit_filters(user, section, action, period, f, t, limit, p, d, via)
     rows, more = av.fetch(ctx.db, ctx.branch.id, flt)
     counts = av.counts_by_user(ctx.db, ctx.branch.id, flt)
     staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id)
@@ -144,6 +146,10 @@ def audit_view(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", a
     for k, c in (("create", "green"), ("update", "blue"), ("delete", "red"), ("login", "purple")):
         act_tiles.append({"t": av.ACTION_FILTERS[k], "n": by_action.get(k, 0), "c": c, "on": flt.action == k,
                           "href": "/audit?" + flt.query_string(action=k)})
+    # 12.11.2026: что админ сделал «глазами сотрудника»
+    n_via = ctx.db.scalar(select(func.count()).select_from(sub).where(sub.c.via_admin_id.is_not(None))) or 0
+    act_tiles.append({"t": "👑 Админ за сотрудника", "n": n_via, "c": "orange", "on": flt.via == "admin", "zero": not n_via,
+                      "s": "глазами сотрудника", "href": "/audit?" + flt.query_string(via="" if flt.via == "admin" else "admin")})
     return ctx.render("audit.html", title="Журнал", flt=flt, days=days, more=more, counts=counts, staff=staff, act_tiles=act_tiles,
                       total=sum(counts.values()), chosen=chosen, SECTIONS=av.SECTIONS, ACTION_FILTERS=av.ACTION_FILTERS,
                       PERIODS=av.PERIODS, n=len(items), bar=Bar(flt.per(), "/audit", flt.keep()))

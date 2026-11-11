@@ -166,7 +166,8 @@ def build(db: Session, wo: WorkOrder, limit: int = 200) -> list[dict]:
         u = people.get(r.created_by)
         e = {"who_id": r.created_by, "who_short": u.short_name if u else "Система", "who": u.full_name if u else "Система",
              "color": color_css(u.role.color) if u else "var(--gray)", "at": r.created_at, "when": _ago(r.created_at),
-             "text": text, "detail": detail, "n": 1}
+             "text": text, "detail": detail, "n": 1,
+             "via": people[r.via_admin_id].full_name if r.via_admin_id in people else ""}   # 👑 сделал админ
         prev = out[-1] if out else None
         # Подряд то же действие того же человека в пределах 3 минут — одной строкой (×N)
         if prev and prev["who_id"] == e["who_id"] and prev["base"] == text and prev["at"] - r.created_at < timedelta(minutes=3):

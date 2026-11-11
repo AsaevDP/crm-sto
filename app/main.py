@@ -87,9 +87,9 @@ async def _forbidden(request: Request, _exc):
 
 @app.exception_handler(ViewOnly)
 async def _view_only(request: Request, exc: ViewOnly):
-    """В режиме «глазами сотрудника» действия выключены — возвращаем назад с пояснением."""
+    """«Глазами сотрудника»: это действие так нельзя (пароль / PIN) — возвращаем назад с пояснением."""
     from fastapi.responses import JSONResponse
     if request.headers.get("x-requested-with") == "fetch":
-        return JSONResponse({"ok": False, "error": "Режим просмотра: изменения выключены"}, status_code=403)
-    flash(request, "Режим просмотра глазами сотрудника — изменения выключены", "error")
+        return JSONResponse({"ok": False, "error": "Глазами сотрудника пароль и PIN менять нельзя"}, status_code=403)
+    flash(request, "Глазами сотрудника пароль и PIN менять нельзя — вернитесь к себе", "error")
     return RedirectResponse(exc.back, status_code=303)
