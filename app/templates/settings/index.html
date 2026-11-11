@@ -1,31 +1,41 @@
 {% extends "base.html" %}
+{# Настройки (11.11.2026): плитки-кнопки как на «Пульте». Ссылки — те же, что раньше, плюс справочники разделов. #}
 {% block content %}
 <header class="page-head"><h1 class="large-title">Настройки</h1></header>
+{% macro tile(href, title, sub, color, ic) %}
+<a class="ptile set-tile" href="{{ href }}" style="--tc:{{ color_css(color) }}">
+  <span class="set-ic">{{ icon(ic) }}</span><span class="ptile-t">{{ title }}</span><span class="ptile-s">{{ sub }}</span></a>
+{% endmacro %}
 
 {% if ctx.can("settings.access") %}
-<section class="stack">
-  <div class="group-title">Основное</div>
-  <div class="group">
-    <a class="row chevron" href="/settings/branding"><span class="tile" style="background:var(--blue)">{{ icon("palette") }}</span><span class="grow">Оформление</span><span class="value">{{ branding.name }}</span></a>
-    <a class="row chevron" href="/settings/numbering"><span class="tile" style="background:var(--orange)">{{ icon("hash") }}</span><span class="grow">Номер наряда</span></a>
-    <a class="row chevron" href="/settings/lifts"><span class="tile" style="background:var(--gray)">{{ icon("lift") }}</span><span class="grow">Подъёмники и слесари</span></a>
-    <a class="row chevron" href="/settings/pricing"><span class="tile" style="background:var(--green)">{{ icon("money") }}</span><span class="grow">Цена часа и наценка</span></a>
-    <a class="row chevron" href="/settings/payroll"><span class="tile" style="background:var(--teal)">{{ icon("chart") }}</span><span class="grow">Зарплата: схемы и оклад</span></a>
-    <a class="row chevron" href="/settings/points"><span class="tile" style="background:var(--purple)">{{ icon("card") }}</span><span class="grow">Проходные (карты, табель)</span></a>
-    <a class="row chevron" href="/settings/labels"><span class="tile" style="background:var(--indigo)">{{ icon("hash") }}</span><span class="grow">Наклейки и принтер</span><span class="value">штрихкоды</span></a>
-  <a class="row chevron" href="/settings/brands"><span class="tile" style="background:var(--orange)">{{ icon("stock") }}</span><span class="grow">Бренды запчастей</span><span class="value">список</span></a>
-  </div>
-</section>
+<div class="group-title">Основное</div>
+<div class="set-tiles">
+  {{ tile("/settings/branding", "Оформление", branding.name ~ " · логотип, цвет", "blue", "palette") }}
+  {{ tile("/settings/numbering", "Номер наряда", "как нумеруются наряды", "orange", "hash") }}
+  {{ tile("/settings/lifts", "Подъёмники и слесари", "посты и кто за ними", "gray", "lift") }}
+  {{ tile("/settings/pricing", "Цена часа и наценка", "работы и запчасти", "green", "money") }}
+  {{ tile("/settings/payroll", "Зарплата: схемы и оклад", "проценты, ставки", "teal", "chart") }}
+  {{ tile("/settings/points", "Проходные", "карты и табель", "purple", "card") }}
+  {{ tile("/settings/labels", "Наклейки и принтер", "штрихкоды", "indigo", "hash") }}
+  {{ tile("/settings/brands", "Бренды запчастей", "общий список", "orange", "stock") }}
+</div>
 {% endif %}
 
 {% if ctx.can("users.manage") %}
-<section class="stack">
-  <div class="group-title">Люди и доступ</div>
-  <div class="group">
-    <a class="row chevron" href="/settings/users"><span class="tile" style="background:var(--green)">{{ icon("users") }}</span><span class="grow">Сотрудники и карты</span><span class="value">{{ n_users }}</span></a>
-    <a class="row chevron" href="/settings/roles"><span class="tile" style="background:var(--indigo)">{{ icon("shield") }}</span><span class="grow">Роли и доступ</span></a>
-  </div>
-</section>
+<div class="group-title">Люди и доступ</div>
+<div class="set-tiles">
+  {{ tile("/settings/users", "Сотрудники и карты", "в штате: " ~ n_users, "green", "users") }}
+  {{ tile("/settings/roles", "Роли и доступ", "кто что может", "indigo", "shield") }}
+</div>
 {% endif %}
 
+{% if ctx.can("stock.manage") or ctx.can("razbor.manage") or ctx.can("tools.manage") %}
+<div class="group-title">Справочники разделов</div>
+<div class="set-tiles">
+  {% if ctx.can("stock.manage") %}{{ tile("/stock/categories", "Категории склада", "ТО и запчасти", "blue", "stock") }}
+  {{ tile("/stock/locations", "Ячейки склада", "стеллажи и полки", "gray", "stock") }}{% endif %}
+  {% if ctx.can("razbor.manage") %}{{ tile("/razbor/refs", "Марки и категории разбора", "для доноров и деталей", "orange", "car") }}{% endif %}
+  {% if ctx.can("tools.manage") %}{{ tile("/tools?view=cabinets", "Шкафы инструмента", "шкафы и полки", "teal", "tool") }}{% endif %}
+</div>
+{% endif %}
 {% endblock %}

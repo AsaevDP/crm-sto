@@ -1,7 +1,14 @@
 {% extends "base.html" %}
+{% from "_tiles.html" import tiles with context %}
 {% block content %}
 <header class="page-head"><div><h1 class="large-title">Сообщения</h1>
-  <p class="footnote" style="margin:4px 0 0">Сюда приходит: «Все запчасти на складе», «Срочная деталь пришла», «Срочно нужна деталь».</p></div></header>
+  <p class="footnote" style="margin:4px 0 0">Сюда приходит: «Все запчасти на складе», «Срочная деталь пришла», «Срочно нужна деталь», «Вам передали наряд».</p></div></header>
+{% set k = rows|map(attribute="kind")|list %}
+{{ tiles([
+  {"t": "Всего", "n": rows|length, "c": "gray", "s": "последние сообщения"},
+  {"t": "Запчасти на складе", "n": k|select("equalto", "parts_ready")|list|length, "c": "green", "s": "можно начинать ремонт"},
+  {"t": "Срочно", "n": (k|select("equalto", "urgent_in")|list|length) + (k|select("equalto", "urgent_ask")|list|length), "c": "red", "s": "просят или пришло"},
+  {"t": "Передали наряд", "n": k|select("equalto", "handover")|list|length, "c": "blue", "s": "теперь ведёте вы"}]) }}
 <div class="card compact nt-list">
   {% for n in rows %}
   <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">

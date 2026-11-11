@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_period.html" import period_bar %}
+{% from "_tiles.html" import tiles with context %}
 {% block content %}
 {% set qs = flt.query_string() %}
 <header class="ov-head">
@@ -14,6 +15,7 @@
 </header>
 
 {{ period_bar(bar) }}
+{{ tiles(act_tiles, "au-tiles") }}
 <form class="audit-bar" method="get" action="/audit">
   {% for k, v in flt.per().params().items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <select class="field audit-mobile" name="user" onchange="this.form.submit()" aria-label="Сотрудник">

@@ -1478,6 +1478,18 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .vs-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .vs-bar .field { width: auto; }
 @media (max-width: 600px) { .stat b { font-size: 19px; } .stat { padding: 8px 10px; } }
+/* Настройки и журнал — плитки */
+.set-tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); margin-bottom: 6px; }
+.set-tile { gap: 4px; padding: 12px 14px; }
+.set-tile .ptile-t { font-size: 15px; }
+.set-tile .ptile-s { white-space: normal; }
+.set-ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; color: #fff; background: var(--tc); margin-bottom: 4px; }
+.set-ic svg { width: 18px; height: 18px; }
+.au-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.nt-row { border-left: 4px solid var(--separator); padding-left: 10px; }
+.nt-row[data-kind="parts_ready"] { border-left-color: var(--green); }
+.nt-row[data-kind="urgent_in"], .nt-row[data-kind="urgent_ask"] { border-left-color: var(--red); }
+.nt-row[data-kind="handover"] { border-left-color: var(--blue); }
 /* Обычные ссылки в тексте — цветом акцента, без подчёркивания (подчёркивание — при наведении) */
 main a:not([class]) { color: var(--accent); text-decoration: none; }
 main a:not([class]):hover { text-decoration: underline; }

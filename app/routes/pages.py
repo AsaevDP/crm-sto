@@ -130,7 +130,21 @@ def audit_view(ctx: Ctx = Depends(get_ctx), user: str = "", section: str = "", a
             days.append((d, []))
         days[-1][1].append(it)
     chosen = next((u for u in staff if str(u.id) == flt.user), None)
-    return ctx.render("audit.html", title="Журнал", flt=flt, days=days, more=more, counts=counts, staff=staff,
+    # Плитки как на «Пульте» (11.11.2026): сколько действий каждого вида при тех же фильтрах
+    import dataclasses
+    from urllib.parse import urlencode
+    from sqlalchemy import func
+    sub = av.base_query(ctx.branch.id, dataclasses.replace(flt, action="")).subquery()
+    by_action = {}
+    for a, n in ctx.db.execute(select(sub.c.action, func.count()).group_by(sub.c.action)):
+        k = a if a in ("create", "update", "delete") else ("login" if a in av.LOGIN_ACTIONS else "other")
+        by_action[k] = by_action.get(k, 0) + n
+    act_tiles = [{"t": "Все действия", "n": sum(by_action.values()), "c": "gray", "on": not flt.action,
+                  "href": "/audit?" + flt.query_string(action="")}]
+    for k, c in (("create", "green"), ("update", "blue"), ("delete", "red"), ("login", "purple")):
+        act_tiles.append({"t": av.ACTION_FILTERS[k], "n": by_action.get(k, 0), "c": c, "on": flt.action == k,
+                          "href": "/audit?" + flt.query_string(action=k)})
+    return ctx.render("audit.html", title="Журнал", flt=flt, days=days, more=more, counts=counts, staff=staff, act_tiles=act_tiles,
                       total=sum(counts.values()), chosen=chosen, SECTIONS=av.SECTIONS, ACTION_FILTERS=av.ACTION_FILTERS,
                       PERIODS=av.PERIODS, n=len(items), bar=Bar(flt.per(), "/audit", flt.keep()))
 
