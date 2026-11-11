@@ -9,6 +9,46 @@
     return r.ok ? r.json() : null;
   }
 
+  // 11.11.2026: после действия на той же странице (сохранил, подтвердил, нажал «Да») страница НЕ прыгает наверх.
+  // Перед отправкой формы запоминаем, где стояли; если сервер вернул на ту же страницу — встаём туда же.
+  // Перешли на другую страницу (следующий этап, другой раздел) — ничего не трогаем.
+  const SCROLL_KEY = 'crm-keep-scroll';
+  const scrollers = () => [...document.querySelectorAll('.ov-col, .sticky-scroll')];
+  function remember(f) {
+    if ((f.method || '').toLowerCase() !== 'post' || (f.target && f.target !== '_self')) return;
+    try {
+      sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ p: location.pathname, y: window.scrollY, t: Date.now(),
+        cols: scrollers().map(c => c.scrollTop) }));
+    } catch (err) {}
+  }
+  document.addEventListener('submit', e => {
+    if (e.target instanceof HTMLFormElement && !e.defaultPrevented) remember(e.target);
+  });
+  // form.submit() из скриптов (выбор в списке и т.п.) события submit не даёт — запоминаем и там
+  const nativeSubmit = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function () { remember(this); return nativeSubmit.call(this); };
+  (function restore() {
+    let s = null;
+    try { s = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || 'null'); sessionStorage.removeItem(SCROLL_KEY); } catch (e) {}
+    if (!s || s.p !== location.pathname || Date.now() - s.t > 20000) return;
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    // Сообщение «Сохранено» — поверх страницы, чтобы оно не сдвигало её вниз; само исчезает
+    const fl = document.querySelector('main .flash[role=status]');
+    if (fl) {
+      fl.classList.add('float'); document.body.appendChild(fl);
+      setTimeout(() => fl.classList.add('gone'), fl.classList.contains('error') ? 6000 : 3000);
+      setTimeout(() => fl.remove(), 7000);
+      fl.addEventListener('click', () => fl.remove());
+    }
+    const go = () => {
+      window.scrollTo(0, s.y);
+      scrollers().forEach((c, i) => { if (s.cols && s.cols[i]) c.scrollTop = s.cols[i]; });
+    };
+    go();
+    requestAnimationFrame(go);
+    window.addEventListener('load', () => { go(); setTimeout(go, 60); });
+  })();
+
   // Формы «один раз» (оплата, возврат, выдача): после нажатия кнопка гаснет — второй клик не отправит форму снова.
   // На сервере всё равно стоит защита меткой формы — это для спокойствия на медленном Wi-Fi.
   document.addEventListener('submit', e => {

@@ -46,6 +46,12 @@
   animation: flash-in .3s var(--ease); }
 .flash.error { background: color-mix(in srgb, var(--red) 12%, var(--surface)); color: var(--red); }
 @keyframes flash-in { from { opacity: 0; transform: translateY(-6px); } }
+/* 11.11.2026: после действия страница остаётся на месте — сообщение всплывает сверху поверх, а не сдвигает страницу */
+.flash.float { position: fixed; top: 14px; left: 50%; z-index: 900; transform: translateX(-50%);
+  width: max-content; max-width: min(560px, calc(100vw - 32px)); box-shadow: 0 8px 30px rgba(0,0,0,.18);
+  animation: flash-float-in .25s var(--ease); transition: opacity .4s var(--ease); }
+.flash.float.gone { opacity: 0; pointer-events: none; }
+@keyframes flash-float-in { from { opacity: 0; transform: translate(-50%, -8px); } }
 
 /* Пустой раздел */
 .empty { display: grid; justify-items: center; text-align: center; gap: 10px; padding: 56px 24px; }
