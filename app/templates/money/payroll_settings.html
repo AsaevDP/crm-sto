@@ -20,6 +20,10 @@
     <div class="card compact"><p class="footnote" style="margin:0">Выберите должность — откроется список сотрудников с их схемами и окладом.
       Справа — проценты по умолчанию и группы запчастей.</p></div>
     {% endif %}
+    {% if role and is_admin %}
+    <p class="footnote" style="margin:0 4px">Ошиблись с окладом или процентом — впишите правильную сумму и «Сохранить». Уже начисленное, но ещё не выданное, пересчитается само.
+      Если деньги за неделю уже выдали — разницу исправьте в «Зарплате» кнопкой «Исправить» у начисления.</p>
+    {% endif %}
     {% for u in staff %}
     <div class="card compact" id="u-{{ u.id }}">
       <div class="card-h"><span><b>{{ u.full_name }}</b> <span class="caption">{{ u.role.name }}</span></span></div>

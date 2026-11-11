@@ -51,9 +51,27 @@ def test_salary_add_edit_delete(client):
         db.add(PayrollAccrual(user_id=u.id, scheme_line_id=line.id, base_amount=Decimal(1), rate=line.rate,
                               amount=Decimal("720.50"), on_date=date(2031, 5, 5), kind="salary", note="Оклад (тест)"))
         db.commit()
+    # Ошиблись с окладом: 720,50 → 700. Невыданное начисление пересчитывается само (1 день × 700)
     _as(client, "admin")
+    client.post(f"/settings/payroll/lines/{line.id}", data={"rate": "700", "role": "mechanic"})
+    with SessionLocal() as db:
+        a = db.scalar(select(PayrollAccrual).where(PayrollAccrual.note.like("Оклад (тест)%")))
+        assert a.amount == Decimal("700.00") and "ставка исправлена" in a.note
+    # Деньги за ту неделю уже выдали — начисление не трогаем, подсказываем исправить в «Зарплате»
+    from app.models import PayrollPayout
+    from app.services import payweek as wsvc
+    with SessionLocal() as db:
+        current_branch_id.set(u.branch_id)
+        wk = wsvc.get_week(db, u.branch_id, date(2031, 5, 5), create=True)
+        db.add(PayrollPayout(user_id=u.id, period_from=date(2031, 5, 5), period_to=date(2031, 5, 11), amount=Decimal("700"),
+                             paid_on=date(2031, 5, 12), method="cash", week_id=wk.id))
+        db.commit()
+    page = client.post(f"/settings/payroll/lines/{line.id}", data={"rate": "650", "role": "mechanic"}).text
+    assert "уже выданы" in page
+    with SessionLocal() as db:
+        assert db.scalar(select(PayrollAccrual).where(PayrollAccrual.note.like("Оклад (тест)%"))).amount == Decimal("700.00")
     r = client.post(f"/settings/payroll/lines/{line.id}/delete", data={"role": "mechanic"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/settings/payroll?role=mechanic"
     with SessionLocal() as db:
         assert db.get(PaySchemeLine, line.id) is None
-        assert db.scalar(select(PayrollAccrual).where(PayrollAccrual.note == "Оклад (тест)")).amount == Decimal("720.50")
+        assert db.scalar(select(PayrollAccrual).where(PayrollAccrual.note.like("Оклад (тест)%"))).amount == Decimal("700.00")

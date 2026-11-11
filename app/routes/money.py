@@ -780,9 +780,40 @@ def payroll_line_edit(line_id: str, ctx: Ctx = Depends(get_ctx), rate: str = For
         r = min(r, Decimal(30))   # запчастисту — не больше 30 % от наценки
     old = l.rate
     l.rate = r
-    ctx.db.commit()
+    # Уже начислено по этой строке, но ещё не выдано — пересчитываем по новой ставке.
+    # Если за ту неделю сотруднику уже выдали деньги — не трогаем (исправить вручную: «Зарплата» → «Исправить»).
+    from ..models import PayrollPayout
+    from ..services import payweek as wsvc
     from ..web import num
-    flash(ctx.request, f"Сохранено: было {num(old)}, стало {num(r)}")
+    fixed, paid_weeks = 0, set()
+    if old != r:
+        for a in ctx.db.scalars(select(PayrollAccrual).where(PayrollAccrual.scheme_line_id == l.id,
+                                                             PayrollAccrual.status != "cancelled")):
+            wk = wsvc.get_week(ctx.db, ctx.branch.id, wsvc.monday(a.on_date))
+            if wk and ctx.db.scalar(select(PayrollPayout.id).where(PayrollPayout.week_id == wk.id,
+                                                                   PayrollPayout.user_id == a.user_id)):
+                paid_weeks.add(wsvc.monday(a.on_date))
+                continue
+            if l.kind == "percent":
+                new = msvc.money(a.base_amount * r / 100)
+            elif l.kind == "salary":
+                new = msvc.money(a.base_amount * r)            # база — дни (или месяцы)
+            elif old:
+                new = msvc.money(a.amount * r / old)           # «за штуку»: та же доля, что и у ставки
+            else:
+                continue
+            if new != a.amount:
+                a.note = f"{a.note} · ставка исправлена: было {num(old)}"[:300]
+                a.amount, a.rate = new, r
+                fixed += 1
+    ctx.db.commit()
+    msg = f"Сохранено: было {num(old)}, стало {num(r)}"
+    if fixed:
+        msg += f". Пересчитано начислений: {fixed}"
+    if paid_weeks:
+        msg += (". За недели " + ", ".join(d.strftime("%d.%m") for d in sorted(paid_weeks)) +
+                " деньги уже выданы — там исправьте в «Зарплате» кнопкой «Исправить»")
+    flash(ctx.request, msg)
     return _to("/settings/payroll" + (f"?role={role}" if role.isidentifier() else ""))
 
 
