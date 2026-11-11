@@ -178,6 +178,7 @@
     <div class="kv"><span>+ продажи разбора</span><span>{{ m.used_sales|money }} ₴</span></div>
     <div class="kv"><span>− себестоимость запчастей</span><span>{{ m.parts_cost|money }} ₴</span></div>
     <div class="kv"><span>− зарплата (начислено)</span><span>{{ m.payroll|money }} ₴</span></div>
+    {% if m.tool_charges %}<div class="kv"><span class="caption">в т. ч. удержано за инструмент{% if ctx.can("payroll.view_all") %} · <a href="/tools/charges">список</a>{% endif %}</span><span class="caption">− {{ m.tool_charges|money }} ₴</span></div>{% endif %}
     <div class="kv rep-total"><span>Валовая прибыль</span><b>{{ m.gross|money }} ₴ · {{ m.margin_pct }} %</b></div>
     <p class="caption" style="margin:4px 0 0">Аренда, коммуналка и прочие расходы СТО в CRM пока не ведутся — это прибыль до них.</p>
   </div>

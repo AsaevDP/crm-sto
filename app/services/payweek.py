@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import now
-from ..models import PayrollAccrual, PayrollPayout, PayWeek, User, WoWork, WorkOrder
+from ..models import PayrollAccrual, PayrollPayout, PayWeek, PayWeekPerson, User, WoWork, WorkOrder
 from . import payroll as psvc
 
 D0 = Decimal(0)
@@ -87,12 +87,77 @@ def week_data(db: Session, branch_id, start: date, users) -> dict:
     for uid, lst in _pending(db, users, start, end).items():
         rows[uid]["pending"] = lst
         rows[uid]["pending_sum"] = sum((x[2] for x in lst), D0)
-    for r in rows.values():
+    persons = _persons(db, week)
+    for uid, r in rows.items():
         r["due"] = r["accrued"] - r["paid"]
         r["items"].sort(key=lambda a: (a.on_date, a.created_at))
+        r["pst"] = person_status(week, persons, uid)
+        r["prow"] = persons.get(uid)
+        r["active"] = bool(r["accrued"] or r["paid"] or r["pending"])
+        r["state"] = ("paid" if r["accrued"] > 0 and r["due"] <= 0 else r["pst"]) if r["active"] else "none"
+        _group_by_order(r)
     tot = {k: sum((r[k] for r in rows.values()), D0) for k in (*COLS, "accrued", "paid", "due", "pending_sum")}
     tot["unpaid_people"] = sum(1 for r in rows.values() if r["due"] > 0)
+    act = [r for r in rows.values() if r["accrued"] > 0 or r["paid"]]
+    tot["people"] = len(act)
+    tot["n_checked"] = sum(1 for r in act if r["pst"] in ("checked", "approved") or r["state"] == "paid")
+    tot["n_approved"] = sum(1 for r in act if r["pst"] == "approved" or r["state"] == "paid")
+    tot["n_paid"] = sum(1 for r in act if r["state"] == "paid")
+    tot["tool_charges"] = -sum((a.amount for r in rows.values() for a in r["items"] if a.tool_line_id), D0)
     return {"week": week, "start": start, "end": end, "rows": rows, "tot": tot, "pay_day": pay_day(start)}
+
+
+def _group_by_order(r: dict):
+    """Сначала список нарядов (сумма по каждому), внутри — работы и запчасти. Оклад, премии, удержания — отдельно."""
+    by = {}
+    for a in r["items"]:
+        if not a.work_order_id:
+            continue
+        g = by.setdefault(a.work_order_id, {"lines": [], "pending": [], "sum": D0, "est": D0, "day": a.on_date})
+        g["lines"].append(a)
+        g["sum"] += a.amount
+        g["day"] = min(g["day"], a.on_date)
+    for w, wo, est in r["pending"]:
+        day = w.done_at.astimezone().date() if w.done_at else date.today()
+        g = by.setdefault(wo.id, {"lines": [], "pending": [], "sum": D0, "est": D0, "day": day})
+        g["pending"].append((w, est))
+        g["est"] += est
+        g["day"] = min(g["day"], day)
+    r["groups"] = sorted(by.items(), key=lambda kv: kv[1]["day"])
+    r["extra"] = [a for a in r["items"] if not a.work_order_id]
+
+
+# ---------- По каждому сотруднику отдельно (11.11.2026) ----------
+def _persons(db: Session, week) -> dict:
+    if not week:
+        return {}
+    return {p.user_id: p for p in db.scalars(select(PayWeekPerson).where(PayWeekPerson.week_id == week.id))}
+
+
+def person_status(week, persons: dict, uid) -> str:
+    """Статус сотрудника в неделе. Старые недели (утверждали целиком) — берём статус недели."""
+    p = persons.get(uid)
+    if p:
+        return p.status
+    st = week.status if week else "open"
+    return "approved" if st in ("approved", "paid") else ("checked" if st == "checked" else "open")
+
+
+def set_person(db: Session, week: PayWeek, uid, status: str, actor: User) -> PayWeekPerson:
+    persons = _persons(db, week)
+    p = persons.get(uid)
+    if p is None:
+        p = PayWeekPerson(week_id=week.id, user_id=uid, status=person_status(week, persons, uid))
+        db.add(p)
+    p.status = status
+    if status == "checked":
+        p.checked_by, p.checked_at = actor.id, now()
+    elif status == "approved":
+        p.approved_by, p.approved_at = actor.id, now()
+    elif status == "open":
+        p.checked_by = p.checked_at = p.approved_by = p.approved_at = None
+    db.flush()
+    return p
 
 
 def history(db: Session, branch_id, users, before: date, n: int = 8) -> list[dict]:
@@ -126,10 +191,28 @@ def pay(db: Session, week: PayWeek, user: User, amount: Decimal, method: str, ac
 
 
 def refresh_paid(db: Session, week: PayWeek, users):
-    """Всё выдано → неделя «выплачена»; появился долг (доначислили после выплаты) → снова «утверждена»."""
+    """Статус недели — сводка по людям: все проверены → «проверена», все утверждены → «утверждена»,
+    всем выдано → «выплачена». Сначала закрепляем статус каждого (старые недели утверждали целиком)."""
+    persons = _persons(db, week)
     d = week_data(db, week.branch_id, week.week_start, users)
-    if week.status in ("approved", "paid"):
-        week.status = "paid" if d["tot"]["accrued"] > 0 and d["tot"]["unpaid_people"] == 0 else "approved"
+    for uid, r in d["rows"].items():
+        if (r["accrued"] > 0 or r["paid"]) and uid not in persons:
+            db.add(PayWeekPerson(week_id=week.id, user_id=uid, status=r["pst"]))
+    db.flush()
+    t = d["tot"]
+    if not t["people"]:
+        return
+    if t["n_paid"] == t["people"]:
+        week.status = "paid"
+    elif t["n_approved"] == t["people"]:
+        week.status = "approved"
+    elif t["n_checked"] == t["people"]:
+        week.status = "checked"
+    else:
+        week.status = "open"
+
+
+sync_week = refresh_paid
 
 
 def days_present(db: Session, branch_id, user_id, start: date, end: date) -> int:

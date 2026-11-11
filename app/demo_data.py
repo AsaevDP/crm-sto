@@ -450,6 +450,8 @@ def populate():
         # Виктор: проверка при приёме — всё исправно
         c1 = tsvc.open_check(db, users["viktor"], "hire")
         db.flush()
+        for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c1.id)):
+            l.result = "ok"
         tsvc.finish_check(db, c1)
         # Тарас: плановая проверка — ключ сломан по вине (удержано), отвёртки — естественный износ
         c2 = tsvc.open_check(db, users["taras"], "planned")
@@ -460,6 +462,8 @@ def populate():
                 l.result, l.charge, l.comment = "fault", Decimal("1500"), "Использовал как рычаг — погнут корпус. Удержание: стоимость ремонта"
             elif tn.startswith("Набор отвёрток"):
                 l.result, l.comment = "worn", "Стёрты жала — естественный износ"
+            else:
+                l.result = "ok"
         tsvc.finish_check(db, c2)
         as_user("admin")
         tsvc.approve_check(db, c2, users["admin"], {str(l.id) for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c2.id))})

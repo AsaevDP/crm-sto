@@ -1,0 +1,90 @@
+<!doctype html>
+{# Расчётный лист за неделю (11.11.2026): по одному сотруднику или все подряд — каждый на своём листе A4.
+   Наряды с суммой, оклад / премии / удержания (за инструмент — отдельной строкой), выдано, к выдаче, подписи. #}
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font: 12px/1.45 -apple-system, "Segoe UI", Arial, sans-serif; color: #111; background: #e9e9ee; margin: 0; }
+  .sheet { width: 210mm; min-height: 200mm; margin: 16px auto; padding: 12mm; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.12); }
+  .bar { position: sticky; top: 0; display: flex; gap: 8px; justify-content: center; padding: 10px; background: rgba(233,233,238,.92); z-index: 2; }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar a { background: #fff; color: #007aff; }
+  h1 { font-size: 18px; margin: 0 0 2px; }
+  .head { display: flex; justify-content: space-between; gap: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 10px; }
+  .muted { color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+  tr { page-break-inside: avoid; }
+  td, th { border: 1px solid #bbb; padding: 4px 7px; text-align: left; vertical-align: top; }
+  th { background: #f3f3f6; font-weight: 600; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .total td { font-weight: 700; background: #f7f7f9; }
+  .sub td { color: #555; font-size: 11px; border-top: 0; }
+  h2 { font-size: 12.5px; margin: 12px 0 2px; text-transform: uppercase; letter-spacing: .03em; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 10px; }
+  .kpis div { border: 1px solid #bbb; padding: 6px 8px; } .kpis b { display: block; font-size: 15px; }
+  .tool { color: #b00020; }
+  .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 14mm; }
+  .sign div { border-top: 1px solid #111; padding-top: 4px; }
+  @media print { body { background: #fff; } .bar { display: none; }
+    .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; page-break-after: always; }
+    .sheet:last-child { page-break-after: auto; } }
+</style>
+</head>
+<body>
+<div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="/payroll/weeks?d={{ start }}">← К зарплате</a></div>
+{% for u in sheet_users %}{% set r = data.rows[u.id] %}
+<div class="sheet">
+  <div class="head">
+    <div><h1>РАСЧЁТНЫЙ ЛИСТ</h1>
+      <div class="muted">Неделя {{ start.strftime("%d.%m") }} — {{ end.strftime("%d.%m.%Y") }} · выплата {{ data.pay_day.strftime("%d.%m.%Y") }}</div></div>
+    <div style="text-align:right"><b>{{ branding.name }}</b><div class="muted">распечатано {{ now_local().strftime("%d.%m.%Y %H:%M") }}</div></div>
+  </div>
+  <p style="margin:0 0 4px">Сотрудник: <b>{{ u.full_name }}</b> · {{ u.role.name }}</p>
+  <p class="muted" style="margin:0">Статус: {{ "выдано" if r.state == "paid" else PERSON_STATUS[r.pst]|lower }}
+    {%- if r.prow and r.prow.approved_at %} · утвердил {{ people[r.prow.approved_by].full_name if r.prow.approved_by in people else "" }} {{ r.prow.approved_at.astimezone().strftime("%d.%m.%Y") }}{% endif %}
+    · выплата: {{ PAY_TO.get(u.pay_method or "cash") }}{% if u.pay_account and u.pay_method != "cash" %} {{ mask(u.pay_account) }}{% endif %}</p>
+
+  <div class="kpis">
+    <div>Начислено<b>{{ r.accrued|money }} ₴</b></div><div>Выдано<b>{{ r.paid|money }} ₴</b></div>
+    <div>К выдаче<b>{{ r.due|money }} ₴</b></div><div>Нарядов<b>{{ r.groups|length }}</b></div>
+  </div>
+
+  <h2>Наряды</h2>
+  <table>
+    <thead><tr><th style="width:62px">Дата</th><th>Наряд, автомобиль</th><th>Работы и позиции</th><th class="num">Сумма, ₴</th></tr></thead>
+    {% for wo_id, g in r.groups %}{% set o = orders.get(wo_id) %}{% set v = vehicles.get(o.vehicle_id) if o else None %}
+    <tr><td>{{ g.day.strftime("%d.%m") }}</td>
+      <td><b>{{ o.number if o else "—" }}</b>{% if v %}<br><span class="muted">{{ v.make }} {{ v.model }} {{ fmt_plate(v.plate) }}</span>{% endif %}</td>
+      <td>{% for a in g.lines %}{{ a.note }} — {{ a.amount|money }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+        {%- for wk, est in g.pending %}{% if g.lines or not loop.first %}<br>{% endif %}<span class="muted">{{ wk.name }} — ≈ {{ est|money }} (наряд не закрыт, не входит в сумму)</span>{% endfor %}</td>
+      <td class="num">{{ g.sum|money if g.lines else "—" }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">Нарядов за неделю нет</td></tr>{% endfor %}
+  </table>
+
+  <h2>Оклад, премии, удержания</h2>
+  <table>
+    <thead><tr><th style="width:62px">Дата</th><th>За что</th><th class="num">Сумма, ₴</th></tr></thead>
+    {% for a in r.extra %}
+    <tr class="{{ 'tool' if a.tool_line_id }}"><td>{{ a.on_date.strftime("%d.%m") }}</td>
+      <td>{% if a.tool_line_id %}Удержание за инструмент: {% endif %}{{ a.note }}</td><td class="num">{{ a.amount|money }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">Нет</td></tr>{% endfor %}
+  </table>
+
+  <table>
+    {% for k, v in COLS.items() if r[k] %}<tr><td>{{ v }}</td><td class="num">{{ r[k]|money }}</td></tr>{% endfor %}
+    <tr class="total"><td>Итого начислено</td><td class="num">{{ r.accrued|money }}</td></tr>
+    {% for p in r.payouts %}<tr><td>Выдано {{ p.paid_on.strftime("%d.%m.%Y") if p.paid_on else "" }} · {{ "наличными" if p.method == "cash" else (p.account or "безнал") }}</td><td class="num">− {{ p.amount|money }}</td></tr>{% endfor %}
+    <tr class="total"><td>К выдаче</td><td class="num">{{ r.due|money }}</td></tr>
+  </table>
+
+  <div class="sign"><div>Выдал: ____________</div><div>Получил: ____________ / {{ u.full_name }}</div></div>
+</div>
+{% else %}
+<div class="sheet"><p class="muted">За эту неделю начислений нет.</p></div>
+{% endfor %}
+</body>
+</html>

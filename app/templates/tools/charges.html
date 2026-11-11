@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles with context %}
+{# Удержания за инструмент (11.11.2026): проверка → «сломан по вине» / «утерян» → решение админа → минус в недельной
+   зарплате (строка «Инструмент: …», видна в расчётном листе). Здесь — всё одним списком для бухгалтера, админа, директора. #}
+{% block content %}
+<header class="page-head">
+  <div>{% if ctx.can("tools.view") %}<a class="back" href="/tools">{{ icon("back") }}Инструмент</a>{% else %}<a class="back" href="/payroll/weeks">{{ icon("back") }}Зарплата</a>{% endif %}<h1 class="large-title">Удержания за инструмент</h1></div>
+  {% if ctx.can("payroll.view_all") %}<div class="ov-actions"><a class="btn btn-sm btn-gray" href="/payroll/weeks">Зарплата →</a></div>{% endif %}
+</header>
+
+{% set items = [{"t": "Все", "n": n_all, "s": "сломан по вине или утерян", "c": "gray", "href": "/tools/charges", "on": not s}] %}
+{% for k, v in CHARGE_STATE.items() %}
+{% set _ = items.append({"t": v[0], "n": tot[k].sum|money(0) ~ " ₴", "s": tot[k].n ~ " поз.", "c": v[1], "href": "/tools/charges?s=" ~ k,
+                         "on": s == k, "zero": not tot[k].n}) %}
+{% endfor %}
+{{ tiles(items) }}
+
+<div class="card compact">
+  <p class="footnote" style="margin:0 0 6px">Как это работает: кладовщик печатает бланк → проверяет инструмент → вносит отметки и завершает проверку →
+    главный админ решает, удерживать ли → сумма уходит минусом в зарплату той недели, когда принято решение (строка «Инструмент: …» в расчётном листе).</p>
+  <div class="tablewrap">
+    <table class="table dense-table">
+      <thead><tr><th>Сотрудник</th><th>Инструмент</th><th>Что случилось</th><th class="num">Сумма</th><th>Решение</th><th>В зарплате</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><b>{{ r.u.full_name if r.u else "" }}</b><div class="caption">{{ r.u.role.name if r.u else "" }}</div></td>
+        <td>{% if r.t %}<a href="/tools/{{ r.t.id }}">{{ r.t.name }}</a><div class="caption mono">{{ r.t.inv_no }}</div>{% endif %}</td>
+        <td><span class="chip" data-tr="{{ r.l.result }}">{{ CHECK_RESULTS.get(r.l.result) }}</span>
+          {% if r.l.comment %}<div class="caption">{{ r.l.comment }}</div>{% endif %}
+          <div class="caption"><a href="/tools/checks/{{ r.c.id }}">проверка {{ r.c.created_at.astimezone().strftime("%d.%m.%Y") }}</a>{% if r.checker %} · {{ r.checker.short_name }}{% endif %}</div></td>
+        <td class="num nowrap"><b>{{ r.l.charge|money }} ₴</b></td>
+        <td><span class="chip" data-s="{{ {'wait': 'waiting', 'held': 'prepay', 'no': 'created'}[r.st] }}">{{ CHARGE_STATE[r.st][0] }}</span>
+          {% if r.by and r.c.approved_at %}<div class="caption">{{ r.by.short_name }} {{ r.c.approved_at.astimezone().strftime("%d.%m.%Y") }}</div>{% endif %}</td>
+        <td>{% if r.a %}{% if ctx.can("payroll.view_all") %}<a href="/payroll/weeks?d={{ r.week }}&open_user={{ r.a.user_id }}#u-{{ r.a.user_id }}">неделя {{ r.week.strftime("%d.%m") }}</a>{% else %}неделя {{ r.week.strftime("%d.%m") }}{% endif %}
+          <div class="caption nowrap">{{ r.a.amount|money }} ₴</div>{% elif r.st == "wait" %}<span class="caption">после решения</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="footnote">Удержаний нет</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

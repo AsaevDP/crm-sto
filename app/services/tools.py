@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import now
 from ..models import PayrollAccrual, Tool, ToolCheck, ToolCheckLine, ToolMove, User
-from ..models.tools import CHECK_KINDS
+from ..models.tools import CHECK_KINDS, CHECK_RESULTS
 from . import orders as osvc
 
 TOOL_PHOTO_DIR = osvc.PHOTO_DIR / "tools"
@@ -221,18 +221,22 @@ def holding(db: Session, user_id) -> list[Tool]:
 
 
 def open_check(db: Session, user: User, kind: str) -> ToolCheck:
-    """Новая проверка: в неё попадает весь инструмент, что сейчас числится за сотрудником."""
+    """Новая проверка: в неё попадает весь инструмент, что сейчас числится за сотрудником.
+    Результат пустой (11.11.2026): печатаем чистый бланк, проверяющий отмечает на бумаге, потом вносит сюда."""
     c = ToolCheck(user_id=user.id, kind=kind if kind in CHECK_KINDS else "planned")
     db.add(c)
     db.flush()
     for t in holding(db, user.id):
-        db.add(ToolCheckLine(check_id=c.id, tool_id=t.id, result="ok"))
+        db.add(ToolCheckLine(check_id=c.id, tool_id=t.id, result=""))
     return c
 
 
 def finish_check(db: Session, c: ToolCheck) -> str:
     """Проверка проведена: состояние инструмента обновляется. При увольнении — всё возвращается на склад."""
     lines = db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c.id)).all()
+    empty = sum(1 for l in lines if l.result not in CHECK_RESULTS)
+    if empty:
+        return f"Отметьте все позиции по бланку — не отмечено: {empty}"
     for l in lines:
         if l.result in ("fault", "lost") and l.charge <= 0 and not l.comment.strip():
             return "Для «сломан по вине» и «утерян» укажите сумму удержания или комментарий, почему без удержания"
@@ -259,7 +263,7 @@ def approve_check(db: Session, c: ToolCheck, admin: User, approve_ids: set) -> D
             l.charge_approved = True
             what = "сломан по вине" if l.result == "fault" else "утерян"
             db.add(PayrollAccrual(user_id=c.user_id, base_amount=l.charge, rate=0, amount=-l.charge, on_date=date.today(),
-                                  kind="deduction", note=f"Удержание: {t.name} ({t.inv_no}) — {what}"))
+                                  kind="deduction", note=f"Инструмент: {t.name} ({t.inv_no}) — {what}", tool_line_id=l.id))
             total += l.charge
     c.status, c.approved_by, c.approved_at = "approved", admin.id, now()
     return total

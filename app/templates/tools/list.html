@@ -11,6 +11,7 @@
   </form>
   <div class="ov-actions">
     {% if ctx.can("stock.issue") or ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/issues?tab=tools">Выдача</a>{% endif %}
+    {% if ctx.can("payroll.view_all") or ctx.can("tools.manage") %}<a class="btn btn-sm btn-gray" href="/tools/charges">Удержания</a>{% endif %}
     {% if manage %}<button class="btn btn-sm" type="button" onclick="document.getElementById('tnew').showModal()">{{ icon("plus") }}Инструмент</button>{% endif %}
   </div>
 </header>

@@ -2,7 +2,7 @@
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import AuditLog, Role, ToolCheck, User, WorkOrder
+from app.models import AuditLog, Role, ToolCheck, ToolCheckLine, User, WorkOrder
 
 from .conftest import login
 from .test_step3 import _create
@@ -50,7 +50,9 @@ def test_dismiss_archive_rehire(client):
     client.post(f"/tools/staff/{uid}/checks", data={"kind": "dismissal"})
     with SessionLocal() as db:
         c = db.scalar(select(ToolCheck).where(ToolCheck.user_id == uid))
-    client.post(f"/tools/checks/{c.id}", data={"action": "finish"})
+    with SessionLocal() as db:   # по бланку всё отмечено «исправен»
+        marks = {f"r_{l.id}": "ok" for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c.id))}
+    client.post(f"/tools/checks/{c.id}", data={**marks, "action": "finish"})
 
     # Директор увольняет и передаёт наряд Андрею
     _as(client, "director")

@@ -1,18 +1,31 @@
 {% extends "base.html" %}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Зарплата: схемы и оклад</h1></div>
+  <div>{% if role %}<a class="back" href="/settings/payroll">{{ icon("back") }}Все должности</a>{% else %}<a class="back" href="/settings">{{ icon("back") }}Настройки</a>{% endif %}
+    <h1 class="large-title">{{ role_name if role else "Зарплата: схемы и оклад" }}</h1></div>
   {% if not is_admin %}<span class="tag">менять может только главный админ</span>{% endif %}
 </header>
+{# Плитки должностей (как на Пульте): нажали — внутри только сотрудники этой должности #}
+<div class="pult-tiles vs-tiles">
+  {% for x in role_list %}
+  <a class="ptile {{ 'on' if x.role.code == role }}" href="/settings/payroll?role={{ x.role.code }}" style="--tc:{{ color_css(x.role.color) }}">
+    <span class="ptile-t">{{ x.role.name }}</span><b>{{ x.n }}</b>
+    <span class="ptile-s">чел.{% if x.salary %} · с окладом {{ x.salary }}{% endif %}</span></a>
+  {% endfor %}
+</div>
 <div class="ov-grid fill pay-grid">
-  {# --- Сотрудники и их схемы --- #}
+  {# --- Сотрудники выбранной должности и их схемы --- #}
   <section class="ov-col on" data-t="main">
+    {% if not role %}
+    <div class="card compact"><p class="footnote" style="margin:0">Выберите должность — откроется список сотрудников с их схемами и окладом.
+      Справа — проценты по умолчанию и группы запчастей.</p></div>
+    {% endif %}
     {% for u in staff %}
     <div class="card compact" id="u-{{ u.id }}">
       <div class="card-h"><span><b>{{ u.full_name }}</b> <span class="caption">{{ u.role.name }}</span></span></div>
       {% for l, desc in schemes[u.id] %}
       <div class="kv"><span>{{ desc }}</span>
-        {% if is_admin %}<form method="post" action="/settings/payroll/lines/{{ l.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>{% endif %}</div>
+        {% if is_admin %}<form method="post" action="/settings/payroll/lines/{{ l.id }}/delete"><input type="hidden" name="role" value="{{ role }}"><button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>{% endif %}</div>
       {% else %}
       <p class="footnote" style="margin:0">{% if default_desc[u.id] %}По умолчанию: {{ default_desc[u.id]|join(", ") }}{% else %}Схема не задана{% endif %}</p>
       {% endfor %}
@@ -48,8 +61,8 @@
     </form>
 
     {# --- Оклад за период --- #}
-    {% if is_admin %}
-    <form class="card compact form dense" method="post" action="/settings/payroll/salary">
+    {% if is_admin and role %}
+    <form class="card compact form dense" method="post" action="/settings/payroll/salary"><input type="hidden" name="role" value="{{ role }}">
       <div class="card-h"><span class="headline">Начислить оклад за период</span></div>
       <input class="field" name="note" placeholder="Например: «Оклад за ноябрь»">
       {% for u in staff %}{% if schemes[u.id]|selectattr("0.kind", "equalto", "salary")|list %}

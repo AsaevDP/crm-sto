@@ -129,6 +129,10 @@ def money_for(db: Session, bid, d1: date, d2: date, light: bool = False) -> Mone
         return r
     r.payroll_paid = money(db.scalar(select(func.sum(PayrollPayout.amount)).where(
         PayrollPayout.branch_id == bid, PayrollPayout.paid_on >= d1, PayrollPayout.paid_on <= d2)) or 0)
+    # Удержано с сотрудников за сломанный / утерянный инструмент (уже вошло в «зарплата начислена» минусом)
+    r.tool_charges = -money(db.scalar(select(func.sum(PayrollAccrual.amount)).where(
+        PayrollAccrual.branch_id == bid, PayrollAccrual.tool_line_id.is_not(None), PayrollAccrual.status != "cancelled",
+        PayrollAccrual.on_date >= d1, PayrollAccrual.on_date <= d2)) or 0)
     r.purchases = money(db.scalar(select(func.sum(PurchaseLine.price * PurchaseLine.qty))
                                   .join(Purchase, Purchase.id == PurchaseLine.purchase_id)
                                   .where(Purchase.branch_id == bid, Purchase.status != "draft",

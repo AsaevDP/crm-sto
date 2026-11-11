@@ -20,6 +20,9 @@
   .num { text-align: right; white-space: nowrap; }
   .sign { display: grid; grid-template-columns: 1fr 1fr; gap: 18mm; margin-top: 16mm; }
   .sign div { border-top: 1px solid #111; padding-top: 4px; }
+  .blank td { height: 9mm; vertical-align: middle; }
+  .blank .c { text-align: center; width: 14mm; font-size: 16px; } .blank th.c { font-size: 10.5px; }
+  .lines { border-bottom: 1px solid #999; height: 8mm; }
   @media print { body { background: #fff; } .bar { display: none; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; } }
 </style>
 </head>
@@ -27,15 +30,33 @@
 <div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="/tools/checks/{{ c.id }}">← К проверке</a></div>
 <div class="sheet">
   <div class="head">
-    <div><h1>АКТ ПРОВЕРКИ ИНСТРУМЕНТА</h1><div class="muted">{{ CHECK_KINDS[c.kind] }} · {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}</div></div>
+    <div><h1>{{ "БЛАНК ПРОВЕРКИ ИНСТРУМЕНТА" if blank else "АКТ ПРОВЕРКИ ИНСТРУМЕНТА" }}</h1><div class="muted">{{ CHECK_KINDS[c.kind] }} · {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}</div></div>
     <div style="text-align:right"><b>{{ branding.name }}</b></div>
   </div>
   <p>Сотрудник: <b>{{ u.full_name if u else "" }}</b>, {{ u.role.name if u else "" }}.</p>
+  {% if blank %}
+  {# Чистый бланк (11.11.2026): проверяющий отмечает галочкой на бумаге, потом вносит в CRM #}
+  <p class="muted">Отметьте одну клетку в каждой строке. «Сломан по вине» и «Утерян» — удержание из зарплаты (решает админ). Естественный износ не удерживается.</p>
+  <table class="blank">
+    <tr><th>№</th><th>Инв. №</th><th>Наименование, серийный №</th><th class="num">Стоимость</th>
+      <th class="c">Исправен</th><th class="c">Износ</th><th class="c">Сломан по вине</th><th class="c">Утерян</th><th style="width:30%">Замечания</th></tr>
+    {% for l in lines %}{% set t = tools[l.tool_id] %}
+    <tr><td>{{ loop.index }}</td><td>{{ t.inv_no }}</td><td>{{ t.name }}{% if t.serial %}, S/N {{ t.serial }}{% endif %}</td>
+      <td class="num">{{ (t.cost)|money }}</td><td class="c">☐</td><td class="c">☐</td><td class="c">☐</td><td class="c">☐</td><td></td></tr>
+    {% endfor %}
+  </table>
+  <p>Общие замечания:</p>
+  <div class="lines"></div><div class="lines"></div>
+  <div class="sign">
+    <div>Сотрудник: ____________ / {{ u.full_name if u else "" }}</div>
+    <div>Проверил: ____________ / ____________ · дата ________</div>
+  </div>
+  {% else %}
   <table>
     <tr><th>№</th><th>Инв. №</th><th>Наименование, серийный №</th><th class="num">Стоимость</th><th>Результат</th><th class="num">Удержание</th></tr>
     {% for l in lines %}{% set t = tools[l.tool_id] %}
     <tr><td>{{ loop.index }}</td><td>{{ t.inv_no }}</td><td>{{ t.name }}{% if t.serial %}, S/N {{ t.serial }}{% endif %}{% if l.comment %}<br><span class="muted">{{ l.comment }}</span>{% endif %}</td>
-      <td class="num">{{ (t.cost)|money }}</td><td>{{ CHECK_RESULTS[l.result] }}</td>
+      <td class="num">{{ (t.cost)|money }}</td><td>{{ CHECK_RESULTS.get(l.result, "не отмечено") }}</td>
       <td class="num">{{ l.charge|money if l.charge and l.result in ("fault", "lost") else "—" }}</td></tr>
     {% endfor %}
   </table>
@@ -46,6 +67,7 @@
     <div>Сотрудник: ____________ / {{ u.full_name if u else "" }}</div>
     <div>Проверил: ____________ / {{ people[c.created_by].full_name if c.created_by in people else "" }}</div>
   </div>
+  {% endif %}
 </div>
 </body>
 </html>

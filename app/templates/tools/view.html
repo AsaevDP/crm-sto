@@ -62,7 +62,7 @@
       <div class="card-h"><span class="headline">История</span></div>
       <div class="timeline">
         {% for l, c in checks %}
-        <div class="tl"><span><b>Проверка</b> · {{ CHECK_KINDS[c.kind] }} — <span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS[l.result] }}</span>{% if l.charge_approved %} · удержано {{ (l.charge)|money }} ₴{% endif %}</span>
+        <div class="tl"><span><b>Проверка</b> · {{ CHECK_KINDS[c.kind] }} — <span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS.get(l.result, "не отмечено") }}</span>{% if l.charge_approved %} · удержано {{ (l.charge)|money }} ₴{% endif %}</span>
           <span class="caption">{{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · <a href="/tools/checks/{{ c.id }}">акт</a>{% if l.comment %} — {{ l.comment }}{% endif %}</span></div>
         {% endfor %}
         {% for m in moves %}

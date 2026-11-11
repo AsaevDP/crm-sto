@@ -65,6 +65,8 @@ class PayrollAccrual(Entity):
     status: Mapped[str] = mapped_column(String(20), default="accrued")  # accrued / paid / cancelled
     kind: Mapped[str] = mapped_column(String(20), default="percent")  # percent / per_unit / salary / deduction
     note: Mapped[str] = mapped_column(String(300), default="")
+    # 11.11.2026: удержание за инструмент — строка проверки (за что и в какой проверке)
+    tool_line_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
 
 class PayrollPayout(Entity):
@@ -95,3 +97,18 @@ class PayWeek(Entity):
     approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     note: Mapped[str] = mapped_column(Text, default="")
+
+
+# 11.11.2026 (решение брата): проверка, утверждение и выдача — по каждому сотруднику отдельно.
+PERSON_STATUS = {"open": "Ждёт проверки", "checked": "Проверено", "approved": "Утверждено к выплате"}
+
+
+class PayWeekPerson(Entity):
+    __tablename__ = "pay_week_people"
+    week_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("pay_weeks.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(10), default="open")
+    checked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

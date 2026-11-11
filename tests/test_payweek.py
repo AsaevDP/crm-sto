@@ -58,8 +58,12 @@ def test_week_flow(client):
     client.post(f"/payroll/weeks/{WEEK}/adjust", data={"user_id": str(sergey.id), "amount": "100", "kind": "fine",
                                                       "note": "опоздание"})
     client.post(f"/payroll/account/{andrey.id}", data={"pay_method": "card", "pay_account": "4149 0000 0000 1234", "pay_bank": "Приват"})
-    client.post(f"/payroll/weeks/{WEEK}/status", data={"status": "approved"})
-    assert _week().status == "approved"
+    # Утверждение — по каждому отдельно (11.11.2026): «утвердить всех» больше нет
+    assert client.post(f"/payroll/weeks/{WEEK}/status", data={"status": "approved"}).status_code == 403
+    client.post(f"/payroll/weeks/{WEEK}/people/{andrey.id}", data={"status": "approved"})
+    assert _week().status == "checked"           # Сергей ещё не утверждён
+    page = client.get(f"/payroll/weeks?d={WEEK}").text
+    assert "Утвердить к выплате" in page and "Выдать всем" not in page and "Расчётный лист" in page
     client.post("/logout")
     with SessionLocal() as db:
         d = wsvc.week_data(db, andrey.branch_id, WEEK, [db.get(User, andrey.id), db.get(User, sergey.id)])
@@ -72,8 +76,22 @@ def test_week_flow(client):
     with SessionLocal() as db:
         p = db.scalar(select(PayrollPayout).where(PayrollPayout.week_id == _week().id, PayrollPayout.user_id == andrey.id))
         assert p.amount == Decimal("1200.00") and "1234" in p.account
+    # Сергея ещё не утвердили — выдать ему нельзя
+    client.post(f"/payroll/weeks/{WEEK}/pay", data={"user_id": str(sergey.id)})
+    with SessionLocal() as db:
+        assert not db.scalar(select(PayrollPayout).where(PayrollPayout.week_id == _week().id, PayrollPayout.user_id == sergey.id))
+    client.post("/logout")
+    login(client, "admin", "admin123")
+    client.post(f"/payroll/weeks/{WEEK}/people/{sergey.id}", data={"status": "approved"})
     assert _week().status == "approved"
-    client.post(f"/payroll/weeks/{WEEK}/pay", data={"all": "1"})
+    client.post("/logout")
+    login(client, "buh", "buh123")
+    client.post(f"/payroll/weeks/{WEEK}/pay", data={"user_id": str(sergey.id)})
+    assert _week().status == "paid"
+    # Расчётный лист: один сотрудник и все
+    sheet = client.get(f"/payroll/weeks/{WEEK}/sheet?user={andrey.id}").text
+    assert "РАСЧЁТНЫЙ ЛИСТ" in sheet and "Андрей Демченко" in sheet and "Сергей Ключников" not in sheet
+    assert client.get(f"/payroll/weeks/{WEEK}/sheet").text.count('class="sheet"') == 2
     with SessionLocal() as db:
         users = [db.get(User, uid) for uid in (andrey.id, sergey.id)]
         d = wsvc.week_data(db, andrey.branch_id, WEEK, users)

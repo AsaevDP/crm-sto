@@ -298,6 +298,46 @@ async def tool_add(request: Request, ctx: Ctx = Depends(get_ctx)):
     return _to(f"/tools/{t.id}")
 
 
+# ---------- Удержания за инструмент (11.11.2026): видно бухгалтеру, админу, директору, кладовщику ----------
+CHARGE_STATE = {"wait": ("Ждут решения админа", "orange"), "held": ("Удержано из зарплаты", "red"),
+                "no": ("Решили не удерживать", "gray")}
+
+
+@router.get("/tools/charges")
+def tool_charges(ctx: Ctx = Depends(get_ctx), s: str = ""):
+    ctx.need("payroll.view_all", "tools.manage")
+    from ..models import PayrollAccrual
+    from ..services import payweek as wsvc
+    db = ctx.db
+    rows = []
+    q = (select(ToolCheckLine, ToolCheck).join(ToolCheck, ToolCheck.id == ToolCheckLine.check_id)
+         .where(ToolCheck.branch_id == ctx.branch.id, ToolCheckLine.result.in_(("fault", "lost")),
+                ToolCheckLine.charge > 0, ToolCheck.status != "draft")
+         .order_by(ToolCheck.created_at.desc()))
+    lines = db.execute(q).all()
+    acc = {a.tool_line_id: a for a in db.scalars(select(PayrollAccrual).where(
+        PayrollAccrual.tool_line_id.in_([l.id for l, _ in lines]), PayrollAccrual.status != "cancelled"))} if lines else {}
+    tools = {t.id: t for t in db.scalars(select(Tool).where(Tool.id.in_([l.tool_id for l, _ in lines])))} if lines else {}
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    tot = {k: {"n": 0, "sum": Decimal(0)} for k in CHARGE_STATE}
+    for l, c in lines:
+        st = "wait" if c.status == "done" else ("held" if l.charge_approved else "no")
+        tot[st]["n"] += 1
+        tot[st]["sum"] += l.charge
+        a = acc.get(l.id)
+        if a is None and l.charge_approved and l.tool_id in tools:
+            # удержания до 11.11.2026 — без ссылки на строку проверки, ищем по подписи «Удержание: … (инв. №)»
+            a = db.scalar(select(PayrollAccrual).where(
+                PayrollAccrual.user_id == c.user_id, PayrollAccrual.kind == "deduction", PayrollAccrual.status != "cancelled",
+                PayrollAccrual.note.like(f"%({tools[l.tool_id].inv_no})%")))
+        rows.append({"l": l, "c": c, "st": st, "t": tools.get(l.tool_id), "u": people.get(c.user_id), "a": a,
+                     "week": wsvc.monday(a.on_date) if a else None,
+                     "by": people.get(c.approved_by), "checker": people.get(c.created_by)})
+    shown = [r for r in rows if r["st"] == s] if s in CHARGE_STATE else rows
+    return ctx.render("tools/charges.html", title="Инструмент: удержания", rows=shown, tot=tot, s=s if s in CHARGE_STATE else "",
+                      CHARGE_STATE=CHARGE_STATE, CHECK_RESULTS=CHECK_RESULTS, n_all=len(rows))
+
+
 # ---------- Карточка инструмента ----------
 @router.get("/tools/{tid}")
 def tool_view(tid: str, ctx: Ctx = Depends(get_ctx)):
@@ -428,6 +468,7 @@ def _check_data(ctx: Ctx, c: ToolCheck) -> dict:
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     return dict(c=c, lines=lines, tools=tools, people=people, u=people.get(c.user_id), CHECK_KINDS=CHECK_KINDS,
                 CHECK_RESULTS=CHECK_RESULTS, CHECK_STATUS=CHECK_STATUS,
+                unmarked=sum(1 for l in lines if l.result not in CHECK_RESULTS),
                 charge_total=sum((l.charge for l in lines if l.result in ("fault", "lost")), Decimal(0)))
 
 
@@ -495,11 +536,12 @@ async def check_approve(cid: str, request: Request, ctx: Ctx = Depends(get_ctx))
 
 
 @router.get("/tools/checks/{cid}/print")
-def check_print(cid: str, ctx: Ctx = Depends(get_ctx)):
+def check_print(cid: str, ctx: Ctx = Depends(get_ctx), blank: str = ""):
+    """Акт проверки; ?blank=1 — чистый бланк без отметок (печатаем до проверки, отмечаем на бумаге)."""
     ctx.need("tools.view", "tools.view_own")
     c = _check(ctx, cid)
-    return ctx.render("tools/check_print.html", title="Акт проверки инструмента", **_check_data(ctx, c),
-                      fmt_phone=osvc.fmt_phone)
+    return ctx.render("tools/check_print.html", title="Бланк проверки инструмента" if blank else "Акт проверки инструмента",
+                      **_check_data(ctx, c), fmt_phone=osvc.fmt_phone, blank=bool(blank))
 
 
 # ======================= Запросы слесаря (11.11.2026) =======================

@@ -45,7 +45,15 @@ def test_tool_lifecycle_check_and_deduction(client):
         c = db.scalar(select(ToolCheck).where(ToolCheck.user_id == sergey).order_by(ToolCheck.created_at.desc()))
         lines = {db.get(Tool, l.tool_id).name: l for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c.id))}
     key, puller = lines["Динамометрический ключ (тест)"], lines["Съёмник (тест)"]
-    client.post(f"/tools/checks/{c.id}", data={f"r_{key.id}": "fault", f"c_{key.id}": "Сорвана трещотка",
+    # 11.11.2026: в новой проверке ничего не отмечено; бланк печатается пустым; завершить без отметок нельзя
+    assert key.result == "" and puller.result == ""
+    blank = client.get(f"/tools/checks/{c.id}/print?blank=1").text
+    assert "БЛАНК ПРОВЕРКИ" in blank and "Динамометрический ключ (тест)" in blank and "☐" in blank
+    client.post(f"/tools/checks/{c.id}", data={f"r_{key.id}": "fault", "action": "finish"})
+    with SessionLocal() as db:
+        assert db.get(ToolCheck, c.id).status == "draft"
+    client.post(f"/tools/checks/{c.id}", data={**{f"r_{l.id}": "ok" for l in lines.values()},
+                                                 f"r_{key.id}": "fault", f"c_{key.id}": "Сорвана трещотка",
                                                  f"r_{puller.id}": "worn", "action": "finish"})
     with SessionLocal() as db:
         c2 = db.get(ToolCheck, c.id)
@@ -62,9 +70,14 @@ def test_tool_lifecycle_check_and_deduction(client):
     with SessionLocal() as db:
         a = db.scalar(select(PayrollAccrual).where(PayrollAccrual.user_id == sergey, PayrollAccrual.kind == "deduction",
                                                    PayrollAccrual.note.like("%Динамометрический%")))
-    assert a.amount == Decimal("-3100.00") and "Динамометрический ключ" in a.note
+    assert a.amount == Decimal("-3100.00") and "Динамометрический ключ" in a.note and a.tool_line_id == key.id
+    # Видно бухгалтеру / админу / директору: список удержаний за инструмент
+    for who in ("admin", "buh", "director"):
+        _as(client, who)
+        page = client.get("/tools/charges").text
+        assert "Динамометрический ключ (тест)" in page and "3 100,00" in page, who
     _as(client, "sergey")
-    assert "Удержание" in client.get("/payroll").text
+    assert "Инструмент: Динамометрический ключ" in client.get("/payroll").text
     assert "АКТ ПРОВЕРКИ" in client.get(f"/tools/checks/{c.id}/print").text
 
 
@@ -85,7 +98,9 @@ def test_dismissal_blocked_until_tools_checked(client):
     client.post(f"/tools/staff/{uid}/checks", data={"kind": "dismissal"})
     with SessionLocal() as db:
         c = db.scalar(select(ToolCheck).where(ToolCheck.user_id == uid))
-    client.post(f"/tools/checks/{c.id}", data={"action": "finish"})
+    with SessionLocal() as db:   # по бланку всё отмечено «исправен»
+        marks = {f"r_{l.id}": "ok" for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.check_id == c.id))}
+    client.post(f"/tools/checks/{c.id}", data={**marks, "action": "finish"})
     assert _tool("Тестер (увольнение)").holder_id is None
     with SessionLocal() as db:
         assert db.get(ToolCheck, c.id).status == "approved"  # удерживать нечего

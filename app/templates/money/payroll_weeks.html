@@ -3,6 +3,15 @@
 {# Недельная зарплата (11.11.2026): неделя пн–вс → бухгалтер проверяет → админ утверждает → выдача в понедельник.
    По каждому сотруднику: из чего сложилось (наряды и работы со ссылками), сколько выдано, куда (карта/счёт).
    Исправлять, премии и штрафы — только payroll.edit (админ или кому он дал право). #}
+{% macro fix(a) %}
+<details class="pu-more"><summary class="btn btn-plain btn-sm">Исправить</summary>
+  <form class="pu-menu card compact form dense" method="post" action="/payroll/accruals/{{ a.id }}">
+    <label class="caption">Сумма, ₴<input class="field" name="amount" value="{{ '%.2f'|format(a.amount) }}" inputmode="decimal"></label>
+    <input class="field" name="reason" placeholder="Причина (обязательно)" required>
+    <div class="form-row"><button class="btn btn-sm" name="action" value="save">Сохранить</button>
+      <button class="btn btn-sm btn-plain danger" name="action" value="cancel">Отменить начисление</button></div>
+  </form></details>
+{% endmacro %}
 {% block content %}
 {% set w = data.week %}
 {% set st = w.status if w else "open" %}
@@ -27,105 +36,146 @@
 
 {% if ctx.can("payroll.view_all") %}
 <ol class="pw-steps">
-  {% for key, title, sub in [("open", "Неделя", "пн–вс, работы и наряды"), ("checked", "Проверка", "бухгалтер, в выходные"),
-                             ("approved", "Утверждение", "админ"), ("paid", "Выдача", "понедельник")] %}
   {% set order = ["open", "checked", "approved", "paid"] %}
   {% set cur = 0 if (st == "open" and start >= this_week) else order.index(st) + 1 %}
+  {% for key, title, sub in [("open", "Неделя", "пн–вс, работы и наряды"), ("checked", "Проверка", "бухгалтер, по каждому"),
+                             ("approved", "Утверждение", "админ, по каждому"), ("paid", "Выдача", "каждому отдельно")] %}
   <li class="pw-step {{ 'done' if loop.index0 < cur }} {{ 'now' if loop.index0 == cur }}">
     <b>{{ loop.index }}. {{ title }}</b><span class="caption">{{ sub }}</span>
-    {% if key == "checked" and w and w.checked_at %}<span class="caption">✓ {{ people[w.checked_by].short_name if w.checked_by in people else "" }} {{ w.checked_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
-    {% if key == "approved" and w and w.approved_at %}<span class="caption">✓ {{ people[w.approved_by].short_name if w.approved_by in people else "" }} {{ w.approved_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
+    {% if T.people and key != "open" %}{% set n = {"checked": T.n_checked, "approved": T.n_approved, "paid": T.n_paid}[key] %}
+    <span class="caption"><b>{{ n }} из {{ T.people }}</b> чел.</span>{% endif %}
   </li>
   {% endfor %}
 </ol>
 <div class="pw-acts">
-  {% if st == "open" and can_check %}
+  {% if can_check and T.people and T.n_checked < T.people %}
   <form method="post" action="/payroll/weeks/{{ start }}/status" class="form-row"><input type="hidden" name="status" value="checked">
-    <input class="field" name="note" placeholder="Комментарий бухгалтера (необязательно)"><button class="btn btn-sm">✓ Проверено</button></form>
-  {% endif %}
-  {% if st in ("open", "checked") and can_edit %}
-  <form method="post" action="/payroll/weeks/{{ start }}/status"><input type="hidden" name="status" value="approved">
-    <button class="btn btn-sm {{ 'btn-gray' if st == 'open' else '' }}" {% if st == "open" %}onclick="return confirm('Бухгалтер ещё не проверил неделю. Утвердить всё равно?')"{% endif %}>Утвердить к выплате</button></form>
-  {% endif %}
-  {% if st in ("approved", "paid") and can_pay and T.due > 0 %}
-  <form method="post" action="/payroll/weeks/{{ start }}/pay" onsubmit="return confirm('Выдать всем, у кого есть «к выдаче»: {{ T.due|money }} ₴?')"><input type="hidden" name="all" value="1">
-    <button class="btn btn-sm">💵 Выдать всем · {{ T.due|money(0) }} ₴</button></form>
-  {% endif %}
-  {% if st != "open" and can_edit %}
-  <form method="post" action="/payroll/weeks/{{ start }}/status"><input type="hidden" name="status" value="open">
-    <button class="btn btn-sm btn-plain" onclick="return confirm('Вернуть неделю на проверку? Выплаты останутся.')">Вернуть на проверку</button></form>
+    <input class="field" name="note" placeholder="Комментарий бухгалтера (необязательно)"><button class="btn btn-sm">✓ Проверил всех</button></form>
   {% endif %}
   {% if can_edit %}
   <form method="post" action="/payroll/weeks/{{ start }}/salary"><button class="btn btn-sm btn-plain" title="Дневная ставка × дни по табелю">＋ Оклад за неделю по табелю</button></form>
   {% endif %}
-  {% if not can_edit %}<span class="caption">Исправлять суммы может только админ или тот, кому он дал право «Зарплата: исправлять».</span>{% endif %}
+  {% if T.people %}<a class="btn btn-sm btn-plain" href="/payroll/weeks/{{ start }}/sheet" target="_blank">🖨 Расчётные листы всех</a>{% endif %}
+  <span class="caption">Утверждение и выдача — у каждого сотрудника в его строке.{% if not can_edit %} Исправлять суммы может только админ или тот, кому он дал право.{% endif %}</span>
 </div>
 {% if w and w.note %}<p class="footnote pw-note">💬 {{ w.note|replace("\n", " · ") }}</p>{% endif %}
 {% endif %}
 
 <div class="pult-tiles pw-tiles">
   <span class="ptile" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Начислено</span><b class="nowrap">{{ T.accrued|money(0) }} ₴</b><span class="ptile-s">за неделю</span></span>
-  <span class="ptile {{ 'zero' if not T.paid }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдано</span><b class="nowrap">{{ T.paid|money(0) }} ₴</b><span class="ptile-s">{{ WEEK_STATUS[st]|lower }}</span></span>
+  <span class="ptile {{ 'zero' if not T.paid }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдано</span><b class="nowrap">{{ T.paid|money(0) }} ₴</b><span class="ptile-s">{{ T.n_paid }} из {{ T.people }} чел.</span></span>
   <span class="ptile {{ 'zero' if T.due <= 0 }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">К выдаче</span><b class="nowrap">{{ T.due|money(0) }} ₴</b><span class="ptile-s">не выдано: {{ T.unpaid_people }} чел.</span></span>
   <span class="ptile {{ 'zero' if not T.pending_sum }}" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Ждут закрытия нарядов</span><b class="nowrap">≈ {{ T.pending_sum|money(0) }} ₴</b><span class="ptile-s">работы сделаны, наряд не оплачен</span></span>
+  {% if ctx.can("payroll.view_all") %}
+  <a class="ptile {{ 'zero' if not T.tool_charges }}" href="/tools/charges" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Удержано за инструмент</span><b class="nowrap">{{ T.tool_charges|money(0) }} ₴</b><span class="ptile-s">за неделю · весь список</span></a>
+  {% endif %}
 </div>
 
+{% set ST_CHIP = {"none": ("created", "нечего выдавать"), "open": ("prepay", "ждёт проверки"), "checked": ("diag", "проверено"),
+                  "approved": ("waiting", "утверждено"), "paid": ("paid", "✓ выдано")} %}
 <div class="pw-list">
   {% for u in users %}{% set r = data.rows[u.id] %}
-  {% if r.accrued or r.paid or r.pending or users|length == 1 %}
+  {% if r.active or users|length == 1 %}
   <details class="card compact pw-user" id="u-{{ u.id }}" {% if open_user == u.id|string or users|length == 1 %}open{% endif %}>
     <summary class="pw-sum">
-      <span class="pw-who"><b>{{ u.full_name }}</b><span class="caption">{{ u.role.name }}{% if r.orders %} · нарядов {{ r.orders|length }}{% endif %}</span></span>
+      <span class="pw-who"><b>{{ u.full_name }}</b><span class="caption">{{ u.role.name }}{% if r.groups %} · нарядов {{ r.groups|length }}{% endif %}</span></span>
       <span class="pw-cols">
         {% for k, v in COLS.items() if r[k] %}<span class="pw-col {{ 'neg' if r[k] < 0 }}"><span class="caption">{{ v }}</span><b>{{ r[k]|money(0) }}</b></span>{% endfor %}
         {% if r.pending_sum %}<span class="pw-col wait"><span class="caption">ждёт нарядов</span><b>≈ {{ r.pending_sum|money(0) }}</b></span>{% endif %}
       </span>
       <span class="pw-total"><span class="caption">начислено</span><b>{{ r.accrued|money }} ₴</b></span>
       <span class="pw-state">
-        {% if r.accrued <= 0 and not r.paid %}<span class="chip" data-s="created">нечего выдавать</span>
-        {% elif r.due <= 0 %}<span class="chip" data-s="paid">✓ выдано</span>
-        {% elif r.paid > 0 %}<span class="chip" data-s="waiting">выдано {{ r.paid|money(0) }}, ещё {{ r.due|money(0) }}</span>
-        {% else %}<span class="chip" data-s="prepay">не выдано</span>{% endif %}
+        {% set chip = ST_CHIP[r.state] %}
+        <span class="chip" data-s="{{ chip[0] }}">{{ chip[1] }}{% if r.state == "approved" and r.paid > 0 %}, выдано {{ r.paid|money(0) }}{% endif %}</span>
         <span class="caption nowrap">{{ PAY_TO.get(u.pay_method or "cash") }}{% if u.pay_account and u.pay_method != "cash" %} {{ mask(u.pay_account) }}{% endif %}</span>
       </span>
     </summary>
 
     <div class="pw-body">
+      {% if ctx.can("payroll.view_all") and r.active %}{% set pr = r.prow %}
+      <div class="pw-pacts">
+        <span class="caption">
+          {% if pr and pr.checked_at %}✓ проверил{{ "а" if people.get(pr.checked_by) and people[pr.checked_by].role.code == "accountant" }} {{ people[pr.checked_by].short_name if pr.checked_by in people else "" }} {{ pr.checked_at.astimezone().strftime("%d.%m %H:%M") }}{% elif r.pst != "open" %}✓ проверено{% else %}не проверено{% endif %}
+          {% if pr and pr.approved_at %} · утвердил {{ people[pr.approved_by].short_name if pr.approved_by in people else "" }} {{ pr.approved_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}
+        </span>
+        <span class="pw-pbtns">
+          {% if r.pst == "open" and can_check %}
+          <form method="post" action="/payroll/weeks/{{ start }}/people/{{ u.id }}"><input type="hidden" name="status" value="checked"><button class="btn btn-sm">✓ Проверено</button></form>
+          {% endif %}
+          {% if r.pst in ("open", "checked") and can_edit and r.accrued > 0 %}
+          <form method="post" action="/payroll/weeks/{{ start }}/people/{{ u.id }}"><input type="hidden" name="status" value="approved">
+            <button class="btn btn-sm {{ 'btn-gray' if r.pst == 'open' }}" {% if r.pst == "open" %}onclick="return confirm('Бухгалтер ещё не проверил {{ u.short_name }}. Утвердить всё равно?')"{% endif %}>Утвердить к выплате</button></form>
+          {% endif %}
+          {% if r.pst != "open" and can_edit and r.state != "paid" %}
+          <form method="post" action="/payroll/weeks/{{ start }}/people/{{ u.id }}"><input type="hidden" name="status" value="open">
+            <button class="btn btn-sm btn-plain" onclick="return confirm('Вернуть {{ u.short_name }} на проверку? Выплаты останутся.')">Вернуть на проверку</button></form>
+          {% endif %}
+          <a class="btn btn-sm btn-plain" href="/payroll/weeks/{{ start }}/sheet?user={{ u.id }}" target="_blank">🖨 Расчётный лист</a>
+        </span>
+      </div>
+      {% elif r.active %}
+      <div class="pw-pacts"><span class="caption">{{ PERSON_STATUS[r.pst] }}</span>
+        <span class="pw-pbtns"><a class="btn btn-sm btn-plain" href="/payroll/weeks/{{ start }}/sheet?user={{ u.id }}" target="_blank">🖨 Расчётный лист</a></span></div>
+      {% endif %}
+
+      {% if r.groups %}
+      <div class="pw-orders">
+        {% for wo_id, g in r.groups %}{% set o = orders.get(wo_id) %}{% set v = vehicles.get(o.vehicle_id) if o else None %}
+        <details class="pw-ord">
+          <summary>
+            <span class="caption nowrap">{{ ["пн", "вт", "ср", "чт", "пт", "сб", "вс"][g.day.weekday()] }} {{ g.day.strftime("%d.%m") }}</span>
+            <span class="pw-ord-n"><b>{{ o.number if o else "Наряд" }}</b> <span class="caption">{{ v.make if v }} {{ v.model if v }}{% if v %} · {{ fmt_plate(v.plate) }}{% endif %}</span></span>
+            <span class="caption nowrap">{{ g.lines|length + g.pending|length }} поз.{% if g.pending %} · <span class="late">наряд не закрыт</span>{% endif %}</span>
+            <b class="num nowrap">{% if g.lines %}{{ g.sum|money }} ₴{% endif %}{% if g.pending %}{% if g.lines %} + {% endif %}≈ {{ g.est|money }} ₴{% endif %}</b>
+          </summary>
+          <div class="tablewrap">
+            <table class="table dense-table pw-items">
+              <thead><tr><th>Работа / позиция</th><th class="num">База</th><th class="num">Ставка</th><th class="num">Сумма</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+              <tbody>
+              {% for a in g.lines %}
+              <tr>
+                <td>{{ a.note }}</td>
+                <td class="num nowrap">{{ a.base_amount|money if a.base_amount else "" }}</td>
+                <td class="num nowrap caption">{% if a.kind == "percent" %}{{ a.rate|num }} %{% elif a.kind in ("per_unit", "salary") and a.rate %}{{ a.rate|money(0) }} ₴{% endif %}</td>
+                <td class="num nowrap {{ 'neg' if a.amount < 0 }}"><b>{{ a.amount|money }}</b></td>
+                {% if can_edit %}<td class="pw-fix">{{ fix(a) }}</td>{% endif %}
+              </tr>
+              {% endfor %}
+              {% for wk, est in g.pending %}
+              <tr class="pw-wait">
+                <td>{{ wk.name }} <span class="caption">· наряд ещё не закрыт — начислится при оплате</span></td>
+                <td class="num nowrap">{{ wk.price|money }}</td><td></td>
+                <td class="num nowrap caption">≈ {{ est|money }}</td>{% if can_edit %}<td></td>{% endif %}
+              </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if o %}<a class="btn btn-sm btn-plain" href="/orders/{{ o.id }}">Открыть наряд {{ o.number }} →</a>{% endif %}
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if r.extra %}
       <div class="tablewrap">
         <table class="table dense-table pw-items">
-          <thead><tr><th>День</th><th>Наряд / за что</th><th>Работа / позиция</th><th class="num">База</th><th class="num">Ставка</th><th class="num">Сумма</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+          <thead><tr><th>День</th><th>Оклад, премии, удержания</th><th class="num">Сумма</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
           <tbody>
-          {% for a in r["items"] %}{% set o = orders.get(a.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else None %}
+          {% for a in r.extra %}
           <tr>
             <td class="nowrap caption">{{ ["пн", "вт", "ср", "чт", "пт", "сб", "вс"][a.on_date.weekday()] }} {{ a.on_date.strftime("%d.%m") }}</td>
-            <td>{% if o %}<a href="/orders/{{ o.id }}">{{ o.number }}</a><div class="caption">{{ v.make if v }} {{ v.model if v }} {% if v %}{{ fmt_plate(v.plate) }}{% endif %}</div>
-              {% else %}<span class="tag">{{ {"salary": "оклад", "deduction": "удержание", "adjust": "премия"}.get(a.kind, a.kind) }}</span>{% endif %}</td>
-            <td>{{ a.note }}</td>
-            <td class="num nowrap">{{ a.base_amount|money if a.base_amount else "" }}</td>
-            <td class="num nowrap caption">{% if a.kind == "percent" %}{{ a.rate|num }} %{% elif a.kind in ("per_unit", "salary") and a.rate %}{{ a.rate|money(0) }} ₴{% endif %}</td>
+            <td>{% if a.tool_line_id %}<span class="tag" style="--tc:{{ color_css('red') }}">🔧 инструмент</span>{% else %}<span class="tag">{{ {"salary": "оклад", "deduction": "удержание", "adjust": "премия"}.get(a.kind, a.kind) }}</span>{% endif %}
+              {{ a.note }}{% if a.tool_line_id and tool_checks.get(a.tool_line_id) %} · <a href="/tools/checks/{{ tool_checks[a.tool_line_id] }}">проверка</a>{% endif %}</td>
             <td class="num nowrap {{ 'neg' if a.amount < 0 }}"><b>{{ a.amount|money }}</b></td>
-            {% if can_edit %}<td class="pw-fix">
-              <details class="pu-more"><summary class="btn btn-plain btn-sm">Исправить</summary>
-                <form class="pu-menu card compact form dense" method="post" action="/payroll/accruals/{{ a.id }}">
-                  <label class="caption">Сумма, ₴<input class="field" name="amount" value="{{ '%.2f'|format(a.amount) }}" inputmode="decimal"></label>
-                  <input class="field" name="reason" placeholder="Причина (обязательно)" required>
-                  <div class="form-row"><button class="btn btn-sm" name="action" value="save">Сохранить</button>
-                    <button class="btn btn-sm btn-plain danger" name="action" value="cancel">Отменить начисление</button></div>
-                </form></details></td>{% endif %}
-          </tr>
-          {% else %}<tr><td colspan="7" class="footnote">Начислений за неделю нет</td></tr>{% endfor %}
-          {% for wk, o, est in r.pending %}{% set v = vehicles.get(o.vehicle_id) %}
-          <tr class="pw-wait">
-            <td class="nowrap caption">{{ wk.done_at.astimezone().strftime("%d.%m") if wk.done_at else "" }}</td>
-            <td><a href="/orders/{{ o.id }}">{{ o.number }}</a><div class="caption">{{ v.make if v }} {{ v.model if v }}</div></td>
-            <td>{{ wk.name }} <span class="caption">· наряд ещё не закрыт — начислится при оплате</span></td>
-            <td class="num nowrap">{{ wk.price|money }}</td><td></td>
-            <td class="num nowrap caption">≈ {{ est|money }}</td>{% if can_edit %}<td></td>{% endif %}
+            {% if can_edit %}<td class="pw-fix">{{ fix(a) }}</td>{% endif %}
           </tr>
           {% endfor %}
           </tbody>
         </table>
       </div>
+      {% endif %}
+      {% if not r.groups and not r.extra %}<p class="footnote">Начислений за неделю нет</p>{% endif %}
 
       <div class="pw-foot">
         <div class="pw-paid">
@@ -136,12 +186,12 @@
             {% if can_edit %}<form class="inline-form" method="post" action="/payroll/payouts/{{ p.id }}/delete" onsubmit="return confirm('Удалить эту выплату?')"><button class="btn btn-plain btn-sm danger">удалить</button></form>{% endif %}</div>
           {% endfor %}
         </div>
-        {% if can_pay and r.due > 0 and st in ("approved", "paid") %}
+        {% if can_pay and r.due > 0 and r.pst == "approved" %}
         <form class="pw-payform form-row" method="post" action="/payroll/weeks/{{ start }}/pay"><input type="hidden" name="user_id" value="{{ u.id }}">
           <input class="field" name="amount" value="{{ '%.2f'|format(r.due) }}" inputmode="decimal" aria-label="Сколько выдать">
           <select class="field" name="method" aria-label="Как">{% for k, v in PAY_TO.items() %}<option value="{{ k }}" {% if k == (u.pay_method or "cash") %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-          <button class="btn btn-sm">💵 Выдано</button></form>
-        {% elif r.due > 0 and ctx.can("payroll.view_all") %}<span class="caption">Выдать можно после утверждения недели.</span>{% endif %}
+          <button class="btn btn-sm">💵 Выдать {{ u.short_name }}</button></form>
+        {% elif r.due > 0 and ctx.can("payroll.view_all") %}<span class="caption">Выдать можно после утверждения.</span>{% endif %}
       </div>
 
       {% if can_edit %}

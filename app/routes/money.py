@@ -384,12 +384,43 @@ def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = "")
         [a.wo_work_id for r in data["rows"].values() for a in r["items"] if a.wo_work_id])))}
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     hist = wsvc.history(db, ctx.branch.id, users, start, 6) if ctx.can("payroll.view_all") else []
+    from ..models import ToolCheckLine
+    from ..models.payroll import PERSON_STATUS
+    tl_ids = [a.tool_line_id for r in data["rows"].values() for a in r["items"] if a.tool_line_id]
+    tool_checks = {l.id: l.check_id for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.id.in_(tl_ids)))} if tl_ids else {}
     return ctx.render("money/payroll_weeks.html", title="Зарплата · неделя", start=start, end=data["end"], data=data,
                       users=users, orders=orders, vehicles=vehicles, works=works, people=people, hist=hist,
+                      PERSON_STATUS=PERSON_STATUS, tool_checks=tool_checks,
                       WEEK_STATUS=WEEK_STATUS, COLS=wsvc.COLS, PAY_METHODS=PAY_METHODS, PAY_TO=PAY_TO,
                       prev=(start - timedelta(days=7)).isoformat(), next=(start + timedelta(days=7)).isoformat(),
                       this_week=wsvc.monday(date.today()), open_user=open_user, fmt_plate=osvc.fmt_plate,
                       column_of=psvc.column_of, mask=_mask_account)
+
+
+@router.get("/payroll/weeks/{d}/sheet")
+def payroll_week_sheet(d: str, ctx: Ctx = Depends(get_ctx), user: str = ""):
+    """Расчётный лист за неделю: один сотрудник (?user=) или все, у кого есть начисления."""
+    ctx.need("payroll.view_own", "payroll.view_all")
+    from ..models.payroll import PERSON_STATUS
+    from ..services import payweek as wsvc
+    db = ctx.db
+    see_all = ctx.can("payroll.view_all")
+    start = _week_start(d, own=not see_all)
+    users = _week_users(ctx, start)
+    if user:
+        users = [u for u in users if str(u.id) == user]
+        if not users:
+            raise Forbidden()
+    data = wsvc.week_data(db, ctx.branch.id, start, users)
+    sheet_users = [u for u in users if data["rows"][u.id]["active"]]
+    ids = {g for r in data["rows"].values() for g, _ in r["groups"]}
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_(list(ids))))}
+    vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    title = f"Расчётный лист — {sheet_users[0].full_name}" if len(sheet_users) == 1 else "Расчётные листы за неделю"
+    return ctx.render("money/payroll_sheet.html", title=title, start=start, end=data["end"], data=data,
+                      sheet_users=sheet_users, orders=orders, vehicles=vehicles, people=people, COLS=wsvc.COLS,
+                      PERSON_STATUS=PERSON_STATUS, PAY_TO=PAY_TO, mask=_mask_account, fmt_plate=osvc.fmt_plate)
 
 
 PAY_TO = {"cash": "Наличными", "card": "На карту", "account": "На счёт (IBAN)"}
@@ -412,45 +443,67 @@ def _week_of(ctx: Ctx, d: str):
 
 @router.post("/payroll/weeks/{d}/status")
 def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), note: str = Form("")):
-    """Проверено (бухгалтер) → Утверждено (админ / кому дали право) ; вернуть на доработку — тоже админ."""
+    """Бухгалтер: «Проверил всех» — отметка «проверено» у всех, кого ещё не проверяли.
+    Утверждение и выдача — только по каждому сотруднику отдельно (решение 11.11.2026)."""
     from ..services import payweek as wsvc
+    if status != "checked":
+        raise Forbidden()
+    ctx.need("payroll.check")
     start, w = _week_of(ctx, d)
+    users = staff_for_period(ctx.db, ctx.branch.id, start)
+    data = wsvc.week_data(ctx.db, ctx.branch.id, start, users)
+    n = 0
+    for uid, r in data["rows"].items():
+        if (r["accrued"] > 0 or r["paid"]) and r["pst"] == "open":
+            wsvc.set_person(ctx.db, w, uid, "checked", ctx.user)
+            n += 1
+    w.checked_by, w.checked_at = ctx.user.id, now()
+    if note.strip():
+        w.note = (w.note + "\n" if w.note else "") + f"{date.today():%d.%m} {ctx.user.short_name}: {note.strip()}"
+    wsvc.refresh_paid(ctx.db, w, users)
+    ctx.db.commit()
+    flash(ctx.request, f"Проверено: {n} чел. — ждут утверждения админа" if n else "Проверять некого — все уже проверены")
+    return _to(_week_back(start))
+
+
+@router.post("/payroll/weeks/{d}/people/{uid}")
+def payroll_person_status(d: str, uid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...)):
+    """Один сотрудник: проверено (бухгалтер) → утверждено к выплате (админ / кому дали право) ; вернуть на проверку."""
+    from ..services import payweek as wsvc
     need = {"checked": "payroll.check", "approved": "payroll.edit", "open": "payroll.edit"}.get(status)
     if not need:
         raise Forbidden()
     ctx.need(need)
-    if status == "approved" and w.status not in ("checked", "open"):
-        flash(ctx.request, "Неделя уже утверждена", "error")
-        return _to(_week_back(start))
-    wsvc.set_status(ctx.db, w, status, ctx.user)
-    if note.strip():
-        w.note = (w.note + "\n" if w.note else "") + f"{date.today():%d.%m} {ctx.user.short_name}: {note.strip()}"
-    if status == "approved":
-        wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, start))
+    u = ctx.db.get(User, _uuid(uid))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    start, w = _week_of(ctx, d)
+    users = staff_for_period(ctx.db, ctx.branch.id, start)
+    wsvc.set_person(ctx.db, w, u.id, status, ctx.user)
+    wsvc.refresh_paid(ctx.db, w, users)
     ctx.db.commit()
-    flash(ctx.request, {"checked": "Неделя проверена — ждёт утверждения админа", "approved": "Утверждено — можно выдавать",
-                        "open": "Неделя снова открыта для правок"}[status])
-    return _to(_week_back(start))
+    flash(ctx.request, {"checked": f"{u.short_name}: проверено — ждёт утверждения", "approved": f"{u.short_name}: утверждено — можно выдавать",
+                        "open": f"{u.short_name}: вернули на проверку"}[status])
+    return _to(_week_back(start, u.id))
 
 
 @router.post("/payroll/weeks/{d}/pay")
 async def payroll_week_pay(d: str, ctx: Ctx = Depends(get_ctx)):
-    """Выдать зарплату за неделю: одному (user_id) или всем, у кого «к выдаче» больше нуля (all=1)."""
+    """Выдать зарплату за неделю — одному сотруднику (каждый приходит и получает сам). Только утверждённому."""
     from ..services import payweek as wsvc
     ctx.need("payroll.pay")
     start, w = _week_of(ctx, d)
-    if w.status not in ("approved", "paid"):
-        flash(ctx.request, "Сначала бухгалтер проверяет неделю, потом админ утверждает — тогда выдача", "error")
-        return _to(_week_back(start))
     form = await ctx.request.form()
     users = staff_for_period(ctx.db, ctx.branch.id, start)
     data = wsvc.week_data(ctx.db, ctx.branch.id, start, users)
-    targets = [u for u in users if data["rows"][u.id]["due"] > 0] if form.get("all") else \
-        [u for u in users if str(u.id) == str(form.get("user_id", ""))]
+    targets = [u for u in users if str(u.id) == str(form.get("user_id", ""))]
+    if targets and data["rows"][targets[0].id]["pst"] != "approved":
+        flash(ctx.request, f"{targets[0].short_name}: сначала бухгалтер проверяет, админ утверждает — тогда выдача", "error")
+        return _to(_week_back(start, targets[0].id))
     n, total = 0, Decimal(0)
     for u in targets:
         due = data["rows"][u.id]["due"]
-        amount = msvc.money(_dec(form.get("amount"))) if (form.get("amount") and not form.get("all")) else due
+        amount = msvc.money(_dec(form.get("amount"))) if form.get("amount") else due
         if amount <= 0:
             continue
         method = str(form.get("method") or u.pay_method or "cash")
@@ -644,23 +697,34 @@ def payroll_payout_delete(pid: str, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.get("/settings/payroll")
-def payroll_settings(ctx: Ctx = Depends(get_ctx)):
+def payroll_settings(ctx: Ctx = Depends(get_ctx), role: str = ""):
+    """Схемы и оклад (11.11.2026): сначала плитки должностей, внутри — сотрудники этой должности."""
     ctx.need("settings.access")
     db = ctx.db
-    staff = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    everyone = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True)).order_by(User.full_name)).all()
+    roles = {}
+    for u in everyone:
+        roles.setdefault(u.role.code, {"role": u.role, "n": 0, "salary": 0})["n"] += 1
+    staff = [u for u in everyone if u.role.code == role] if role in roles else []
     groups = db.scalars(select(PartGroup).where(PartGroup.branch_id == ctx.branch.id).order_by(PartGroup.name)).all()
     gnames = {g.id: g.name for g in groups}
     group_items = {g.id: db.scalars(select(PartCatalog).join(PartGroupItem, PartGroupItem.catalog_id == PartCatalog.id)
                                     .where(PartGroupItem.group_id == g.id).order_by(PartCatalog.name)).all() for g in groups}
     schemes = {}
-    for u in staff:
+    for u in everyone:
         own = psvc.lines_for(db, u)
-        schemes[u.id] = [(l, psvc.describe(l, gnames)) for l in own]
+        if any(l.kind == "salary" for l in own):
+            roles[u.role.code]["salary"] += 1
+        if u in staff:
+            schemes[u.id] = [(l, psvc.describe(l, gnames)) for l in own]
     from ..services.attendance import days_present
     t = date.today()
     present = {u.id: days_present(db, ctx.branch.id, u.id, t.year, t.month) for u in staff}
+    order = ["mechanic", "partsman", "manager", "storekeeper", "content", "accountant", "director", "admin"]
+    role_list = sorted(roles.values(), key=lambda x: (order.index(x["role"].code) if x["role"].code in order else 99, x["role"].name))
     return ctx.render("money/payroll_settings.html", title="Зарплата: схемы", staff=staff, schemes=schemes, groups=groups,
-                      present=present,
+                      present=present, role_list=role_list, role=role if role in roles else "",
+                      role_name=roles[role]["role"].name if role in roles else "",
                       group_items=group_items, defaults=st.get(db, ctx.branch.id, "payroll"), is_admin=_is_admin(ctx),
                       KINDS=psvc.KINDS, BASES=psvc.BASES, SOURCES=psvc.SOURCES, PERIODS=psvc.PERIODS,
                       default_desc={u.id: [psvc.describe(l, gnames) for l in psvc.default_lines(db, u)] for u in staff})
@@ -701,17 +765,17 @@ def payroll_line_add(user_id: str, ctx: Ctx = Depends(get_ctx), kind: str = Form
                              filter_group_id=g.id if g and g.branch_id == ctx.branch.id else None,
                              priority=0))
     ctx.db.commit()
-    return _to("/settings/payroll#u-" + user_id)
+    return _to(f"/settings/payroll?role={u.role.code}#u-{user_id}")
 
 
 @router.post("/settings/payroll/lines/{line_id}/delete")
-def payroll_line_delete(line_id: str, ctx: Ctx = Depends(get_ctx)):
+def payroll_line_delete(line_id: str, ctx: Ctx = Depends(get_ctx), role: str = Form("")):
     _admin_only(ctx)
     l = ctx.db.get(PaySchemeLine, _uuid(line_id))
     if l and l.branch_id == ctx.branch.id:
         ctx.db.delete(l)
         ctx.db.commit()
-    return _to("/settings/payroll")
+    return _to("/settings/payroll" + (f"?role={role}" if role.isidentifier() else ""))
 
 
 @router.post("/settings/payroll/groups")
@@ -752,4 +816,5 @@ async def salary_accrue(ctx: Ctx = Depends(get_ctx)):
         total += psvc.accrue_salary(ctx.db, u, max(days, 0), months, note)
     ctx.db.commit()
     flash(ctx.request, f"Оклад начислен: {msvc.money(total)} ₴")
-    return _to("/settings/payroll")
+    role = str(form.get("role", ""))
+    return _to("/settings/payroll" + (f"?role={role}" if role.isidentifier() else ""))

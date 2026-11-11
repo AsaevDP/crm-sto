@@ -501,7 +501,7 @@ select.field { text-overflow: ellipsis; }
 .res:has(input:checked)[data-v="worn"] { background: color-mix(in srgb, var(--yellow) 30%, transparent); font-weight: 600; }
 .res:has(input:checked)[data-v="fault"], .res:has(input:checked)[data-v="lost"] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); font-weight: 600; }
 .check-form { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.check-table { flex: 1 1 0; min-height: 0; overflow: auto; }
+.check-table { flex: none; overflow-x: auto; }   /* страница листается обычной прокруткой (11.11.2026) */
 .check-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .check-bar .field { flex: 1; min-width: 200px; }
 tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red) 5%, transparent); }
@@ -1184,6 +1184,27 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
 .pw-edit .form-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .pw-edit .field { width: auto; flex: 1 1 150px; }
 .pw-edit .btn { flex: none; }
+/* По каждому сотруднику (11.11.2026): статус и кнопки, список нарядов с раскрытием */
+.pw-pacts { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 10px; background: var(--fill); }
+.pw-pbtns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pw-pbtns form { margin: 0; }
+.pw-orders { display: grid; gap: 6px; }
+.pw-list > *, .pw-body > *, .pw-orders > * { min-width: 0; }   /* таблица внутри наряда листается сама, страницу не растягивает */
+.pw-payform { flex-wrap: wrap; }
+.pw-ord { border: 0.5px solid var(--separator); border-radius: 10px; padding: 0 10px; }
+.pw-ord > summary { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto minmax(110px, auto); gap: 4px 12px;
+  align-items: center; padding: 9px 0; cursor: pointer; list-style: none; }
+.pw-ord > summary::-webkit-details-marker { display: none; }
+.pw-ord > summary .num { text-align: right; }
+.pw-ord-n b { color: var(--accent); }
+.pw-ord[open] { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+.pw-ord[open] > summary { border-bottom: 0.5px solid var(--separator); }
+.pw-ord > .btn { margin: 4px 0 8px; }
+@media (max-width: 899px) {
+  .pw-ord > summary { grid-template-columns: 52px minmax(0, 1fr) auto; }
+  .pw-ord > summary > .caption:nth-child(3) { display: none; }
+}
 @media (max-width: 899px) {
   .pw-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pw-sum { grid-template-columns: 1fr auto; }

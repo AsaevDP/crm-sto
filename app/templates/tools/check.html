@@ -6,9 +6,18 @@
     <div><h1 class="title-1">Проверка: {{ CHECK_KINDS[c.kind]|lower }}</h1>
       <div class="subhead">{{ u.full_name if u else "" }} · {{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · проверяет {{ people[c.created_by].full_name if c.created_by in people else "" }} · позиций {{ lines|length }}</div></div>
     <div class="ov-actions"><span class="chip chip-lg" data-ck="{{ c.status }}">{{ CHECK_STATUS[c.status] }}</span>
+      {% if c.status == "draft" %}<a class="btn btn-sm" href="/tools/checks/{{ c.id }}/print?blank=1" target="_blank">🖨 Бланк для проверки</a>{% endif %}
       <a class="btn btn-sm btn-gray" href="/tools/checks/{{ c.id }}/print" target="_blank">Акт</a></div>
   </div>
 </header>
+{% if c.status == "draft" and can_edit %}
+<ol class="pw-steps ck-steps">
+  <li class="pw-step done"><b>1. Бланк</b><span class="caption">распечатайте — в нём ничего не отмечено</span></li>
+  <li class="pw-step done"><b>2. Проверка</b><span class="caption">проверяющий отмечает на бумаге</span></li>
+  <li class="pw-step now"><b>3. Внести отметки</b><span class="caption">{% if unmarked %}не отмечено: <b>{{ unmarked }}</b> из {{ lines|length }}{% else %}все позиции отмечены{% endif %}</span></li>
+  <li class="pw-step"><b>4. Завершить</b><span class="caption">по вине / утерян — удержание после решения админа</span></li>
+</ol>
+{% endif %}
 
 <form class="fill check-form" method="post" action="/tools/checks/{{ c.id }}{{ '/approve' if can_approve else '' }}" enctype="multipart/form-data">
   <div class="tablewrap check-table">
@@ -24,7 +33,7 @@
           <div class="res-pick" data-cost="{{ '%.2f'|format(t.cost) }}">
             {% for k, v in CHECK_RESULTS.items() %}<label class="res" data-v="{{ k }}" title="{{ v }}"><input type="radio" name="r_{{ l.id }}" value="{{ k }}" {% if k == l.result %}checked{% endif %}>{{ {"ok": "Исправен", "worn": "Износ", "fault": "По вине", "lost": "Утерян"}[k] }}</label>{% endfor %}
           </div>
-          {% else %}<span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS[l.result] }}</span>{% endif %}
+          {% else %}<span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS.get(l.result, "не отмечено") }}</span>{% endif %}
         </td>
         <td>
           {% if can_edit %}<input class="field" name="c_{{ l.id }}" value="{{ l.comment }}" placeholder="Что с инструментом">
