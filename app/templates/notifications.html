@@ -8,11 +8,12 @@
   {"t": "Всего", "n": rows|length, "c": "gray", "s": "последние сообщения"},
   {"t": "Запчасти на складе", "n": k|select("equalto", "parts_ready")|list|length, "c": "green", "s": "можно начинать ремонт"},
   {"t": "Срочно", "n": (k|select("equalto", "urgent_in")|list|length) + (k|select("equalto", "urgent_ask")|list|length), "c": "red", "s": "просят или пришло"},
+  {"t": "Готово к выдаче", "n": k|select("equalto", "issue_ready")|list|length, "c": "teal", "s": "забрать у кладовщика"},
   {"t": "Передали наряд", "n": k|select("equalto", "handover")|list|length, "c": "blue", "s": "теперь ведёте вы"}]) }}
 <div class="card compact nt-list">
   {% for n in rows %}
   <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
-    <span class="nt-ico">{{ {"parts_ready": "✅", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤"}.get(n.kind, "•") }}</span>
+    <span class="nt-ico">{{ {"parts_ready": "✅", "issue_ready": "📦", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤"}.get(n.kind, "•") }}</span>
     <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
     <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
   </a>

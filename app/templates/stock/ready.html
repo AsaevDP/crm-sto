@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{# Готово к выдаче (12.11.2026): кладовщик собрал запчасти у окошка и нажал «Готово к выдаче».
+   Менеджер приходит, забирает и нажимает «Выдано» (или это делает кладовщик — кто первый). #}
+{% macro req_card(x) %}
+<div class="card compact issue ready">
+  <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
+    <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
+  <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
+  <div class="caption">📦 у окошка кладовщика{% set rb = people.get(x.r.ready_by) %}{% if rb %} · подготовил {{ rb.full_name }}{% endif %}
+    · просил {{ x.who.full_name if x.who else "" }}</div>
+  {% for l in x.lines %}<div class="kv"><span>{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт</b></div>{% endfor %}
+  <form method="post" action="/stock/issues/{{ x.r.id }}/issue" onsubmit="return confirm('Запчасти забрали? Отметить «Выдано».')">
+    <input type="hidden" name="back" value="/ready"><button class="btn btn-block">✓ Выдано</button></form>
+</div>
+{% endmacro %}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Готово к выдаче</h1></div>
+</header>
+<p class="footnote" style="margin:0 4px">Кладовщик собрал запчасти у окошка. Заберите и нажмите «Выдано» — запчасти уйдут в наряд, слесарь может работать.
+  Закрыть выдачу может и кладовщик.</p>
+<div class="cl-grid">
+  <section class="ov-col on">
+    <div class="group-title">По моим нарядам · {{ mine|length }}</div>
+    {% for x in mine %}{{ req_card(x) }}{% else %}<div class="card compact"><p class="footnote" style="margin:0">Сейчас ничего не готово</p></div>{% endfor %}
+    {% if others %}
+    <div class="group-title">По другим нарядам · {{ others|length }}</div>
+    {% for x in others %}{{ req_card(x) }}{% endfor %}
+    {% endif %}
+  </section>
+  <section class="ov-col on">
+    <div class="group-title">Недавно выдано</div>
+    <div class="card compact">
+      {% for x in done %}
+      <div class="kv"><span><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
+        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption" style="display:block">выдано · {{ ib.full_name }}</span>{% endif %}</span>
+        <b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

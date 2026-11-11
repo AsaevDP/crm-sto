@@ -24,11 +24,25 @@
       {% for l in x.lines %}
       <div class="kv"><span>{% if l.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт · {{ l.cells|join(", ") or "—" }}</b></div>
       {% endfor %}
-      <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block">Выдано</button></form>
+      {# 12.11.2026: собрал у окошка → «Готово к выдаче» (у менеджера загорится); человек уже стоит рядом → «Выдано сразу» #}
+      <div class="iss-acts">
+        <form method="post" action="/stock/issues/{{ x.r.id }}/ready"><button class="btn btn-block">📦 Готово к выдаче</button></form>
+        <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block btn-gray">Выдано сразу</button></form>
+      </div>
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Новых запросов нет</p></div>{% endfor %}
   </section>
   <section class="ov-col on">
+    <div class="group-title">Готово — ждут, когда заберут · {{ ready|length }}</div>
+    {% for x in ready %}
+    <div class="card compact issue ready">
+      <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }}</span>
+        <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span></div>
+      <div class="caption">просил {{ x.who.full_name if x.who else "" }}{% set m = people.get(x.wo.manager_id) %}{% if m %} · ведёт {{ m.full_name }}{% endif %}</div>
+      {% for l in x.lines %}<div class="kv"><span>{{ l.name }}</span><b>{{ l.qty|num }} шт</b></div>{% endfor %}
+      <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block">Выдано</button></form>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Подготовленного нет</p></div>{% endfor %}
     <div class="group-title">Недавно выдано</div>
     <div class="card compact">
       {% for x in done %}

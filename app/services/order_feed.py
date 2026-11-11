@@ -128,7 +128,11 @@ def _sentence(r: AuditLog, obj, people: dict) -> tuple[str, str]:
     if t == "issue_requests":
         if a == "create":
             return "запросил выдачу запчастей", ""
+        if _pair(ch, "status")[1] == "ready":
+            return "подготовил запчасти — готово к выдаче", ""
         if _pair(ch, "status")[1] == "issued":
+            if _pair(ch, "status")[0] == "ready":
+                return "отметил «Выдано» — подготовленные запчасти забрали", ""
             return "выдал запчасти со склада", ""
     return "", ""
 

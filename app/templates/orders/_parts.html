@@ -127,7 +127,15 @@
   <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button></form>
   {% endif %}
 
-  {% if open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
+  {% if open_issue and open_issue.status == "ready" %}
+  {# 12.11.2026: кладовщик собрал запчасти у окошка — забрать и «Выдано» (менеджер или кладовщик) #}
+  <div class="hint iss-ready-bar"><b>📦 Запчасти готовы к выдаче — у кладовщика</b>
+    {% if open_issue.ready_at %}<span class="caption"> · с {{ open_issue.ready_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
+    {% if ctx.can("stock.issue") or ctx.can("stock.pickup") %}
+    <form method="post" action="/stock/issues/{{ open_issue.id }}/issue" style="margin-top:6px" onsubmit="return confirm('Запчасти забрали? Отметить «Выдано».')">
+      <input type="hidden" name="back" value="/orders/{{ wo.id }}#parts"><button class="btn btn-sm">✓ Выдано</button></form>
+    {% endif %}</div>
+  {% elif open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
   {% if can_request_issue %}
   <form class="note-form" method="post" action="/orders/{{ wo.id }}/issue-request">
     <input class="field" name="comment" placeholder="Комментарий кладовщику (необязательно)">

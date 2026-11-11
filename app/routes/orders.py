@@ -214,7 +214,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id).order_by(WoPart.created_at)).all()
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([p.catalog_id for p in parts if p.catalog_id])))}
     people.update(_people(ctx, *[p.created_by for p in parts]))   # подпись «кто добавил» у каждой позиции
-    open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
+    # открытый запрос на выдачу: ждёт кладовщика или «Готово к выдаче» (12.11.2026) — сначала готовый
+    open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status.in_(("new", "ready")))
+                           .order_by(IssueRequest.status.desc()))
     can_pick = (ctx.can("parts.pick") and wo.status in ("picking", "waiting") and not wo.awaiting_prepay
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
     # Деньги и работы

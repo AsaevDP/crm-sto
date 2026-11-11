@@ -460,13 +460,20 @@ def parse_paste(text: str) -> list[dict]:
 
 # ---------- Выдача ----------
 def request_issue(db: Session, wo: WorkOrder, comment: str = "") -> IssueRequest | None:
-    """Запрос на выдачу всех зарезервированных и ещё не выданных позиций наряда."""
-    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved")).all()
-    if not parts:
-        return None
+    """Запрос на выдачу всех зарезервированных и ещё не выданных позиций наряда.
+    Позиции, которые уже в открытом запросе (ждёт кладовщика или «готово к выдаче»), второй раз не просим."""
+    open_ids = [r.id for r in db.scalars(select(IssueRequest).where(IssueRequest.work_order_id == wo.id,
+                                                                    IssueRequest.status.in_(("new", "ready"))))]
+    asked = set(db.scalars(select(IssueRequestLine.wo_part_id).where(IssueRequestLine.request_id.in_(open_ids)))) if open_ids else set()
+    parts = [p for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved"))
+             if p.id not in asked]
     open_req = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
     if open_req:
+        for p in parts:   # дозаказали ещё деталь — добавляем в тот же запрос
+            db.add(IssueRequestLine(request_id=open_req.id, wo_part_id=p.id, qty=p.qty))
         return open_req
+    if not parts:
+        return None
     req = IssueRequest(work_order_id=wo.id, comment=comment.strip()[:500])
     db.add(req)
     db.flush()
@@ -485,12 +492,31 @@ def issue(db: Session, req: IssueRequest, user_id):
             move(db, "issue", db.get(StockItem, sid), qty, part, comment="Выдано по запросу")
         line.issued_qty = line.qty
         part.status = "issued"
-    req.status, req.issued_by = "issued", user_id
+    from ..db import now
+    req.status, req.issued_by, req.issued_at = "issued", user_id, now()
+    # «Готово к выдаче» по этому запросу больше не горит
+    from ..models import Notification
+    for n in db.scalars(select(Notification).where(Notification.work_order_id == req.work_order_id,
+                                                   Notification.kind == "issue_ready", Notification.read_at.is_(None))):
+        n.read_at = now()
     db.flush()
     wo = db.get(WorkOrder, req.work_order_id)
     left = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.in_(("need", "ordered", "reserved")))).all()
     if wo.status == "instock" and not left:
         osvc.set_status(db, wo, "work", "Запчасти выданы слесарю")
+
+
+def mark_ready(db: Session, req: IssueRequest, user) -> bool:
+    """Кладовщик собрал запчасти у окошка: «Готово к выдаче». Менеджеру наряда и тому, кто просил, — сообщение."""
+    from ..db import now
+    from . import notify as nsvc
+    if req.status != "new":
+        return False
+    req.status, req.ready_at, req.ready_by = "ready", now(), user.id
+    wo = db.get(WorkOrder, req.work_order_id)
+    nsvc.send(db, [wo.manager_id, req.created_by], "issue_ready", "Запчасти готовы к выдаче — у кладовщика",
+              f"{nsvc.car(db, wo)} · наряд {wo.number}", "/ready", wo, skip=user.id)
+    return True
 
 
 def location_label(loc: Location | None) -> str:

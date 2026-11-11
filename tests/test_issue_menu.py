@@ -49,3 +49,76 @@ def test_issue_requests_menu(client):
     for who in ("irina", "andrey"):
         _as(client, who)
         assert 'href="/stock/issues"' not in _sidebar(client.get("/orders").text), who
+
+
+def _reserved_order(client, plate, phone, name):
+    """Наряд, где запчасть пришла в резерв и менеджер попросил выдать. Возвращает (url, id запроса)."""
+    _as(client, "irina")
+    url = _create(client, scenario="A", photos=1, plate=plate, phone=phone, works="Работа").json()["url"]
+    _as(client, "oleg")
+    client.post(f"{url}/parts", data={"name": name, "qty": "1", "cost": "100", "markup_pct": "50", "action": "order"})
+    client.post(f"{url}/picking-done")
+    with SessionLocal() as db:
+        part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
+        pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
+    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    _as(client, "pavel")
+    client.post(f"/purchases/{pid}/receive", data={})
+    _as(client, "irina")
+    client.post(f"{url}/issue-request", data={})
+    with SessionLocal() as db:
+        rid = db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == _wo(url).id))
+    return url, rid
+
+
+def _status(rid):
+    with SessionLocal() as db:
+        return db.get(IssueRequest, rid).status
+
+
+def test_ready_to_issue(client):
+    url, rid = _reserved_order(client, "KA2002AA", "0670002002", "Фильтр (готово к выдаче)")
+    # Менеджер не может отметить «готово» и не может закрыть ещё не подготовленное
+    assert client.post(f"/stock/issues/{rid}/ready").status_code == 403
+    assert client.post(f"/stock/issues/{rid}/issue").status_code == 403
+    assert _status(rid) == "new"
+    menu = _sidebar(client.get("/orders").text)
+    assert 'href="/ready"' in menu and "Готово к выдаче" in menu
+    before = client.get("/api/notify").json()["ready"]
+
+    # Кладовщик собрал у окошка → «Готово к выдаче»; у менеджера загорается + сообщение
+    _as(client, "pavel")
+    page = client.get("/stock/issues").text
+    assert "📦 Готово к выдаче" in page and "Выдано сразу" in page
+    assert 'href="/ready"' not in _sidebar(page)          # у кладовщика это в «Запросах на выдачу»
+    client.post(f"/stock/issues/{rid}/ready")
+    assert _status(rid) == "ready"
+    assert "Готово — ждут, когда заберут · " in client.get("/stock/issues").text
+    _as(client, "irina")
+    j = client.get("/api/notify").json()
+    assert j["ready"] == before + 1 and any(n["kind"] == "issue_ready" for n in j["notes"])
+    ready = client.get("/ready").text
+    assert "Фильтр (готово к выдаче)" in ready and "у окошка кладовщика" in ready
+    order = client.get(url).text
+    assert "Запчасти готовы к выдаче" in order
+    # Менеджер забрал → «Выдано» → наряд в работе, цифра ушла, в ленте видно
+    r = client.post(f"/stock/issues/{rid}/issue", data={"back": "/ready"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/ready"
+    assert _status(rid) == "issued" and _wo(url).status == "work"
+    assert client.get("/api/notify").json()["ready"] == before
+    assert "подготовил запчасти — готово к выдаче" in client.get(url).text
+
+    # Второй наряд: «готово», а закрывает кладовщик — тоже можно
+    url2, rid2 = _reserved_order(client, "KA2003AA", "0670002003", "Свеча (готово к выдаче)")
+    _as(client, "pavel")
+    client.post(f"/stock/issues/{rid2}/ready")
+    client.post(f"/stock/issues/{rid2}/issue")
+    assert _status(rid2) == "issued"
+
+    # Слесарь не может ни подготовить, ни закрыть
+    url3, rid3 = _reserved_order(client, "KA2004AA", "0670002004", "Датчик (готово к выдаче)")
+    _as(client, "pavel")
+    client.post(f"/stock/issues/{rid3}/ready")
+    _as(client, "andrey")
+    assert client.post(f"/stock/issues/{rid3}/issue").status_code == 403
+    assert client.get("/ready").status_code == 403

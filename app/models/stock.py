@@ -217,9 +217,13 @@ class StockMovement(Entity):
 class IssueRequest(Entity):
     __tablename__ = "issue_requests"
     work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"))
-    status: Mapped[str] = mapped_column(String(10), default="new")  # new / issued / cancelled
+    status: Mapped[str] = mapped_column(String(10), default="new")  # new / ready / issued / cancelled
     comment: Mapped[str] = mapped_column(Text, default="")
     issued_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    # 12.11.2026: кладовщик собрал запчасти у окошка — «Готово к выдаче»; менеджер приходит, выдачу закрывает любой из двух
+    ready_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    ready_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    issued_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class IssueRequestLine(Entity):

@@ -1546,6 +1546,11 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .au-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .nt-row { border-left: 4px solid var(--separator); padding-left: 10px; }
 .nt-row[data-kind="parts_ready"] { border-left-color: var(--green); }
+.nt-row[data-kind="issue_ready"] { border-left-color: var(--teal); }
+.iss-acts { display: grid; gap: 6px; }
+.iss-acts form { margin: 0; }
+.issue.ready { border-left: 4px solid var(--teal); }
+.iss-ready-bar { border-left: 4px solid var(--teal); }
 .nt-row[data-kind="urgent_in"], .nt-row[data-kind="urgent_ask"] { border-left-color: var(--red); }
 .nt-row[data-kind="handover"] { border-left-color: var(--blue); }
 /* Обычные ссылки в тексте — цветом акцента, без подчёркивания (подчёркивание — при наведении) */

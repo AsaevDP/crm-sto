@@ -1064,18 +1064,55 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
                     can_manage=ctx.can("tools.manage"))
     else:
         data["done"] = _requests(ctx, "issued")[:15]
+        data["ready"] = _requests(ctx, "ready")
+        data["people"] = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     return ctx.render("stock/issues.html", title="Запросы на выдачу", **data)
 
 
 @router.post("/stock/issues/{rid}/issue")
-def issue_do(rid: str, ctx: Ctx = Depends(get_ctx)):
-    ctx.need("stock.issue")
+def issue_do(rid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """«Выдано»: кладовщик — сразу или после «Готово к выдаче»; менеджер — только подготовленное (12.11.2026)."""
+    ctx.need("stock.issue", "stock.pickup")
     r = ctx.db.get(IssueRequest, _uuid(rid))
-    if r and r.branch_id == ctx.branch.id and r.status == "new":
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    ok = ("new", "ready") if ctx.can("stock.issue") else ("ready",)
+    if r.status in ok:
         svc.issue(ctx.db, r, ctx.user.id)
         ctx.db.commit()
         flash(ctx.request, "Выдано")
+    elif r.status == "new":
+        raise Forbidden()
+    return _to(_safe_back(back, "/stock/issues" if ctx.can("stock.issue") else "/ready"))
+
+
+@router.post("/stock/issues/{rid}/ready")
+def issue_ready(rid: str, ctx: Ctx = Depends(get_ctx)):
+    """Кладовщик собрал запчасти у окошка — «Готово к выдаче». У менеджера загорается."""
+    ctx.need("stock.issue")
+    r = ctx.db.get(IssueRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    if svc.mark_ready(ctx.db, r, ctx.user):
+        ctx.db.commit()
+        flash(ctx.request, "Готово к выдаче — менеджер получил сообщение")
     return _to("/stock/issues")
+
+
+def _ready_mine(ctx: Ctx, x) -> bool:
+    return x["wo"].manager_id == ctx.user.id or x["r"].created_by == ctx.user.id
+
+
+@router.get("/ready")
+def ready_page(ctx: Ctx = Depends(get_ctx)):
+    """Готово к выдаче (менеджер): кладовщик подготовил запчасти — сверху по моим нарядам, ниже остальные."""
+    ctx.need("stock.pickup", "stock.issue")
+    rows = _requests(ctx, "ready")
+    rows.sort(key=lambda x: x["r"].ready_at or x["r"].created_at)
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    return ctx.render("stock/ready.html", title="Готово к выдаче", mine=[x for x in rows if _ready_mine(ctx, x)],
+                      others=[x for x in rows if not _ready_mine(ctx, x)], people=people, fmt_plate=osvc.fmt_plate,
+                      done=[x for x in _requests(ctx, "issued")[:30] if _ready_mine(ctx, x)][:10])
 
 
 @router.get("/api/notify")
@@ -1105,7 +1142,11 @@ def notify(ctx: Ctx = Depends(get_ctx)):
                                 "order": x["wo"].number if x["wo"] else "", "plate": osvc.fmt_plate(x["v"].plate) if x["v"] else "",
                                 "done_url": f"/tool-requests/{r.id}/done"})
     if not ctx.can("stock.issue"):
-        return {"issues": len(tools_items), "items": [], "tools": tools_items, "notes": notes, "unread": unread_n}
+        ready_n = 0
+        if ctx.can("stock.pickup"):   # «Готово к выдаче» — по моим нарядам и моим запросам
+            ready_n = sum(1 for x in _requests(ctx, "ready") if _ready_mine(ctx, x))
+        return {"issues": len(tools_items), "items": [], "tools": tools_items, "notes": notes, "unread": unread_n,
+                "ready": ready_n}
     items = []
     for x in _requests(ctx, "new")[:5]:
         names = ", ".join(("🔥 " if l["urgent"] else "") + l["name"] for l in x["lines"][:3]) + ("…" if len(x["lines"]) > 3 else "")
