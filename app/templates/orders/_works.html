@@ -24,8 +24,8 @@
     {% if w.status == "paused" and pauses.get(w.id) %}<div class="hint warn" style="margin:0">Пауза: {{ pauses[w.id].pause_reason }} · с {{ pauses[w.id].started_at.astimezone().strftime("%H:%M") }}</div>{% endif %}
     {% if show_price %}
     <div class="part-nums">
-      <span>{% if w.pricing == "fixed" %}фикс {{ "%.2f"|format(w.rate or 0) }} ₴{% else %}{{ w.hours|num if w.hours is not none else 0 }} н/ч × {{ "%.0f"|format(w.rate or 0) }} ₴{% endif %}{% if w.qty != 1 %} × {{ w.qty|num }}{% endif %}</span>
-      <b>{{ "%.2f"|format(w.price or 0) }} ₴</b>
+      <span>{% if w.pricing == "fixed" %}фикс {{ (w.rate or 0)|money }} ₴{% else %}{{ w.hours|num if w.hours is not none else 0 }} н/ч × {{ (w.rate or 0)|money(0) }} ₴{% endif %}{% if w.qty != 1 %} × {{ w.qty|num }}{% endif %}</span>
+      <b>{{ (w.price or 0)|money }} ₴</b>
     </div>
     {% endif %}
 

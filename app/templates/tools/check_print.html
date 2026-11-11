@@ -35,11 +35,11 @@
     <tr><th>№</th><th>Инв. №</th><th>Наименование, серийный №</th><th class="num">Стоимость</th><th>Результат</th><th class="num">Удержание</th></tr>
     {% for l in lines %}{% set t = tools[l.tool_id] %}
     <tr><td>{{ loop.index }}</td><td>{{ t.inv_no }}</td><td>{{ t.name }}{% if t.serial %}, S/N {{ t.serial }}{% endif %}{% if l.comment %}<br><span class="muted">{{ l.comment }}</span>{% endif %}</td>
-      <td class="num">{{ "%.2f"|format(t.cost) }}</td><td>{{ CHECK_RESULTS[l.result] }}</td>
-      <td class="num">{{ "%.2f"|format(l.charge) if l.charge and l.result in ("fault", "lost") else "—" }}</td></tr>
+      <td class="num">{{ (t.cost)|money }}</td><td>{{ CHECK_RESULTS[l.result] }}</td>
+      <td class="num">{{ l.charge|money if l.charge and l.result in ("fault", "lost") else "—" }}</td></tr>
     {% endfor %}
   </table>
-  <p>Итого к удержанию: <b>{{ "%.2f"|format(charge_total) }} ₴</b>{% if c.status == "approved" %} (решение принято{% if c.approved_by in people %}: {{ people[c.approved_by].full_name }}{% endif %}){% endif %}.
+  <p>Итого к удержанию: <b>{{ (charge_total)|money }} ₴</b>{% if c.status == "approved" %} (решение принято{% if c.approved_by in people %}: {{ people[c.approved_by].full_name }}{% endif %}){% endif %}.
     Естественный износ удержанию не подлежит.</p>
   {% if c.note %}<p class="muted">{{ c.note }}</p>{% endif %}
   <div class="sign">

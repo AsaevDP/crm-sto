@@ -8,7 +8,7 @@
     <div><div class="footnote"><span class="mono code-big">{{ i.code }}</span> · {{ CONDITIONS.get(i.condition) }} · ячейка {{ r.loc }}</div>
       <h1 class="title-1">{{ r.c.name }}</h1>
       <div class="subhead">{{ i.donor_make }} {{ i.donor_model }}{% if i.donor_year %} · {{ i.donor_year }}{% endif %}{% if r.d and r.d.engine %} · {{ r.d.engine }}{% endif %}</div></div>
-    <div class="ov-actions"><b class="price-big">{{ "{:,.0f}".format(i.sale_price).replace(",", " ") }} ₴</b>
+    <div class="ov-actions"><b class="price-big">{{ (i.sale_price)|money(0) }} ₴</b>
       <span class="chip chip-lg" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if i.publish_on_site %}<span class="tag">на сайте</span>{% endif %}
       <a class="btn btn-sm btn-gray" href="/stock/labels?ids={{ i.id }}" target="_blank" title="Наклейка со штрихкодом {{ i.barcode or '' }}">🏷 Наклейка</a></div>
   </div>

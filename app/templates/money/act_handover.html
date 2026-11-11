@@ -10,7 +10,7 @@
 <div class="box">{{ wo.handover_defects }}</div>
 <p><span class="cb">{% if wo.handover_state == "advice" or wo.handover_advice %}✓{% endif %}</span>Рекомендации (детали ещё рабочие, но требуют внимания):</p>
 <div class="box">{{ wo.handover_advice }}</div>
-<p class="muted">Итого по заказ-наряду: {{ "%.2f"|format(t.total) }} ₴, оплачено {{ "%.2f"|format(t.paid) }} ₴.
+<p class="muted">Итого по заказ-наряду: {{ (t.total)|money }} ₴, оплачено {{ (t.paid)|money }} ₴.
   Заказчик автомобиль осмотрел, претензий к объёму и качеству работ не имеет{% if wo.handover_state == "partial" %}, с перечнем неисправностей ознакомлен{% endif %}.</p>
 <div class="sign">
   <div>Принял (заказчик): ____________ / {{ c.full_name }}</div>

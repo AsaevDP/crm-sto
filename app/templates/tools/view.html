@@ -4,7 +4,7 @@
   <a class="back" href="/tools">{{ icon("back") }}Инструмент</a>
   <div class="ov-title">
     <div><div class="footnote mono">{{ t.inv_no }}{% if t.serial %} · S/N {{ t.serial }}{% endif %}</div><h1 class="title-1">{{ t.name }}</h1>
-      <div class="subhead">{{ TOOL_CATEGORIES[t.cat] }} · {{ "У " ~ people[t.holder_id].full_name if t.holder_id in people else "На складе инструмента" }}{% if t.place %} · место: <a href="/tools?view=cabinets">{{ t.place }}</a>{% endif %}{% if t.work_order_id in wo_nums %} · под наряд <a href="/orders/{{ t.work_order_id }}">{{ wo_nums[t.work_order_id] }}</a>{% if t.wo_work_id in work_names %} ({{ work_names[t.wo_work_id] }}){% endif %}{% endif %} · {{ "%.2f"|format(t.cost) }} ₴</div></div>
+      <div class="subhead">{{ TOOL_CATEGORIES[t.cat] }} · {{ "У " ~ people[t.holder_id].full_name if t.holder_id in people else "На складе инструмента" }}{% if t.place %} · место: <a href="/tools?view=cabinets">{{ t.place }}</a>{% endif %}{% if t.work_order_id in wo_nums %} · под наряд <a href="/orders/{{ t.work_order_id }}">{{ wo_nums[t.work_order_id] }}</a>{% if t.wo_work_id in work_names %} ({{ work_names[t.wo_work_id] }}){% endif %}{% endif %} · {{ (t.cost)|money }} ₴</div></div>
     <span class="chip chip-lg" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span>
   </div>
 </header>
@@ -62,7 +62,7 @@
       <div class="card-h"><span class="headline">История</span></div>
       <div class="timeline">
         {% for l, c in checks %}
-        <div class="tl"><span><b>Проверка</b> · {{ CHECK_KINDS[c.kind] }} — <span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS[l.result] }}</span>{% if l.charge_approved %} · удержано {{ "%.2f"|format(l.charge) }} ₴{% endif %}</span>
+        <div class="tl"><span><b>Проверка</b> · {{ CHECK_KINDS[c.kind] }} — <span class="chip" data-tr="{{ l.result }}">{{ CHECK_RESULTS[l.result] }}</span>{% if l.charge_approved %} · удержано {{ (l.charge)|money }} ₴{% endif %}</span>
           <span class="caption">{{ c.created_at.astimezone().strftime("%d.%m.%Y") }} · <a href="/tools/checks/{{ c.id }}">акт</a>{% if l.comment %} — {{ l.comment }}{% endif %}</span></div>
         {% endfor %}
         {% for m in moves %}

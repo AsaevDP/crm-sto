@@ -22,7 +22,7 @@
         {% for t in personal %}
         <tr onclick="location.href='/tools/{{ t.id }}'" style="cursor:pointer"><td class="mono">{{ t.inv_no }}</td>
           <td>{{ t.name }}{% if t.serial %}<div class="caption mono">S/N {{ t.serial }}</div>{% endif %}</td>
-          <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td><td class="num">{{ "%.2f"|format(t.cost) }}</td></tr>
+          <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td><td class="num">{{ (t.cost)|money }}</td></tr>
         {% else %}<tr><td colspan="4" class="footnote">Личного инструмента нет</td></tr>{% endfor %}
         </tbody>
         <thead><tr><th colspan="4" class="tbl-group">Временно, под наряд · {{ temp|length }} <span class="caption">— общий инструмент, вернуть на склад</span></th></tr>
@@ -37,7 +37,7 @@
           <td class="num">{% if ctx.can("tools.manage") %}
             <form method="post" action="/tools/{{ t.id }}"><input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/tools/staff/{{ u.id }}">
               <button class="btn btn-sm btn-tinted">Вернуть</button></form>
-            {% else %}{{ "%.2f"|format(t.cost) }}{% endif %}</td></tr>
+            {% else %}{{ (t.cost)|money }}{% endif %}</td></tr>
         {% else %}<tr><td colspan="4" class="footnote">Временно выданного нет</td></tr>{% endfor %}
         </tbody>
       </table>

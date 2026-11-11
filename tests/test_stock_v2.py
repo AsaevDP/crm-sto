@@ -43,7 +43,8 @@ def test_stock_tree_fits_barcode_labels(client):
 
     # Дерево категорий создано, вкладки ТО / Запчасти, б/у нет
     page = client.get("/stock?sec=repair").text
-    assert "Колодки (тест склада)" in page and ">ТО</a>" in page and ">Запчасти</a>" in page and "Б/у" not in page
+    assert "Колодки (тест склада)" in page and "Б/у" not in page
+    assert '<span class="ptile-t">ТО</span>' in page and '<span class="ptile-t">Запчасти</span>' in page   # плитки разделов
     with SessionLocal() as db:
         assert db.scalar(select(StockCategory).where(StockCategory.name == "Тормоза"))
         sub = db.scalar(select(StockCategory).where(StockCategory.name == "Колодки"))

@@ -18,7 +18,7 @@
       {% for l in lines %}
       {% set t = tools[l.tool_id] %}
       <tr data-r="{{ l.result }}">
-        <td><span class="mono caption">{{ t.inv_no }}</span><div>{{ t.name }}</div><span class="caption">стоимость {{ "%.2f"|format(t.cost) }} ₴</span></td>
+        <td><span class="mono caption">{{ t.inv_no }}</span><div>{{ t.name }}</div><span class="caption">стоимость {{ (t.cost)|money }} ₴</span></td>
         <td>
           {% if can_edit %}
           <div class="res-pick" data-cost="{{ '%.2f'|format(t.cost) }}">
@@ -33,7 +33,7 @@
           {% if l.photo %}<a href="/tools/files/{{ l.photo.split('/')[-1] }}" data-lightbox class="caption">фото</a>{% endif %}
         </td>
         <td class="num">{% if can_edit %}<input class="mini m-charge" name="m_{{ l.id }}" value="{{ '%.2f'|format(l.charge) if l.charge else '' }}" inputmode="decimal" placeholder="0" style="width:90px">
-          {% else %}{{ "%.2f"|format(l.charge) if l.charge else "—" }}{% if l.charge_approved %} ✓{% endif %}{% endif %}</td>
+          {% else %}{{ l.charge|money if l.charge else "—" }}{% if l.charge_approved %} ✓{% endif %}{% endif %}</td>
         {% if can_approve %}<td>{% if l.result in ("fault", "lost") and l.charge > 0 %}<label><input type="checkbox" name="approve" value="{{ l.id }}" checked> да</label>{% endif %}</td>{% endif %}
       </tr>
       {% else %}<tr><td colspan="5" class="footnote">За сотрудником нет инструмента</td></tr>{% endfor %}
@@ -44,7 +44,7 @@
     {% if can_edit %}<input class="field" name="note" value="{{ c.note }}" placeholder="Общий комментарий к проверке">
     <button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
     <button class="btn btn-sm" name="action" value="finish" onclick="return confirm('Завершить проверку? Состояние инструмента обновится{{ ", весь инструмент вернётся на склад" if c.kind == "dismissal" else "" }}.')">Завершить проверку</button>
-    {% elif can_approve %}<span class="subhead">Удержание из ближайшей зарплаты одной суммой: <b>{{ "%.2f"|format(charge_total) }} ₴</b></span>
+    {% elif can_approve %}<span class="subhead">Удержание из ближайшей зарплаты одной суммой: <b>{{ (charge_total)|money }} ₴</b></span>
     <button class="btn btn-sm">Утвердить решение</button>
     {% else %}<span class="subhead">{{ c.note }}</span>{% endif %}
   </div>

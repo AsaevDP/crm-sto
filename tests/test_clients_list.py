@@ -23,7 +23,9 @@ def test_client_tabs_sort_regular(client):
     _create(client, plate="AA4040KL", phone="0674440000", make="Nissan", model="Leaf")
 
     page = client.get("/clients").text
-    assert "Постоянные · " in page and "Должники · " in page and "Давно · " in page
+    # Плитки групп (11.11.2026): заголовок и ссылка-фильтр
+    assert all(f'<span class="ptile-t">{t}</span>' in page for t in ("Постоянные", "Должники", "Давно"))
+    assert "?tab=regular" in page and "?tab=debt" in page
     reg = client.get("/clients?tab=regular").text
     c3 = _client("0673330000")
     c1 = _client("0674440000")
