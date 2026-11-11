@@ -403,8 +403,22 @@ def _orders_board(ctx: Ctx, uid, st: str, mode: str, people_tiles=None):
         shown = [r for r in rows if r["st"] == st]
     else:
         shown = [r for r in rows if r["st"] != "arrived"] or rows
-    shown.sort(key=lambda r: (not r["late"], not (r["part"] and r["part"].urgent), r["st"] == "arrived"))
-    return dict(rows=shown[:300], counts=counts, st=st, mode=mode, people_tiles=people_tiles or [],
+    # 12.11.2026: строки одной накладной — рядом (у первой — кнопка «✓ Заказал» / приёмка). Сверху черновики
+    # (ждут кнопки), потом опаздывающие, срочные; принятые — вниз.
+    grp = {}
+    for r in shown:
+        g = grp.setdefault(r["p"].id, [False, False, False, True])
+        g[0] |= r["st"] == "draft"
+        g[1] |= r["late"]
+        g[2] |= bool(r["part"] and r["part"].urgent)
+        g[3] &= r["st"] == "arrived"
+    order = {pid: i for i, pid in enumerate(dict.fromkeys(r["p"].id for r in shown))}
+    shown.sort(key=lambda r: (not grp[r["p"].id][0], not grp[r["p"].id][1], not grp[r["p"].id][2], grp[r["p"].id][3],
+                              order[r["p"].id]))
+    n_lines = {}
+    for r in shown:
+        n_lines[r["p"].id] = n_lines.get(r["p"].id, 0) + 1
+    return dict(rows=shown[:300], counts=counts, st=st, mode=mode, people_tiles=people_tiles or [], n_lines=n_lines,
                 STATES=svc.ORDER_STATES, fmt_plate=osvc.fmt_plate, cost_ok=ctx.can("prices.view_purchase"))
 
 
@@ -491,6 +505,27 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx), short: str = ""):
                       cells={l.id: svc.default_location(db, l.catalog_id) for l in lines if not l.received},
                       fmt_plate=osvc.fmt_plate, total=sum((l.qty * l.price for l in lines), Decimal(0)),
                       total_got=sum((l.got * l.price for l in lines), Decimal(0)))
+
+
+@router.post("/purchases/{pid}/ordered")
+def purchase_ordered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """«✓ Заказал» (12.11.2026) — из «Моих заказов», у каждого черновика. Поставщик, счёт, дата не трогаются."""
+    ctx.need("purchases.manage")
+    p = _purchase(ctx, pid)
+    db = ctx.db
+    to = back if back.startswith("/my-orders") else f"/purchases/{pid}"
+    if p.status != "draft":
+        flash(ctx.request, "Эта закупка уже заказана")
+        return _to(to)
+    if not db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id)):
+        flash(ctx.request, "В закупке нет строк", "error")
+        return _to(to)
+    from datetime import date as _d
+    p.status, p.ordered_on = "ordered", _d.today()
+    db.commit()
+    flash(ctx.request, "Заказано — накладная ушла кладовщику в «Приход»"
+          + ("" if p.supplier_id else ". Поставщик не указан — откройте закупку и впишите, у кого брали"))
+    return _to(to)
 
 
 def _date(v: str):

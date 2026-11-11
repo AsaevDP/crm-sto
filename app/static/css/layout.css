@@ -1688,3 +1688,7 @@ main a:not([class]):hover { text-decoration: underline; }
 .pr-row .field { width: auto; flex: 1 1 150px; min-width: 0; }
 .pr-swap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pr-swap .field { width: auto; flex: 1 1 160px; }
+
+/* «✓ Заказал» в «Моих заказах» (12.11.2026): на ПК — в колонке «Статус», на телефоне — под названием детали */
+.po-ord-m { display: none; }
+@media (max-width: 600px) { .po-ord-m { display: flex; margin-top: 6px; } .po-ord-d { display: none; } }

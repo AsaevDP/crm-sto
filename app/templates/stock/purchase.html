@@ -84,7 +84,7 @@
     <div class="form-row pu-head-btns">
       <button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
       {% if p.status == "draft" %}
-      <button class="btn btn-sm" name="action" value="ordered">Отправлено поставщику</button>
+      <button class="btn btn-sm" name="action" value="ordered">✓ Заказал</button>
       <button class="btn btn-sm btn-plain danger" name="action" value="delete" onclick="return confirm('Удалить этот черновик? Позиции нарядов из него снова будут ждать решения запчастиста.')">Удалить черновик</button>
       {% elif p.status == "ordered" %}
       <button class="btn btn-sm btn-plain" name="action" value="back_to_draft">Вернуть в черновик</button>

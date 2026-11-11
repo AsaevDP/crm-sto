@@ -135,7 +135,7 @@ def compute(ctx) -> dict:
         rows = ssvc.partsman_lines(db, bid, me.id, days=1)
         _add(out, "/my-orders", "red", sum(1 for r in rows if r["late"]), "опаздывают", "/my-orders?st=late")
         # 12.11.2026: черновик под наряд не отправлен поставщику — в наряде это «в черновике», кладовщик ждёт
-        _add(out, "/my-orders", "yellow", len(ssvc.draft_waits(db, bid, me.id)), "черновики под наряды — нажмите «Заказано»",
+        _add(out, "/my-orders", "yellow", len(ssvc.draft_waits(db, bid, me.id)), "черновики под наряды — нажмите «✓ Заказал»",
              "/my-orders?st=draft")
         _add(out, "/my-orders", "yellow", sum(1 for r in rows if r["st"] == "delivered"), "привезли — кладовщик принимает",
              "/my-orders?st=delivered")

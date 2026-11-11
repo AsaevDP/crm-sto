@@ -6,7 +6,16 @@
 {% from "stock/_recv.html" import recv_btns with context %}
 {% block content %}
 {% set recv_ok = mode == "all" and ctx.can("stock.manage") %}
-{% set ns = namespace(seen=[]) %}
+{% set order_ok = mode == "mine" and ctx.can("purchases.manage") %}
+{% set ns = namespace(seen=[], drafts=[]) %}
+{# «✓ Заказал» (12.11.2026): запчастист подтверждает заказ прямо отсюда — у первой строки каждого черновика
+   (вся накладная). На ПК — в колонке «Статус», на телефоне — под названием детали (таблица там листается вбок). #}
+{% macro ordered_btn(p, cls) %}
+<span class="rcv-btns {{ cls }}"><form method="post" action="/purchases/{{ p.id }}/ordered">
+  <input type="hidden" name="back" value="{{ ctx.request.url.path }}{{ '?' ~ ctx.request.url.query if ctx.request.url.query }}">
+  <button class="btn btn-sm" title="Заказ отправлен поставщику — накладная уйдёт кладовщику в «Приход»">✓ Заказал</button></form>
+  {% if n_lines[p.id] > 1 %}<span class="caption">вся накладная · {{ n_lines[p.id] }} поз.</span>{% endif %}</span>
+{% endmacro %}
 <header class="page-head">
   <div>{% if mode == "all" and who %}<a class="back" href="/purchases/by-partsman">{{ icon("back") }}Все запчастисты</a>{% endif %}
     <h1 class="large-title">{% if mode == "mine" %}Мои заказы{% elif who %}Заказы: {{ who.full_name }}{% else %}Заказы запчастистов{% endif %}</h1></div>
@@ -46,9 +55,12 @@
       <thead><tr><th>Запчасть</th><th>Под наряд</th><th>Поставщик · закупка</th><th class="num">Пришло</th><th>Статус</th></tr></thead>
       <tbody>
       {% for r in rows %}
+      {% set first_draft = order_ok and r.p.status == "draft" and r.p.id not in ns.drafts %}
+      {% if first_draft %}{% set ns.drafts = ns.drafts + [r.p.id] %}{% endif %}
       <tr class="{{ 'urgent' if r.part and r.part.urgent and r.st != 'arrived' }}">
         <td>{% if r.part and r.part.urgent and r.st != "arrived" %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
           <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div>
+          {% if first_draft %}{{ ordered_btn(r.p, "po-ord-m") }}{% endif %}
           {% if mode == "all" and r.buyer and who and r.buyer.id != who.id %}<div class="caption">добавил {{ r.buyer.short_name }}</div>{% endif %}</td>
         <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}#parts">{{ r.wo.number }}</a>
             <div class="caption">{% if r.v %}{{ r.v.make }} {{ r.v.model }} {{ fmt_plate(r.v.plate) }} · {% endif %}в наряд {{ r.need|num }}{% if r.extra > 0 %}, на склад {{ r.extra|num }}{% endif %}</div>
@@ -59,7 +71,8 @@
         <td>{% set sv = STATES[r.st] %}<span class="chip" data-s="{{ {'draft': 'created', 'wait': 'waiting', 'delivered': 'diag', 'partial': 'picking', 'arrived': 'ready'}[r.st] }}">{{ {'draft': 'черновик', 'wait': 'заказано', 'delivered': 'привезли, кладовщик принимает', 'partial': 'неполная поставка', 'arrived': '✓ принято на склад'}[r.st] }}</span>
           {% if r.st in ("wait", "partial") %}<div class="caption {{ 'late' if r.late }}">{% if r.p.expected_on %}привезут {{ r.p.expected_on.strftime("%d.%m") }}{% if r.late %} — опаздывает{% endif %}{% else %}срок не указан{% endif %}</div>{% endif %}
           {# Кладовщик принимает прямо отсюда — кнопки у первой строки каждой накладной #}
-          {% if recv_ok and r.p.status in ("ordered", "delivered", "partial") and r.p.id not in ns.seen %}{% set ns.seen = ns.seen + [r.p.id] %}{{ recv_btns(r.p) }}{% endif %}</td>
+          {% if recv_ok and r.p.status in ("ordered", "delivered", "partial") and r.p.id not in ns.seen %}{% set ns.seen = ns.seen + [r.p.id] %}{{ recv_btns(r.p) }}{% endif %}
+          {% if first_draft %}{{ ordered_btn(r.p, "po-ord-d") }}{% endif %}</td>
       </tr>
       {% else %}<tr><td colspan="5" class="footnote">Здесь пусто</td></tr>{% endfor %}
       </tbody>

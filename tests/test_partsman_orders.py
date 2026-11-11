@@ -62,8 +62,20 @@ def test_partsman_orders(client):
     assert "в наряд 1, на склад 2" in mine
     assert client.get("/purchases/by-partsman").status_code == 403
 
+    # «✓ Заказал» — прямо в «Моих заказах», у каждого черновика; поставщик и прочее не стираются
+    assert f'action="/purchases/{pa.id}/ordered"' in mine and f'action="/purchases/{pb.id}/ordered"' in mine
+    client.post(f"/purchases/{pa.id}", data={"action": "save", "note": "до 16:00"})
+    r =client.post(f"/purchases/{pa.id}/ordered", data={"back": "/my-orders"}, follow_redirects=False)
+    assert r.status_code in (302, 303) and r.headers["location"] == "/my-orders"
+    with SessionLocal() as db:
+        p = db.get(Purchase, pa.id)
+        assert p.status == "ordered" and p.ordered_on and p.note == "до 16:00"
+    assert f'action="/purchases/{pa.id}/ordered"' not in client.get("/my-orders").text
+    _as(client, "irina")   # менеджер — только смотрит
+    assert client.post(f"/purchases/{pb.id}/ordered", data={}).status_code == 403
+    _as(client, "oleg")
+
     # Отправили поставщику. «Привезли» и приёмку отмечает только кладовщик — запчастисту нельзя
-    client.post(f"/purchases/{pa.id}", data={"action": "ordered"})
     client.post(f"/purchases/{pb.id}", data={"action": "ordered"})
     assert client.post(f"/purchases/{pa.id}/delivered", data={}).status_code == 403
     assert client.post(f"/purchases/{pa.id}/receive", data={}).status_code == 403
