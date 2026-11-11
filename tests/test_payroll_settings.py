@@ -42,8 +42,18 @@ def test_salary_add_edit_delete(client):
     _as(client, "buh")
     assert client.post(f"/settings/payroll/lines/{line.id}", data={"rate": "1"}).status_code == 403
 
-    # Убрать
+    # По строке уже начисляли оклад (как у Игоря Мельника) — «Убрать» всё равно работает, начисление остаётся
+    from datetime import date
+    from app.db import current_branch_id
+    from app.models import PayrollAccrual
+    with SessionLocal() as db:
+        current_branch_id.set(u.branch_id)
+        db.add(PayrollAccrual(user_id=u.id, scheme_line_id=line.id, base_amount=Decimal(1), rate=line.rate,
+                              amount=Decimal("720.50"), on_date=date(2031, 5, 5), kind="salary", note="Оклад (тест)"))
+        db.commit()
     _as(client, "admin")
-    client.post(f"/settings/payroll/lines/{line.id}/delete", data={"role": "mechanic"})
+    r = client.post(f"/settings/payroll/lines/{line.id}/delete", data={"role": "mechanic"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/settings/payroll?role=mechanic"
     with SessionLocal() as db:
         assert db.get(PaySchemeLine, line.id) is None
+        assert db.scalar(select(PayrollAccrual).where(PayrollAccrual.note == "Оклад (тест)")).amount == Decimal("720.50")

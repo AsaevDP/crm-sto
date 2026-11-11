@@ -791,8 +791,13 @@ def payroll_line_delete(line_id: str, ctx: Ctx = Depends(get_ctx), role: str = F
     _admin_only(ctx)
     l = ctx.db.get(PaySchemeLine, _uuid(line_id))
     if l and l.branch_id == ctx.branch.id:
+        # По строке уже начисляли — начисления остаются как есть (сумма и подпись), только отвязываем от строки
+        for a in ctx.db.scalars(select(PayrollAccrual).where(PayrollAccrual.scheme_line_id == l.id)):
+            a.scheme_line_id = None
+        ctx.db.flush()
         ctx.db.delete(l)
         ctx.db.commit()
+        flash(ctx.request, "Строка схемы убрана. Уже начисленное остаётся в зарплате.")
     return _to("/settings/payroll" + (f"?role={role}" if role.isidentifier() else ""))
 
 
