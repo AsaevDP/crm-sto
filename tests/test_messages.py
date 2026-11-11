@@ -117,6 +117,37 @@ def test_decline_and_text_messages(client):
     assert "хомут глушителя" in client.get(url).text
 
 
+def test_mechanic_stock_filters_and_razbor(client):
+    """Слесарь: склад по категориям и марке; разбор — машина → категории; занятое покупателем не видно; цен нет."""
+    from app.models import Donor
+    from app.services import razbor as rsvc
+    with SessionLocal() as db:
+        bid = db.get(User, _uid("pavel")).branch_id
+        current_branch_id.set(bid)
+        d = Donor(code="Д-ТСТ", make="Skoda", model="Superb", year=2017, branch_id=bid)
+        db.add(d)
+        db.flush()
+        free = rsvc.add_part(db, bid, d, "Фара левая (слесарь)", 1, 4500, "good", None, category="Оптика", subcategory="Фары")
+        sold = rsvc.add_part(db, bid, d, "Дверь передняя (слесарь)", 1, 7000, "good", None, category="Кузов", subcategory="Двери")
+        db.flush()
+        rsvc.reserve_for_buyer(db, bid, sold, 1, 7000, "Покупатель", "0991112233", "np")   # купили — ждёт отправки
+        db.commit()
+        dkey = str(d.id)
+    _as(client, "andrey")
+    page = client.get("/stock?sec=used").text
+    assert "Skoda Superb" in page and "Выберите машину" in page and "₴" not in page
+    page = client.get(f"/stock?sec=used&donor={dkey}").text
+    assert "Фара левая (слесарь)" in page and "Дверь передняя (слесарь)" not in page and "Оптика · 1" in page
+    assert "Кузов" not in page.split("look-cats")[1].split("</nav>")[0]
+    page = client.get(f"/stock?sec=used&donor={dkey}&cat=Оптика&sub=Фары").text
+    assert "Фара левая (слесарь)" in page and "4500" not in page and "4 500" not in page
+    # Склад: фильтр по категории и марке работает и не роняет страницу
+    assert client.get("/stock?sec=repair&make=Skoda&model=Superb").status_code == 200
+    assert client.get("/stock?sec=to&cat=-").status_code == 200
+    card = client.get(f"/stock/items/{free.id}").text
+    assert "Попросить под наряд" in card and "4500" not in card and "4 500" not in card
+
+
 def test_mechanic_cannot_ask_for_foreign_order(client):
     url = _order_to_work(client, "КМ 2003 КМ", "0502003000", "Колодки (чужой)")   # слесарь — andrey
     item = _stock("Герметик (сообщения)", qty=3)

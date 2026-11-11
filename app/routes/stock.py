@@ -778,7 +778,7 @@ def _stock_args(sec, cat, sub, make, model, q, only):
 
 @router.get("/stock")
 def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "to", cat: str = "", sub: str = "",
-               make: str = "", model: str = "", order: str = ""):
+               make: str = "", model: str = "", order: str = "", donor: str = ""):
     """Склад (10.11.2026): вкладки «ТО» и «Запчасти», дерево категорий, фильтр по марке и модели, штрихкоды.
     Слесарь (stock.look, 11.11.2026) — только смотрит: название, наличие, количество; ещё вкладка «Разбор (б/у)»."""
     ctx.need("stock.view", "stock.look")
@@ -793,11 +793,8 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
     db.commit()
     order = order if osvc._uuid(order) else ""
     rows, counts = _stock_rows(ctx, q, only, sec, cat, sub, make, model)
-    if look:   # слесарь: простой список — название, наличие, количество; б/у — отдельной вкладкой
-        n_used = len(_stock_rows(ctx, "", "", "used", "", "", "", "")[0]) if sec != "used" else len(rows)
-        return ctx.render("stock/look.html", title="Склад", rows=rows, q=q, sec=sec, order=order, n_used=n_used,
-                          SECTIONS=SECTIONS, fit_label=sc.fit_label,
-                          n_sec={s: len(_stock_rows(ctx, "", "", s, "", "", "", "")[0]) for s in SECTIONS})
+    if look:
+        return _look(ctx, q, sec, cat, sub, make, model, order, donor)
     new_requests = db.scalar(select(func.count()).select_from(IssueRequest)
                              .where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == "new"))
     if ctx.can("tools.manage"):   # + запросы по инструменту (11.11.2026)
@@ -818,6 +815,67 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
                       sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
                       counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,
                       args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))
+
+
+def _look(ctx: Ctx, q, sec, cat, sub, make, model, order, donor):
+    """Склад глазами слесаря (11.11.2026): только свободное, без цен.
+    ТО / Запчасти — фильтр по категории и по марке/модели машины.
+    Разбор — сначала машина-донор (можно сузить маркой и моделью), потом её категории и детали.
+    Купленное, в резерве под покупателя, ждущее отправки и проданное — не показываем (свободно = 0)."""
+    from urllib.parse import urlencode
+    from ..services import stock_cat as sc
+
+    def link(**over):
+        d = {"sec": sec, "q": q, "cat": cat, "sub": sub, "make": make, "model": model, "donor": donor, "order": order, **over}
+        return "/stock?" + urlencode({k: v for k, v in d.items() if v})
+
+    n_sec = {s: len(_stock_rows(ctx, "", "free", s, "", "", "", "")[0]) for s in SECTIONS}
+    used_all = _stock_rows(ctx, "", "free", "used", "", "", "", "")[0]
+    data = dict(q=q, sec=sec, cat=cat, sub=sub, make=make, model=model, order=order, donor=donor, link=link,
+                n_sec=n_sec, n_used=len(used_all), fit_label=sc.fit_label, SECTIONS=SECTIONS)
+    if sec != "used":
+        rows, counts = _stock_rows(ctx, q, "free", sec, cat, sub, make, model)
+        mm = sc.makes_models(ctx.db, ctx.branch.id)
+        return ctx.render("stock/look.html", title="Склад", rows=rows, counts=counts, tree=sc.tree(ctx.db, ctx.branch.id, sec),
+                          makes=mm, models=mm.get(make, []), **data)
+    # ---- Разбор: машины-доноры со свободными деталями ----
+    from ..models import Donor
+
+    def key(r):
+        i = r["i"]
+        return str(i.donor_id) if i.donor_id else "mm:" + (i.donor_make or "Без машины") + "|" + (i.donor_model or "")
+    cars: dict[str, dict] = {}
+    donors = {d.id: d for d in ctx.db.scalars(select(Donor).where(Donor.branch_id == ctx.branch.id))}
+    for r in used_all:
+        i, k = r["i"], key(r)
+        d = donors.get(i.donor_id)
+        c = cars.setdefault(k, {"key": k, "make": (d.make if d else i.donor_make) or "Без машины",
+                                "model": (d.model if d else i.donor_model) or "", "year": (d.year if d else i.donor_year),
+                                "code": d.code if d else "", "n": 0})
+        c["n"] += 1
+    car_list = sorted(cars.values(), key=lambda c: (c["make"].lower(), c["model"].lower(), c["year"] or 0))
+    makes_used = sorted({c["make"] for c in car_list}, key=str.lower)
+    models_used = sorted({c["model"] for c in car_list if c["make"] == make and c["model"]}, key=str.lower)
+    shown_cars = [c for c in car_list if (not make or c["make"] == make) and (not model or c["model"] == model)]
+    rows, cats = [], {}
+    if donor or q:
+        ql = q.strip().lower()
+        for r in used_all:
+            if donor and key(r) != donor:
+                continue
+            if ql and ql not in f"{r['c'].name} {r['c'].article} {r['i'].code} {r['i'].donor_make} {r['i'].donor_model}".lower():
+                continue
+            k1, k2 = r["c"].category or "Прочее", r["c"].subcategory or ""
+            cats.setdefault(k1, {"n": 0, "subs": {}})
+            cats[k1]["n"] += 1
+            if k2:
+                cats[k1]["subs"][k2] = cats[k1]["subs"].get(k2, 0) + 1
+            if cat and k1 != cat or (sub and k2 != sub):
+                continue
+            rows.append(r)
+        rows.sort(key=lambda r: ((r["c"].category or "яя").lower(), (r["c"].subcategory or "").lower(), r["c"].name.lower()))
+    return ctx.render("stock/look.html", title="Склад — разбор", rows=rows, cars=shown_cars, car=cars.get(donor),
+                      ucats=sorted(cats.items(), key=lambda x: x[0].lower()), makes=makes_used, models=models_used, **data)
 
 
 @router.get("/stock/print")

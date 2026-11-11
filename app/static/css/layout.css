@@ -1102,6 +1102,17 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
 .msg-part { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: var(--r-sm, 8px);
   background: color-mix(in srgb, var(--orange) 10%, var(--surface)); }
 .msg-st[data-st="approved"] { color: var(--green); } .msg-st[data-st="declined"] { color: var(--red); }
+/* Склад глазами слесаря: машины разбора плитками, категории — «таблетками» */
+.look-cars { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.look-car { display: flex; flex-direction: column; gap: 2px; color: var(--text); text-decoration: none; }
+.look-car:hover { box-shadow: inset 0 0 0 2px var(--accent); }
+.look-crumbs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.look-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-link { padding: 6px 12px; border-radius: 999px; background: var(--fill); color: var(--text); text-decoration: none;
+  font-size: 14px; white-space: nowrap; }
+.chip-link.on { background: var(--accent); color: var(--on-accent); }
+.look-cats.subs .chip-link { font-size: 13px; padding: 5px 10px; }
+@media (max-width: 600px) { .look-fit { display: none; } }
 .card.issue.wait { opacity: .85; box-shadow: inset 3px 0 0 var(--orange); }
 .iss-tabs { align-self: center; }
 .tool-req { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-left: 4px solid var(--blue); }

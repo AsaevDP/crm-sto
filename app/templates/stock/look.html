@@ -1,37 +1,99 @@
 {% extends "base.html" %}
 {% from "_tiles.html" import tiles as tiles_m with context %}
-{# Склад глазами слесаря (11.11.2026): только название, наличие и количество — без цен, ячеек и управления.
-   Нажал на строку → карточка → «Попросить под наряд» (согласует менеджер, выдаёт кладовщик). #}
+{# Склад глазами слесаря (11.11.2026): только то, что свободно, — без цен, ячеек и управления.
+   ТО / Запчасти: категория и марка/модель. Разбор: сначала машина-донор → её категории → детали.
+   Нажал на деталь → карточка → «Попросить под наряд» (согласует менеджер, выдаёт кладовщик). #}
 {% block content %}
 <header class="page-head">
-  <div><h1 class="large-title">Склад</h1>
-    <p class="footnote" style="margin:4px 0 0">Что есть в наличии. Нужная запчасть → нажмите → «Попросить под наряд». Нет в списке — напишите
-      менеджеру в <a href="/notifications#write">Сообщения</a>, закажут.</p></div>
+  <div><h1 class="large-title">{{ "Разбор" if sec == "used" else "Склад" }}</h1>
+    <p class="footnote" style="margin:4px 0 0">Только то, что свободно. Нужная запчасть → нажмите → «Попросить под наряд». Нет в списке —
+      напишите менеджеру в <a href="/notifications#write">Сообщения</a>, закажут.</p></div>
 </header>
-{% set oq = ("&order=" ~ order) if order else "" %}
 {{ tiles_m([
-  {"t": "ТО", "n": n_sec.get("to", 0), "c": "blue", "s": "масла, фильтры, химия", "href": "/stock?sec=to" ~ oq, "on": sec == "to"},
-  {"t": "Запчасти", "n": n_sec.get("repair", 0), "c": "indigo", "s": "для ремонта", "href": "/stock?sec=repair" ~ oq, "on": sec == "repair"},
-  {"t": "Разбор (б/у)", "n": n_used, "c": "teal", "s": "с машин-доноров", "href": "/stock?sec=used" ~ oq, "on": sec == "used"}], "st-tiles") }}
+  {"t": "ТО", "n": n_sec.get("to", 0), "c": "blue", "s": "масла, фильтры, химия", "href": link(sec="to", cat="", sub="", donor="", make="", model="", q=""), "on": sec == "to"},
+  {"t": "Запчасти", "n": n_sec.get("repair", 0), "c": "indigo", "s": "новые, для ремонта", "href": link(sec="repair", cat="", sub="", donor="", make="", model="", q=""), "on": sec == "repair"},
+  {"t": "Разбор", "n": n_used, "c": "teal", "s": "б/у с машин-доноров", "href": link(sec="used", cat="", sub="", donor="", make="", model="", q=""), "on": sec == "used"}], "st-tiles") }}
+
+{% if sec != "used" %}
+{# ---------- ТО / Запчасти: поиск, категория, марка и модель ---------- #}
 <form class="toolbar-row st-bar" method="get" action="/stock">
   <input type="hidden" name="sec" value="{{ sec }}">{% if order %}<input type="hidden" name="order" value="{{ order }}">{% endif %}
-  <input class="field search" name="q" value="{{ q }}" placeholder="Поиск: название, бренд, артикул, марка машины" autocomplete="off">
+  <input type="hidden" name="cat" value="{{ cat }}"><input type="hidden" name="sub" value="{{ sub }}">
+  <input class="field search" name="q" value="{{ q }}" placeholder="Поиск: название, бренд, артикул" autocomplete="off">
+  <select class="field" aria-label="Категория" onchange="location.href=this.value">
+    <option value="{{ link(cat='', sub='') }}">Все категории</option>
+    {% for x in tree %}{% if counts.get(x.c.name) %}<option value="{{ link(cat=x.c.name, sub='') }}" {% if cat == x.c.name and not sub %}selected{% endif %}>{{ x.c.name }} · {{ counts.get(x.c.name, 0) }}</option>
+    {% for s in x.subs %}{% if counts.get((x.c.name, s.name)) %}<option value="{{ link(cat=x.c.name, sub=s.name) }}" {% if sub == s.name and cat == x.c.name %}selected{% endif %}>&nbsp;&nbsp;› {{ s.name }} · {{ counts.get((x.c.name, s.name)) }}</option>{% endif %}{% endfor %}{% endif %}{% endfor %}
+    {% if counts.get("") %}<option value="{{ link(cat='-', sub='') }}" {% if cat == '-' %}selected{% endif %}>Без категории · {{ counts.get("") }}</option>{% endif %}
+  </select>
+  <select class="field" aria-label="Марка машины" onchange="location.href=this.value">
+    <option value="{{ link(make='', model='') }}">Все марки</option>
+    {% for m in makes %}<option value="{{ link(make=m, model='') }}" {% if m == make %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  {% if make and models %}<select class="field" aria-label="Модель" onchange="location.href=this.value">
+    <option value="{{ link(model='') }}">Все модели {{ make }}</option>
+    {% for m in models %}<option value="{{ link(model=m) }}" {% if m == model %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>{% endif %}
   <button class="btn btn-sm">Найти</button>
 </form>
+{% if cat or make or q %}<p class="footnote" style="margin:0 4px">Найдено: {{ rows|length }} · <a href="{{ link(cat='', sub='', make='', model='', q='') }}">сбросить</a></p>{% endif %}
+
+{% else %}
+{# ---------- Разбор: машина → категории → детали ---------- #}
+{% if not donor %}
+<form class="toolbar-row st-bar" method="get" action="/stock">
+  <input type="hidden" name="sec" value="used">{% if order %}<input type="hidden" name="order" value="{{ order }}">{% endif %}
+  <input class="field search" name="q" value="{{ q }}" placeholder="Поиск детали по всему разбору" autocomplete="off">
+  <select class="field" aria-label="Марка" onchange="location.href=this.value">
+    <option value="{{ link(make='', model='', q='') }}">Все марки</option>
+    {% for m in makes %}<option value="{{ link(make=m, model='', q='') }}" {% if m == make %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  {% if make and models %}<select class="field" aria-label="Модель" onchange="location.href=this.value">
+    <option value="{{ link(model='', q='') }}">Все модели {{ make }}</option>
+    {% for m in models %}<option value="{{ link(model=m, q='') }}" {% if m == model %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>{% endif %}
+  <button class="btn btn-sm">Найти</button>
+</form>
+{% if not q %}
+<div class="group-title">Выберите машину · {{ cars|length }}</div>
+<div class="look-cars">
+  {% for c in cars %}
+  <a class="card compact look-car" href="{{ link(donor=c.key, cat='', sub='', q='') }}">
+    <b>{{ c.make }} {{ c.model }}</b>
+    <span class="caption">{% if c.year %}{{ c.year }} · {% endif %}{% if c.code %}{{ c.code }} · {% endif %}свободно деталей: {{ c.n }}</span>
+  </a>
+  {% else %}<div class="card compact"><p class="footnote" style="margin:0">В разборе сейчас нет свободных деталей{% if make %} по {{ make }} {{ model }}{% endif %}</p></div>{% endfor %}
+</div>
+{% endif %}
+{% else %}
+<div class="look-crumbs">
+  <a class="btn btn-sm btn-gray" href="{{ link(donor='', cat='', sub='') }}">{{ icon("back") }}Все машины</a>
+  <b>{{ car.make }} {{ car.model }}{% if car.year %} · {{ car.year }}{% endif %}</b>{% if car.code %} <span class="caption">{{ car.code }}</span>{% endif %}
+</div>
+<nav class="look-cats" aria-label="Категории">
+  <a class="chip-link {{ 'on' if not cat }}" href="{{ link(cat='', sub='') }}">Все · {{ ucats|sum(attribute='1.n') }}</a>
+  {% for name, x in ucats %}<a class="chip-link {{ 'on' if cat == name and not sub }}" href="{{ link(cat=name, sub='') }}">{{ name }} · {{ x.n }}</a>{% endfor %}
+</nav>
+{% for name, x in ucats %}{% if cat == name and x.subs %}
+<nav class="look-cats subs" aria-label="Подкатегории">
+  {% for s, n in x.subs|dictsort %}<a class="chip-link {{ 'on' if sub == s }}" href="{{ link(cat=name, sub=s) }}">{{ s }} · {{ n }}</a>{% endfor %}
+</nav>{% endif %}{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if sec != "used" or donor or q %}
 <div class="tablewrap">
   <table class="table st-table">
-    <thead><tr><th>Запчасть</th><th>Подходит для</th><th class="num">Свободно</th></tr></thead>
+    {% set two = sec == "used" and donor %}
+    <thead><tr><th>Запчасть</th>{% if not two %}<th class="look-fit">{{ "С машины" if sec == "used" else "Подходит для" }}</th>{% endif %}<th class="num">Свободно</th></tr></thead>
     <tbody>
     {% for r in rows %}
     <tr data-href="/stock/items/{{ r.i.id }}{{ ('?order=' ~ order) if order }}">
       <td>{% if sec == "used" and r.i.code %}<span class="tag">{{ r.i.code }}</span> {% endif %}{{ r.c.name }}
-        <div class="caption">{% if r.c.category %}{{ r.c.category }}{% if r.c.subcategory %} › {{ r.c.subcategory }}{% endif %} · {% endif %}<span class="mono">{{ r.c.brand }} {{ r.c.article }}</span>{% if sec == "used" and r.i.donor_make %} · с {{ r.i.donor_make }} {{ r.i.donor_model }}{% endif %}</div></td>
-      <td class="footnote">{% for f in r.fits[:3] %}<span class="fit-chip">{{ fit_label(f) }}</span>{% else %}{{ r.c.fits or "—" }}{% endfor %}</td>
-      <td class="num"><b>{{ r.free|num if r.free > 0 else "нет" }}</b></td>
+        <div class="caption">{{ [((r.c.category or "") ~ (" › " ~ r.c.subcategory if r.c.subcategory else "")), (r.c.brand ~ " " ~ r.c.article)|trim]|select|join(" · ") }}</div></td>
+      {% if not two %}<td class="footnote look-fit">{% if sec == "used" %}{{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} · {{ r.i.donor_year }}{% endif %}{% else %}{% for f in r.fits[:3] %}<span class="fit-chip">{{ fit_label(f) }}</span>{% else %}{{ r.c.fits or "—" }}{% endfor %}{% endif %}</td>{% endif %}
+      <td class="num"><b>{{ r.free|num }}</b></td>
     </tr>
-    {% else %}<tr><td colspan="3" class="footnote">{% if q %}Не нашлось — напишите менеджеру, чтобы заказали{% else %}Пусто{% endif %}</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="{{ 2 if two else 3 }}" class="footnote">Ничего свободного не нашлось — напишите менеджеру, чтобы заказали</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>
+{% endif %}
 <script>document.querySelectorAll('tr[data-href]').forEach(tr => tr.addEventListener('click', () => location.href = tr.dataset.href));</script>
 {% endblock %}
