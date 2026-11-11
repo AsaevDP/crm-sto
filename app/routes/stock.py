@@ -16,7 +16,14 @@ from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
 
 router = APIRouter()
-PURCHASE_STATUS = {"draft": "Черновик", "ordered": "Заказана", "partial": "Пришла частично", "arrived": "Пришла"}
+PURCHASE_STATUS = {"draft": "Черновик", "ordered": "Заказана", "delivered": "Привезли — ждёт приёмки",
+                   "partial": "Неполная поставка", "arrived": "Принята на склад"}
+PURCHASE_CHIP = {"draft": "created", "ordered": "waiting", "delivered": "diag", "partial": "picking", "arrived": "ready"}
+
+
+def _safe_back(v: str, default: str) -> str:
+    v = (v or "").strip()
+    return v if v.startswith("/") and not v.startswith("//") else default
 
 
 def _dec(v, default="0") -> Decimal:
@@ -278,7 +285,13 @@ def issue_request(order_id: str, ctx: Ctx = Depends(get_ctx), comment: str = For
 
 
 # ======================= Закупки =======================
-PURCHASE_TABS = {"draft": "Черновики", "wait": "Ждём", "arrived": "Пришли", "all": "Все"}
+# 12.11.2026: «Привезли — ждут приёмки» и «Неполная поставка» — отдельно, кладовщику сразу видно, что принимать
+PURCHASE_TABS = {"draft": ("Черновики", "gray", "собираем заказ"), "wait": ("Ждём", "orange", "заказано, едет"),
+                 "delivered": ("Привезли — ждут приёмки", "teal", "кладовщик пересчитывает"),
+                 "partial": ("Неполная поставка", "purple", "часть принята, ждём остальное"),
+                 "arrived": ("Приняты", "green", "всё на складе"), "all": ("Все", "blue", "за всё время")}
+_TAB_STATUS = {"draft": ("draft",), "wait": ("ordered",), "delivered": ("delivered",), "partial": ("partial",),
+               "arrived": ("arrived",)}
 
 
 @router.get("/purchases")
@@ -291,13 +304,12 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     buyers = sorted({p.created_by for p in allp if p.created_by in people}, key=lambda i: people[i].full_name)
     if who:   # 12.11.2026: закупки одного запчастиста
         allp = [p for p in allp if str(p.created_by) == who]
-    counts = {"draft": sum(p.status == "draft" for p in allp),
-              "wait": sum(p.status in ("ordered", "partial") for p in allp),
-              "arrived": sum(p.status == "arrived" for p in allp), "all": len(allp)}
+    counts = {k: sum(p.status in st_ for p in allp) for k, st_ in _TAB_STATUS.items()}
+    counts["all"] = len(allp)
     if tab not in PURCHASE_TABS:
-        tab = "draft" if counts["draft"] else ("wait" if counts["wait"] else "all")
-    rows = [p for p in allp if tab == "all" or (tab == "draft" and p.status == "draft")
-            or (tab == "wait" and p.status in ("ordered", "partial")) or (tab == "arrived" and p.status == "arrived")]
+        # кладовщику первым делом — что привезли; остальным — черновики / что ждём
+        tab = next((k for k in (("delivered",) if ctx.can("stock.manage") else ()) + ("draft", "wait") if counts[k]), "all")
+    rows = [p for p in allp if tab == "all" or p.status in _TAB_STATUS[tab]]
     if sup:
         rows = [p for p in rows if str(p.supplier_id) == sup]
     rows = rows[:200]
@@ -321,7 +333,7 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     return ctx.render("stock/purchases.html", title="Закупки", rows=rows, stats=stats,
                       people=people, buyers=[people[i] for i in buyers], who=who, p_orders=p_orders, p_veh=p_veh,
                       suppliers={s.id: s for s in suppliers}, supplier_list=suppliers, tab=tab, sup=sup,
-                      counts=counts, TABS=PURCHASE_TABS, PURCHASE_STATUS=PURCHASE_STATUS, today=_d.today())
+                      counts=counts, TABS=PURCHASE_TABS, PURCHASE_STATUS=PURCHASE_STATUS, CHIP=PURCHASE_CHIP, today=_d.today())
 
 
 def _orders_board(ctx: Ctx, uid, st: str, mode: str, people_tiles=None):
@@ -358,7 +370,8 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
     for p in sorted((x for x in db.scalars(select(User).where(User.id.in_(list(ids))))), key=lambda x: x.full_name):
         mine = [r for r in all_rows if r["buyer"] and r["buyer"].id == p.id]
         c = svc.order_counts(mine)
-        tiles.append({"u": p, "wait": c["wait"] + c["partial"], "late": c["late"], "arrived": c["arrived"], "draft": c["draft"]})
+        tiles.append({"u": p, "wait": c["wait"] + c["partial"] + c["delivered"], "delivered": c["delivered"], "late": c["late"],
+                      "arrived": c["arrived"], "draft": c["draft"]})
     who = db.get(User, _uuid(u)) if u else None
     if who and who.branch_id != ctx.branch.id:
         raise Forbidden()
@@ -395,7 +408,7 @@ def _purchase(ctx: Ctx, pid: str) -> Purchase:
 
 
 @router.get("/purchases/{pid}")
-def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx)):
+def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx), short: str = ""):
     ctx.need("purchases.view")
     p = _purchase(ctx, pid)
     db = ctx.db
@@ -412,11 +425,11 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx)):
     from ..services import brands as _br
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     return ctx.render("stock/purchase.html", title="Закупка", p=p, lines=lines, cats=cats, parts=parts, orders=orders,
-                      buyer=people.get(p.created_by), people=people,
+                      buyer=people.get(p.created_by), people=people, short=bool(short),
                       vehicles=vehicles, BRANDS=_br.names(db, ctx.branch.id), suppliers=sup_all,
                       sup_names={s.id: s.name for s in sup_all}, drafts=drafts,
                       supplier=db.get(Supplier, p.supplier_id) if p.supplier_id else None,
-                      locations=locations, loc_label=svc.location_label, PURCHASE_STATUS=PURCHASE_STATUS,
+                      locations=locations, loc_label=svc.location_label, PURCHASE_STATUS=PURCHASE_STATUS, CHIP=PURCHASE_CHIP,
                       cells={l.id: svc.default_location(db, l.catalog_id) for l in lines if not l.received},
                       fmt_plate=osvc.fmt_plate, total=sum((l.qty * l.price for l in lines), Decimal(0)),
                       total_got=sum((l.got * l.price for l in lines), Decimal(0)))
@@ -494,7 +507,7 @@ def _add_line(ctx: Ctx, p: Purchase, name, article, brand, qty, price, catalog_i
 
 def _editable(p: Purchase) -> bool:
     """Строки можно добавлять/править в черновике и в заказе, пока он едет (поставщик что-то поменял)."""
-    return p.status in ("draft", "ordered", "partial")
+    return p.status in ("draft", *svc.OPEN)
 
 
 @router.post("/purchases/{pid}/lines")
@@ -590,14 +603,28 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
     """Приход из карточки закупки: строка (сколько пришло, в какую ячейку) или «Принять всё»."""
     ctx.need("stock.manage")
     p = _purchase(ctx, pid)
-    if p.status not in ("ordered", "partial"):
+    if p.status not in svc.OPEN:
         raise Forbidden()
     form = dict(await ctx.request.form())
     if not form.get("line_id"):
-        form["all"] = str(p.id)   # без строки — принять всё по этой закупке
+        form["all"] = str(p.id)   # без строки — принять всё по этой закупке (или сколько вписали в «Неполной поставке»)
     n, ready = _receive(ctx, form, [p])
-    flash(ctx.request, f"Принято строк: {n}" + (f". Все запчасти на складе: {', '.join(ready)}" if ready else ""))
-    return _to(f"/purchases/{pid}#lines")
+    left = ctx.db.get(Purchase, p.id).status == "partial"
+    flash(ctx.request, (f"Принято строк: {n}" if n else "Ничего не принято — впишите, сколько привезли")
+          + (". Неполная поставка — остальное ждём" if n and left else "")
+          + (f". Все запчасти на складе: {', '.join(ready)}" if ready else ""), "ok" if n else "error")
+    return _to(_safe_back(str(form.get("back", "")), f"/purchases/{pid}#lines"))
+
+
+@router.post("/purchases/{pid}/delivered")
+def purchase_delivered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form(""), invoice: str = Form("")):
+    """Кладовщик: «Привезли» — товар на СТО, пересчитает и примет. Запчастист отметить не может, только видит."""
+    ctx.need("stock.manage")
+    p = _purchase(ctx, pid)
+    if svc.mark_delivered(ctx.db, p, ctx.user, invoice):
+        ctx.db.commit()
+        flash(ctx.request, "Отмечено: привезли — ждёт приёмки")
+    return _to(_safe_back(back, f"/purchases/{pid}"))
 
 
 def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
@@ -615,7 +642,7 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
     done, ready, item_ids, touched = 0, [], [], set()
     for l in lines:
         p = db.get(Purchase, l.purchase_id) if l else None
-        if not l or l.received or not p or p.id not in ids or p.status not in ("ordered", "partial"):
+        if not l or l.received or not p or p.id not in ids or p.status not in svc.OPEN:
             continue
         raw = str(form.get(f"loc_{l.id}", "") or form.get("location_id", ""))
         loc = db.get(Location, _uuid(raw)) if raw else None
@@ -1136,7 +1163,7 @@ def _receive_lines(ctx: Ctx, who: str = ""):
     who — только закупки этого запчастиста (12.11.2026)."""
     db = ctx.db
     purchases = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
-                                                  Purchase.status.in_(("ordered", "partial"))).order_by(Purchase.created_at)).all()
+                                                  Purchase.status.in_(svc.OPEN)).order_by(Purchase.created_at)).all()
     if who:
         purchases = [p for p in purchases if str(p.created_by) == who]
     groups = []
@@ -1160,7 +1187,7 @@ def _receive_lines(ctx: Ctx, who: str = ""):
 
 def _receive_count(ctx: Ctx) -> int:
     return ctx.db.scalar(select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
-                         .where(Purchase.branch_id == ctx.branch.id, Purchase.status.in_(("ordered", "partial")),
+                         .where(Purchase.branch_id == ctx.branch.id, Purchase.status.in_(svc.OPEN),
                                 PurchaseLine.received.is_(False))) or 0
 
 
@@ -1182,7 +1209,7 @@ async def receive_do(ctx: Ctx = Depends(get_ctx)):
     ctx.need("stock.manage")
     form = await ctx.request.form()
     purchases = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
-                                                      Purchase.status.in_(("ordered", "partial")))).all()
+                                                      Purchase.status.in_(svc.OPEN))).all()
     done, ready = _receive(ctx, form, purchases)
     flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else ""))
     return _to("/stock/receive")

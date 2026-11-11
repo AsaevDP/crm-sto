@@ -1417,6 +1417,24 @@ span.ptile.zero:hover { background: var(--surface); }
 .pu-filter .field { width: auto; min-width: 200px; }
 .pu-filter .footnote { flex: 1 1 320px; }
 .pu-filter-f { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Приёмка закупки (12.11.2026): этапы, «Привезли», «Принять полностью», «Неполная поставка» */
+.rcv-card { display: grid; gap: 10px; border-left: 4px solid var(--orange); }
+.rcv-card.now { border-left-color: var(--teal); background: color-mix(in srgb, var(--teal) 6%, transparent); }
+.rcv-steps { display: flex; gap: 6px 18px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); }
+.rcv-steps .done { color: var(--green); }
+.rcv-steps .done::before { content: "✓ "; }
+.rcv-steps .now { color: var(--text); font-weight: 600; }
+.rcv-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.rcv-acts form { margin: 0; }
+.rcv-acts .form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rcv-acts .field { width: auto; min-width: 220px; }
+.rcv-short { display: grid; gap: 6px; padding-top: 8px; border-top: 0.5px dashed var(--separator); }
+.rcv-short[hidden] { display: none; }
+.rcv-row { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 10px; align-items: center; padding: 4px 0; }
+.rcv-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.rcv-btns form { margin: 0; }
+.rcv-btns .btn, .rcv-acts .btn { white-space: nowrap; }
+@media (max-width: 600px) { .rcv-acts .field { min-width: 0; flex: 1 1 100%; } }
 @media (max-width: 600px) { .pu-filter-f, .pu-filter .field { width: 100%; min-width: 0; } }
 .row-link { cursor: pointer; }
 .pu-table a { color: inherit; text-decoration: none; }

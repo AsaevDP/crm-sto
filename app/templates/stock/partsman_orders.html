@@ -3,12 +3,15 @@
    «Мои заказы» — запчастист видит только свои: что заказал по своим нарядам и на склад, пришло или нет.
    «Заказы запчастистов» — кладовщик, директор, админ: плитки по каждому запчастисту, внутри — то же самое.
    Пришло — по приходу на склад («Склад → Приход»). Под наряд с запасом — видно, сколько в наряд и сколько на склад. #}
+{% from "stock/_recv.html" import recv_btns with context %}
 {% block content %}
+{% set recv_ok = mode == "all" and ctx.can("stock.manage") %}
+{% set ns = namespace(seen=[]) %}
 <header class="page-head">
   <div>{% if mode == "all" and who %}<a class="back" href="/purchases/by-partsman">{{ icon("back") }}Все запчастисты</a>{% endif %}
     <h1 class="large-title">{% if mode == "mine" %}Мои заказы{% elif who %}Заказы: {{ who.full_name }}{% else %}Заказы запчастистов{% endif %}</h1></div>
   <div class="ov-actions">
-    {% if mode == "all" and who and ctx.can("stock.manage") and (counts.wait or counts.partial) %}<a class="btn btn-sm" href="/stock/receive?who={{ who.id }}">Принять на склад</a>{% endif %}
+    {% if mode == "all" and who and ctx.can("stock.manage") and (counts.wait or counts.delivered or counts.partial) %}<a class="btn btn-sm" href="/stock/receive?who={{ who.id }}">Принять на склад</a>{% endif %}
     <a class="btn btn-sm btn-gray" href="/purchases{% if who %}?tab=all&who={{ who.id }}{% endif %}">Закупки{% if who %} {{ who.short_name if mode == "all" else "мои" }}{% endif %}</a>
   </div>
 </header>
@@ -17,9 +20,9 @@
 <div class="pult-tiles vs-tiles">
   {% for t in people_tiles %}
   <a class="ptile {{ 'on' if who and t.u.id == who.id }} {{ 'zero' if not (t.wait or t.draft or t.arrived) }}" href="/purchases/by-partsman?u={{ t.u.id }}"
-     style="--tc:{{ color_css('red' if t.late else ('orange' if t.wait else 'green')) }}">
+     style="--tc:{{ color_css('red' if t.late else ('teal' if t.delivered else ('orange' if t.wait else 'green'))) }}">
     <span class="ptile-t">{{ t.u.full_name }}</span><b>{{ t.wait }}</b>
-    <span class="ptile-s">ждём{% if t.late %} · опаздывают {{ t.late }}{% endif %} · пришло {{ t.arrived }}{% if t.draft %} · черн. {{ t.draft }}{% endif %}</span></a>
+    <span class="ptile-s">ждём{% if t.delivered %} · привезли {{ t.delivered }}{% endif %}{% if t.late %} · опаздывают {{ t.late }}{% endif %} · принято {{ t.arrived }}{% if t.draft %} · черн. {{ t.draft }}{% endif %}</span></a>
   {% else %}<p class="footnote">Запчастистов нет</p>{% endfor %}
 </div>
 {% if not who %}<div class="card compact"><p class="footnote" style="margin:0">Выберите запчастиста — откроются все его заказы: под какой наряд, у какого поставщика, пришло или ещё едет.</p></div>{% endif %}
@@ -30,7 +33,7 @@
 {% set sep = "?" if mode == "mine" else "&" %}
 <div class="pult-tiles vs-tiles">
   <a class="ptile {{ 'on' if not st }}" href="{{ base }}" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Ещё не пришло</span>
-    <b>{{ counts.draft + counts.wait + counts.partial }}</b><span class="ptile-s">черновики и в пути</span></a>
+    <b>{{ counts.draft + counts.wait + counts.delivered + counts.partial }}</b><span class="ptile-s">черновики и в пути</span></a>
   {% for k, v in STATES.items() %}
   <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="{{ base }}{{ sep }}st={{ k }}" style="--tc:{{ color_css(v[1]) }}">
     <span class="ptile-t">{{ v[0] }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ v[2] }}</span></a>
@@ -53,14 +56,16 @@
         <td>{{ r.sup.name if r.sup else "поставщик не указан" }}
           <div class="caption"><a href="/purchases/{{ r.p.id }}">закупка {{ r.p.created_at.astimezone().strftime("%d.%m") }}</a>{% if r.p.supplier_invoice %} · счёт {{ r.p.supplier_invoice }}{% endif %}</div></td>
         <td class="num nowrap"><b>{{ r.l.got|num }}</b> из {{ r.l.qty|num }}</td>
-        <td>{% set sv = STATES[r.st] %}<span class="chip" data-s="{{ {'draft': 'created', 'wait': 'waiting', 'partial': 'picking', 'arrived': 'ready'}[r.st] }}">{{ {'draft': 'черновик', 'wait': 'заказано', 'partial': 'пришло частично', 'arrived': '✓ пришло'}[r.st] }}</span>
-          {% if r.st in ("wait", "partial") %}<div class="caption {{ 'late' if r.late }}">{% if r.p.expected_on %}привезут {{ r.p.expected_on.strftime("%d.%m") }}{% if r.late %} — опаздывает{% endif %}{% else %}срок не указан{% endif %}</div>{% endif %}</td>
+        <td>{% set sv = STATES[r.st] %}<span class="chip" data-s="{{ {'draft': 'created', 'wait': 'waiting', 'delivered': 'diag', 'partial': 'picking', 'arrived': 'ready'}[r.st] }}">{{ {'draft': 'черновик', 'wait': 'заказано', 'delivered': 'привезли, кладовщик принимает', 'partial': 'неполная поставка', 'arrived': '✓ принято на склад'}[r.st] }}</span>
+          {% if r.st in ("wait", "partial") %}<div class="caption {{ 'late' if r.late }}">{% if r.p.expected_on %}привезут {{ r.p.expected_on.strftime("%d.%m") }}{% if r.late %} — опаздывает{% endif %}{% else %}срок не указан{% endif %}</div>{% endif %}
+          {# Кладовщик принимает прямо отсюда — кнопки у первой строки каждой накладной #}
+          {% if recv_ok and r.p.status in ("ordered", "delivered", "partial") and r.p.id not in ns.seen %}{% set ns.seen = ns.seen + [r.p.id] %}{{ recv_btns(r.p) }}{% endif %}</td>
       </tr>
       {% else %}<tr><td colspan="5" class="footnote">Здесь пусто</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
-  <p class="footnote" style="margin:6px 0 0">«Пришло» отмечается само, когда кладовщик принимает деталь на склад («Склад → Приход»). Под наряд — сразу в резерв наряда, лишнее — на склад.</p>
+  <p class="footnote" style="margin:6px 0 0">«Принято на склад» отмечается само, когда кладовщик принимает деталь на склад («Склад → Приход»). Под наряд — сразу в резерв наряда, лишнее — на склад.</p>
 </div>
 {% endif %}
 {% endblock %}

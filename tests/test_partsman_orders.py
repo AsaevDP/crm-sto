@@ -20,6 +20,12 @@ def _purchase_of(part_name):
         return db.get(Purchase, db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id)))
 
 
+def _purchase_line(part_name):
+    with SessionLocal() as db:
+        part = db.scalar(select(WoPart).where(WoPart.name == part_name))
+        return db.scalar(select(PurchaseLine.id).where(PurchaseLine.wo_part_id == part.id))
+
+
 def test_partsman_orders(client):
     _as(client, "irina")
     url_a = _create(client, scenario="A", photos=1, plate="KA1001AA", phone="0670001001", works="Колодки").json()["url"]
@@ -56,9 +62,37 @@ def test_partsman_orders(client):
     assert "в наряд 1, на склад 2" in mine
     assert client.get("/purchases/by-partsman").status_code == 403
 
-    # Отправили поставщику → кладовщик принял → у Олега «пришло»
+    # Отправили поставщику. «Привезли» и приёмку отмечает только кладовщик — запчастисту нельзя
     client.post(f"/purchases/{pa.id}", data={"action": "ordered"})
+    client.post(f"/purchases/{pb.id}", data={"action": "ordered"})
+    assert client.post(f"/purchases/{pa.id}/delivered", data={}).status_code == 403
+    assert client.post(f"/purchases/{pa.id}/receive", data={}).status_code == 403
+    assert "🚚 Привезли" not in client.get(f"/purchases/{pa.id}").text
     _as(client, "pavel")
+    page = client.get(f"/purchases/{pa.id}").text
+    assert "🚚 Привезли" in page and "Принять полностью" not in page
+    client.post(f"/purchases/{pa.id}/delivered", data={"invoice": "НК-777"})
+    with SessionLocal() as db:
+        p_ = db.get(Purchase, pa.id)
+        assert p_.status == "delivered" and p_.supplier_invoice == "НК-777" and p_.delivered_by == _uid("pavel")
+    page = client.get("/purchases?tab=delivered").text
+    assert "Привезли — ждут приёмки" in page and f"/purchases/{pa.id}" in page and "Принять полностью" in page
+    _as(client, "oleg")
+    assert "привезли, кладовщик принимает" in client.get("/my-orders").text
+    _as(client, "pavel")
+    # Неполная поставка по второму наряду: привезли 0 из 1 → ничего не принято; в первом — потом полностью
+    client.post(f"/purchases/{pb.id}/delivered", data={})
+    lb = _purchase_line("Фильтр ПО-тест")
+    client.post(f"/purchases/{pb.id}/receive", data={"all": str(pb.id), f"qty_{lb}": "0"})
+    with SessionLocal() as db:
+        assert db.get(Purchase, pb.id).status == "delivered"
+    la = _purchase_line("Колодки ПО-тест")
+    client.post(f"/purchases/{pa.id}/receive", data={"all": str(pa.id), f"qty_{la}": "1"})   # из 3 привезли 1
+    with SessionLocal() as db:
+        assert db.get(Purchase, pa.id).status == "partial"
+    assert "Неполная поставка" in client.get(f"/purchases/{pa.id}").text
+    client.post(f"/purchases/{pa.id}/delivered", data={})   # довезли остальное
+    assert "Принять полностью" in client.get(f"/purchases/by-partsman?u={oleg}").text
     menu = client.get("/stock").text
     assert 'href="/purchases/by-partsman"' in menu and 'href="/my-orders"' not in menu
     board = client.get(f"/purchases/by-partsman?u={oleg}").text

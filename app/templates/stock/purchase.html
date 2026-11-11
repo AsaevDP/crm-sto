@@ -5,20 +5,62 @@
 {% block content %}
 {% set cost_ok = ctx.can("prices.view_purchase") %}
 {% set manage = ctx.can("purchases.manage") %}
-{% set edit = manage and p.status in ("draft", "ordered", "partial") %}
-{% set recv = ctx.can("stock.manage") and p.status in ("ordered", "partial") %}
+{% set edit = manage and p.status in ("draft", "ordered", "delivered", "partial") %}
+{% set recv = ctx.can("stock.manage") and p.status in ("ordered", "delivered", "partial") %}
 {% set n_got = lines|selectattr("received")|list|length %}
 {% set n_orders = lines|selectattr("wo_part_id")|list|length %}
 <header class="ov-head">
-  <a class="back" href="/purchases?tab={{ 'draft' if p.status == 'draft' else ('arrived' if p.status == 'arrived' else 'wait') }}">{{ icon("back") }}Закупки</a>
+  <a class="back" href="/purchases?tab={{ {'draft': 'draft', 'ordered': 'wait', 'delivered': 'delivered', 'partial': 'partial', 'arrived': 'arrived'}[p.status] }}">{{ icon("back") }}Закупки</a>
   <div class="ov-title">
     <div><h1 class="title-1">{{ supplier.name if supplier else "Закупка без поставщика" }}</h1>
       <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div>
       <div class="subhead">Заказал: <b>{{ buyer.full_name if buyer else "—" }}</b>
         {%- set po = orders.get(p.work_order_id) %}{% if po %}{% set pv = vehicles.get(po.vehicle_id) %} · под наряд <a href="/orders/{{ po.id }}">{{ po.number }}</a>{% if pv %} ({{ pv.make }} {{ pv.model }} {{ fmt_plate(pv.plate) }}){% endif %}{% elif not p.work_order_id %} · на склад и под разные наряды{% endif %}</div></div>
-    <span class="chip chip-lg" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
+    <span class="chip chip-lg" data-s="{{ CHIP[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
   </div>
 </header>
+
+{# Приёмка (12.11.2026): только кладовщик. «Привезли» → «Принять полностью» или «Неполная поставка» (вписать, сколько привезли).
+   Запчастист и остальные только видят этап. #}
+{% if p.status in ("ordered", "delivered", "partial") %}
+<section class="card compact rcv-card {{ 'now' if p.status == 'delivered' }}">
+  <div class="rcv-steps">
+    <span class="{{ 'done' }}">1. Заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}</span>
+    <span class="{{ 'done' if p.status in ('delivered', 'partial') }} {{ 'now' if p.status == 'ordered' }}">2. Привезли{% if p.delivered_at %} {{ p.delivered_at.astimezone().strftime("%d.%m %H:%M") }}{% if p.delivered_by in people %} · {{ people[p.delivered_by].short_name }}{% endif %}{% endif %}</span>
+    <span class="{{ 'now' if p.status in ('delivered', 'partial') }}">3. Приёмка на склад{% if p.status == "partial" %} · неполная поставка: принято {{ n_got }} из {{ lines|length }}{% endif %}</span>
+  </div>
+  {% if recv %}
+  <div class="rcv-acts">
+    {% if p.status in ("ordered", "partial") %}
+    <form method="post" action="/purchases/{{ p.id }}/delivered" class="form-row">
+      <input class="field" name="invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной (необязательно)" aria-label="Номер накладной">
+      <button class="btn">🚚 Привезли</button></form>
+    {% endif %}
+    {% if p.status in ("delivered", "partial") %}
+    <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять всю накладную на склад?')">
+      <input type="hidden" name="all" value="{{ p.id }}">
+      {% for l in lines if not l.received %}{% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}{% endfor %}
+      <button class="btn">✓ Принять полностью · {{ lines|length - n_got }} поз.</button></form>
+    <button class="btn btn-gray" type="button" onclick="document.getElementById('short').hidden = false; document.getElementById('short').scrollIntoView({block: 'center'})">Неполная поставка</button>
+    {% endif %}
+  </div>
+  {% if p.status in ("delivered", "partial") %}
+  <form id="short" class="rcv-short" method="post" action="/purchases/{{ p.id }}/receive" {% if not short %}hidden{% endif %}>
+    <input type="hidden" name="all" value="{{ p.id }}">
+    <p class="footnote" style="margin:0">Привезли не всё — впишите, сколько привезли по каждой позиции (0 — не привезли). Остальное будем ждать.</p>
+    {% for l in lines if not l.received %}{% set c = cats.get(l.catalog_id) %}
+    <label class="rcv-row"><span><b>{{ c.name if c else "" }}</b> <span class="caption">{{ c.brand if c }} {{ c.article if c }} · ждём {{ l.left|num }}</span></span>
+      <input class="field" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" aria-label="Сколько привезли">
+      {% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}</label>
+    {% endfor %}
+    <div class="form-row"><button class="btn">Принять привезённое</button>
+      <button class="btn btn-plain" type="button" onclick="this.closest('form').hidden = true">Отмена</button></div>
+  </form>
+  {% endif %}
+  {% elif p.status == "delivered" %}<p class="footnote" style="margin:0">Привезли — кладовщик пересчитывает и принимает на склад.</p>
+  {% endif %}
+</section>
+{% endif %}
 
 <div class="pu-top">
   <div class="pult-tiles pu-tiles">
@@ -54,9 +96,6 @@
 
 <section class="card compact" id="lines">
   <div class="card-h"><span class="headline">Что заказываем · {{ lines|length }}</span>
-    {% if recv and n_got < lines|length %}
-    <form method="post" action="/purchases/{{ p.id }}/receive" class="inline-form"><input type="hidden" name="all" value="{{ p.id }}">
-      <button class="btn btn-sm">Принять всё, что ждём</button></form>{% endif %}
   </div>
   <div class="tablewrap pu-wrap">
   <table class="table pu-lines">

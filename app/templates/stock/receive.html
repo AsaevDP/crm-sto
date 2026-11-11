@@ -24,7 +24,8 @@
 <form class="card compact rc-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
   <div class="card-h">
     <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.p.supplier_invoice %} <span class="caption">· счёт {{ g.p.supplier_invoice }}</span>{% endif %}
-      {% if g.buyer %}<span class="caption">· заказал {{ g.buyer.short_name }}</span>{% endif %}</span>
+      {% if g.buyer %}<span class="caption">· заказал {{ g.buyer.short_name }}</span>{% endif %}
+      {% if g.p.status == "delivered" %}<span class="chip" data-s="diag">🚚 привезли</span>{% elif g.p.status == "partial" %}<span class="chip" data-s="picking">неполная поставка</span>{% endif %}</span>
     <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/purchases/{{ g.p.id }}">Закупка</a>
       <button class="btn btn-sm" name="all" value="{{ g.p.id }}">Принять всё · {{ g.rows|length }}</button></span>
   </div>

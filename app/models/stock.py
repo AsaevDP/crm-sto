@@ -1,12 +1,12 @@
 """Склад и закупки. Остаток не хранится — считается по stock_movements."""
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..db import Entity
+from ..db import Entity, UTCDateTime
 
 MONEY = Numeric(12, 2)
 
@@ -174,6 +174,9 @@ class Purchase(Entity):
     expected_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     # 12.11.2026: у каждого запчастиста свои закупки (кто заказал = created_by), под наряд — отдельная на каждый наряд
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    # 12.11.2026: кладовщик отметил «Привезли» — товар на СТО, ждёт приёмки (пересчёт, ячейки). Только кладовщик.
+    delivered_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    delivered_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class PurchaseLine(Entity):

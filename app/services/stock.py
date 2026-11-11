@@ -350,6 +350,10 @@ def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=No
     return take
 
 
+# Закупка ждёт приёмки: заказана / привезли (кладовщик отметил, ещё не принял) / неполная поставка (ждём остальное)
+OPEN = ("ordered", "delivered", "partial")
+
+
 def refresh_purchase_status(db: Session, p: Purchase):
     lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)).all()
     if p.status == "draft":
@@ -358,8 +362,19 @@ def refresh_purchase_status(db: Session, p: Purchase):
         p.status = "arrived"
     elif any(l.got > 0 for l in lines):
         p.status = "partial"
-    else:
+    elif p.status != "delivered":
         p.status = "ordered"
+
+
+def mark_delivered(db: Session, p: Purchase, user, invoice: str = "") -> bool:
+    """Кладовщик: «Привезли» — товар на СТО, ждёт приёмки. Запчастист видит это в «Моих заказах»."""
+    from ..db import now
+    if p.status not in ("ordered", "partial"):
+        return False
+    p.status, p.delivered_at, p.delivered_by = "delivered", now(), user.id
+    if invoice.strip():
+        p.supplier_invoice = invoice.strip()[:80]
+    return True
 
 
 def move_rest(db: Session, branch_id, line: PurchaseLine, target: Purchase | None) -> PurchaseLine | None:
@@ -502,8 +517,9 @@ def backfill_categories(db: Session):
 # ======================= Заказы запчастистов (12.11.2026) =======================
 # Кто заказал = created_by закупки (или строки, если добавил в чужую). Пришло — по приходу на склад (received_qty).
 ORDER_STATES = {"draft": ("Черновики", "gray", "ещё не отправлено"), "wait": ("Заказано", "orange", "ждём от поставщика"),
-                "partial": ("Пришло частично", "purple", "ждём остальное"), "late": ("Опаздывают", "red", "срок прошёл"),
-                "arrived": ("Пришло", "green", "за 60 дней")}
+                "delivered": ("Привезли — ждут приёмки", "teal", "кладовщик проверяет"),
+                "partial": ("Неполная поставка", "purple", "ждём остальное"), "late": ("Опаздывают", "red", "срок прошёл"),
+                "arrived": ("Приняты на склад", "green", "за 60 дней")}
 
 
 def partsman_lines(db: Session, branch_id, uid=None, days: int = 60) -> list[dict]:
@@ -526,6 +542,8 @@ def partsman_lines(db: Session, branch_id, uid=None, days: int = 60) -> list[dic
             when = l.updated_at or p.updated_at
             if when and when.replace(tzinfo=when.tzinfo or timezone.utc) < since:
                 continue
+        elif p.status == "delivered":
+            st = "delivered"          # привезли — кладовщик пересчитывает и принимает
         elif l.got > 0:
             st = "partial"
         else:

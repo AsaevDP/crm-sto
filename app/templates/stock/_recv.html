@@ -1,0 +1,17 @@
+{# Кнопки приёмки закупки (12.11.2026) — только кладовщик (stock.manage).
+   Заказана / неполная поставка → «🚚 Привезли»; привезли / неполная поставка → «✓ Принять полностью» и «Неполная поставка»
+   (откроется закупка с полями «сколько привезли»). Используется в Закупках, «Заказах запчастистов» и в самой закупке. #}
+{% macro recv_btns(p, big=False) %}
+<span class="rcv-btns {{ 'big' if big }}" onclick="event.stopPropagation()">
+  {% if p.status in ("ordered", "partial") %}
+  <form method="post" action="/purchases/{{ p.id }}/delivered"><input type="hidden" name="back" value="{{ ctx.request.url.path }}?{{ ctx.request.url.query }}">
+    <button class="btn btn-sm {{ 'btn-gray' if not big }}" title="Товар привезли на СТО — пересчитаю и приму">🚚 Привезли</button></form>
+  {% endif %}
+  {% if p.status in ("delivered", "partial") %}
+  <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять всю накладную на склад?')">
+    <input type="hidden" name="all" value="{{ p.id }}"><input type="hidden" name="back" value="{{ ctx.request.url.path }}?{{ ctx.request.url.query }}">
+    <button class="btn btn-sm">✓ Принять полностью</button></form>
+  <a class="btn btn-sm btn-gray" href="/purchases/{{ p.id }}?short=1#lines">Неполная поставка</a>
+  {% endif %}
+</span>
+{% endmacro %}
