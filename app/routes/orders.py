@@ -108,7 +108,14 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     if ctx.can("lifts.take") and ctx.user.role.code == "mechanic":
         lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.active.is_(True))
                                .order_by(Lift.number)).all()
-    return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q,
+    # 12.11.2026: менеджер видит свои наряды; ко всем — по запросу на срок
+    acc = None
+    if ctx.user.role.code == "manager" and ctx.can("orders.view_all"):
+        from ..models import OrderAccess
+        acc = {"until": svc.access_until(ctx.db, ctx.user.id),
+               "pending": ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.user_id == ctx.user.id,
+                                                                     OrderAccess.status == "pending")) is not None}
+    return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
                       STAGES=ORDER_STAGES, stage_counts=stage_counts,
@@ -372,6 +379,9 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
     if wo.status == "created":   # назначили недостающее — наряд едет дальше сам
         svc.route_after_intake(ctx.db, wo)
     ctx.db.commit()
+    if not svc.can_view(ctx, wo):   # передал наряд другому менеджеру — у себя он больше не виден (12.11.2026)
+        flash(ctx.request, f"Наряд {wo.number} передан: {new_mg.full_name if new_mg else ''}")
+        return RedirectResponse("/orders", status_code=303)
     flash(ctx.request, "Назначения сохранены")
     return RedirectResponse(f"/orders/{order_id}", status_code=303)
 
@@ -480,3 +490,91 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
                       recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
                       vmap={v.id: v for v in vehicles}, numbers=numbers,
                       lead=ctx.db.get(User, orders[0].manager_id) if orders and orders[0].manager_id else None)
+
+
+# ======================= Доступ менеджера ко всем нарядам (12.11.2026) =======================
+# Менеджер видит только свои наряды. Ко всем — по запросу с причиной: админ / директор / зам разрешают на 1, 2, 3 часа,
+# день или неделю (или отказывают). Решает тот, кто ответил первым. Всё — в журнале.
+def _to(url: str):
+    return RedirectResponse(url, status_code=303)
+
+
+def _deciders(ctx: Ctx) -> list:
+    from ..permissions import effective_permissions
+    staff = ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True))).all()
+    return [u for u in staff if "orders.grant_access" in effective_permissions(ctx.db, u)]
+
+
+@router.post("/orders/access-request")
+def access_request(ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    from ..models import OrderAccess
+    from ..services import notify as nsvc
+    ctx.need("orders.view_all")
+    if not reason.strip():
+        flash(ctx.request, "Напишите причину — её увидит админ или директор", "error")
+        return _to("/orders")
+    if ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.user_id == ctx.user.id, OrderAccess.status == "pending")):
+        flash(ctx.request, "Запрос уже отправлен — ждём ответа")
+        return _to("/orders")
+    ctx.db.add(OrderAccess(user_id=ctx.user.id, reason=reason.strip()[:300]))
+    nsvc.send(ctx.db, [u.id for u in _deciders(ctx)], "access_req", f"{ctx.user.full_name} просит доступ ко всем нарядам",
+              reason.strip()[:300], "/access-requests", skip=ctx.user.id)
+    ctx.db.commit()
+    flash(ctx.request, "Запрос отправлен админу и директору — ответ придёт сообщением")
+    return _to("/orders")
+
+
+@router.get("/access-requests")
+def access_requests(ctx: Ctx = Depends(get_ctx)):
+    from ..models import OrderAccess
+    from ..models.orders import ACCESS_HOURS, ACCESS_STATUS
+    ctx.need("orders.grant_access")
+    rows = ctx.db.scalars(select(OrderAccess).where(OrderAccess.branch_id == ctx.branch.id)
+                          .order_by(OrderAccess.created_at.desc()).limit(60)).all()
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    from datetime import datetime, timezone
+    now_ = datetime.now(timezone.utc)
+
+    def active(a):
+        return a.status == "approved" and a.until and (a.until if a.until.tzinfo else a.until.replace(tzinfo=timezone.utc)) > now_
+    return ctx.render("orders/access.html", title="Доступ ко всем нарядам", rows=rows, people=people, HOURS=ACCESS_HOURS,
+                      STATUS=ACCESS_STATUS, pending=[a for a in rows if a.status == "pending"],
+                      granted=[a for a in rows if active(a)], history=[a for a in rows if a.status != "pending" and not active(a)])
+
+
+@router.post("/access-requests/{aid}")
+def access_decide(aid: str, ctx: Ctx = Depends(get_ctx), action: str = Form(""), hours: int = Form(0)):
+    from datetime import timedelta
+    from ..db import now
+    from ..models import Notification, OrderAccess
+    from ..models.orders import ACCESS_HOURS
+    from ..services import notify as nsvc
+    ctx.need("orders.grant_access")
+    a = ctx.db.get(OrderAccess, _uuid(aid))
+    if not a or a.branch_id != ctx.branch.id:
+        raise Forbidden()
+    who = ctx.db.get(User, a.user_id)
+    if action == "close" and a.status == "approved":
+        a.status, a.until = "closed", now()
+        nsvc.send(ctx.db, [a.user_id], "access_no", "Доступ ко всем нарядам закрыт", f"Закрыл: {ctx.user.full_name}", "/orders")
+        flash(ctx.request, f"{who.full_name if who else ''}: доступ закрыт")
+    elif a.status != "pending":
+        flash(ctx.request, "По этому запросу уже решили", "error")
+    elif action == "approve" and hours in ACCESS_HOURS:
+        a.status, a.hours, a.until = "approved", hours, now() + timedelta(hours=hours)
+        a.decided_by, a.decided_at = ctx.user.id, now()
+        until = a.until.astimezone().strftime("%d.%m %H:%M")
+        nsvc.send(ctx.db, [a.user_id], "access_ok", f"Доступ ко всем нарядам — до {until}",
+                  f"Разрешил: {ctx.user.full_name} · на {ACCESS_HOURS[hours]}", "/orders")
+        flash(ctx.request, f"{who.full_name if who else ''}: разрешено на {ACCESS_HOURS[hours]} — до {until}")
+    elif action == "decline":
+        a.status, a.decided_by, a.decided_at = "declined", ctx.user.id, now()
+        nsvc.send(ctx.db, [a.user_id], "access_no", "Доступ ко всем нарядам — отказано", f"Ответил: {ctx.user.full_name}", "/orders")
+        flash(ctx.request, f"{who.full_name if who else ''}: отказано")
+    # окошко «просит доступ» у остальных решающих больше не нужно
+    for n in ctx.db.scalars(select(Notification).where(Notification.kind == "access_req", Notification.read_at.is_(None),
+                                                       Notification.url == "/access-requests")):
+        if not ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.branch_id == ctx.branch.id, OrderAccess.status == "pending")):
+            n.read_at = now()
+    ctx.db.commit()
+    return _to("/access-requests")

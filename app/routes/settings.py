@@ -41,9 +41,9 @@ def _back(path: str):
 # ---------- Главная настроек ----------
 @router.get("")
 def index(ctx: Ctx = Depends(get_ctx)):
-    ctx.need("settings.access", "users.manage", "staff.dismiss")
-    if not ctx.can("settings.access", "users.manage"):
-        return _back("/settings/users")  # директор: только сотрудники и архив
+    ctx.need("settings.access", "users.manage", "staff.dismiss", "orders.grant_access")
+    if not ctx.can("settings.access", "users.manage", "orders.grant_access"):
+        return _back("/settings/users")  # только увольнение: сразу сотрудники и архив
     n_users = ctx.db.scalar(select(func.count()).select_from(User).where(User.branch_id == ctx.branch.id))
     return ctx.render("settings/index.html", title="Настройки", n_users=n_users)
 
@@ -536,3 +536,56 @@ def lift_add(ctx: Ctx = Depends(get_ctx)):
     ctx.db.commit()
     flash(ctx.request, f"Добавлен подъёмник {n}")
     return _back("/settings/lifts")
+
+
+# ======================= Менеджеры и запчастисты (12.11.2026) =======================
+# Пары «менеджер ↔ запчастист»: админ, директор, зам переставляют (не сработались, менеджер заболел).
+# Открытые наряды остаются за прежней парой — они их дорабатывают; новые наряды идут по новой паре.
+def _pairs_staff(ctx: Ctx):
+    from ..services.orders import staff_by_role
+    return staff_by_role(ctx.db, ctx.branch.id, "manager"), staff_by_role(ctx.db, ctx.branch.id, "partsman")
+
+
+@router.get("/pairs")
+def pairs(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("orders.grant_access")
+    from ..models import WorkOrder
+    from ..models.orders import WO_ACTIVE
+    managers, partsmen = _pairs_staff(ctx)
+    load = dict(ctx.db.execute(select(WorkOrder.partsman_id, func.count()).where(
+        WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE)).group_by(WorkOrder.partsman_id)).all())
+    mload = dict(ctx.db.execute(select(WorkOrder.manager_id, func.count()).where(
+        WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE)).group_by(WorkOrder.manager_id)).all())
+    ids = {m.id for m in managers}
+    cols = [{"m": m, "p": [p for p in partsmen if p.works_with_id == m.id]} for m in managers]
+    free = [p for p in partsmen if p.works_with_id not in ids]
+    return ctx.render("settings/pairs.html", title="Менеджеры и запчастисты", cols=cols, free=free, managers=managers,
+                      load=load, mload=mload)
+
+
+@router.post("/pairs")
+def pairs_save(ctx: Ctx = Depends(get_ctx), partsman_id: str = Form(""), manager_id: str = Form(""),
+               swap_a: str = Form(""), swap_b: str = Form("")):
+    ctx.need("orders.grant_access")
+    managers, partsmen = _pairs_staff(ctx)
+    mids = {str(m.id): m for m in managers}
+    if swap_a and swap_b:   # поменять местами всех запчастистов двух менеджеров
+        if swap_a in mids and swap_b in mids and swap_a != swap_b:
+            a, b = mids[swap_a], mids[swap_b]
+            pa = [p for p in partsmen if p.works_with_id == a.id]
+            pb = [p for p in partsmen if p.works_with_id == b.id]
+            for p in pa:
+                p.works_with_id = b.id
+            for p in pb:
+                p.works_with_id = a.id
+            ctx.db.commit()
+            flash(ctx.request, f"Поменяли местами: запчастисты {a.short_name} ↔ {b.short_name}")
+        return _back("/settings/pairs")
+    p = next((x for x in partsmen if str(x.id) == partsman_id), None)
+    if not p:
+        raise Forbidden()
+    m = mids.get(manager_id)
+    p.works_with_id = m.id if m else None
+    ctx.db.commit()
+    flash(ctx.request, f"{p.full_name} теперь работает с {m.full_name}" if m else f"{p.full_name} — без закреплённого менеджера")
+    return _back("/settings/pairs")

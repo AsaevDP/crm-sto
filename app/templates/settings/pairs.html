@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{# Менеджеры и запчастисты (12.11.2026): кто с кем работает. Переставляют админ, директор, зам.
+   Открытые наряды остаются за прежней парой — дорабатывают и закрывают они; новые наряды — по новой паре. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Менеджеры и запчастисты</h1></div>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/access-requests">Доступ ко всем нарядам</a></div>
+</header>
+<p class="footnote" style="margin:0 4px">При приёмке машины подставляется запчастист из пары менеджера (с меньшей загрузкой). Перевели запчастиста —
+  его открытые наряды остаются у прежнего менеджера, новые пойдут по новой паре.</p>
+
+<div class="pr-cols">
+  {% for col in cols %}{% set m = col.m %}
+  <section class="card compact pr-col">
+    <div class="card-h"><span class="headline">{{ m.full_name }}</span><span class="caption nowrap">нарядов на СТО: {{ mload.get(m.id, 0) }}</span></div>
+    {% for p in col.p %}
+    <form class="pr-row" method="post" action="/settings/pairs"><input type="hidden" name="partsman_id" value="{{ p.id }}">
+      <span class="pr-who"><b>{{ p.full_name }}</b><span class="caption">в работе: {{ load.get(p.id, 0) }}</span></span>
+      <select class="field" name="manager_id" aria-label="Перевести к менеджеру">
+        {% for mm in managers %}<option value="{{ mm.id }}" {% if mm.id == m.id %}selected{% endif %}>{{ mm.full_name }}</option>{% endfor %}
+        <option value="">— без менеджера —</option></select>
+      <button class="btn btn-sm btn-gray">Перевести</button>
+    </form>
+    {% else %}<p class="footnote" style="margin:0">Запчастистов нет</p>{% endfor %}
+  </section>
+  {% endfor %}
+  {% if free %}
+  <section class="card compact pr-col free">
+    <div class="card-h"><span class="headline">Без менеджера</span></div>
+    {% for p in free %}
+    <form class="pr-row" method="post" action="/settings/pairs"><input type="hidden" name="partsman_id" value="{{ p.id }}">
+      <span class="pr-who"><b>{{ p.full_name }}</b><span class="caption">в работе: {{ load.get(p.id, 0) }}</span></span>
+      <select class="field" name="manager_id" aria-label="К какому менеджеру">
+        <option value="">— выбрать —</option>{% for mm in managers %}<option value="{{ mm.id }}">{{ mm.full_name }}</option>{% endfor %}</select>
+      <button class="btn btn-sm">Закрепить</button>
+    </form>
+    {% endfor %}
+  </section>
+  {% endif %}
+</div>
+
+{% if managers|length >= 2 %}
+<form class="card compact form-row pr-swap" method="post" action="/settings/pairs">
+  <span class="headline">Поменять местами всех запчастистов</span>
+  <select class="field" name="swap_a" aria-label="Первый менеджер">{% for mm in managers %}<option value="{{ mm.id }}" {% if loop.first %}selected{% endif %}>{{ mm.full_name }}</option>{% endfor %}</select>
+  <span>↔</span>
+  <select class="field" name="swap_b" aria-label="Второй менеджер">{% for mm in managers %}<option value="{{ mm.id }}" {% if loop.index == 2 %}selected{% endif %}>{{ mm.full_name }}</option>{% endfor %}</select>
+  <button class="btn btn-sm btn-gray" onclick="return confirm('Поменять запчастистов этих менеджеров местами?')">Поменять</button>
+</form>
+{% endif %}
+{% endblock %}

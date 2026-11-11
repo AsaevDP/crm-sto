@@ -49,8 +49,9 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([wo.vehicle_id for _, wo in lifts if wo])))}
     staff = db.scalars(select(User).where(User.branch_id == bid, User.active.is_(True)).order_by(User.full_name)).all()
     people = {u.id: u for u in staff}
-    counts = dict(db.execute(select(WorkOrder.status, func.count()).where(WorkOrder.branch_id == bid)
-                             .group_by(WorkOrder.status)).all())
+    from ..services.orders import visible_orders_query
+    vis = visible_orders_query(ctx).subquery()   # менеджер — только свои наряды (12.11.2026)
+    counts = dict(db.execute(select(vis.c.status, func.count()).group_by(vis.c.status)).all())
     issue_new = db.scalar(select(func.count()).select_from(IssueRequest)
                           .where(IssueRequest.branch_id == bid, IssueRequest.status == "new"))
     # Чем занят каждый: активные наряды, где он назначен

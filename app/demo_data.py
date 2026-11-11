@@ -710,5 +710,15 @@ def populate():
         as_user("admin")
         msvc.close(db, debtor, True, "ok", "", "", "Остаток доплатит в пятницу — договорились по телефону")
 
+        # 12.11.2026: Марина видит только свои наряды и просит доступ ко всем — у админа и директора важное окошко
+        from .models import OrderAccess
+        from .services import notify as nsvc
+        as_user("marina")
+        db.add(OrderAccess(user_id=users["marina"].id, reason="Ирина в отпуске до пятницы — клиенты звонят по её нарядам"))
+        nsvc.send(db, [users[x].id for x in ("admin", "director") if x in users], "access_req",
+                  "Марина Приёмкина просит доступ ко всем нарядам", "Ирина в отпуске до пятницы — клиенты звонят по её нарядам",
+                  "/access-requests")
+        db.flush()
+
         current_user_id.set(None)
         db.commit()

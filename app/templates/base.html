@@ -76,18 +76,35 @@
       b.textContent = n;
     });
   }
+  function paint(map) {
+    document.querySelectorAll('.sidebar a[href], .tabbar a[href], .more-menu a[href]').forEach(a => {
+      const href = a.getAttribute('href');
+      if (href === '/notifications') return;
+      let box = a.querySelector('.nbadges');
+      const list = map[href] || [];
+      if (!list.length) { box && box.remove(); return; }
+      if (!box) { box = document.createElement('span'); box.className = 'nbadges'; a.appendChild(box); }
+      box.innerHTML = '';
+      list.forEach(x => {
+        const b = document.createElement('span');
+        b.className = 'nbadge nb-' + x.c; b.textContent = x.n; b.title = x.t;
+        b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); location.href = x.href; });
+        box.appendChild(b);
+      });
+    });
+  }
   async function poll() {
     try {
       const r = await fetch('/api/notify', { headers: { 'x-requested-with': 'fetch' } });
       if (!r.ok) return;
-      const j = await r.json(); badge('.sidebar a[href="/stock"], .tabbar a[href="/stock"]', (j.issues || 0) + (j.receive || 0));
-      badge('.sidebar a[href="/stock/issues"], .tabbar a[href="/stock/issues"]', j.issues || 0);   // «Запросы на выдачу»: 1, 2…
-      badge('.sidebar a[href="/ready"], .tabbar a[href="/ready"]', j.ready || 0);                  // менеджеру: «Готово к выдаче»
-      badge('.sidebar a[href="/razbor/shipping"], .tabbar a[href="/razbor/shipping"]', j.razbor || 0);   // разбор: подготовить
+      const j = await r.json();
+      // 12.11.2026: цветные цифры у пунктов меню — красная (срочно), жёлтая (ждут действия), зелёная (готово), рядом
+      paint(j.badges || {});
       badge('.sidebar a[href="/notifications"]', j.unread);
       (j.notes || []).forEach(n => window.crmToast && window.crmToast({
-        id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', handover: 'Наряд', issue_ready: 'Выдача' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,
-        tone: { parts_ready: 'green', handover: 'blue', issue_ready: 'green' }[n.kind] || 'red', readUrl: '/api/notify/' + n.id + '/read',
+        id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', handover: 'Наряд', issue_ready: 'Выдача', access_req: 'Важно · доступ к нарядам',
+                  access_ok: 'Доступ', access_no: 'Доступ' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,
+        tone: { parts_ready: 'green', handover: 'blue', issue_ready: 'green', access_ok: 'green', access_no: 'blue' }[n.kind] || 'red', readUrl: '/api/notify/' + n.id + '/read',
         action: n.request_url ? { label: 'Запросить выдачу', url: n.request_url, done: 'Запрос отправлен кладовщику' } : null }));
       if ((j.notes || []).some(n => !seen.has('n' + n.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
       (j.notes || []).forEach(n => seen.add('n' + n.id));

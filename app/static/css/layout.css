@@ -12,7 +12,7 @@
 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; }
 
 @media (min-width: 900px) {
-  .shell { display: grid; grid-template-columns: 248px 1fr; }
+  .shell { display: grid; grid-template-columns: 264px 1fr; }
   .side {
     display: flex; flex-direction: column;
     position: sticky; top: 0; height: 100dvh;
@@ -562,7 +562,7 @@ tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red
 .tag-in { background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); }
 .muted-tag { opacity: .6; }
 /* Каркас: основная колонка не растягивается широкими таблицами — они листаются внутри своего блока */
-@media (min-width: 900px) { .shell { grid-template-columns: 248px minmax(0, 1fr); } }
+@media (min-width: 900px) { .shell { grid-template-columns: 264px minmax(0, 1fr); } }   /* +16 px под цветные цифры (12.11.2026) */
 .main, .content { min-width: 0; }
 .onsite { min-width: 0; }
 /* iPhone: двухколоночные страницы — в одну колонку; фильтры переносятся, а не вылезают */
@@ -1582,3 +1582,36 @@ main a:not([class]):hover { text-decoration: underline; }
 /* «Глазами сотрудника» (12.11.2026): отметка в журнале и ленте — сделал админ за сотрудника */
 .via-admin { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px; font-size: 12px; font-weight: 600;
   color: var(--orange); background: color-mix(in srgb, var(--orange) 14%, transparent); white-space: nowrap; }
+
+/* Цветные цифры в меню (12.11.2026): красная — срочно, жёлтая — ждут действия, зелёная — готово; несколько рядом */
+.nbadges { margin-left: auto; display: inline-flex; gap: 3px; flex: none; }
+.nbadges .nbadge { margin-left: 0; cursor: pointer; }
+.nbadge.nb-red { background: var(--red); color: #fff; }
+.nbadge.nb-yellow { background: var(--yellow); color: #1c1c1e; }
+.nbadge.nb-green { background: var(--green); color: #fff; }
+.tabbar .nbadges { position: absolute; top: 2px; left: 50%; margin: 0 0 0 6px; gap: 2px; }
+.tabbar .nbadges .nbadge { position: static; min-width: 16px; height: 16px; font-size: 10px; padding: 0 4px; }
+/* Доступ менеджера ко всем нарядам (12.11.2026) */
+.acc-bar { display: flex; gap: 8px 14px; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 10px 14px;
+  border-radius: 12px; background: var(--fill); font-size: 14px; }
+.acc-bar.on { background: color-mix(in srgb, var(--orange) 16%, transparent); }
+.acc-ask[open] { flex: 1 1 100%; }
+.acc-ask .form-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.acc-ask .field { flex: 1 1 240px; width: auto; }
+.ac-card { display: grid; gap: 8px; border-left: 4px solid var(--gray); }
+.ac-card.now { border-left-color: var(--red); }
+.ac-card.ok { border-left-color: var(--green); }
+.ac-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0; }
+.nt-row[data-kind="access_req"] { border-left-color: var(--red); }
+.nt-row[data-kind="access_ok"] { border-left-color: var(--green); }
+.nt-row[data-kind="access_no"] { border-left-color: var(--gray); }
+
+/* Менеджеры и запчастисты (12.11.2026) */
+.pr-cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); }
+.pr-col { display: grid; gap: 6px; align-content: start; border-top: 4px solid var(--blue); }
+.pr-col.free { border-top-color: var(--gray); }
+.pr-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 6px 0; border-top: 0.5px solid var(--separator); margin: 0; }
+.pr-who { display: grid; flex: 1 1 150px; min-width: 0; }
+.pr-row .field { width: auto; flex: 1 1 150px; min-width: 0; }
+.pr-swap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pr-swap .field { width: auto; flex: 1 1 160px; }

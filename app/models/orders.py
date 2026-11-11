@@ -183,6 +183,23 @@ class Notification(Entity):
     read_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
 
 
+# 12.11.2026: менеджер видит только свои наряды; ко всем — по запросу, админ / директор / зам разрешают на срок
+ACCESS_STATUS = {"pending": "Ждёт решения", "approved": "Разрешено", "declined": "Отказано", "closed": "Закрыто досрочно"}
+ACCESS_HOURS = {1: "1 час", 2: "2 часа", 3: "3 часа", 24: "день", 168: "неделю"}
+
+
+class OrderAccess(Entity):
+    """Запрос менеджера «показать все наряды»: причина → решение (срок) → действует до `until`."""
+    __tablename__ = "order_access"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    reason: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
 class ClientEvent(Entity):
     """Хронология карты клиента: всё, что происходило с клиентом и его авто.
     kind: order — новый наряд, status — смена статуса, finding — найдена проблема,

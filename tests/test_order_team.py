@@ -60,6 +60,10 @@ def test_steps_team_feed_and_handover(client):
     with SessionLocal() as db:
         n = db.scalar(select(Notification).where(Notification.user_id == mgr2, Notification.kind == "handover"))
         assert n and "наряд" in n.text
+    # 12.11.2026: менеджер видит только свои наряды — у Ирины он пропал, у Марии появился
+    assert client.get(url).status_code == 403
+    client.post("/logout")
+    login(client, "mgr2", "mgr2pass")
     page = client.get(url).text
     assert "Мария Вторая" in page and "передал наряд другому менеджеру" in page
 

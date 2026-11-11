@@ -18,6 +18,20 @@
   {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
 </header>
 
+{# 12.11.2026: менеджер видит только свои наряды; ко всем — по запросу (админ / директор / зам разрешают на срок) #}
+{% if acc %}
+<div class="acc-bar {{ 'on' if acc.until }}">
+  {% if acc.until %}<span>👁 Доступ ко <b>всем нарядам</b> до <b>{{ acc.until.astimezone().strftime("%d.%m %H:%M") }}</b> — потом снова только ваши</span>
+  {% elif acc.pending %}<span>⏳ Запрос на доступ ко всем нарядам отправлен — ждём ответа админа или директора. Сейчас видны только ваши наряды.</span>
+  {% else %}<span>Видны наряды, которые ведёте вы.</span>
+  <details class="acc-ask"><summary class="btn btn-sm btn-gray">Попросить доступ ко всем нарядам</summary>
+    <form class="form-row" method="post" action="/orders/access-request">
+      <input class="field" name="reason" placeholder="Причина: например, Ирина на больничном" required>
+      <button class="btn btn-sm">Отправить</button></form></details>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="vs-bar">
   <form class="toolbar-row vs-search" method="get">
     <input class="field search" name="q" value="{{ q }}" placeholder="Номер, госномер, телефон, клиент" autocomplete="off">

@@ -21,11 +21,13 @@
 </div>
 {% endif %}
 
-{% if ctx.can("users.manage") %}
+{% if ctx.can("users.manage") or ctx.can("orders.grant_access") or ctx.can("staff.dismiss") %}
 <div class="group-title">Люди и доступ</div>
 <div class="set-tiles">
-  {{ tile("/settings/users", "Сотрудники и карты", "в штате: " ~ n_users, "green", "users") }}
-  {{ tile("/settings/roles", "Роли и доступ", "кто что может", "indigo", "shield") }}
+  {% if ctx.can("users.manage") or ctx.can("staff.dismiss") %}{{ tile("/settings/users", "Сотрудники и карты", "в штате: " ~ n_users, "green", "users") }}{% endif %}
+  {% if ctx.can("users.manage") %}{{ tile("/settings/roles", "Роли и доступ", "кто что может", "indigo", "shield") }}{% endif %}
+  {% if ctx.can("orders.grant_access") %}{{ tile("/settings/pairs", "Менеджеры и запчастисты", "кто с кем работает", "blue", "users") }}
+  {{ tile("/access-requests", "Доступ ко всем нарядам", "запросы менеджеров", "red", "lock") }}{% endif %}
 </div>
 {% endif %}
 

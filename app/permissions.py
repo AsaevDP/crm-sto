@@ -28,6 +28,7 @@ PERMISSIONS = [
     ("parts.pick", "Подбор запчастей в наряд", "Склад и закупки"),
     ("purchases.view", "Видеть закупки", "Склад и закупки"),
     ("purchases.manage", "Создавать закупки", "Склад и закупки"),
+    ("orders.grant_access", "Разрешать менеджеру видеть все наряды (на срок) и переставлять пары менеджер ↔ запчастист", "Наряды"),
     ("stock.pickup", "«Готово к выдаче» — забирать подготовленные кладовщиком запчасти и закрывать выдачу", "Склад и закупки"),
     ("purchases.mine", "«Мои заказы» — свои закупки по своим нарядам (запчастист)", "Склад и закупки"),
     ("purchases.by_partsman", "«Заказы запчастистов» — заказы каждого запчастиста", "Склад и закупки"),
@@ -84,12 +85,12 @@ DEFAULT_ROLES = {
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
-        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", *_OWN]),
+        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "tools.view", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
         "reports.view", "money.view", "attendance.view_all", "payroll.view_all", "payroll.check", "payroll.pay",
@@ -127,7 +128,7 @@ MENU = [
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),
     ("/tools", "Инструмент", "tool", ["tools.view", "tools.view_own"]),
-    ("/settings", "Настройки", "gear", ["settings.access", "users.manage", "staff.dismiss"]),
+    ("/settings", "Настройки", "gear", ["settings.access", "users.manage", "staff.dismiss", "orders.grant_access"]),
     ("/audit", "Журнал", "list", ["audit.view"]),
 ]
 

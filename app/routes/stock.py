@@ -1119,6 +1119,7 @@ def ready_page(ctx: Ctx = Depends(get_ctx)):
 def notify(ctx: Ctx = Depends(get_ctx)):
     """Опрос раз в 15 секунд. Кладовщику — новые запросы на выдачу; всем — их сообщения
     («Все запчасти на складе», «Срочная деталь пришла», «Слесарь просит срочно»)."""
+    from ..services import badges as bsvc
     from ..services import notify as nsvc
     notes = []
     for n in nsvc.unread(ctx.db, ctx.user.id):
@@ -1151,14 +1152,14 @@ def notify(ctx: Ctx = Depends(get_ctx)):
         if ctx.can("stock.pickup"):   # «Готово к выдаче» — по моим нарядам и моим запросам
             ready_n = sum(1 for x in _requests(ctx, "ready") if _ready_mine(ctx, x))
         return {"issues": len(tools_items), "items": [], "tools": tools_items, "notes": notes, "unread": unread_n,
-                "ready": ready_n, "razbor": razbor_n}
+                "ready": ready_n, "razbor": razbor_n, "badges": bsvc.compute(ctx)}
     items = []
     for x in _requests(ctx, "new")[:5]:
         names = ", ".join(("🔥 " if l["urgent"] else "") + l["name"] for l in x["lines"][:3]) + ("…" if len(x["lines"]) > 3 else "")
         items.append({"id": str(x["r"].id), "who": x["who"].full_name if x["who"] else "",
                       "text": names, "order": x["wo"].number, "plate": osvc.fmt_plate(x["v"].plate)})
     return {"issues": len(_requests(ctx, "new")) + len(tools_items), "items": items, "tools": tools_items,
-            "notes": notes, "unread": unread_n, "razbor": razbor_n,
+            "notes": notes, "unread": unread_n, "razbor": razbor_n, "badges": bsvc.compute(ctx),
             "receive": _receive_count(ctx) if ctx.can("stock.manage") else 0}
 
 

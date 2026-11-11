@@ -47,10 +47,37 @@ def fmt_plate(p: str) -> str:
 
 
 # ---------- Видимость ----------
+def access_until(db: Session, user_id):
+    """До какого времени менеджеру разрешено видеть все наряды (None — не разрешено)."""
+    from datetime import datetime, timezone
+    from ..models import OrderAccess
+    a = db.scalar(select(OrderAccess).where(OrderAccess.user_id == user_id, OrderAccess.status == "approved")
+                  .order_by(OrderAccess.until.desc()))
+    if a and a.until:
+        until = a.until if a.until.tzinfo else a.until.replace(tzinfo=timezone.utc)
+        if until > datetime.now(timezone.utc):
+            return until
+    return None
+
+
+def sees_all_orders(ctx) -> bool:
+    """Все наряды видят: админ, директор, зам, кладовщик и т.п. (orders.view_all). Менеджер (12.11.2026) — только свои,
+    ко всем — если админ / директор / зам разрешили на срок."""
+    cached = getattr(ctx, "_sees_all", None)
+    if cached is not None:
+        return cached
+    res = ctx.can("orders.view_all") and (ctx.user.role.code != "manager" or access_until(ctx.db, ctx.user.id) is not None)
+    try:
+        ctx._sees_all = res
+    except AttributeError:
+        pass
+    return res
+
+
 def visible_orders_query(ctx):
-    """Менеджер/админ (orders.view_all) видят все, остальные — где они назначены."""
+    """Кто видит все — все; остальные — где они назначены (менеджер ведёт, слесарь, запчастист)."""
     q = select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id)
-    if not ctx.can("orders.view_all"):
+    if not sees_all_orders(ctx):
         me = ctx.user.id
         q = q.where(or_(WorkOrder.partsman_id == me, WorkOrder.mechanic_id == me, WorkOrder.manager_id == me))
     return q
@@ -59,9 +86,9 @@ def visible_orders_query(ctx):
 def can_view(ctx, wo: WorkOrder) -> bool:
     if wo.branch_id != ctx.branch.id:
         return False
-    if ctx.can("orders.view_all"):
+    if sees_all_orders(ctx):
         return True
-    return ctx.can("orders.view_own") and ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id)
+    return ctx.can("orders.view_own", "orders.view_all") and ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id)
 
 
 # ---------- Справочники для формы ----------
