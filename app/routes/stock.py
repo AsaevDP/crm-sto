@@ -1525,8 +1525,10 @@ def receive_page(ctx: Ctx = Depends(get_ctx), who: str = ""):
                            .order_by(Location.rack, Location.shelf, Location.place)).all()
     last = ctx.request.session.pop("last_received", None)
     wu = db.get(User, _uuid(who)) if who else None
+    drafts = svc.draft_waits(db, ctx.branch.id, wu.id if wu else None)
     return ctx.render("stock/receive.html", title="Приход", groups=_receive_lines(ctx, who), locations=locations, who_user=wu,
-                      last=last, loc_label=svc.location_label, fmt_plate=osvc.fmt_plate)
+                      last=last, loc_label=svc.location_label, fmt_plate=osvc.fmt_plate, drafts=drafts,
+                      dveh={d["wo"].id: db.get(Vehicle, d["wo"].vehicle_id) for d in drafts})
 
 
 @router.post("/stock/receive")

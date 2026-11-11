@@ -110,6 +110,13 @@
   {% for role, u in team %}{% if u %}<span class="who-chip" title="{{ u.full_name }} · {{ u.role.name }}"><i style="--uc:{{ color_css(u.role.color) }}"></i><span class="caption">{{ role }}</span> <b>{{ u.full_name }}</b></span>{% endif %}{% endfor %}
   {% if last_change %}<span class="wo-last caption">Последнее изменение: <b>{{ last_change.who }}</b> · {{ last_change.ago }} — {{ last_change.text }}</span>{% endif %}
 </div>
+{# 12.11.2026: наряд передали мне — пока не нажал «Принял», он в плитке «Мне передали» и горит в меню #}
+{% if handed %}
+<div class="wo-now" style="--sc:var(--red)">
+  <div class="grow"><b>Вам передали этот наряд</b><span class="wo-now-t">{% if handed.from %}Передал(а) {{ handed.from.full_name }}{% endif %}{% if handed.at %} · {{ handed.at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Посмотрите и нажмите «Принял».</span></div>
+  <form class="wo-now-acts one-shot" method="post" action="/orders/{{ wo.id }}/handover-ack"><button class="btn btn-sm">✓ Принял</button></form>
+</div>
+{% endif %}
 <div class="wo-now" style="--sc:var(--{{ flow.color }})">
   <div class="grow"><b>{{ flow.title }}</b><span class="wo-now-t">{{ flow.text }}</span></div>
   {% if can_route %}

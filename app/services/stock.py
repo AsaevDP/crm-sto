@@ -295,6 +295,43 @@ def release_order(db: Session, wo: WorkOrder) -> int:
     return n
 
 
+def draft_part_ids(db: Session, part_ids) -> set:
+    """Позиции «заказана», которые на самом деле лежат только в ЧЕРНОВИКЕ закупки (поставщику ещё не отправлено).
+    12.11.2026: раньше они горели «заказана», а кладовщик их нигде не видел — теперь в наряде «в черновике закупки»."""
+    ids = [i for i in part_ids if i]
+    if not ids:
+        return set()
+    sent, draft = set(), set()
+    for pid, st in db.execute(select(PurchaseLine.wo_part_id, Purchase.status).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+                              .where(PurchaseLine.wo_part_id.in_(ids))):
+        (draft if st == "draft" else sent).add(pid)
+    return draft - sent
+
+
+def draft_waits(db: Session, branch_id, who=None) -> list[dict]:
+    """Черновики закупок под наряды — запчастист ещё не нажал «Заказано». Для кладовщика («Приход») и запчастиста."""
+    from ..models import User
+    q = select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft")
+    if who:
+        q = q.where(Purchase.created_by == who)
+    out = []
+    for p in db.scalars(q.order_by(Purchase.created_at)):
+        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.wo_part_id.is_not(None))).all()
+        if not lines:
+            continue
+        rows = []
+        for l in lines:
+            part = db.get(WoPart, l.wo_part_id)
+            wo = db.get(WorkOrder, part.work_order_id) if part else None
+            if not part or not wo or wo.status in ("closed", "cancel"):
+                continue
+            rows.append({"l": l, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo})
+        if rows:
+            out.append({"p": p, "who": db.get(User, p.created_by) if p.created_by else None, "rows": rows,
+                        "wo": rows[0]["wo"], "urgent": any(r["part"].urgent for r in rows)})
+    return out
+
+
 def unlink_line(db: Session, line: PurchaseLine):
     """Строку убрали из закупки: позиция наряда снова ждёт решения запчастиста («со склада» / «заказать»).
     Пришедшее частями снимается с резерва и становится свободным — «со склада» его же и возьмёт."""

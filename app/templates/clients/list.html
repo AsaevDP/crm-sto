@@ -22,6 +22,24 @@
 {% for k, v in tabs.items() if k in CL %}{% set _ = items_t.append({"t": v, "n": counts[k], "c": CL[k][0], "s": CL[k][1],
     "href": link(tab=k), "on": tab == k, "zero": not counts[k]}) %}{% endfor %}
 {{ tiles(items_t, "cl-tiles") }}
+{# 12.11.2026: менеджер видит только своих клиентов. Чужой нужен срочно — запрос директору / заму #}
+{% if limited %}
+<div class="card compact cl-limited">
+  <p class="footnote" style="margin:0">Здесь ваши клиенты: чьи машины сейчас у нас и выданные за последние {{ RECENT_DAYS }} дня.
+    Клиент снова приехал — найдите его в <a href="/orders/new">Приёмке</a> по номеру, телефону, фамилии или VIN.</p>
+  {% for a, c in my_access.active %}{% if c %}<a class="chip-link" href="/clients/{{ c.id }}">🔓 {{ c.full_name }} · до {{ a.until.astimezone().strftime("%d.%m %H:%M") }}</a>{% endif %}{% endfor %}
+  {% if my_access.pending %}<p class="hint warn" style="margin:0">Запрос доступа отправлен — ждём директора или зама.</p>
+  {% else %}
+  <details>
+    <summary class="caption" style="cursor:pointer">Нужен другой клиент срочно — попросить доступ</summary>
+    <form class="form dense one-shot" method="post" action="/clients/access-request" style="margin-top:8px">
+      <input class="field" name="reason" maxlength="300" required placeholder="Кого ищете (имя, телефон, госномер) и зачем">
+      <button class="btn btn-sm">Отправить директору и заму</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
 {% if tab in ("regular", "lost", "new") %}
 <p class="footnote cl-hint">{{ {"regular": "Постоянные — от " ~ REGULAR_VISITS ~ " визитов или отмеченные вручную (★ в карточке клиента).",
   "lost": "Давно не были — больше полугода. Можно позвонить и пригласить на ТО.", "new": "Первый визит — за последние 30 дней."}[tab] }}</p>

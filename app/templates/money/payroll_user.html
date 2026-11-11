@@ -15,7 +15,9 @@
 <div class="stats">
   <div class="stat"><span class="footnote">Начислено {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ s.accrued|money }} ₴</b></div>
   <div class="stat"><span class="footnote">Выплачено</span><b>{{ s.paid|money }} ₴</b></div>
-  <div class="stat"><span class="footnote">К выплате</span><b>{{ s.due|money }} ₴</b></div>
+  {# 12.11.2026: минус = выдали больше, чем заработано (аванс) — пишем это словами, а не «−2 271,60» #}
+  {% if s.due < 0 %}<div class="stat"><span class="footnote">Аванс больше заработанного</span><b style="color:var(--orange)">{{ (-s.due)|money }} ₴</b></div>
+  {% else %}<div class="stat"><span class="footnote">К выплате</span><b>{{ s.due|money }} ₴</b></div>{% endif %}
   <div class="stat"><span class="footnote">Сегодня</span><b>{{ today_sum|money }} ₴</b></div>
 </div>
 <div class="card compact pay-cols">
@@ -51,17 +53,22 @@
       <div class="card-h"><span class="headline">Выплаты за период</span></div>
       {% for p in payouts %}
       <div class="kv"><span>{{ p.paid_on.strftime("%d.%m") }} · {{ PAY_METHODS.get(p.method, p.method) }}{% if p.note %} <span class="caption">· {{ p.note }}</span>{% endif %}</span>
-        <span class="nowrap"><b>{{ p.amount|money }} ₴</b>{% if ctx.can("payroll.manage") %}
+        <span class="nowrap"><b>{{ p.amount|money }} ₴</b>{% if ctx.can("payroll.edit") %}
           <form method="post" action="/payroll/payouts/{{ p.id }}/delete" style="display:inline" onsubmit="return confirm('Удалить выплату?')"><button class="btn btn-plain btn-sm" title="Удалить выплату">×</button></form>{% endif %}</span></div>
       {% else %}<p class="footnote" style="margin:0">Выплат не было</p>{% endfor %}
-      {% if ctx.can("payroll.manage") %}
-      <form class="form dense" method="post" action="/payroll/payouts" style="margin-top:8px">
-        <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="f" value="{{ d1 }}"><input type="hidden" name="t" value="{{ d2 }}">
-        <div class="form-row"><input class="field" name="amount" inputmode="decimal" placeholder="Сумма ₴ *" value="{{ '%.2f'|format(s.due) if s.due > 0 else '' }}" required aria-label="Сумма">
-          <select class="field" name="method" aria-label="Как выдали">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
-        <input class="field" name="note" placeholder="Аванс, расчёт за месяц…" aria-label="Комментарий">
-        <button class="btn btn-sm">Записать выплату</button>
-      </form>
+      {# 12.11.2026: аванс выдают только директор и зам. Обычная зарплата — по неделям (бухгалтер, «Выдать»). #}
+      {% if ctx.can("payroll.advance") and u.id != user.id %}
+      <details class="work-edit" style="margin-top:8px">
+        <summary class="btn btn-sm btn-tinted">Выдать аванс</summary>
+        <form class="form dense one-shot" method="post" action="/payroll/payouts" style="margin-top:8px">
+          <input type="hidden" name="user_id" value="{{ u.id }}"><input type="hidden" name="f" value="{{ d1 }}"><input type="hidden" name="t" value="{{ d2 }}">
+          <div class="form-row"><input class="field" name="amount" inputmode="decimal" placeholder="Сумма аванса ₴ *" required aria-label="Сумма аванса">
+            <select class="field" name="method" aria-label="Как выдали">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+          <input class="field" name="note" value="Аванс" aria-label="Комментарий">
+          <button class="btn btn-sm">Выдать аванс {{ u.short_name }}</button>
+          <p class="hint" style="margin:0">Аванс вычтется из того, что сотрудник заработает. Выдают только директор и зам.</p>
+        </form>
+      </details>
       {% endif %}
     </div>
   </section>

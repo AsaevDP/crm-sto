@@ -57,6 +57,8 @@ PERMISSIONS = [
     ("payroll.manage", "Схемы зарплаты и выплаты", "Сотрудники"),
     ("payroll.check", "Зарплата: проверять неделю (бухгалтер)", "Сотрудники"),
     ("payroll.pay", "Зарплата: отмечать выдачу денег за неделю", "Сотрудники"),
+    # 12.11.2026 (брат): аванс конкретному сотруднику выдают только директор и зам — бухгалтер нет
+    ("payroll.advance", "Зарплата: выдавать аванс сотруднику", "Сотрудники"),
     ("payroll.edit", "Зарплата: исправлять начисления, добавлять премии и штрафы (даёт админ)", "Сотрудники"),
     ("staff.dismiss", "Увольнять и возвращать сотрудников, архив уволенных", "Сотрудники"),
     ("tools.view", "Инструмент всех сотрудников", "Инструмент"),
@@ -90,12 +92,13 @@ DEFAULT_ROLES = {
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
-        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access", *_OWN]),
+        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
+        "payroll.advance", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
         "reports.view", "money.view", "attendance.view_all", "payroll.view_all", "payroll.check", "payroll.pay",

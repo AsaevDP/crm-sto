@@ -74,9 +74,78 @@ def sees_all_orders(ctx) -> bool:
     return res
 
 
+# 12.11.2026 (брат): менеджер видит своих клиентов и их наряды, пока машина у нас, и ещё RECENT_DAYS дня после выдачи.
+# Потом — только через поиск при приёмке или по доступу, который дали директор / зам / админ.
+RECENT_DAYS = 3
+
+
+def manager_limited(ctx) -> bool:
+    """Менеджер без временного доступа ко всем нарядам — видит только своё."""
+    return ctx.user.role.code == "manager" and not sees_all_orders(ctx)
+
+
+def _cut():
+    from datetime import datetime, timedelta, timezone
+    return datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)
+
+
+def granted_client_ids(ctx) -> set:
+    """Клиенты, к которым менеджеру дали доступ на срок (директор / зам / админ)."""
+    cached = getattr(ctx, "_granted_clients", None)
+    if cached is not None:
+        return cached
+    from datetime import datetime, timezone
+    from ..models import ClientAccess
+    res = set(ctx.db.scalars(select(ClientAccess.client_id).where(
+        ClientAccess.user_id == ctx.user.id, ClientAccess.status == "approved", ClientAccess.client_id.is_not(None),
+        ClientAccess.until > datetime.now(timezone.utc))))
+    try:
+        ctx._granted_clients = res
+    except AttributeError:
+        pass
+    return res
+
+
+def _mine_recent_cond(ctx):
+    from sqlalchemy import and_
+    cut = _cut()
+    # Выданный — по дате выдачи (closed_at); отменённый — по последнему изменению (отмена — это и есть последнее изменение)
+    return and_(WorkOrder.manager_id == ctx.user.id,
+                or_(WorkOrder.status.in_(WO_ACTIVE),
+                    and_(WorkOrder.status == "closed", WorkOrder.closed_at >= cut),
+                    and_(WorkOrder.status == "cancel", WorkOrder.updated_at >= cut)))
+
+
+def _recent(wo: WorkOrder) -> bool:
+    from datetime import timezone
+    t = wo.closed_at if wo.status == "closed" else (wo.updated_at if wo.status == "cancel" else None)
+    return bool(t and (t if t.tzinfo else t.replace(tzinfo=timezone.utc)) >= _cut())
+
+
+def visible_client_ids(ctx) -> set | None:
+    """None — видит всех клиентов; иначе — id клиентов, которых видит менеджер."""
+    if not manager_limited(ctx):
+        return None
+    ids = set(ctx.db.scalars(select(WorkOrder.client_id).where(WorkOrder.branch_id == ctx.branch.id, _mine_recent_cond(ctx))))
+    return ids | granted_client_ids(ctx)
+
+
+def can_see_client(ctx, client_id) -> bool:
+    ids = visible_client_ids(ctx)
+    return ids is None or client_id in ids
+
+
 def visible_orders_query(ctx):
-    """Кто видит все — все; остальные — где они назначены (менеджер ведёт, слесарь, запчастист)."""
+    """Кто видит все — все; остальные — где они назначены (менеджер ведёт, слесарь, запчастист).
+    Менеджер (12.11.2026): свои — пока машина у нас и 3 дня после выдачи, плюс наряды клиентов, к которым дали доступ."""
     q = select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id)
+    if manager_limited(ctx):
+        me = ctx.user.id
+        conds = [WorkOrder.partsman_id == me, WorkOrder.mechanic_id == me, _mine_recent_cond(ctx)]
+        granted = granted_client_ids(ctx)
+        if granted:
+            conds.append(WorkOrder.client_id.in_(granted))
+        return q.where(or_(*conds))
     if not sees_all_orders(ctx):
         me = ctx.user.id
         # слесарь видит и наряды, где ему дали отдельную работу (второй слесарь)
@@ -92,6 +161,10 @@ def can_view(ctx, wo: WorkOrder) -> bool:
         return True
     if not ctx.can("orders.view_own", "orders.view_all"):
         return False
+    if manager_limited(ctx):   # 12.11.2026: свой — пока у нас и 3 дня после выдачи; чужой — по доступу к клиенту
+        if wo.manager_id == ctx.user.id and (wo.status in WO_ACTIVE or _recent(wo)):
+            return True
+        return wo.client_id in granted_client_ids(ctx) or ctx.user.id in (wo.partsman_id, wo.mechanic_id)
     if ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id):
         return True
     return ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == ctx.user.id)

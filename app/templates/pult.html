@@ -61,12 +61,16 @@
     </div>
     <div class="card compact">
       <div class="card-h"><span class="headline">Сотрудники</span><a class="footnote" href="/timesheet">табель →</a></div>
-      <div class="pstaff">
-        {% for s in staff %}{% set pr = presence.get(s.id) %}
-        <span class="pwho {{ 'in' if pr and pr[0] == 'in' else ('out' if pr else 'none') }}" title="{{ s.full_name }} · {{ s.role.name }}{% if busy.get(s.id) %} · нарядов: {{ busy[s.id] }}{% endif %}">
-          <i></i>{{ s.short_name }}{% if pr %} <span class="caption">{{ ("с " if pr[0] == "in" else "ушёл ") ~ pr[1] }}</span>{% endif %}</span>
+      {# 12.11.2026: по группам. Слесарь — чем занят; остальные — 🟢 на месте / 🔴 ушёл (по отметке картой) #}
+      {% for g in staff_groups %}
+      <div class="pst-group">
+        <div class="pst-title">{{ g.title }} · {{ g.rows|length }}</div>
+        {% for r in g.rows %}
+        <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
+          <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span></div>
         {% endfor %}
       </div>
+      {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}
     </div>
   </section>
 </div>

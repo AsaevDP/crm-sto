@@ -17,7 +17,9 @@
     {% elif in_group and p.status == "declined" %}
       <span class="chip part-st" data-ps="declined">не выбран</span>
     {% else %}
-      <span class="chip part-st" data-ps="{{ p.status }}">{% if in_group %}✓ выбран · {% endif %}{{ PART_STATUS.get(p.status, p.status) }}</span>
+      {# 12.11.2026: «заказана», а закупка ещё черновик — честно пишем «в черновике закупки» #}
+      {% if p.id in draft_parts %}<span class="chip part-st" data-ps="need" title="Запчастист ещё не отправил заказ поставщику">{% if in_group %}✓ выбран · {% endif %}в черновике закупки</span>
+      {% else %}<span class="chip part-st" data-ps="{{ p.status }}">{% if in_group %}✓ выбран · {% endif %}{{ PART_STATUS.get(p.status, p.status) }}</span>{% endif %}
     {% endif %}
   </div>
   <div class="part-nums">

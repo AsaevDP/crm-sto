@@ -20,6 +20,21 @@
 </div>
 {% endif %}
 
+{# 12.11.2026: запчастист собрал черновик под наряд, но поставщику ещё не отправил («Заказано» не нажато).
+   Кладовщик видит, что по этим машинам мы ещё ждём, — и может напомнить запчастисту. #}
+{% if drafts %}
+<div class="card compact rc-drafts">
+  <div class="card-h"><span class="headline">Ещё не заказано у поставщика · {{ drafts|length }}</span>
+    <span class="caption">запчастист собрал, но не отправил</span></div>
+  {% for d in drafts %}{% set v = dveh.get(d.wo.id) %}
+  <div class="kv" style="align-items:flex-start"><span>{% if d.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ d.who.short_name if d.who else "Запчастист" }}</b>
+    · <a href="/orders/{{ d.wo.id }}">{{ d.wo.number[-6:] }}</a>{% if v %} · {{ v.make }} {{ v.model }} · {{ fmt_plate(v.plate) }}{% endif %}
+    <span class="caption" style="display:block">{{ d.rows|map(attribute="c.name")|join(", ") }}</span></span>
+    <span class="caption nowrap">черновик с {{ d.p.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% for g in groups %}
 <form class="card compact rc-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
   <div class="card-h">

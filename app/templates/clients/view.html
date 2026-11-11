@@ -50,6 +50,29 @@
       {% endfor %}
     </div>
 
+    {# 12.11.2026: директор / зам / админ дают менеджеру доступ к этому клиенту на срок — по запросу или сами #}
+    {% if grant %}
+    <div class="card compact" id="grant">
+      <div class="card-h"><span class="headline">Доступ менеджеру к этому клиенту</span></div>
+      {% for a in grant.active %}{% set m = grant.people.get(a.user_id) %}
+      <div class="kv"><span>{{ m.full_name if m else "" }} · до {{ a.until.astimezone().strftime("%d.%m %H:%M") }}</span>
+        <form method="post" action="/client-access/{{ a.id }}"><button class="btn btn-plain btn-sm" name="action" value="close">Закрыть</button></form></div>
+      {% endfor %}
+      {% for r in grant.pending %}{% set m = grant.people.get(r.user_id) %}
+      <p class="hint warn" style="margin:0">Запрос: {{ m.short_name if m else "" }} — «{{ r.reason }}»</p>
+      {% endfor %}
+      <form class="form dense one-shot" method="post" action="/clients/{{ c.id }}/grant">
+        <select class="field" name="user_id" required aria-label="Менеджер"><option value="">Какому менеджеру…</option>
+          {% for m in grant.managers %}<option value="{{ m.id }}" {% if grant.pending and grant.pending[0].user_id == m.id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}</select>
+        <div class="segmented seg-wide pick" data-name="hours">
+          {% for h, t in grant.HOURS.items() %}<button type="button" data-v="{{ h }}" aria-pressed="{{ (h == 24)|lower }}">{{ t }}</button>{% endfor %}</div>
+        <input type="hidden" name="hours" value="24">
+        <button class="btn btn-sm btn-tinted">Дать доступ</button>
+        <p class="hint" style="margin:0">Менеджер увидит карточку и наряды этого клиента до конца срока. Получит сообщение.</p>
+      </form>
+    </div>
+    {% endif %}
+
     {% if can_edit %}
     <details class="card compact">
       <summary class="footnote" style="cursor:pointer">Изменить данные клиента…</summary>
@@ -110,6 +133,11 @@
   </section>
 </div>
 <script>
+document.querySelectorAll('.segmented.pick').forEach(seg => seg.addEventListener('click', e => {   // срок доступа
+  const b = e.target.closest('button'); if (!b) return;
+  seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  seg.closest('form').elements[seg.dataset.name].value = b.dataset.v;
+}));
 (function () {  // Фильтр истории: всё / заметки / рекомендации / визиты / оплаты
   const seg = document.getElementById('histf'), empty = document.getElementById('histempty');
   seg.addEventListener('click', e => {

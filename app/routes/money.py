@@ -369,7 +369,7 @@ def _period(f: str, t: str, p: str = "", d: str = ""):
 
 
 def _payroll_target(ctx: Ctx, user: str):
-    see_all = ctx.can("payroll.view_all")
+    see_all = ctx.can("payroll.view_all", "payroll.advance")   # зам выдаёт аванс — ему нужно открыть сотрудника
     target = ctx.db.get(User, _uuid(user)) if (user and see_all) else (None if see_all else ctx.user)
     if target and target.branch_id != ctx.branch.id:
         raise Forbidden()
@@ -720,8 +720,9 @@ def payroll_csv(ctx: Ctx = Depends(get_ctx), f: str = "", t: str = "", p: str = 
 @router.post("/payroll/payouts")
 def payroll_payout(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), amount: str = Form(...), method: str = Form("cash"),
                    note: str = Form(""), f: str = Form(""), t: str = Form("")):
-    """Выплата зарплаты (аванс / расчёт) — чтобы видеть «к выплате»."""
-    ctx.need("payroll.manage")
+    """Аванс сотруднику (12.11.2026): выдают только директор и зам (право payroll.advance), бухгалтер — нет.
+    Обычная зарплата выдаётся по неделям (бухгалтер, «Выдать»)."""
+    ctx.need("payroll.advance")
     u = ctx.db.get(User, _uuid(user_id))
     if not u or u.branch_id != ctx.branch.id:
         raise Forbidden()

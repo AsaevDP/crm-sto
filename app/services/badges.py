@@ -64,6 +64,10 @@ def compute(ctx) -> dict:
         if role == "mechanic":
             _add(out, "/orders", "red", n_status("created", "diag", field=WorkOrder.mechanic_id), "новые — посмотреть",
                  "/orders?tab=intake")
+        if ctx.can("orders.approve"):   # 12.11.2026: мне передали наряд — горит, пока не нажал «Принял»
+            _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(WorkOrder).where(
+                WorkOrder.branch_id == bid, WorkOrder.manager_id == me.id, WorkOrder.handover_pending.is_(True),
+                WorkOrder.status.not_in(("closed", "cancel")))) or 0, "вам передали наряд — нажмите «Принял»", "/orders?tab=handed")
         if ctx.can("orders.approve"):
             _add(out, "/orders", "yellow", n_status("approve", field=None if see_all else WorkOrder.manager_id),
                  "согласовать с клиентом", "/orders?tab=approve")
@@ -83,6 +87,10 @@ def compute(ctx) -> dict:
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0, "просят доступ ко всем нарядам",
              "/access-requests")
+        from ..models import ClientAccess   # 12.11.2026: менеджер просит доступ к клиенту
+        _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(ClientAccess).where(
+            ClientAccess.branch_id == bid, ClientAccess.status == "pending")) or 0, "менеджер просит доступ к клиенту",
+             "/access-requests#clients")
         from ..models import OrderReopen   # 11.11.2026: просят открыть закрытый наряд заново
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
             OrderReopen.branch_id == bid, OrderReopen.status == "pending")) or 0, "просят открыть наряд заново",
@@ -126,6 +134,9 @@ def compute(ctx) -> dict:
         from . import stock as ssvc
         rows = ssvc.partsman_lines(db, bid, me.id, days=1)
         _add(out, "/my-orders", "red", sum(1 for r in rows if r["late"]), "опаздывают", "/my-orders?st=late")
+        # 12.11.2026: черновик под наряд не отправлен поставщику — в наряде это «в черновике», кладовщик ждёт
+        _add(out, "/my-orders", "yellow", len(ssvc.draft_waits(db, bid, me.id)), "черновики под наряды — нажмите «Заказано»",
+             "/my-orders?st=draft")
         _add(out, "/my-orders", "yellow", sum(1 for r in rows if r["st"] == "delivered"), "привезли — кладовщик принимает",
              "/my-orders?st=delivered")
         _add(out, "/my-orders", "green", sum(1 for r in rows if r["st"] == "arrived"), "приняты на склад сегодня",

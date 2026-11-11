@@ -92,6 +92,10 @@ class WorkOrder(Entity):
     discount_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)  # скидка клиенту на весь наряд, %
     # 11.11.2026 (брат): отдельно скидка только на работы, %. Сначала скидка на работы, потом — на весь наряд.
     works_discount_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=0, nullable=True)
+    # 12.11.2026: наряд передали другому менеджеру — пока он не нажал «Принял», наряд в плитке «Мне передали»
+    handover_from: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    handover_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    handover_pending: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True, index=True)
     # Метка формы приёмки: повторная отправка той же формы не создаёт второй наряд
     intake_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
@@ -204,7 +208,26 @@ class OrderAccess(Entity):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
-MSG_STATUS = {"pending": "Ждёт согласования", "approved": "Согласовано", "declined": "Отказано"}
+CLIENT_ACCESS_HOURS = {1: "1 час", 3: "3 часа", 24: "1 день", 48: "2 дня"}
+
+
+class ClientAccess(Entity):
+    """Доступ менеджера к карточке «чужого» клиента на срок (12.11.2026).
+    Менеджер видит только своих клиентов (сегодняшних и 3 дня после выдачи машины). Нужен другой — пишет запрос
+    (status=pending, client_id пусто, в reason — кого ищет и зачем). Директор / зам / админ находят клиента и дают доступ
+    (approved, until) — можно и без запроса, из карточки клиента."""
+    __tablename__ = "client_access"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    client_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("clients.id"), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)   # pending / approved / declined / closed
+    hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
+MSG_STATUS ={"pending": "Ждёт согласования", "approved": "Согласовано", "declined": "Отказано"}
 
 
 class OrderMessage(Entity):

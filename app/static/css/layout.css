@@ -474,7 +474,10 @@ select.field { text-overflow: ellipsis; }
 .kv.due b { color: var(--red); font-weight: 700; }
 .kv.due.zero b { color: var(--green); }
 .chip[data-s="paid"] { --c: var(--teal); }
-.pay-grid { grid-template-columns: 1.2fr 1fr !important; } .pay-grid > [data-t="diag"] { grid-column: 2 !important; grid-row: 1 !important; }
+/* 12.11.2026: колонка работ сжимается (minmax(0,…)), таблица листается внутри — «Выплаты за период» больше не наезжает */
+.pay-grid { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr) !important; } .pay-grid > [data-t="diag"] { grid-column: 2 !important; grid-row: 1 !important; }
+.pay-grid > * { min-width: 0; }
+.pay-grid .tablewrap { overflow-x: auto; }
 
 /* Плашки статусов не сжимаются; причина паузы — отдельной строкой */
 .part-main .chip, .li .chip, .finding-top .chip, .card-h .chip { flex: none; }
@@ -922,6 +925,22 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
 .ptoday[data-st="noshow"], .ptoday[data-st="cancel"] { opacity: .6; }
 .ptoday .st-ico { font-size: 12px; white-space: nowrap; }
 .pstaff { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Пульт → «Сотрудники» по группам (12.11.2026): точка-индикатор + чем занят / на месте */
+.pst-group { display: grid; gap: 2px; }
+.pst-group + .pst-group { margin-top: 8px; }
+.pst-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); padding: 2px 0; }
+.pst-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 14px; border-bottom: 0.5px solid var(--separator); }
+.pst-row:last-child { border-bottom: 0; }
+.pst-row i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--gray); }
+.pst-row .pst-st { font-size: 13px; color: var(--text-2); text-align: right; overflow-wrap: anywhere; }
+.pst-row[data-st="in"] i, .pst-row[data-st="free"] i { background: var(--green); }
+.pst-row[data-st="work"] i { background: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 25%, transparent); }
+.pst-row[data-st="work"] .pst-st { color: var(--teal); font-weight: 600; }
+.pst-row[data-st="pause"] i { background: var(--orange); } .pst-row[data-st="pause"] .pst-st { color: var(--orange); }
+.pst-row[data-st="wait"] i { background: var(--yellow, var(--orange)); }
+.pst-row[data-st="out"] i { background: var(--red); } .pst-row[data-st="out"] .pst-st { color: var(--red); }
+.pst-row[data-st="none"] i { background: transparent; border: 1px solid var(--text-2); }
+.pst-row[data-st="none"] { opacity: .6; }
 .pwho { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 13px; background: var(--fill); }
 .pwho.in { background: color-mix(in srgb, var(--green) 16%, transparent); } .pwho.in i { background: var(--green); }
 .pwho.out i { background: var(--gray); } .pwho.none { opacity: .55; } .pwho.none i { background: transparent; border: 1px solid var(--text-2); }.pult-tiles { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }

@@ -284,7 +284,8 @@ def test_old_debt_can_be_paid(client):
     client.post(f"{url}/payments", data={"amount": "300", "method": "cash", "purpose": "extra"})
     with SessionLocal() as db:   # как было раньше: админ закрыл с долгом
         wo = db.get(WorkOrder, _wo(url).id)
-        wo.status, wo.closed_with_debt_comment = "closed", "доплатит"
+        from app.db import now as _now
+        wo.status, wo.closed_with_debt_comment, wo.closed_at = "closed", "доплатит", _now()
         db.commit()
     assert "Старые долги" in client.get("/money?p=month").text
     page = client.get(url).text

@@ -89,7 +89,13 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         by_status[st_] = by_status.get(st_, 0) + 1
     stage_counts = {k: sum(by_status.get(s, 0) for s in v[2]) for k, v in ORDER_STAGES.items()}
     stage_counts["all"] = sum(by_status.values())
-    if tab in ORDER_STAGES:
+    # 12.11.2026: «Мне передали» — наряды, которые передали мне и я ещё не нажал «Принял»
+    handed_cond = (WorkOrder.manager_id == ctx.user.id, WorkOrder.handover_pending.is_(True), WorkOrder.status.in_(WO_ACTIVE))
+    show_handed = ctx.can("orders.approve")
+    stage_counts["handed"] = ctx.db.scalar(select(func.count()).select_from(WorkOrder).where(*handed_cond)) or 0 if show_handed else 0
+    if tab == "handed" and show_handed:
+        query = query.where(*handed_cond)
+    elif tab in ORDER_STAGES:
         query = query.where(WorkOrder.status.in_(ORDER_STAGES[tab][2]))
     elif status in WO_STATUSES:
         query = query.where(WorkOrder.status == status)
@@ -120,7 +126,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
-                      STAGES=ORDER_STAGES, stage_counts=stage_counts,
+                      STAGES=ORDER_STAGES, stage_counts=stage_counts, show_handed=show_handed,
                       bar=periods.Bar(per, "/orders", {"tab": tab, "q": q, "status": status}))
 
 
@@ -307,6 +313,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         left_parts=money_svc.not_issued_parts(db, wo) if wo.status in ("ready", "paid") else [],
         reopen=_reopen_state(ctx, wo),
         order_msgs=_order_msgs(ctx, wo),
+        draft_parts=stock_svc.draft_part_ids(db, [p.id for p in parts if p.status == "ordered"]),
+        handed=({"from": db.get(User, wo.handover_from) if wo.handover_from else None, "at": wo.handover_at}
+                if wo.handover_pending and wo.manager_id == ctx.user.id and wo.status in WO_ACTIVE else None),
         can_money=ctx.can("money.accept") and (wo.status not in ("closed", "cancel")
                                                or (wo.status == "closed" and money_svc.totals(db, wo).due > 0)),
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
@@ -417,6 +426,8 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
         flash(ctx.request, "Передать наряд другому менеджеру может только менеджер", "error")
         new_mg = None
     if new_mg and new_mg.branch_id == bid and new_mg.active and new_mg.id != wo.manager_id:
+        from ..db import now as _now
+        wo.handover_from, wo.handover_at, wo.handover_pending = wo.manager_id, _now(), True
         wo.manager_id = new_mg.id
         from ..services import notify as nsvc
         nsvc.send(ctx.db, [new_mg.id], "handover", "Вам передан наряд",
@@ -435,6 +446,24 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
         return RedirectResponse("/orders", status_code=303)
     flash(ctx.request, "Назначения сохранены")
     return RedirectResponse(f"/orders/{order_id}", status_code=303)
+
+
+@router.post("/orders/{order_id}/handover-ack")
+def order_handover_ack(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Менеджер принял переданный ему наряд (12.11.2026): плитка «Мне передали» и цифра в меню гаснут."""
+    from ..db import now
+    from ..models import Notification
+    wo = _order(ctx, order_id)
+    if wo.manager_id != ctx.user.id:
+        raise Forbidden()
+    wo.handover_pending = False
+    for n in ctx.db.scalars(select(Notification).where(Notification.user_id == ctx.user.id, Notification.work_order_id == wo.id,
+                                                       Notification.kind == "handover", Notification.read_at.is_(None))):
+        n.read_at = now()
+    svc.event(ctx.db, wo, "status", f"Наряд принял {ctx.user.full_name}")
+    ctx.db.commit()
+    flash(ctx.request, f"Наряд {wo.number} принят — теперь он ваш")
+    return RedirectResponse(f"/orders/{wo.id}", status_code=303)
 
 
 @router.post("/orders/{order_id}/photos")
@@ -574,6 +603,11 @@ def clients_list(ctx: Ctx = Depends(get_ctx), q: str = "", tab: str = "all", sor
     tab = tab if tab in csvc.TABS else "all"
     sort = sort if sort in csvc.SORTS else "last"
     allrows = csvc.rows(ctx.db, ctx.branch.id)
+    # 12.11.2026: менеджер видит только своих клиентов (машина у нас или выдана не больше 3 дней назад) и тех,
+    # к кому ему дали доступ. Найти любого клиента для новой приёмки можно в «Приёмке» — поиск там по всей базе.
+    vis = svc.visible_client_ids(ctx)
+    if vis is not None:
+        allrows = [r for r in allrows if r.c.id in vis]
     ids = csvc.search_ids(ctx.db, ctx.branch.id, q)
     base = csvc.apply(allrows, "all", sort, make, ids)
     items = csvc.apply(allrows, tab, sort, make, ids)
@@ -586,7 +620,123 @@ def clients_list(ctx: Ctx = Depends(get_ctx), q: str = "", tab: str = "all", sor
     return ctx.render("clients/list.html", title="Клиенты", items=items, q=q, tab=tab, sort=sort, make=make,
                       tabs=csvc.TABS, sorts=csvc.SORTS, counts=csvc.counts(base), makes=csvc.makes(allrows), link=link,
                       show_money=ctx.can("money.view"), fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate,
-                      REGULAR_VISITS=csvc.REGULAR_VISITS, LOST_DAYS=csvc.LOST_DAYS)
+                      REGULAR_VISITS=csvc.REGULAR_VISITS, LOST_DAYS=csvc.LOST_DAYS, limited=vis is not None,
+                      RECENT_DAYS=svc.RECENT_DAYS, my_access=_my_client_access(ctx) if vis is not None else None)
+
+
+def _my_client_access(ctx: Ctx) -> dict:
+    """Менеджеру: доступы к клиентам, что сейчас действуют, и есть ли запрос, ждущий решения."""
+    from datetime import datetime, timezone
+    from ..models import ClientAccess
+    rows = ctx.db.scalars(select(ClientAccess).where(ClientAccess.user_id == ctx.user.id, ClientAccess.status == "approved",
+                                                     ClientAccess.until > datetime.now(timezone.utc))).all()
+    clients = {c.id: c for c in ctx.db.scalars(select(Client).where(Client.id.in_([r.client_id for r in rows])))}
+    return {"active": [(r, clients.get(r.client_id)) for r in rows],
+            "pending": ctx.db.scalar(select(ClientAccess.id).where(ClientAccess.user_id == ctx.user.id,
+                                                                   ClientAccess.status == "pending")) is not None}
+
+
+def _client_access_lists(ctx: Ctx) -> dict:
+    from datetime import datetime, timezone
+    from ..models import ClientAccess
+    pend = ctx.db.scalars(select(ClientAccess).where(ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "pending")
+                          .order_by(ClientAccess.created_at)).all()
+    act = ctx.db.scalars(select(ClientAccess).where(ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "approved",
+                                                    ClientAccess.until > datetime.now(timezone.utc))).all()
+    cl = {c.id: c for c in ctx.db.scalars(select(Client).where(Client.id.in_([a.client_id for a in act])))}
+    return {"c_pending": pend, "c_active": act, "c_clients": cl}
+
+
+def _grant_data(ctx: Ctx, c) -> dict:
+    """Для директора / зама / админа в карточке клиента: кому дать доступ, ждущие запросы, кому уже дан."""
+    from datetime import datetime, timezone
+    from ..models import ClientAccess
+    from ..models.orders import CLIENT_ACCESS_HOURS
+    managers = svc.staff_by_role(ctx.db, ctx.branch.id, "manager")
+    pend = ctx.db.scalars(select(ClientAccess).where(ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "pending")
+                          .order_by(ClientAccess.created_at)).all()
+    active = ctx.db.scalars(select(ClientAccess).where(ClientAccess.client_id == c.id, ClientAccess.status == "approved",
+                                                       ClientAccess.until > datetime.now(timezone.utc))).all()
+    people = {u.id: u for u in managers}
+    return {"managers": managers, "pending": pend, "active": active, "people": people, "HOURS": CLIENT_ACCESS_HOURS}
+
+
+@router.post("/clients/access-request")
+def client_access_request(ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    """Менеджеру срочно нужен «чужой» клиент: пишет, кого ищет и зачем → директору / заму / админу (12.11.2026)."""
+    from ..models import ClientAccess
+    from ..services import notify as nsvc
+    ctx.need("clients.view")
+    if not svc.manager_limited(ctx):
+        return _to("/clients")
+    if not reason.strip():
+        flash(ctx.request, "Напишите, кого ищете (имя, телефон, госномер) и зачем", "error")
+        return _to("/clients")
+    if ctx.db.scalar(select(ClientAccess.id).where(ClientAccess.user_id == ctx.user.id, ClientAccess.status == "pending")):
+        flash(ctx.request, "Запрос уже отправлен — ждём ответа")
+        return _to("/clients")
+    ctx.db.add(ClientAccess(user_id=ctx.user.id, reason=reason.strip()[:300]))
+    nsvc.send(ctx.db, [u.id for u in _deciders(ctx)], "client_req", f"{ctx.user.full_name} просит доступ к клиенту",
+              reason.strip()[:300], "/access-requests#clients", skip=ctx.user.id)
+    ctx.db.commit()
+    flash(ctx.request, "Запрос отправлен директору и заму — ответ придёт сообщением")
+    return _to("/clients")
+
+
+@router.post("/clients/{client_id}/grant")
+def client_access_grant(client_id: str, ctx: Ctx = Depends(get_ctx), user_id: str = Form(""), hours: int = Form(0),
+                        request_id: str = Form("")):
+    """Директор / зам / админ дают менеджеру доступ к карточке клиента на срок (по запросу или сами)."""
+    from datetime import timedelta
+    from ..db import now
+    from ..models import ClientAccess, Notification
+    from ..models.orders import CLIENT_ACCESS_HOURS
+    from ..services import notify as nsvc
+    ctx.need("orders.grant_access")
+    c = ctx.db.get(Client, _uuid(client_id))
+    uid = svc._uuid(user_id)
+    u = ctx.db.get(User, uid) if uid else None
+    if not c or c.branch_id != ctx.branch.id or not u or u.branch_id != ctx.branch.id or hours not in CLIENT_ACCESS_HOURS:
+        flash(ctx.request, "Выберите менеджера и срок", "error")
+        return _to(f"/clients/{client_id}")
+    req = ctx.db.get(ClientAccess, svc._uuid(request_id)) if svc._uuid(request_id) else None
+    if req is None or req.status != "pending" or req.user_id != u.id:
+        req = ctx.db.scalar(select(ClientAccess).where(ClientAccess.user_id == u.id, ClientAccess.status == "pending"))
+    a = req or ClientAccess(user_id=u.id, reason="Дали без запроса")
+    if req is None:
+        ctx.db.add(a)
+    a.client_id, a.status, a.hours, a.until = c.id, "approved", hours, now() + timedelta(hours=hours)
+    a.decided_by, a.decided_at = ctx.user.id, now()
+    until = a.until.astimezone().strftime("%d.%m %H:%M")
+    nsvc.send(ctx.db, [u.id], "client_ok", f"Доступ к клиенту {c.full_name} — до {until}",
+              f"Дал(а): {ctx.user.full_name} · на {CLIENT_ACCESS_HOURS[hours]}", f"/clients/{c.id}")
+    for n in ctx.db.scalars(select(Notification).where(Notification.kind == "client_req", Notification.read_at.is_(None))):
+        if not ctx.db.scalar(select(ClientAccess.id).where(ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "pending")):
+            n.read_at = now()
+    ctx.db.commit()
+    flash(ctx.request, f"{u.full_name}: доступ к клиенту на {CLIENT_ACCESS_HOURS[hours]} — до {until}")
+    return _to(f"/clients/{c.id}")
+
+
+@router.post("/client-access/{aid}")
+def client_access_decide(aid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("")):
+    """Отказать в запросе или закрыть доступ досрочно."""
+    from ..db import now
+    from ..models import ClientAccess
+    from ..services import notify as nsvc
+    ctx.need("orders.grant_access")
+    a = ctx.db.get(ClientAccess, _uuid(aid))
+    if not a or a.branch_id != ctx.branch.id:
+        raise Forbidden()
+    if action == "decline" and a.status == "pending":
+        a.status, a.decided_by, a.decided_at = "declined", ctx.user.id, now()
+        nsvc.send(ctx.db, [a.user_id], "client_no", "Доступ к клиенту — отказано", f"Ответил(а): {ctx.user.full_name}", "/clients")
+        flash(ctx.request, "Отказано")
+    elif action == "close" and a.status == "approved":
+        a.status, a.until = "closed", now()
+        flash(ctx.request, "Доступ закрыт")
+    ctx.db.commit()
+    return _to("/access-requests#clients")
 
 
 @router.post("/clients/{client_id}/regular")
@@ -594,7 +744,7 @@ def client_regular(client_id: str, ctx: Ctx = Depends(get_ctx)):
     """Отметить / снять «Постоянный клиент» вручную."""
     ctx.need("clients.view")
     c = ctx.db.get(Client, _uuid(client_id))
-    if not c or c.branch_id != ctx.branch.id:
+    if not c or c.branch_id != ctx.branch.id or not svc.can_see_client(ctx, c.id):
         raise Forbidden()
     c.is_regular = not bool(c.is_regular)
     ctx.db.commit()
@@ -613,7 +763,7 @@ def client_edit(client_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Fo
     """Правка клиента (11.11.2026): имя и телефон. Телефон — один на клиента."""
     _can_edit_clients(ctx)
     c = ctx.db.get(Client, _uuid(client_id))
-    if not c or c.branch_id != ctx.branch.id:
+    if not c or c.branch_id != ctx.branch.id or not svc.can_see_client(ctx, c.id):
         raise Forbidden()
     ph = svc.norm_phone(phone)
     if not full_name.strip() or len(ph) < 10:
@@ -635,7 +785,7 @@ def client_edit(client_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Fo
 
 def _vehicle(ctx: Ctx, vid: str) -> Vehicle:
     v = ctx.db.get(Vehicle, _uuid(vid))
-    if not v or v.branch_id != ctx.branch.id:
+    if not v or v.branch_id != ctx.branch.id or not svc.can_see_client(ctx, v.client_id):
         raise Forbidden()
     return v
 
@@ -707,7 +857,7 @@ def vehicle_owner(vid: str, ctx: Ctx = Depends(get_ctx), phone: str = Form(""), 
 def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("clients.view")
     c = ctx.db.get(Client, _uuid(client_id))
-    if not c or c.branch_id != ctx.branch.id:
+    if not c or c.branch_id != ctx.branch.id or not svc.can_see_client(ctx, c.id):
         raise Forbidden()
     vehicles = ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
     # Наряды клиента + история его машин при прошлых владельцах (смена владельца, 11.11.2026)
@@ -725,6 +875,7 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
                       recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
                       vmap={v.id: v for v in vehicles}, numbers=numbers,
                       can_edit=ctx.can("orders.create") or ctx.user.role.code == "admin",
+                      grant=_grant_data(ctx, c) if ctx.can("orders.grant_access") else None,
                       lead=ctx.db.get(User, orders[0].manager_id) if orders and orders[0].manager_id else None)
 
 
@@ -778,7 +929,7 @@ def access_requests(ctx: Ctx = Depends(get_ctx)):
                              .order_by(OrderReopen.created_at)).all()
     reopen_orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([r.work_order_id for r in reopens])))}
     return ctx.render("orders/access.html", title="Доступ ко всем нарядам", rows=rows, people=people, HOURS=ACCESS_HOURS,
-                      reopens=reopens, reopen_orders=reopen_orders,
+                      reopens=reopens, reopen_orders=reopen_orders, **_client_access_lists(ctx),
                       STATUS=ACCESS_STATUS, pending=[a for a in rows if a.status == "pending"],
                       granted=[a for a in rows if active(a)], history=[a for a in rows if a.status != "pending" and not active(a)])
 

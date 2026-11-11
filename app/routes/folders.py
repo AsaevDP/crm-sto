@@ -25,7 +25,7 @@ def client_folder(client_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("clients.view")
     db = ctx.db
     c = db.get(Client, _uuid(client_id))
-    if not c or c.branch_id != ctx.branch.id:
+    if not c or c.branch_id != ctx.branch.id or not osvc.can_see_client(ctx, c.id):
         raise Forbidden()
     vehicles = db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
     orders = db.scalars(osvc.visible_orders_query(ctx).where(WorkOrder.client_id == c.id)

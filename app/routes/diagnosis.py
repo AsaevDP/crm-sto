@@ -163,7 +163,7 @@ def act_intake(order_id: str, ctx: Ctx = Depends(get_ctx)):
 def client_note(client_id: str, ctx: Ctx = Depends(get_ctx), text: str = Form("")):
     ctx.need("clients.view")
     c = ctx.db.get(Client, _uuid(client_id))
-    if not c or c.branch_id != ctx.branch.id:
+    if not c or c.branch_id != ctx.branch.id or not svc.can_see_client(ctx, c.id):
         raise Forbidden()
     if text.strip():
         svc.event(ctx.db, None, "note", text.strip(), client_id=c.id)
@@ -176,7 +176,7 @@ def recommendation_resolve(client_id: str, event_id: str, ctx: Ctx = Depends(get
     """Рекомендацию выполнили (или она больше не актуальна) — и обратно."""
     ctx.need("clients.view")
     e = ctx.db.get(ClientEvent, _uuid(event_id))
-    if e and str(e.client_id) == client_id and e.branch_id == ctx.branch.id and e.kind == "recommendation":
+    if e and str(e.client_id) == client_id and e.branch_id == ctx.branch.id and e.kind == "recommendation" and svc.can_see_client(ctx, e.client_id):
         e.resolved = not e.resolved
         ctx.db.commit()
     return RedirectResponse(f"/clients/{client_id}", status_code=303)

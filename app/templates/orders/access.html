@@ -37,6 +37,25 @@
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Ни у кого нет доступа ко всем нарядам</p></div>{% endfor %}
 
+    {# 12.11.2026: менеджер видит только своих клиентов; к «чужому» — по запросу на срок #}
+    <div class="group-title" id="clients">Доступ к клиентам · {{ c_pending|length }}</div>
+    {% for a in c_pending %}{% set u = people.get(a.user_id) %}
+    <div class="card compact ac-card now">
+      <div class="card-h"><span class="headline">{{ u.full_name if u else "" }} ищет клиента</span>
+        <span class="caption nowrap">{{ a.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      <p class="ov-text" style="margin:0">«{{ a.reason }}»</p>
+      <p class="hint" style="margin:0">Найдите клиента в <a href="/clients">Клиентах</a> → в его карточке «Доступ менеджеру» → срок → «Дать доступ».</p>
+      <form method="post" action="/client-access/{{ a.id }}" class="one-shot"><button class="btn btn-sm btn-plain danger" name="action" value="decline">Отказать</button></form>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов нет</p></div>{% endfor %}
+    {% for a in c_active %}{% set u = people.get(a.user_id) %}{% set c = c_clients.get(a.client_id) %}
+    <div class="card compact ac-card ok">
+      <div class="card-h"><span class="headline">{{ u.full_name if u else "" }} → {% if c %}<a href="/clients/{{ c.id }}">{{ c.full_name }}</a>{% endif %}</span>
+        <b class="nowrap">до {{ a.until.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <form method="post" action="/client-access/{{ a.id }}"><button class="btn btn-sm btn-gray" name="action" value="close">Закрыть доступ сейчас</button></form>
+    </div>
+    {% endfor %}
+
     {# 11.11.2026: открыть закрытый / отменённый наряд заново — по запросу #}
     <div class="group-title" id="reopen">Открыть наряд заново · {{ reopens|length }}</div>
     {% for r in reopens %}{% set u = people.get(r.user_id) %}{% set o = reopen_orders.get(r.work_order_id) %}

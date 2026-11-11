@@ -38,6 +38,77 @@ for _p in SECTIONS:
     router.add_api_route(_p, _section(_p), methods=["GET"])
 
 
+STAFF_GROUPS = [("mechanic", "Слесари"), ("partsman", "Запчастисты"), ("storekeeper", "Кладовщики"),
+                ("content", "Кладовщики"), ("manager", "Менеджеры"), ("office", "Офис")]
+
+
+def _staff_groups(ctx, staff, presence) -> list[dict]:
+    """Пульт → «Сотрудники» (12.11.2026): по группам, с индикацией.
+    Слесарь — чем занят (в работе / пауза / ждёт / свободен), остальные — на месте (🟢) или ушёл (🔴) по отметке картой.
+    Менеджер видит своих: всех слесарей, кладовщиков и закреплённых за ним запчастистов. Директор / зам / админ — всех."""
+    from ..models import Vehicle, WorkOrder, WoWorkSession
+    from ..models.orders import WO_ACTIVE
+    db, me = ctx.db, ctx.user
+    is_mgr = me.role.code == "manager"
+
+    def visible(u):
+        code = u.role.code
+        if not is_mgr:
+            return u.id != me.id
+        if code in ("mechanic", "storekeeper", "content"):
+            return True
+        return code == "partsman" and u.works_with_id == me.id
+
+    people = [u for u in staff if visible(u)]
+    mech_ids = [u.id for u in people if u.role.code == "mechanic"]
+    sess = {}
+    for s in db.scalars(select(WoWorkSession).where(WoWorkSession.mechanic_id.in_(mech_ids), WoWorkSession.ended_at.is_(None))
+                        .order_by(WoWorkSession.started_at)):
+        sess[s.mechanic_id] = s
+    active = {}
+    for wo in db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE),
+                                                 WorkOrder.mechanic_id.in_(mech_ids))):
+        active.setdefault(wo.mechanic_id, []).append(wo)
+    plate = {}
+    for s in sess.values():
+        wo = db.get(WorkOrder, s.work_order_id)
+        v = db.get(Vehicle, wo.vehicle_id) if wo else None
+        plate[s.mechanic_id] = f"{v.make} {v.model}".strip() if v else ""
+    out = {}
+    for u in people:
+        code = u.role.code
+        key = code if code in dict(STAFF_GROUPS) else "office"
+        pr = presence.get(u.id)
+        here = "in" if pr and pr[0] == "in" else ("out" if pr else "none")
+        since = pr[1] if pr else ""
+        if code == "mechanic":
+            s = sess.get(u.id)
+            if here == "out":
+                state, text = "out", f"ушёл {since}"
+            elif s and s.kind == "work":
+                state, text = "work", "в работе" + (f" · {plate.get(u.id)}" if plate.get(u.id) else "")
+            elif s and s.kind == "pause":
+                state, text = "pause", "пауза" + (f" · {s.pause_reason}" if s.pause_reason else "")
+            elif active.get(u.id):
+                state, text = "wait", f"ждёт · нарядов: {len(active[u.id])}"
+            else:
+                state, text = ("free", "свободен") if here == "in" else ("none", "не отмечался")
+        else:
+            state = here
+            text = {"in": f"на месте с {since}", "out": f"ушёл {since}", "none": "не отмечался"}[here]
+        out.setdefault(key, []).append({"u": u, "state": state, "text": text})
+    groups, seen = [], set()
+    for key, title in STAFF_GROUPS:
+        if title in seen:
+            rows = next(g for g in groups if g["title"] == title)["rows"]
+            rows.extend(out.get(key, []))
+            continue
+        if out.get(key):
+            seen.add(title)
+            groups.append({"title": title, "rows": list(out[key])})
+    return [g for g in groups if g["rows"]]
+
+
 @router.get("/pult")
 def pult(ctx: Ctx = Depends(get_ctx)):
     ctx.need("dashboard.view")
@@ -76,6 +147,7 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     colors = ssvc.mech_colors(staff_by_role(db, bid, "mechanic"))
     appts = ssvc.between(db, bid, _date.today(), _date.today())
     on_site = sum(1 for v in presence.values() if v and v[0] == "in")
+    staff_groups = _staff_groups(ctx, staff, presence)
     money_today = None
     if ctx.can("money.view", "reports.finance") and ctx.user.role.code in ("admin", "director", "deputy", "manager"):
         from ..services.reports import money_for
@@ -92,7 +164,7 @@ def pult(ctx: Ctx = Depends(get_ctx)):
         ("На месте", on_site, "/timesheet", "indigo", f"из {len(staff)}"),
     ]
     return ctx.render("pult.html", title="Пульт", lifts=lifts, prog=prog, vehicles=vehicles, people=people, staff=staff, paused=paused,
-                      presence=presence, tiles=tiles, appts=appts, colors=colors, money_today=money_today,
+                      presence=presence, tiles=tiles, appts=appts, colors=colors, money_today=money_today, staff_groups=staff_groups,
                       issue_new=issue_new, local=ssvc.local, today=_date.today(),
                       counts=counts, busy=busy, fmt_plate=fmt_plate)
 
