@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{# Службы доставки (12.11.2026): почта с ТТН (Нова Пошта, Укрпошта, Meest…) или курьер (свой, организация) — без ТТН. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/razbor/shipping">{{ icon("back") }}Выдача и отправка</a><h1 class="large-title">Службы доставки</h1></div>
+</header>
+<p class="footnote" style="margin:0 4px">Служба доставки — нужен номер ТТН при отправке. Курьер (свой или организация) — ТТН не обязателен. Скрытая служба не предлагается в выборе, но старые посылки с ней остаются.</p>
+<div class="cl-grid">
+  <section class="ov-col on">
+    {% for c in rows %}
+    <form class="card compact form dense cr-row {{ 'off' if not c.active }}" method="post" action="/razbor/carriers">
+      <input type="hidden" name="cid" value="{{ c.id }}">
+      <div class="form-row">
+        <input class="field" name="name" value="{{ c.name }}" aria-label="Название" required>
+        <select class="field" name="kind" aria-label="Вид">{% for k, v in KINDS.items() %}<option value="{{ k }}" {% if k == c.kind %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-row">
+        <input class="field" name="phone" value="{{ c.phone }}" placeholder="Телефон" inputmode="tel">
+        <input class="field" name="note" value="{{ c.note }}" placeholder="Заметка: например, забирает по вторникам">
+      </div>
+      <div class="form-row"><button class="btn btn-sm btn-gray" name="action" value="save">Сохранить</button>
+        <button class="btn btn-sm btn-plain" name="action" value="toggle">{{ "Скрыть" if c.active else "Вернуть в список" }}</button>
+        {% if not c.active %}<span class="caption">скрыта</span>{% endif %}</div>
+    </form>
+    {% endfor %}
+  </section>
+  <section class="ov-col on">
+    <form class="card compact form dense" method="post" action="/razbor/carriers">
+      <div class="card-h"><span class="headline">＋ Добавить службу или курьера</span></div>
+      <input class="field" name="name" placeholder="Название: «Делівері», «Курьер Саша», ООО «Быстро»" required>
+      <select class="field" name="kind" aria-label="Вид">{% for k, v in KINDS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+      <input class="field" name="phone" placeholder="Телефон" inputmode="tel">
+      <input class="field" name="note" placeholder="Заметка">
+      <button class="btn btn-sm" name="action" value="save">Добавить</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

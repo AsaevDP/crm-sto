@@ -1556,3 +1556,25 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 /* Обычные ссылки в тексте — цветом акцента, без подчёркивания (подчёркивание — при наведении) */
 main a:not([class]) { color: var(--accent); text-decoration: none; }
 main a:not([class]):hover { text-decoration: underline; }
+
+/* ===== Разбор: выдача и отправка (12.11.2026) ===== */
+.sh-bulk { display: flex; gap: 8px; flex-wrap: wrap; }
+.sh-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.sh-card { display: grid; gap: 8px; border-left: 4px solid var(--orange); min-width: 0; }
+.sh-card[data-stage="ready_pickup"] { border-left-color: var(--teal); }
+.sh-card[data-stage="ready_ship"] { border-left-color: var(--indigo); }
+.sh-card[data-stage="sent"] { border-left-color: var(--purple); }
+.sh-card[data-stage="sold"] { border-left-color: var(--green); }
+.sh-card[data-stage="returned"] { border-left-color: var(--red); }
+.sh-top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.sh-what { display: grid; gap: 1px; min-width: 0; }
+.sh-sum { font-size: 15px; }
+.sh-who { display: grid; gap: 2px; }
+.sh-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-top: 8px; border-top: 0.5px solid var(--separator); margin: 0; }
+.sh-form .field { width: auto; flex: 1 1 160px; min-width: 0; }
+.sh-form .btn { white-space: nowrap; }
+.sh-ret { display: contents; }
+.sh-ret[open] { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+.cr-row.off { opacity: .6; }
+.cr-row .form-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.cr-row .field { flex: 1 1 160px; width: auto; }

@@ -121,6 +121,8 @@ MENU = [
     ("/my-orders", "Мои заказы", "list", ["purchases.mine"]),
     ("/purchases/by-partsman", "Заказы запчастистов", "users", ["purchases.by_partsman"]),
     ("/razbor", "Разбор", "car", ["razbor.view"]),
+    # 12.11.2026: второй кладовщик (разбор) — подготовить, выдать, отправить; цифра — сколько подготовить
+    ("/razbor/shipping", "Выдача и отправка", "box", ["razbor.manage"]),
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),

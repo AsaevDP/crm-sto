@@ -310,6 +310,145 @@ def sales_page(ctx: Ctx = Depends(get_ctx), tab: str = "", q: str = ""):
                       PAY_METHODS=PAY_METHODS, CHANNELS=CHANNELS, fmt_phone=osvc.fmt_phone)
 
 
+# ======================= Выдача и отправка (12.11.2026) — рабочее место кладовщика разбора =======================
+def _ship_rows(ctx: Ctx, sales) -> list[dict]:
+    from ..models import Carrier, User
+    db = ctx.db
+    items = {i.id: i for i in db.scalars(select(StockItem).where(StockItem.id.in_([s.stock_item_id for s in sales])))} if sales else {}
+    cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([i.catalog_id for i in items.values()])))} if items else {}
+    locs = {l.id: l for l in db.scalars(select(Location).where(Location.id.in_([i.location_id for i in items.values() if i.location_id])))} if items else {}
+    carr = {c.id: c for c in db.scalars(select(Carrier).where(Carrier.branch_id == ctx.branch.id))}
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    out = []
+    for s in sales:
+        i = items.get(s.stock_item_id)
+        out.append({"s": s, "i": i, "c": cats.get(i.catalog_id) if i else None, "stage": svc.stage_of(s),
+                    "cell": ssvc.location_label(locs.get(i.location_id)) if i and i.location_id else "",
+                    "carrier": carr.get(s.carrier_id), "packer": people.get(s.packed_by), "seller": people.get(s.created_by),
+                    "ttn_need": svc.needs_ttn(ctx.db, s) if svc.is_ship(s) else False})
+    return out
+
+
+def _recent(s, days=30) -> bool:
+    from datetime import datetime, timedelta, timezone
+    t = s.sold_at or s.closed_at or s.updated_at
+    if not t:
+        return False
+    t = t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+    return t >= datetime.now(timezone.utc) - timedelta(days=days)
+
+
+@router.get("/razbor/shipping")
+def shipping(ctx: Ctx = Depends(get_ctx), st: str = ""):
+    """Выдача и отправка: подготовить → готово к выдаче / к отправке → отправлено → получено."""
+    ctx.need("razbor.manage", "razbor.sell")
+    db = ctx.db
+    carriers = svc.carriers(db, ctx.branch.id)
+    db.commit()
+    sales = db.scalars(select(UsedSale).where(UsedSale.branch_id == ctx.branch.id, UsedSale.status.in_(
+        ("reserved", "sent", "sold", "returned"))).order_by(UsedSale.created_at)).all()
+    sales = [s for s in sales if s.status in ("reserved", "sent") or _recent(s)]
+    counts = {k: sum(1 for s in sales if svc.stage_of(s) == k) for k in svc.SHIP_STAGES}
+    if st not in svc.SHIP_STAGES:
+        st = next((k for k in ("prepare", "ready_ship", "ready_pickup", "sent") if counts[k]), "prepare")
+    rows = _ship_rows(ctx, [s for s in sales if svc.stage_of(s) == st])
+    if st in ("sold", "returned"):
+        rows.reverse()
+    return ctx.render("razbor/shipping.html", title="Разбор · выдача и отправка", rows=rows, counts=counts, st=st,
+                      STAGES=svc.SHIP_STAGES, carriers=carriers, DELIVERY=DELIVERY, PAY_METHODS=PAY_METHODS,
+                      fmt_phone=osvc.fmt_phone)
+
+
+@router.get("/razbor/shipping/labels")
+def shipping_labels(ctx: Ctx = Depends(get_ctx), ids: str = ""):
+    """Наша наклейка на посылку / на деталь к выдаче: код, деталь, донор, покупатель, куда, ТТН, наложка, штрихкод."""
+    ctx.need("razbor.manage", "razbor.sell")
+    from ..services import barcode as bc
+    from ..services import settings as st_
+    want = [x for x in (_uuid(v) for v in ids.split(",") if v.strip()) if x]
+    sales = [s for s in ctx.db.scalars(select(UsedSale).where(UsedSale.id.in_(want))) if s.branch_id == ctx.branch.id]
+    rows = _ship_rows(ctx, sales)
+    for r in rows:
+        r["svg"] = bc.svg((r["i"].code or r["i"].barcode or "0") if r["i"] else "0")
+    return ctx.render("razbor/ship_labels.html", title="Наклейки на посылки", rows=rows,
+                      cfg=st_.get(ctx.db, ctx.branch.id, "labels"), fmt_phone=osvc.fmt_phone,
+                      back=ctx.request.headers.get("referer", "/razbor/shipping"))
+
+
+def _parcels(ctx: Ctx, q: str = "", carrier: str = "", d: str = ""):
+    sales = ctx.db.scalars(select(UsedSale).where(UsedSale.branch_id == ctx.branch.id, UsedSale.delivery.in_(("np", "other")),
+                                                  UsedSale.status.in_(("reserved", "sent", "sold", "returned")))
+                           .order_by(UsedSale.created_at.desc()).limit(500)).all()
+    rows = _ship_rows(ctx, sales)
+    if carrier:
+        rows = [r for r in rows if str(r["s"].carrier_id) == carrier]
+    if d:
+        rows = [r for r in rows if r["s"].sent_at and r["s"].sent_at.astimezone().date().isoformat() == d]
+    if q.strip():
+        ql = q.strip().lower()
+        rows = [r for r in rows if ql in f"{r['s'].ttn} {r['s'].buyer_name} {r['s'].buyer_phone} {r['s'].np_address} "
+                                          f"{r['i'].code if r['i'] else ''} {r['c'].name if r['c'] else ''}".lower()]
+    return rows
+
+
+@router.get("/razbor/parcels")
+def parcels(ctx: Ctx = Depends(get_ctx), q: str = "", carrier: str = "", d: str = ""):
+    """Справочная таблица посылок: ТТН, кому, куда, что, сколько, наложка, где лежит, статус. Поиск и фильтры."""
+    ctx.need("razbor.manage", "razbor.sell")
+    rows = _parcels(ctx, q, carrier, d)
+    return ctx.render("razbor/parcels.html", title="Разбор · посылки", rows=rows, q=q, carrier=carrier, d=d,
+                      carriers=svc.carriers(ctx.db, ctx.branch.id, active_only=False), STAGES=svc.SHIP_STAGES,
+                      today=date.today().isoformat(), fmt_phone=osvc.fmt_phone)
+
+
+@router.get("/razbor/parcels/print")
+def parcels_print(ctx: Ctx = Depends(get_ctx), carrier: str = "", d: str = ""):
+    """Реестр отправок за день (для курьера / отделения): ТТН, кому, куда, что, наложка, подписи."""
+    ctx.need("razbor.manage", "razbor.sell")
+    from ..models import Carrier
+    d = d or date.today().isoformat()
+    rows = [r for r in _parcels(ctx, "", carrier, d) if r["s"].status in ("sent", "sold", "returned")]
+    c = ctx.db.get(Carrier, _uuid(carrier)) if carrier else None
+    return ctx.render("razbor/parcels_print.html", title="Реестр отправок", rows=rows, d=date.fromisoformat(d),
+                      carrier=c, fmt_phone=osvc.fmt_phone)
+
+
+@router.get("/razbor/carriers")
+def carriers_page(ctx: Ctx = Depends(get_ctx)):
+    """Справочник служб доставки: Нова Пошта, Укрпошта, Meest, свой курьер, организация — добавить, поправить, скрыть."""
+    ctx.need("razbor.manage", "settings.access")
+    from ..models.razbor import CARRIER_KINDS
+    rows = svc.carriers(ctx.db, ctx.branch.id, active_only=False)
+    ctx.db.commit()
+    return ctx.render("razbor/carriers.html", title="Службы доставки", rows=rows, KINDS=CARRIER_KINDS)
+
+
+@router.post("/razbor/carriers")
+def carrier_save(ctx: Ctx = Depends(get_ctx), cid: str = Form(""), name: str = Form(""), kind: str = Form("post"),
+                 phone: str = Form(""), note: str = Form(""), action: str = Form("save")):
+    ctx.need("razbor.manage", "settings.access")
+    from ..models import Carrier
+    from ..models.razbor import CARRIER_KINDS
+    svc.carriers(ctx.db, ctx.branch.id)   # сначала стандартные (Нова Пошта и др.), если их ещё нет
+    c = ctx.db.get(Carrier, _uuid(cid)) if cid else None
+    if c and c.branch_id != ctx.branch.id:
+        raise Forbidden()
+    if action == "toggle" and c:
+        c.active = not c.active
+        flash(ctx.request, f"{c.name}: {'снова в списке' if c.active else 'скрыта из выбора'}")
+    elif name.strip():
+        if c is None:
+            c = Carrier(sort=100)
+            ctx.db.add(c)
+        c.name, c.kind = name.strip()[:80], kind if kind in CARRIER_KINDS else "post"
+        c.phone, c.note = phone.strip()[:40], note.strip()[:200]
+        flash(ctx.request, f"Сохранено: {c.name}")
+    else:
+        flash(ctx.request, "Впишите название службы или курьера", "error")
+    ctx.db.commit()
+    return _to("/razbor/carriers")
+
+
 @router.get("/api/razbor/free")
 def free_parts(ctx: Ctx = Depends(get_ctx), q: str = ""):
     """Поиск свободной б/у детали для новой продажи: код, название, марка, модель."""
@@ -626,7 +765,15 @@ async def sale_update(sid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     back = back if back.startswith("/") and not back.startswith("//") else f"/razbor/parts/{s.stock_item_id}"
     pm = str(form.get("pay_method")) if form.get("pay_method") in PAY_METHODS else None
     err, msg = "", ""
-    if action == "cancel":
+    if action == "pack":   # 12.11.2026: кладовщик достал и упаковал → «Готово к выдаче / к отправке»
+        cid = _uuid(str(form.get("carrier_id", ""))) if form.get("carrier_id") else None
+        err = svc.pack(ctx.db, s, ctx.user, str(form.get("place", "")), cid, str(form.get("ttn", "")))
+        msg = ("Готово к отправке" if svc.is_ship(s) else "Готово к выдаче — ждём покупателя") + \
+              (f" · лежит: {s.place}" if s.place else "")
+    elif action == "unpack":
+        svc.unpack(ctx.db, s)
+        msg = "Снова «Подготовить»"
+    elif action == "cancel":
         svc.cancel_reserve(ctx.db, s)
         msg = "Резерв отменён — деталь снова свободна"
     elif action == "ship":
@@ -645,6 +792,10 @@ async def sale_update(sid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         s.np_address = str(form.get("np_address", s.np_address or "")).strip()[:200]
         if form.get("ttn") is not None:
             s.ttn = str(form.get("ttn", "")).strip()[:40]
+        if form.get("place") is not None:
+            s.place = str(form.get("place", "")).strip()[:60]
+        if form.get("carrier_id"):
+            s.carrier_id = _uuid(str(form.get("carrier_id")))
         if form.get("price") and s.status in ("reserved", "sent"):
             s.price = ssvc.money(_dec(form.get("price")))
         msg = "Сохранено"

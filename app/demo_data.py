@@ -521,7 +521,12 @@ def populate():
         sold_plan = {"Коробка передач АКПП U250E": ("СТО «Мотор» (Киев)", "0442223344", "np", "20450987654321", "card"),
                      "Капот": ("Сергей", "0501112233", "pickup", "", "cash")}
         reserve_plan = {"Фара передняя левая, ксенон": ("Олег М.", "0633332211", "np"),
-                        "Генератор 180A": ("Василий", "0991112200", "pickup")}
+                        "Генератор 180A": ("Василий", "0991112200", "pickup"),
+                        # 12.11.2026: «Выдача и отправка» — посылка готова к отправке, дверь едет личным курьером
+                        "Фонарь задний левый": ("Ирина В.", "0507771122", "np"),
+                        "Дверь передняя правая в сборе": ("СТО «Кузов» (Бровары)", "0445556677", "other")}
+        # упаковано кладовщиком разбора: (где лежит, ТТН)
+        packed_plan = {"Генератор 180A": ("у окошка", ""), "Фонарь задний левый": ("полка отправок 1", "20450555000111")}
         # 11.11.2026: посылка в пути — наложенный платёж, ждём деньги
         sent_plan = {"Блок управления двигателем DDE": ("Андрей К.", "0671234500", "Львов, отд. 7", "20450123456789")}
         for info, d_photos, parts in demo_donors:
@@ -543,8 +548,14 @@ def populate():
                     rsvc.sell_now(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, dl, pm, ttn)
                 elif name in reserve_plan:
                     bn, bp, dl = reserve_plan[name]
-                    rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price), bn, bp, dl,
-                                           np_address="Киев, отд. 112" if dl == "np" else "", channel="olx" if dl == "np" else "phone")
+                    s = rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price), bn, bp, dl,
+                                               np_address={"np": "Киев, отд. 112", "other": "Бровары, ул. Киевская 10"}.get(dl, ""),
+                                               channel="olx" if dl == "np" else "phone")
+                    db.flush()
+                    if dl == "other":
+                        s.carrier_id = next(c.id for c in rsvc.carriers(db, branch.id) if c.kind == "courier")
+                    if name in packed_plan:
+                        rsvc.pack(db, s, users["dmitro"], *packed_plan[name][:1], None, packed_plan[name][1])
                 elif name in sent_plan:
                     bn, bp, addr, ttn = sent_plan[name]
                     s = rsvc.reserve_for_buyer(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, "np", "card",

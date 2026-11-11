@@ -82,6 +82,7 @@
       const j = await r.json(); badge('.sidebar a[href="/stock"], .tabbar a[href="/stock"]', (j.issues || 0) + (j.receive || 0));
       badge('.sidebar a[href="/stock/issues"], .tabbar a[href="/stock/issues"]', j.issues || 0);   // «Запросы на выдачу»: 1, 2…
       badge('.sidebar a[href="/ready"], .tabbar a[href="/ready"]', j.ready || 0);                  // менеджеру: «Готово к выдаче»
+      badge('.sidebar a[href="/razbor/shipping"], .tabbar a[href="/razbor/shipping"]', j.razbor || 0);   // разбор: подготовить
       badge('.sidebar a[href="/notifications"]', j.unread);
       (j.notes || []).forEach(n => window.crmToast && window.crmToast({
         id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', handover: 'Наряд', issue_ready: 'Выдача' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,

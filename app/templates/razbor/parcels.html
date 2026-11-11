@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{# Посылки (12.11.2026): справочная таблица всех отправок разбора — где какая посылка, ТТН, кому, куда, что, наложка, статус.
+   Поиск по ТТН, телефону, фамилии, коду детали; фильтр по службе и дню отправки; печать реестра за день. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/razbor/shipping">{{ icon("back") }}Выдача и отправка</a><h1 class="large-title">Посылки</h1></div>
+  <div class="ov-actions"><a class="btn btn-sm" href="/razbor/parcels/print?d={{ d or today }}{% if carrier %}&carrier={{ carrier }}{% endif %}" target="_blank">🖨 Реестр отправок за {{ "день" if d else "сегодня" }}</a></div>
+</header>
+<form class="vs-bar" method="get" action="/razbor/parcels">
+  <input class="field search vs-search" name="q" value="{{ q }}" placeholder="ТТН, телефон, фамилия, код детали" autocomplete="off">
+  <select class="field" name="carrier" onchange="this.form.submit()" aria-label="Служба доставки"><option value="">Все службы</option>
+    {% for c in carriers %}<option value="{{ c.id }}" {% if carrier == c.id|string %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <input class="field" type="date" name="d" value="{{ d }}" onchange="this.form.submit()" aria-label="День отправки">
+  {% if q or carrier or d %}<a class="btn btn-sm btn-plain" href="/razbor/parcels">Сбросить</a>{% endif %}
+</form>
+<div class="card compact">
+  <div class="tablewrap">
+    <table class="table dense-table pc-table">
+      <thead><tr><th>ТТН · служба</th><th>Кому, куда</th><th>Деталь</th><th class="num">Сумма</th><th>Где лежит</th><th>Статус</th></tr></thead>
+      <tbody>
+      {% for r in rows %}{% set s = r.s %}
+      <tr>
+        <td><span class="mono">{{ s.ttn or "—" }}</span><div class="caption">{{ r.carrier.name if r.carrier else "служба не выбрана" }}</div></td>
+        <td><b>{{ s.buyer_name or "покупатель" }}</b>{% if s.buyer_phone %} <span class="caption nowrap">{{ fmt_phone(s.buyer_phone) }}</span>{% endif %}
+          <div class="caption">{{ s.np_address or "" }}</div></td>
+        <td>{% if r.i %}<a href="/razbor/parts/{{ r.i.id }}">{{ r.i.code }}</a>{% endif %} {{ r.c.name if r.c else "" }}
+          <div class="caption">{% if r.i and r.i.donor_make %}{{ r.i.donor_make }} {{ r.i.donor_model }}{% endif %}</div></td>
+        <td class="num nowrap">{{ s.price|money }} ₴<div class="caption">{{ "наложка" if s.cod else ("оплачено" if s.paid else "") }}</div></td>
+        <td>{{ s.place or "—" }}</td>
+        <td>{% set sv = STAGES.get(r.stage) %}<span class="chip" style="--c:{{ color_css(sv[1]) if sv else '' }}">{{ sv[0] if sv else "" }}</span>
+          <div class="caption">{% if s.sent_at %}отпр. {{ s.sent_at.astimezone().strftime("%d.%m") }}{% elif s.packed_at %}упак. {{ s.packed_at.astimezone().strftime("%d.%m") }}{% else %}резерв {{ s.created_at.astimezone().strftime("%d.%m") }}{% endif %}</div></td>
+      </tr>
+      {% else %}<tr><td colspan="6" class="footnote">Посылок не найдено</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

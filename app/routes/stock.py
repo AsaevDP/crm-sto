@@ -1131,6 +1131,11 @@ def notify(ctx: Ctx = Depends(get_ctx)):
         notes.append({"id": str(n.id), "kind": n.kind, "title": n.title, "text": n.text, "url": n.url,
                       "request_url": f"/orders/{wo.id}/issue-request" if can_req else ""})
     unread_n = len(notes)
+    razbor_n = 0
+    if ctx.can("razbor.manage"):   # «Выдача и отправка» разбора: сколько резервов ещё не подготовлено
+        from ..models import UsedSale
+        razbor_n = ctx.db.scalar(select(func.count()).select_from(UsedSale).where(
+            UsedSale.branch_id == ctx.branch.id, UsedSale.status == "reserved", UsedSale.packed_at.is_(None))) or 0
     # Инструмент (11.11.2026): кладовщику — «просит выдать» / «сдаёт», как запросы на запчасти
     tools_items = []
     if ctx.can("tools.manage"):
@@ -1146,14 +1151,14 @@ def notify(ctx: Ctx = Depends(get_ctx)):
         if ctx.can("stock.pickup"):   # «Готово к выдаче» — по моим нарядам и моим запросам
             ready_n = sum(1 for x in _requests(ctx, "ready") if _ready_mine(ctx, x))
         return {"issues": len(tools_items), "items": [], "tools": tools_items, "notes": notes, "unread": unread_n,
-                "ready": ready_n}
+                "ready": ready_n, "razbor": razbor_n}
     items = []
     for x in _requests(ctx, "new")[:5]:
         names = ", ".join(("🔥 " if l["urgent"] else "") + l["name"] for l in x["lines"][:3]) + ("…" if len(x["lines"]) > 3 else "")
         items.append({"id": str(x["r"].id), "who": x["who"].full_name if x["who"] else "",
                       "text": names, "order": x["wo"].number, "plate": osvc.fmt_plate(x["v"].plate)})
     return {"issues": len(_requests(ctx, "new")) + len(tools_items), "items": items, "tools": tools_items,
-            "notes": notes, "unread": unread_n,
+            "notes": notes, "unread": unread_n, "razbor": razbor_n,
             "receive": _receive_count(ctx) if ctx.can("stock.manage") else 0}
 
 

@@ -32,7 +32,7 @@
       <span>👤 {{ s.buyer_name or "покупатель" }}{% if s.buyer_phone %} · <a href="tel:+{{ s.buyer_phone }}">{{ fmt_phone(s.buyer_phone) }}</a>{% endif %}</span>
       <span class="caption">{{ DELIVERY.get(s.delivery, s.delivery) }}{% if s.np_address %} · {{ s.np_address }}{% endif %}{% if s.ttn %} · ТТН <span class="mono">{{ s.ttn }}</span>{% endif %}
         {% if s.cod %} · наложенный платёж{% endif %}{% if s.paid and s.status == "sent" %} · оплачено заранее{% endif %}{% if s.channel %} · {{ CHANNELS.get(s.channel, "") }}{% endif %}</span>
-      <span class="caption">{% if s.status == "reserved" %}в резерве с {{ s.created_at.astimezone().strftime("%d.%m %H:%M") }}{% elif s.status == "sent" %}отправлено {{ s.sent_at.astimezone().strftime("%d.%m") if s.sent_at else "" }}{% elif s.status == "sold" %}продано {{ s.sold_at.astimezone().strftime("%d.%m.%Y") if s.sold_at else "" }} · {{ PAY_METHODS.get(s.pay_method, "") }}{% elif s.closed_at %}{{ SALE_STATUS[s.status]|lower }} {{ s.closed_at.astimezone().strftime("%d.%m") }}{% endif %}</span>
+      <span class="caption">{% if s.status == "reserved" %}в резерве с {{ s.created_at.astimezone().strftime("%d.%m %H:%M") }}{% if s.packed_at %} · 📦 упаковано{% if s.place %} ({{ s.place }}){% endif %}{% endif %}{% elif s.status == "sent" %}отправлено {{ s.sent_at.astimezone().strftime("%d.%m") if s.sent_at else "" }}{% elif s.status == "sold" %}продано {{ s.sold_at.astimezone().strftime("%d.%m.%Y") if s.sold_at else "" }} · {{ PAY_METHODS.get(s.pay_method, "") }}{% elif s.closed_at %}{{ SALE_STATUS[s.status]|lower }} {{ s.closed_at.astimezone().strftime("%d.%m") }}{% endif %}</span>
       {% if s.comment %}<span class="caption">💬 {{ s.comment }}</span>{% endif %}
     </div>
     {% if sell %}

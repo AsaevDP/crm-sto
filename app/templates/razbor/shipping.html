@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{# Выдача и отправка (12.11.2026) — рабочее место кладовщика разбора.
+   Подготовить (достать, упаковать, наклейка) → Готово к выдаче (самовывоз) / Готово к отправке (служба доставки, ТТН)
+   → Отправлено → Получено / Возврат. Служб доставки сколько угодно: «Службы доставки». #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/razbor">{{ icon("back") }}Разбор</a><h1 class="large-title">Выдача и отправка</h1></div>
+  <div class="ov-actions">
+    <a class="btn btn-sm btn-gray" href="/razbor/parcels">📋 Все посылки</a>
+    <a class="btn btn-sm btn-gray" href="/razbor/parcels/print" target="_blank">🖨 Реестр за сегодня</a>
+    <a class="btn btn-sm btn-gray" href="/razbor/carriers">Службы доставки</a>
+  </div>
+</header>
+
+<div class="pult-tiles vs-tiles">
+  {% for k, (t, c, sub) in STAGES.items() %}
+  <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="/razbor/shipping?st={{ k }}" style="--tc:{{ color_css(c) }}">
+    <span class="ptile-t">{{ t }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+
+{% if rows and st in ("prepare", "ready_ship", "ready_pickup") %}
+<div class="sh-bulk">
+  <a class="btn btn-sm btn-gray" href="/razbor/shipping/labels?ids={{ rows|map(attribute='s.id')|join(',') }}" target="_blank">🏷 Наклейки на все · {{ rows|length }}</a>
+</div>
+{% endif %}
+
+<div class="sh-list">
+  {% for r in rows %}{% set s = r.s %}
+  <article class="card compact sh-card" data-stage="{{ r.stage }}">
+    <div class="sh-top">
+      <div class="sh-what">
+        <span class="mono caption">{{ r.i.code if r.i else "" }}</span>
+        <b>{{ r.c.name if r.c else "" }}</b>
+        <span class="caption">{% if r.i and r.i.donor_make %}с {{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %}{% endif %}
+          {% if r.cell %} · ячейка <b>{{ r.cell }}</b>{% endif %} · {{ s.qty|num }} шт</span>
+      </div>
+      <b class="nowrap sh-sum">{{ s.price|money }} ₴</b>
+    </div>
+    <div class="sh-who">
+      <span><b>{{ s.buyer_name or "покупатель" }}</b>{% if s.buyer_phone %} · <a href="tel:{{ s.buyer_phone }}">{{ fmt_phone(s.buyer_phone) }}</a>{% endif %}</span>
+      <span class="caption">{% if s.delivery == "pickup" %}🙋 заберёт сам{% else %}📦 {{ r.carrier.name if r.carrier else DELIVERY.get(s.delivery) }}{% if s.np_address %} · {{ s.np_address }}{% endif %}{% endif %}
+        {% if s.cod %} · наложенный платёж{% elif s.paid %} · оплачено{% endif %}</span>
+      {% if s.comment %}<span class="caption">💬 {{ s.comment }}</span>{% endif %}
+      <span class="caption">резерв {{ s.created_at.astimezone().strftime("%d.%m %H:%M") }}{% if r.seller %} · {{ r.seller.short_name }}{% endif %}
+        {% if s.packed_at %} · упаковал {{ r.packer.short_name if r.packer else "" }} {{ s.packed_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}
+        {% if s.place %} · лежит: <b>{{ s.place }}</b>{% endif %}{% if s.ttn %} · ТТН <span class="mono">{{ s.ttn }}</span>{% endif %}</span>
+    </div>
+
+    {% if r.stage == "prepare" %}
+    {# Достал с полки, упаковал, наклеил нашу наклейку (и наклейку службы с ТТН) → «Готово» #}
+    <form class="sh-form" method="post" action="/razbor/sales/{{ s.id }}">
+      <input type="hidden" name="action" value="pack"><input type="hidden" name="back" value="/razbor/shipping?st=prepare">
+      {% if s.delivery != "pickup" %}
+      <select class="field" name="carrier_id" aria-label="Служба доставки">
+        {% for c in carriers %}<option value="{{ c.id }}" {% if c.id == s.carrier_id or (not s.carrier_id and s.delivery == "np" and c.name.lower().startswith("нова")) %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+      <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН (с наклейки службы)" inputmode="numeric">
+      {% endif %}
+      <input class="field" name="place" value="{{ s.place or '' }}" placeholder="Где лежит: полка отправок 1, у окошка…">
+      <a class="btn btn-sm btn-gray" href="/razbor/shipping/labels?ids={{ s.id }}" target="_blank">🏷 Наша наклейка</a>
+      <button class="btn btn-sm">{{ "📦 Готово к отправке" if s.delivery != "pickup" else "🙋 Готово к выдаче" }}</button>
+    </form>
+
+    {% elif r.stage == "ready_pickup" %}
+    <form class="sh-form" method="post" action="/razbor/sales/{{ s.id }}">
+      <input type="hidden" name="back" value="/razbor/shipping?st=ready_pickup">
+      <select class="field" name="pay_method" aria-label="Как оплатил">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}" {% if k == s.pay_method %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      <button class="btn btn-sm" name="action" value="sold" onclick="return confirm('Покупатель забрал и оплатил?')">✓ Выдано</button>
+      <a class="btn btn-sm btn-gray" href="/razbor/shipping/labels?ids={{ s.id }}" target="_blank">🏷 Наклейка</a>
+      <button class="btn btn-sm btn-plain" name="action" value="unpack">Ещё не готово</button>
+    </form>
+
+    {% elif r.stage == "ready_ship" %}
+    <form class="sh-form" method="post" action="/razbor/sales/{{ s.id }}">
+      <input type="hidden" name="back" value="/razbor/shipping?st=ready_ship">
+      <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН{% if not r.ttn_need %} (необязательно){% endif %}" {% if r.ttn_need %}required{% endif %} inputmode="numeric">
+      {% if not s.cod %}<label class="caption"><input type="checkbox" name="paid" value="1" {% if s.paid %}checked{% endif %}> предоплата получена</label>{% endif %}
+      <button class="btn btn-sm" name="action" value="ship">🚚 Отправлено</button>
+      <a class="btn btn-sm btn-gray" href="/razbor/shipping/labels?ids={{ s.id }}" target="_blank">🏷 Наклейка</a>
+      <button class="btn btn-sm btn-plain" name="action" value="unpack" formnovalidate>Ещё не готово</button>
+    </form>
+
+    {% elif r.stage == "sent" %}
+    <form class="sh-form" method="post" action="/razbor/sales/{{ s.id }}">
+      <input type="hidden" name="back" value="/razbor/shipping?st=sent">
+      <span class="caption">отправлено {{ s.sent_at.astimezone().strftime("%d.%m") if s.sent_at else "" }}</span>
+      <button class="btn btn-sm" name="action" value="complete">✓ Получено, деньги есть</button>
+      <details class="sh-ret"><summary class="btn btn-sm btn-plain" style="color:var(--red)">Возврат…</summary>
+        <input class="field" name="note" placeholder="Почему вернули"><button class="btn btn-sm btn-danger" name="action" value="return">Вернулась на склад</button></details>
+    </form>
+    {% else %}
+    <p class="caption" style="margin:0">{{ "получено " ~ s.sold_at.astimezone().strftime("%d.%m.%Y") if s.sold_at else "" }}{{ "возврат " ~ s.closed_at.astimezone().strftime("%d.%m.%Y") if s.status == "returned" and s.closed_at else "" }}</p>
+    {% endif %}
+  </article>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">{{ {"prepare": "Готовить нечего — новые резервы появятся здесь сами.", "ready_pickup": "Никто не ждёт выдачи.",
+    "ready_ship": "Готовых посылок нет.", "sent": "В пути ничего нет.", "sold": "За 30 дней ничего не получено.", "returned": "Возвратов нет."}[st] }}</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

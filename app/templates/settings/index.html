@@ -34,7 +34,8 @@
 <div class="set-tiles">
   {% if ctx.can("stock.manage") %}{{ tile("/stock/categories", "Категории склада", "ТО и запчасти", "blue", "stock") }}
   {{ tile("/stock/locations", "Ячейки склада", "стеллажи и полки", "gray", "stock") }}{% endif %}
-  {% if ctx.can("razbor.manage") %}{{ tile("/razbor/refs", "Марки и категории разбора", "для доноров и деталей", "orange", "car") }}{% endif %}
+  {% if ctx.can("razbor.manage") %}{{ tile("/razbor/refs", "Марки и категории разбора", "для доноров и деталей", "orange", "car") }}
+  {{ tile("/razbor/carriers", "Службы доставки", "почта, курьеры — для разбора", "indigo", "box") }}{% endif %}
   {% if ctx.can("tools.manage") %}{{ tile("/tools?view=cabinets", "Шкафы инструмента", "шкафы и полки", "teal", "tool") }}{% endif %}
 </div>
 {% endif %}

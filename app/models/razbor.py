@@ -13,8 +13,12 @@ MONEY = Numeric(12, 2)
 
 DONOR_STATUS = {"dismantling": "На разборке", "done": "Разобран", "scrapped": "Утилизирован"}
 CONDITIONS = {"excellent": "Отличное", "good": "Хорошее", "fair": "Удовлетворительное", "repair": "Под восстановление"}
+# 12.11.2026: «Готово» = в резерве + упаковано (packed_at): готово к выдаче (самовывоз) или к отправке (служба доставки)
 SALE_STATUS = {"reserved": "В резерве", "sent": "Отправлено", "sold": "Продано", "returned": "Возврат",
                "cancelled": "Отменено"}
+# Виды служб доставки: почта (ТТН обязателен) или курьер (свой / организация, ТТН не нужен)
+CARRIER_KINDS = {"post": "Служба доставки (ТТН)", "courier": "Курьер"}
+DEFAULT_CARRIERS = [("Нова Пошта", "post"), ("Укрпошта", "post"), ("Meest", "post"), ("Личный курьер", "courier")]
 DELIVERY = {"pickup": "Самовывоз", "np": "Нова Пошта", "other": "Другая доставка"}
 # Откуда пришёл покупатель (11.11.2026) — чтобы видеть, где продаётся лучше
 CHANNELS = {"phone": "Звонок", "site": "Сайт", "olx": "OLX", "social": "Соцсети", "walkin": "Пришёл сам", "other": "Другое"}
@@ -94,3 +98,19 @@ class UsedSale(Entity):
     sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)       # возврат / отмена
     channel: Mapped[str | None] = mapped_column(String(10), default="", nullable=True)    # CHANNELS
+    # 12.11.2026: служба доставки (справочник), упаковано — кто/когда, где лежит готовая посылка/деталь
+    carrier_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    packed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    packed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    place: Mapped[str | None] = mapped_column(String(60), default="", nullable=True)
+
+
+class Carrier(Entity):
+    """Служба доставки (12.11.2026): Нова Пошта, Укрпошта, Meest, свой курьер, организация — добавляются в справочнике."""
+    __tablename__ = "carriers"
+    name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(10), default="post")   # CARRIER_KINDS
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    note: Mapped[str] = mapped_column(String(200), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0)

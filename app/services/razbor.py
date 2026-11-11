@@ -126,8 +126,9 @@ def ship(db: Session, s: UsedSale, ttn: str, cod: bool | None = None, paid: bool
     Предоплата (paid) — деньги уже у нас. Наложенный платёж (cod) — деньги придут после получения."""
     if s.status != "reserved":
         return "Отправить можно только деталь в резерве"
-    if not (ttn or "").strip() and s.delivery == "np":
-        return "Впишите номер ТТН Новой Почты"
+    if not (ttn or s.ttn or "").strip() and needs_ttn(db, s):
+        return "Впишите номер ТТН службы доставки"
+    ttn = (ttn or s.ttn or "")
     item = db.get(StockItem, s.stock_item_id)
     ssvc.move(db, "unreserve", item, s.qty, comment="Снят резерв — отправлено")
     s.ttn = (ttn or "").strip()[:40]
@@ -412,3 +413,78 @@ def export_zip(rows) -> bytes:
                 if f.exists():
                     z.write(f, f"photos/{r['Код']}_{n + 1}.{rel.rsplit('.', 1)[-1]}")
     return out.getvalue()
+
+
+# ======================= Выдача и отправка (12.11.2026) =======================
+# Рабочее место второго кладовщика (разбор). Продажа в резерве → кладовщик достал и упаковал («Готово»):
+# самовывоз — «Готово к выдаче» → «Выдано»; служба доставки — наша наклейка + ТТН и наклейка службы → «Готово к отправке»
+# → «Отправлено» → «Получено» / «Возврат». «Готово» = статус reserved + packed_at (вся прежняя логика резерва не меняется).
+SHIP_STAGES = {"prepare": ("Подготовить", "orange", "достать и упаковать"),
+               "ready_pickup": ("Готово к выдаче", "teal", "ждём покупателя"),
+               "ready_ship": ("Готово к отправке", "indigo", "отдать в службу доставки"),
+               "sent": ("В пути", "purple", "ждём получение и деньги"),
+               "sold": ("Получено", "green", "за 30 дней"),
+               "returned": ("Возвраты", "red", "за 30 дней")}
+
+
+def is_ship(s: UsedSale) -> bool:
+    return s.delivery in ("np", "other")
+
+
+def stage_of(s: UsedSale) -> str:
+    if s.status == "reserved":
+        if not s.packed_at:
+            return "prepare"
+        return "ready_ship" if is_ship(s) else "ready_pickup"
+    return s.status
+
+
+def carriers(db: Session, branch_id, active_only: bool = True) -> list:
+    """Службы доставки. Пусто — заводим стандартные (Нова Пошта, Укрпошта, Meest, личный курьер)."""
+    from ..models import Carrier
+    from ..models.razbor import DEFAULT_CARRIERS
+    rows = db.scalars(select(Carrier).where(Carrier.branch_id == branch_id).order_by(Carrier.sort, Carrier.name)).all()
+    if not rows:
+        for k, (name, kind) in enumerate(DEFAULT_CARRIERS):
+            db.add(Carrier(name=name, kind=kind, sort=k))
+        db.flush()
+        rows = db.scalars(select(Carrier).where(Carrier.branch_id == branch_id).order_by(Carrier.sort, Carrier.name)).all()
+    return [c for c in rows if c.active or not active_only]
+
+
+def default_carrier(db: Session, branch_id, s: UsedSale):
+    """Служба по умолчанию: «Нова Пошта», если покупатель выбрал её при продаже."""
+    if s.carrier_id or not is_ship(s):
+        return s.carrier_id
+    if s.delivery == "np":
+        c = next((c for c in carriers(db, branch_id) if c.name.lower().startswith("нова")), None)
+        return c.id if c else None
+    return None
+
+
+def needs_ttn(db: Session, s: UsedSale) -> bool:
+    """ТТН обязателен для служб доставки (почта); для курьера — нет."""
+    from ..models import Carrier
+    c = db.get(Carrier, s.carrier_id) if s.carrier_id else None
+    return (c.kind == "post") if c else s.delivery == "np"
+
+
+def pack(db: Session, s: UsedSale, user, place: str = "", carrier_id=None, ttn: str = "") -> str:
+    """Кладовщик достал деталь и упаковал: «Готово к выдаче» / «Готово к отправке»."""
+    if s.status != "reserved":
+        return "Подготовить можно только деталь в резерве"
+    if carrier_id:
+        s.carrier_id = carrier_id
+    elif is_ship(s) and not s.carrier_id:
+        s.carrier_id = default_carrier(db, s.branch_id, s)
+    if (ttn or "").strip():
+        s.ttn = ttn.strip()[:40]
+    s.place = (place or s.place or "").strip()[:60]
+    s.packed_at, s.packed_by = now(), user.id
+    return ""
+
+
+def unpack(db: Session, s: UsedSale):
+    """Отметили «готово» по ошибке — снова «Подготовить»."""
+    if s.status == "reserved":
+        s.packed_at = s.packed_by = None

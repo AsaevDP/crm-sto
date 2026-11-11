@@ -11,6 +11,7 @@
   </form>
   <div class="ov-actions">
     <a class="btn btn-sm" href="/razbor/sales">🛒 Продажи и отправки{% if n_sales.reserved + n_sales.sent %} · {{ n_sales.reserved + n_sales.sent }}{% endif %}</a>
+    {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/shipping">📦 Выдача и отправка</a>{% endif %}
     {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/refs">Марки и категории</a>{% endif %}
     {% if ctx.can("razbor.export") %}<a class="btn btn-sm btn-gray" href="/razbor/export.zip" title="Excel + CSV + JSON + фото в одном архиве">⤓ Для сайта · {{ n_site }}</a>{% endif %}
   </div>

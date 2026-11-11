@@ -1,0 +1,19 @@
+{% extends "_print_doc.html" %}
+{# Реестр отправок за день (12.11.2026) — для курьера / отделения: что передали, кому, ТТН, наложка, подписи. #}
+{% block back %}/razbor/parcels{% endblock %}
+{% block doc_title %}РЕЕСТР ОТПРАВОК{% endblock %}
+{% block subtitle %}{{ d.strftime("%d.%m.%Y") }}{% if carrier %} · {{ carrier.name }}{% endif %} · посылок: {{ rows|length }}{% endblock %}
+{% block body %}
+<table>
+  <thead><tr><th>№</th><th>ТТН</th><th>Служба</th><th>Получатель</th><th>Куда</th><th>Деталь</th><th class="num">Сумма, ₴</th><th>Наложка</th></tr></thead>
+  {% for r in rows %}{% set s = r.s %}
+  <tr><td>{{ loop.index }}</td><td>{{ s.ttn or "—" }}</td><td>{{ r.carrier.name if r.carrier else "" }}</td>
+    <td>{{ s.buyer_name }}{% if s.buyer_phone %}<br><span class="muted">{{ fmt_phone(s.buyer_phone) }}</span>{% endif %}</td>
+    <td>{{ s.np_address or "" }}</td><td>{{ r.i.code if r.i else "" }} {{ r.c.name if r.c else "" }}</td>
+    <td class="num">{{ s.price|money }}</td><td>{{ "да" if s.cod else "нет" }}</td></tr>
+  {% else %}<tr><td colspan="8" class="muted">За этот день отправок нет</td></tr>{% endfor %}
+  {% if rows %}<tr class="total"><td colspan="6">Итого</td><td class="num">{{ rows|sum(attribute="s.price")|money }}</td>
+    <td>{{ rows|selectattr("s.cod")|list|length }} шт</td></tr>{% endif %}
+</table>
+<div class="sign"><div>Передал: ____________</div><div>Принял (курьер / отделение): ____________</div></div>
+{% endblock %}

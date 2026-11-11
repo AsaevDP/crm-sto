@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+{% set W, H = cfg.width_mm, cfg.height_mm %}
+<style>
+  /* Наша наклейка на посылку / деталь к выдаче (12.11.2026). Размер и режим — «Настройки → Наклейки».
+     Наклейку службы доставки (Нова Пошта и др.) печатают в её приложении — сюда вписывается только номер ТТН. */
+  {% if cfg.mode == "label" %}@page { size: {{ W }}mm {{ H }}mm; margin: 0; }{% else %}@page { size: A4; margin: 8mm; }{% endif %}
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Arial, sans-serif; color: #000; background: #e9e9ee; }
+  .bar { position: sticky; top: 0; display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; padding: 10px;
+    background: rgba(233,233,238,.94); z-index: 2; font-size: 13px; color: #444; }
+  .bar button, .bar a { font: 600 14px -apple-system, "Segoe UI", sans-serif; padding: 9px 16px; border-radius: 10px; border: 0; background: #007aff; color: #fff; cursor: pointer; text-decoration: none; }
+  .bar a { background: #fff; color: #007aff; }
+  .wrap { display: flex; flex-wrap: wrap; gap: {{ "6mm" if cfg.mode == "label" else "0" }}; justify-content: center; padding: 16px; }
+  .lab { width: {{ W }}mm; height: {{ H }}mm; background: #fff; padding: {{ [W, H]|min * 0.05 }}mm; display: flex; flex-direction: column; gap: 0.8mm;
+    overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.15); border: {{ "0" if cfg.mode == "label" else "0.2mm dashed #999" }}; }
+  .top { display: flex; justify-content: space-between; gap: 2mm; font-size: {{ (H * 0.07)|round(1) }}pt; color: #333; }
+  .to { font-weight: 800; font-size: {{ (H * 0.12)|round(1) }}pt; line-height: 1.1; }
+  .addr { font-size: {{ (H * 0.09)|round(1) }}pt; line-height: 1.15; }
+  .meta { font-size: {{ (H * 0.075)|round(1) }}pt; color: #222; line-height: 1.15; white-space: nowrap; overflow: hidden; }
+  .ttn { font: 700 {{ (H * 0.1)|round(1) }}pt "Consolas", monospace; }
+  .bc { width: 100%; flex: 1 1 auto; min-height: {{ (H * 0.18)|round(1) }}mm; display: block; }
+  .cod { font-weight: 800; border: 0.4mm solid #000; padding: 0 1mm; }
+  @media print {
+    body { background: #fff; } .bar { display: none; }
+    .wrap { padding: 0; gap: 0; display: {{ "block" if cfg.mode == "label" else "flex" }}; justify-content: flex-start; }
+    .lab { box-shadow: none; {% if cfg.mode == "label" %}page-break-after: always; break-after: page;{% endif %} }
+  }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button onclick="print()">🖨 Печать · {{ rows|length }} шт</button>
+  <a href="{{ back }}">← Назад</a>
+  <span>Размер {{ W }}×{{ H }} мм · {{ "принтер наклеек" if cfg.mode == "label" else "лист A4" }}. Наклейку службы доставки печатайте в её приложении, а ТТН впишите в CRM.</span>
+</div>
+<div class="wrap">
+  {% for r in rows %}{% set s = r.s %}
+  <div class="lab">
+    <div class="top"><span>{{ branding.name }} · разбор</span><span>{{ r.i.code if r.i else "" }} · {{ s.created_at.astimezone().strftime("%d.%m") }}</span></div>
+    <div class="to">{{ s.buyer_name or "Покупатель" }}{% if s.buyer_phone %} · {{ fmt_phone(s.buyer_phone) }}{% endif %}</div>
+    <div class="addr">{% if s.delivery == "pickup" %}Самовывоз — заберёт сам{% else %}{{ r.carrier.name if r.carrier else "" }}{% if s.np_address %}: {{ s.np_address }}{% endif %}{% endif %}</div>
+    <div class="meta">{{ r.c.name if r.c else "" }}{% if r.i and r.i.donor_make %} · с {{ r.i.donor_make }} {{ r.i.donor_model }}{% endif %} · {{ s.qty|num }} шт</div>
+    <div class="meta">{% if s.ttn %}ТТН <span class="ttn">{{ s.ttn }}</span>{% elif s.delivery != "pickup" %}ТТН: ______________{% endif %}
+      {% if s.cod %} <span class="cod">НАЛОЖКА {{ s.price|money(0) }} ₴</span>{% elif s.paid %} · оплачено{% endif %}</div>
+    {{ r.svg|safe }}
+  </div>
+  {% else %}<p>Не выбрано ни одной продажи.</p>{% endfor %}
+</div>
+</body>
+</html>
