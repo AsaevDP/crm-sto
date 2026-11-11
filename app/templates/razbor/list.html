@@ -27,6 +27,37 @@
   {% endfor %}
 </div>
 
+{# 11.11.2026: «Доноры и окупаемость» — плитками во всю ширину. Одинаковые машины (марка + модель + год) — одна плитка
+   «×2», внутри — каждая машина отдельно (код, статус, окупаемость). Новая машина сама появляется плиткой. #}
+<section class="dt-sec">
+  <div class="group-title">Доноры и окупаемость · {{ donors|length }} {{ "машина" if donors|length == 1 else ("машины" if donors|length in (2, 3, 4) else "машин") }}</div>
+  <div class="dt-grid">
+    {% for g in donor_groups %}{% set multi = g["items"]|length > 1 %}{% set one = g["items"][0] %}
+    <{{ "div" if multi else "a" }} class="card compact dt-tile {{ 'multi' if multi }}"{% if not multi %} href="/razbor/donors/{{ one.id }}"{% endif %}>
+      <div class="dt-head">
+        <span class="dt-ph">{% if g.photo %}<img src="/razbor/files/{{ g.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}🚗{% endif %}</span>
+        <span class="dt-name"><b>{{ g.make }} {{ g.model }}</b>
+          <span class="caption">{% if g.year %}{{ g.year }} · {% endif %}{% if multi %}{{ g["items"]|length }} шт{% else %}{{ one.code }} · {{ DONOR_STATUS[one.status] }}{% endif %}</span></span>
+        {% if multi %}<span class="dt-count">×{{ g["items"]|length }}</span>{% endif %}
+      </div>
+      <span class="payback"><span style="width:{{ [g.pct, 100]|min }}%" class="{{ 'ok' if g.pct >= 100 }}"></span></span>
+      <span class="caption nowrap">{{ g.earned|money(0) }} из {{ g.invested|money(0) }} ₴ · <b class="{{ 'dt-ok' if g.pct >= 100 }}">{{ g.pct }}%</b> · на полке {{ g.left }}</span>
+      {% if multi %}
+      <div class="dt-list">
+        {% for d in g["items"] %}{% set e = eco[d.id] %}
+        <a href="/razbor/donors/{{ d.id }}"><span>{{ d.code }} · {{ DONOR_STATUS[d.status] }}</span><span class="caption nowrap">{{ e.pct }}% · на полке {{ e.parts_left }}</span></a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </{{ "div" if multi else "a" }}>
+    {% endfor %}
+    {% if ctx.can("razbor.manage") %}
+    <button class="card compact dt-tile dt-new" type="button" onclick="document.getElementById('dnew').showModal()">{{ icon("plus") }}<span>Новый донор</span></button>
+    {% endif %}
+    {% if not donor_groups and not ctx.can("razbor.manage") %}<div class="card compact"><p class="footnote" style="margin:0">Доноров пока нет</p></div>{% endif %}
+  </div>
+</section>
+
 <div class="rz-layout">
   <aside class="card compact rz-tree">
     <div class="card-h"><span class="headline">Марки и модели</span>{% if make or model %}<a class="caption" href="{{ link(make='', model='', cat='', sub='') }}">все</a>{% endif %}</div>
@@ -38,17 +69,6 @@
       {% endfor %}
     </details>
     {% else %}<p class="footnote" style="margin:0">Пусто{% if f %} в этом состоянии{% endif %}</p>{% endfor %}
-    <div class="rz-donors">
-      <div class="card-h"><span class="headline">Доноры · окупаемость</span>{% if donor %}<a class="caption" href="{{ link(donor='') }}">все</a>{% endif %}</div>
-      {% for d in donors %}{% set e = eco[d.id] %}
-      <a class="donor-row" href="/razbor/donors/{{ d.id }}">
-        <span class="donor-top"><b>{{ d.code }} · {{ d.make }} {{ d.model }}{% if d.year %} {{ d.year }}{% endif %}</b><span class="caption">{{ DONOR_STATUS[d.status] }}</span></span>
-        <span class="payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></span>
-        <span class="caption">{{ e.earned|money(0) }} из {{ e.invested|money(0) }} ₴ · {{ e.pct }}%</span>
-      </a>
-      {% else %}<p class="footnote" style="margin:0">Доноров пока нет</p>{% endfor %}
-      {% if ctx.can("razbor.manage") %}<button class="btn btn-sm btn-gray btn-block" type="button" onclick="document.getElementById('dnew').showModal()">{{ icon("plus") }}Новый донор</button>{% endif %}
-    </div>
   </aside>
 
   <section class="rz-main">

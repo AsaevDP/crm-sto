@@ -132,6 +132,22 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
         rows = [r for r in rows if (r["c"].subcategory or "") == sub]
     donors = db.scalars(select(Donor).where(Donor.branch_id == ctx.branch.id).order_by(Donor.created_at.desc())).all()
     eco = {d.id: svc.economy(db, ctx.branch.id, d) for d in donors}
+    # 11.11.2026: «Доноры и окупаемость» — плитками. Одинаковые машины (марка + модель + год) — одна плитка «×2»
+    dphoto = {}
+    for p in db.scalars(select(DonorPhoto).where(DonorPhoto.donor_id.in_([d.id for d in donors])).order_by(DonorPhoto.created_at)):
+        dphoto.setdefault(p.donor_id, p)
+    groups: dict = {}
+    for d in donors:
+        g = groups.setdefault((d.make.strip().lower(), d.model.strip().lower(), d.year or 0),
+                              {"make": d.make, "model": d.model, "year": d.year, "items": []})
+        g["items"].append(d)
+    for g in groups.values():
+        e = [eco[d.id] for d in g["items"]]
+        g["earned"], g["invested"] = sum((x.earned for x in e), 0), sum((x.invested for x in e), 0)
+        g["pct"] = int(g["earned"] / g["invested"] * 100) if g["invested"] else 0
+        g["left"] = sum(x.parts_left for x in e)
+        g["photo"] = next((dphoto[d.id] for d in g["items"] if d.id in dphoto), None)
+    donor_groups = list(groups.values())   # порядок — как доноры: новые сверху
     n_sales = {s: db.scalar(select(func.count()).select_from(UsedSale).where(UsedSale.branch_id == ctx.branch.id,
                                                                              UsedSale.status == s)) or 0
                for s in ("reserved", "sent")}
@@ -143,6 +159,7 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
         d = {**keep, **kw}
         return "/razbor?" + urlencode({k: v for k, v in d.items() if v})
     return ctx.render("razbor/list.html", title="Разбор", rows=rows, q=q, f=f, donor=donor, donors=donors, eco=eco,
+                      donor_groups=donor_groups,
                       cat=cat, sub=sub, make=make, model=model, cat_counts=cat_counts, sub_counts=sub_counts,
                       mk_tree=dict(sorted(mk_tree.items())), ref=ref, tiles=tiles, link=link, FILTERS=RZ_FILTERS,
                       ITEM_STATES=ITEM_STATES, n_sales=n_sales, CONDITIONS=CONDITIONS, DONOR_STATUS=DONOR_STATUS,
