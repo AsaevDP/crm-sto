@@ -105,7 +105,7 @@
     {% if m.discount %}<div class="kv"><span>Скидки клиентам</span><b>−{{ m.discount|money(0) }} ₴</b></div>{% endif %}
   </div>
   <div class="card compact">
-    <div class="card-h"><span class="headline">Наряды сейчас на СТО</span><a class="footnote" href="/orders">все →</a></div>
+    <div class="card-h"><span class="headline">Наряды сейчас на СТО</span>{% if ctx.can("orders.view_all", "orders.view_own") %}<a class="footnote" href="/orders">все →</a>{% endif %}</div>
     {% set fm = [funnel|map(attribute=1)|max, 1]|max %}
     {% for name, cnt in funnel %}
     <div class="hbar"><span>{{ name }}</span><span class="hbar-track"><span style="width:{{ (100 * cnt / fm)|round|int }}%"></span></span><b>{{ cnt }}</b></div>
@@ -118,7 +118,7 @@
     {% else %}<p class="footnote" style="margin:0">Слесарей нет</p>{% endfor %}
   </div>
   <div class="card compact">
-    <div class="card-h"><span class="headline">Склад в деньгах</span><a class="footnote" href="/stock">склад →</a></div>
+    <div class="card-h"><span class="headline">Склад в деньгах</span>{% if ctx.can("stock.view") %}<a class="footnote" href="/stock">склад →</a>{% endif %}</div>
     {% if fin %}
     <div class="kv"><span>Новые запчасти (по закупке)</span><b>{{ stock.new|money(0) }} ₴</b></div>
     <div class="kv"><span class="footnote">· ТО</span><span>{{ stock.by_section.to|money(0) }} ₴</span></div>

@@ -1477,6 +1477,19 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .vs-search .field.search, .vs-search .field { width: 100%; flex: 1; }
 .vs-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .vs-bar .field { width: auto; }
+.vs-bar > * { min-width: 0; max-width: 100%; }
+@media (max-width: 600px) {
+  .vs-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .vs-tiles .ptile { padding: 7px 9px; }
+  .vs-tiles .ptile-s { display: none; }
+  .vs-tiles .ptile-t { font-size: 12px; line-height: 1.2; }
+  .vs-tiles .ptile b { font-size: 19px; }
+}
+@media (max-width: 899px) {
+  .vs-bar > * { flex: 1 1 100%; }
+  nav.segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  nav.segmented a { flex: none; }
+}
 @media (max-width: 600px) { .stat b { font-size: 19px; } .stat { padding: 8px 10px; } }
 /* Настройки и журнал — плитки */
 .set-tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); margin-bottom: 6px; }
