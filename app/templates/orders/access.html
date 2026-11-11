@@ -36,6 +36,20 @@
         <button class="btn btn-sm btn-gray">Закрыть доступ сейчас</button></form>
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Ни у кого нет доступа ко всем нарядам</p></div>{% endfor %}
+
+    {# 11.11.2026: открыть закрытый / отменённый наряд заново — по запросу #}
+    <div class="group-title" id="reopen">Открыть наряд заново · {{ reopens|length }}</div>
+    {% for r in reopens %}{% set u = people.get(r.user_id) %}{% set o = reopen_orders.get(r.work_order_id) %}
+    <div class="card compact ac-card now">
+      <div class="card-h"><span class="headline"><a href="/orders/{{ r.work_order_id }}">{{ o.number if o else "" }}</a> · {{ u.full_name if u else "" }}</span>
+        <span class="caption nowrap">{{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      <p class="ov-text" style="margin:0">«{{ r.reason }}» · {{ "выдан клиенту" if r.from_status == "closed" else "отменён" }}</p>
+      <div class="ac-btns">
+        <form method="post" action="/reopen-requests/{{ r.id }}" class="one-shot"><button class="btn btn-sm btn-tinted" name="action" value="approve">Открыть заново</button></form>
+        <form method="post" action="/reopen-requests/{{ r.id }}" class="one-shot"><button class="btn btn-sm btn-plain danger" name="action" value="decline">Отказать</button></form>
+      </div>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов нет</p></div>{% endfor %}
   </section>
 
   <section class="ov-col on">

@@ -76,6 +76,10 @@ def compute(ctx) -> dict:
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0, "просят доступ ко всем нарядам",
              "/access-requests")
+        from ..models import OrderReopen   # 11.11.2026: просят открыть закрытый наряд заново
+        _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
+            OrderReopen.branch_id == bid, OrderReopen.status == "pending")) or 0, "просят открыть наряд заново",
+             "/access-requests#reopen")
 
     # ---------- Готово к выдаче (менеджер) ----------
     if ctx.can("stock.pickup") and not ctx.can("stock.issue"):

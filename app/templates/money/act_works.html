@@ -4,8 +4,8 @@
 {% block body %}
 <p class="muted" style="margin:0 0 4px">Исполнитель выполнил, а заказчик принял работы по заказ-наряду № {{ wo.number }}.</p>
 <table>
-  <tr><th style="width:5%">№</th><th>Наименование работы</th><th style="width:20%">Исполнитель</th>
-    <th class="num" style="width:10%">Кол-во</th><th class="num" style="width:12%">Цена, ₴</th><th class="num" style="width:13%">Сумма, ₴</th></tr>
+  <thead><tr><th style="width:5%">№</th><th>Наименование работы</th><th style="width:20%">Исполнитель</th>
+    <th class="num" style="width:10%">Кол-во</th><th class="num" style="width:12%">Цена, ₴</th><th class="num" style="width:13%">Сумма, ₴</th></tr></thead>
   {% for w in works %}{% set m = people.get(w.mechanic_id or wo.mechanic_id) %}
   <tr><td>{{ loop.index }}</td><td>{{ w.name }}{% if w.status != "done" %} <span class="muted">(не завершена)</span>{% endif %}</td>
     <td>{{ m.full_name if m else "" }}</td>
@@ -16,7 +16,8 @@
 <table class="sum" style="width:55%;margin-left:auto">
   <tr class="big"><td>Итого работы</td><td class="num">{{ t.works|money }} ₴</td></tr>
   {% if t.parts %}<tr><td>Запчасти (см. акт на запчасти)</td><td class="num">{{ t.parts|money }} ₴</td></tr>{% endif %}
-  {% if t.discount %}<tr><td>Скидка {{ wo.discount_pct|num }} %</td><td class="num">−{{ t.discount|money }} ₴</td></tr>{% endif %}
+  {% if t.works_discount %}<tr><td>Скидка на работы {{ wo.works_discount_pct|num }} %</td><td class="num">−{{ t.works_discount|money }} ₴</td></tr>{% endif %}
+  {% if t.order_discount %}<tr><td>Скидка на наряд {{ wo.discount_pct|num }} %</td><td class="num">−{{ t.order_discount|money }} ₴</td></tr>{% endif %}
   <tr><td><b>Всего по наряду</b></td><td class="num"><b>{{ t.total|money }} ₴</b></td></tr>
 </table>
 <h2>Гарантия на работы</h2>

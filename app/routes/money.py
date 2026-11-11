@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from ..db import now
 from ..models import (Client, PartCatalog, PartGroup, PartGroupItem, Payment, PayrollAccrual, PaySchemeLine, User,
                       Vehicle, WoPart, WorkOrder, WoWork, WoWorkSession)
-from ..models.money import PAY_METHODS, PAY_PURPOSES
+from ..models.money import PAY_IN, PAY_METHODS, PAY_PURPOSES
 from ..models.orders import WO_STATUSES
 from ..services import money as msvc
 from ..services import orders as osvc
@@ -35,6 +35,13 @@ def _to(url):
     return RedirectResponse(url, status_code=303)
 
 
+def _uuid_or_none(v):
+    try:
+        return uuid.UUID(str(v)) if v else None
+    except ValueError:
+        return None
+
+
 def _is_admin(ctx: Ctx) -> bool:
     return ctx.user.role.code == "admin"
 
@@ -46,11 +53,13 @@ EDITABLE = ("created", "diag", "approve", "picking", "waiting", "instock", "work
 def _apply_work(ctx: Ctx, w: WoWork, name, pricing, hours, rate, qty, mechanic_id):
     w.name = name.strip()[:200] or w.name
     w.pricing = "fixed" if pricing == "fixed" else "hours"
-    w.hours = None if w.pricing == "fixed" else _dec(hours)
-    w.rate = msvc.money(_dec(rate))
+    # Отрицательные цены и часы не принимаем (отчёт тестировщика: итог 100 вместо 1 000)
+    w.hours = None if w.pricing == "fixed" else max(_dec(hours), Decimal(0))
+    w.rate = max(msvc.money(_dec(rate)), Decimal(0))
     w.qty = max(_dec(qty, "1"), Decimal("0.01"))
     if mechanic_id is not None:
-        u = ctx.db.get(User, uuid.UUID(mechanic_id)) if mechanic_id else None
+        uid = _uuid_or_none(mechanic_id)
+        u = ctx.db.get(User, uid) if uid else None
         w.mechanic_id = u.id if u and u.branch_id == ctx.branch.id and u.role.code == "mechanic" else None
     w.price = msvc.work_price(w)
 
@@ -67,6 +76,8 @@ def work_add(order_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(...), 
         rate = str(st.get(ctx.db, ctx.branch.id, "pricing")["hour_rate"]) if pricing != "fixed" else "0"
     _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id or (str(wo.mechanic_id) if wo.mechanic_id else ""))
     ctx.db.add(w)
+    ctx.db.flush()
+    msvc.after_change(ctx.db, wo)   # машина была «Готово» — снова в ремонт
     ctx.db.commit()
     return _to(f"/orders/{order_id}")
 
@@ -91,6 +102,15 @@ def work_edit(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), name: st
         ctx.db.delete(w)
     else:
         _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id)
+    ctx.db.flush()
+    err = msvc.guard_total(ctx.db, wo)
+    if err:
+        ctx.db.rollback()
+        if ctx.request.headers.get("x-requested-with") == "fetch":
+            return JSONResponse({"ok": False, "error": err}, status_code=400)
+        flash(ctx.request, err, "error")
+        return _to(f"/orders/{order_id}")
+    msvc.after_change(ctx.db, wo)   # удалили последнюю несделанную работу — наряд не зависает «В работе»
     ctx.db.commit()
     if ctx.request.headers.get("x-requested-with") == "fetch":
         t = msvc.totals(ctx.db, wo)
@@ -128,11 +148,10 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     elif action == "done" and w.status in ("todo", "doing", "paused"):
         close_open()
         w.status, w.done_at, w.done_by = "done", t, ctx.user.id
+        if ctx.user.role.code == "mechanic":   # зарплата — тому, кто сделал (наряд могли передать другому)
+            w.mechanic_id = ctx.user.id
         db.flush()
-        left = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status != "done")).all()
-        if not left:
-            osvc.set_status(db, wo, "ready", "Все работы выполнены")
-            msvc.mark_paid_if_settled(db, wo)
+        msvc.after_change(db, wo)
     elif undo_ok and w.status == "done":
         w.status, w.done_at, w.done_by = "todo", None, None
         if wo.status == "ready":
@@ -143,19 +162,32 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
 
 # ======================= Оплата, скидка, предоплата =======================
 @router.post("/orders/{order_id}/money")
-def order_money(order_id: str, ctx: Ctx = Depends(get_ctx), payment_type: str = Form("post"), prepay_amount: str = Form("0"),
-                prepay_for: str = Form(""), discount_pct: str = Form("0"), payroll_ignore_discount: str = Form(None)):
+def order_money(order_id: str, ctx: Ctx = Depends(get_ctx), payment_type: str = Form(None), prepay_amount: str = Form("0"),
+                prepay_for: str = Form(""), discount_pct: str = Form(None), works_discount_pct: str = Form(None),
+                payroll_ignore_discount: str = Form(None)):
+    """Предоплата (своя форма) и скидки (своя форма, «спокойная» ссылка внизу блока) — поля без значения не трогаем."""
     ctx.need("money.accept")
     wo = _order(ctx, order_id)
-    if wo.status in ("paid", "closed", "cancel"):
+    if wo.status in msvc.FROZEN:
         raise Forbidden()
-    wo.payment_type = "prepay" if payment_type == "prepay" else "post"
-    wo.prepay_amount = msvc.money(_dec(prepay_amount)) if wo.payment_type == "prepay" else Decimal(0)
-    wo.prepay_for = prepay_for.strip()[:500] if wo.payment_type == "prepay" else ""
-    wo.discount_pct = max(Decimal(0), min(Decimal(100), _dec(discount_pct)))
+    if payment_type is not None:
+        wo.payment_type = "prepay" if payment_type == "prepay" else "post"
+        wo.prepay_amount = max(msvc.money(_dec(prepay_amount)), Decimal(0)) if wo.payment_type == "prepay" else Decimal(0)
+        wo.prepay_for = prepay_for.strip()[:500] if wo.payment_type == "prepay" else ""
+    if discount_pct is not None:
+        wo.discount_pct = msvc.pct(_dec(discount_pct))
+    if works_discount_pct is not None:
+        wo.works_discount_pct = msvc.pct(_dec(works_discount_pct))
     if payroll_ignore_discount is not None and _is_admin(ctx):   # только главный админ
         wo.payroll_ignore_discount = payroll_ignore_discount == "1"
+    ctx.db.flush()
+    err = msvc.guard_total(ctx.db, wo)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+        return _to(f"/orders/{order_id}")
     msvc.refresh_prepay(ctx.db, wo)
+    msvc.after_change(ctx.db, wo)   # скидка закрыла остаток → «Оплачено» и зарплата (раньше наряд зависал в «Готово»)
     ctx.db.commit()
     flash(ctx.request, "Сохранено" + (" — подбор заблокирован до предоплаты" if wo.awaiting_prepay else ""))
     return _to(f"/orders/{order_id}")
@@ -163,25 +195,58 @@ def order_money(order_id: str, ctx: Ctx = Depends(get_ctx), payment_type: str = 
 
 @router.post("/orders/{order_id}/payments")
 def payment_add(order_id: str, ctx: Ctx = Depends(get_ctx), amount: str = Form(...), method: str = Form("cash"),
-                purpose: str = Form("full"), receipt_no: str = Form(""), comment: str = Form("")):
+                purpose: str = Form("full"), receipt_no: str = Form(""), comment: str = Form(""), token: str = Form("")):
     ctx.need("money.accept")
     wo = _order(ctx, order_id)
-    a = msvc.money(_dec(amount))
-    if a <= 0 or method not in PAY_METHODS or purpose not in PAY_PURPOSES or wo.status in ("closed", "cancel"):
-        flash(ctx.request, "Проверьте сумму и способ оплаты", "error")
+    token = token.strip()[:40]
+    # Второе нажатие той же формы (двойной клик, «назад» в браузере) — второй платёж не создаём
+    if token and ctx.db.scalar(select(Payment.id).where(Payment.work_order_id == wo.id, Payment.form_token == token)):
+        flash(ctx.request, "Эта оплата уже проведена")
         return _to(f"/orders/{order_id}")
-    msvc.add_payment(ctx.db, wo, a, method, purpose, receipt_no, comment)
-    ctx.db.commit()
+    a = msvc.money(_dec(amount))
+    if method not in PAY_METHODS or purpose not in PAY_IN:
+        flash(ctx.request, "Проверьте способ оплаты", "error")
+        return _to(f"/orders/{order_id}")
+    err = msvc.check_payment(ctx.db, wo, a, purpose)
+    if err:
+        flash(ctx.request, err, "error")
+        return _to(f"/orders/{order_id}")
+    from sqlalchemy.exc import IntegrityError
+    try:
+        msvc.add_payment(ctx.db, wo, a, method, purpose, receipt_no, comment, token)
+        ctx.db.commit()
+    except IntegrityError:   # два нажатия одновременно — второе упёрлось в метку формы
+        ctx.db.rollback()
+        flash(ctx.request, "Эта оплата уже проведена")
+        return _to(f"/orders/{order_id}")
     flash(ctx.request, f"Оплата {a} ₴ принята")
+    return _to(f"/orders/{order_id}")
+
+
+@router.post("/orders/{order_id}/refund")
+def payment_refund(order_id: str, ctx: Ctx = Depends(get_ctx), amount: str = Form(...), method: str = Form("cash"),
+                   reason: str = Form("")):
+    """Возврат денег клиенту — оформляет менеджер (он принимает оплаты и говорит с клиентом)."""
+    ctx.need("money.accept")
+    wo = _order(ctx, order_id)
+    if method not in PAY_METHODS:
+        raise Forbidden()
+    err = msvc.refund(ctx.db, wo, _dec(amount), method, reason)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"Возврат {msvc.money(_dec(amount))} ₴ оформлен")
     return _to(f"/orders/{order_id}")
 
 
 @router.post("/orders/{order_id}/close")
 def order_close(order_id: str, ctx: Ctx = Depends(get_ctx), state: str = Form(""), defects: str = Form(""),
-                advice: str = Form(""), debt_comment: str = Form("")):
+                advice: str = Form("")):
     ctx.need("money.accept")
     wo = _order(ctx, order_id)
-    err = msvc.close(ctx.db, wo, _is_admin(ctx), state, defects, advice, debt_comment)
+    err = msvc.close(ctx.db, wo, state, defects, advice)
     if err:
         ctx.db.rollback()
         flash(ctx.request, err, "error")
@@ -265,13 +330,14 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = "", p: str = "", d: str =
     by_method = {m: sum((p.amount for p in pays if p.method == m), Decimal(0)) + sum((s.price for s in used if s.pay_method == m), Decimal(0))
                  for m in PAY_METHODS}
     orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([p.work_order_id for p in pays])))}
-    # Долги: готовые/оплаченные/закрытые с остатком
-    debts = []
+    # Ждут оплаты: машина готова, деньги ещё не приняты (в долг не работаем — машина стоит у нас).
+    # «Закрыт с долгом» — только старые наряды, до 11.11.2026.
+    debts, old_debts = [], []
     for wo in db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id,
                                                  WorkOrder.status.in_(("ready", "paid", "closed")))):
         t = msvc.totals(db, wo)
         if t.due > 0:
-            debts.append((wo, t, db.get(Client, wo.client_id)))
+            (debts if wo.status == "ready" else old_debts).append((wo, t, db.get(Client, wo.client_id)))
     waiting_prepay = db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.awaiting_prepay.is_(True),
                                                         WorkOrder.status.not_in(("closed", "cancel")))).all()
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
@@ -282,7 +348,7 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = "", p: str = "", d: str =
         used_names[s.id] = (si.code, db.get(PartCatalog, si.catalog_id).name, si.id)
     return ctx.render("money/index.html", title="Деньги", d=d, pays=pays, by_method=by_method, orders=orders,
                       used=used, used_names=used_names,
-                      total=sum(by_method.values(), Decimal(0)), debts=debts, waiting_prepay=waiting_prepay, people=people,
+                      total=sum(by_method.values(), Decimal(0)), debts=debts, old_debts=old_debts, waiting_prepay=waiting_prepay, people=people,
                       PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, per=per, one_day=per.d1 == per.d2,
                       bar=periods.Bar(per, "/money", {}))
 

@@ -99,6 +99,8 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     if q:
         plate, digits = svc.norm_plate(q), "".join(ch for ch in q if ch.isdigit())
         conds = [WorkOrder.number.contains(q), Vehicle.plate.contains(plate), Client.full_name.ilike(f"%{q}%")]
+        if len(q) >= 4:
+            conds.append(Vehicle.vin.contains(q.upper().replace(" ", "")))
         if len(digits) >= 3:
             conds.append(Client.phone.contains(digits))
         query = (query.join(Vehicle, Vehicle.id == WorkOrder.vehicle_id).join(Client, Client.id == WorkOrder.client_id)
@@ -158,7 +160,7 @@ def order_new(ctx: Ctx = Depends(get_ctx), appt: str = ""):
                       mechanics=svc.staff_by_role(ctx.db, bid, "mechanic"),
                       lifts=svc.lifts_with_load(ctx.db, bid), makes=svc.known_makes(ctx.db, bid),
                       INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS, MAX_PHOTOS=svc.MAX_PHOTOS,
-                      fmt_plate=svc.fmt_plate, prefill=prefill)
+                      fmt_plate=svc.fmt_plate, prefill=prefill, intake_token=uuid.uuid4().hex)
 
 
 @router.post("/orders/new")
@@ -170,11 +172,18 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
                        intake_items=[str(x) for x in form.getlist("intake_items")])
     photos = [p for p in form.getlist("photos") if hasattr(p, "read")][:svc.MAX_PHOTOS]
     thumbs = [p for p in form.getlist("thumbs") if hasattr(p, "read")]
-    errors = f.errors(len(photos))
+    errors = f.errors(len(photos)) or f.problems(ctx.db, ctx.branch.id)
     if errors:
         return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+    # Та же форма пришла второй раз (двойное нажатие, медленный Wi-Fi) — отдаём уже созданный наряд
+    token = str(form.get("intake_token", "")).strip()[:40] or None
+    if token:
+        same = ctx.db.scalar(select(WorkOrder).where(WorkOrder.intake_token == token))
+        if same:
+            return {"ok": True, "url": f"/orders/{same.id}"}
 
     wo = svc.create_order(ctx.db, ctx, f)
+    wo.intake_token = token
     saved = 0
     for i, p in enumerate(photos):
         thumb = await thumbs[i].read() if i < len(thumbs) else None
@@ -187,7 +196,15 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
     if form.get("appt_id"):
         from .schedule import link_order
         link_order(ctx, str(form.get("appt_id")), wo)
-    ctx.db.commit()
+    from sqlalchemy.exc import IntegrityError
+    try:
+        ctx.db.commit()
+    except IntegrityError:   # два одновременных запроса с одной формы — второй упёрся в метку
+        ctx.db.rollback()
+        same = ctx.db.scalar(select(WorkOrder).where(WorkOrder.intake_token == token)) if token else None
+        if same:
+            return {"ok": True, "url": f"/orders/{same.id}"}
+        raise
     flash(request, f"Наряд {wo.number} создан")
     return {"ok": True, "url": f"/orders/{wo.id}"}
 
@@ -228,7 +245,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
     # Деньги и работы
     from ..models import Payment, WoWorkSession
-    from ..models.money import PAY_METHODS, PAY_PURPOSES
+    from ..models.money import PAY_IN, PAY_METHODS, PAY_PURPOSES
     from ..services import money as money_svc
     payments = db.scalars(select(Payment).where(Payment.work_order_id == wo.id).order_by(Payment.created_at)).all()
     people.update(_people(ctx, *[p.created_by for p in payments]))
@@ -284,8 +301,12 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                            and any(p.status == "reserved" for p in parts)
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id)),
         parts_total=sum((p.price * p.qty for p in counted), 0), n_counted=len(counted),
-        t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES,
-        can_money=ctx.can("money.accept") and wo.status not in ("closed", "cancel"),
+        t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, PAY_IN=PAY_IN,
+        pay_token=uuid.uuid4().hex, refund_max=money_svc.refund_limit(db, wo),
+        left_parts=money_svc.not_issued_parts(db, wo) if wo.status in ("ready", "paid") else [],
+        reopen=_reopen_state(ctx, wo),
+        can_money=ctx.can("money.accept") and (wo.status not in ("closed", "cancel")
+                                               or (wo.status == "closed" and money_svc.totals(db, wo).due > 0)),
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
         can_work=(wo.status == "work" and (ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all"))
                   and ctx.can("orders.view_own", "orders.view_all")),
@@ -295,7 +316,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         people=people, STATUSES=WO_STATUSES, INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
         fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, can_assign=can_assign,
         can_add_photo=(ctx.can("orders.create") or ctx.can("orders.diagnose")) and wo.status in WO_ACTIVE,
-        can_cancel=ctx.can("orders.cancel") and wo.status in WO_ACTIVE,
+        can_cancel=ctx.can("orders.cancel") and wo.status in WO_ACTIVE and wo.status != "paid",
         partsmen=svc.staff_by_role(db, ctx.branch.id, "partsman") if can_assign else [],
         mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if can_assign else [],
         lifts=svc.lifts_with_load(db, ctx.branch.id) if can_assign else [],
@@ -360,22 +381,37 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
     bid = ctx.branch.id
 
     def pick(v, role):
-        u = ctx.db.get(User, uuid.UUID(v)) if v else None
+        uid = svc._uuid(v)   # мусор в форме — просто «не выбрано», а не ошибка сервера
+        u = ctx.db.get(User, uid) if uid else None
         return u.id if u and u.branch_id == bid and u.role.code == role else None
 
+    if wo.status not in WO_ACTIVE:
+        raise Forbidden()
+    old_mech = wo.mechanic_id
+    lift_uuid = svc._uuid(lift_id)
+    lift = ctx.db.get(Lift, lift_uuid) if lift_uuid else None
+    busy = svc.lift_busy(ctx.db, lift, wo) if lift and lift.branch_id == bid else None
+    if busy:
+        flash(ctx.request, f"На подъёмнике {lift.number} уже стоит машина (наряд {busy.number}) — сначала освободите его", "error")
+        return RedirectResponse(f"/orders/{order_id}", status_code=303)
     wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), pick(mechanic_id, "mechanic")
-    # Передать наряд другому менеджеру (11.11.2026) — новому приходит сообщение
-    new_mg = ctx.db.get(User, _uuid(manager_id)) if manager_id else None
+    # Передать наряд другому менеджеру (11.11.2026) — новому приходит сообщение. Передаёт только менеджер (и админ).
+    new_uuid = svc._uuid(manager_id)
+    new_mg = ctx.db.get(User, new_uuid) if new_uuid else None
+    if new_mg and new_mg.id != wo.manager_id and ctx.user.role.code not in ("manager", "admin"):
+        flash(ctx.request, "Передать наряд другому менеджеру может только менеджер", "error")
+        new_mg = None
     if new_mg and new_mg.branch_id == bid and new_mg.active and new_mg.id != wo.manager_id:
         wo.manager_id = new_mg.id
         from ..services import notify as nsvc
         nsvc.send(ctx.db, [new_mg.id], "handover", "Вам передан наряд",
                   f"{nsvc.car(ctx.db, wo)} · наряд {wo.number} · передал {ctx.user.short_name}", f"/orders/{wo.id}", wo,
                   skip=ctx.user.id)
-    lift = ctx.db.get(Lift, uuid.UUID(lift_id)) if lift_id else None
     wo.lift_id = lift.id if lift and lift.branch_id == bid else None
-    for w in ctx.db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id.is_(None))):
-        w.mechanic_id = wo.mechanic_id
+    # Несделанные работы прежнего слесаря переходят новому — зарплата тому, кто делает (отчёт тестировщика 11.11.2026)
+    for w in ctx.db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status != "done")):
+        if w.mechanic_id is None or (old_mech and w.mechanic_id == old_mech and wo.mechanic_id != old_mech):
+            w.mechanic_id = wo.mechanic_id
     if wo.status == "created":   # назначили недостающее — наряд едет дальше сам
         svc.route_after_intake(ctx.db, wo)
     ctx.db.commit()
@@ -406,17 +442,98 @@ async def order_add_photos(order_id: str, request: Request, ctx: Ctx = Depends(g
 
 
 @router.post("/orders/{order_id}/cancel")
-def order_cancel(order_id: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+def order_cancel(order_id: str, ctx: Ctx = Depends(get_ctx), reason: str = Form(""), keep_money: str = Form("")):
+    """Отмена наряда (11.11.2026 — всё возвращается): резервы снимаются, выданное — на склад, заказанное придёт
+    на свободный склад. Оплаченный наряд не отменяется. Деньги — сначала возврат, или явно «оставляем СТО»."""
     ctx.need("orders.cancel")
     wo = _order(ctx, order_id)
+    from ..services import money as msvc
+    from ..services import stock as ssvc
+    paid = msvc.totals(ctx.db, wo).paid
     if not reason.strip():
         flash(ctx.request, "Укажите причину отмены", "error")
-    elif wo.status in WO_ACTIVE:
+    elif wo.status in ("paid",):
+        flash(ctx.request, "Оплаченный наряд не отменяется: выдайте машину или сначала оформите возврат денег", "error")
+    elif wo.status not in WO_ACTIVE:
+        flash(ctx.request, "Этот наряд уже закрыт или отменён", "error")
+    elif paid > 0 and not keep_money:
+        flash(ctx.request, f"Клиент заплатил {paid} ₴: сначала оформите возврат (блок «Деньги») "
+                           f"или отметьте «деньги остаются СТО»", "error")
+    else:
+        n = ssvc.release_order(ctx.db, wo)
+        from ..services import payroll as psvc
+        psvc.cancel_for_order(ctx.db, wo)
         wo.cancel_reason = reason.strip()[:500]
+        if paid > 0:
+            wo.cancel_reason += f" · деньги {paid} ₴ остаются СТО"
         svc.set_status(ctx.db, wo, "cancel", wo.cancel_reason)
         ctx.db.commit()
-        flash(ctx.request, "Наряд отменён")
+        flash(ctx.request, "Наряд отменён" + (f" — запчасти вернулись на склад: {n}" if n else ""))
     return RedirectResponse(f"/orders/{order_id}", status_code=303)
+
+
+# ======================= Открыть наряд заново — по запросу (11.11.2026) =======================
+# Просит любой, кто видит наряд; решают админ / директор / зам (orders.grant_access) — как доступ ко всем нарядам.
+def _reopen_state(ctx: Ctx, wo: WorkOrder) -> dict | None:
+    if wo.status not in ("closed", "cancel"):
+        return None
+    from ..models import OrderReopen
+    pending = ctx.db.scalar(select(OrderReopen).where(OrderReopen.work_order_id == wo.id, OrderReopen.status == "pending"))
+    return {"pending": pending, "can_decide": ctx.can("orders.grant_access")}
+
+
+@router.post("/orders/{order_id}/reopen-request")
+def reopen_request(order_id: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    from ..models import OrderReopen
+    from ..services import notify as nsvc
+    wo = _order(ctx, order_id)
+    if wo.status not in ("closed", "cancel"):
+        raise Forbidden()
+    if not reason.strip():
+        flash(ctx.request, "Напишите, зачем открыть наряд заново — это увидит админ или директор", "error")
+        return _to(f"/orders/{wo.id}")
+    if ctx.db.scalar(select(OrderReopen.id).where(OrderReopen.work_order_id == wo.id, OrderReopen.status == "pending")):
+        flash(ctx.request, "Запрос уже отправлен — ждём ответа")
+        return _to(f"/orders/{wo.id}")
+    ctx.db.add(OrderReopen(work_order_id=wo.id, user_id=ctx.user.id, reason=reason.strip()[:300], from_status=wo.status))
+    nsvc.send(ctx.db, [u.id for u in _deciders(ctx)], "reopen_req", f"{ctx.user.full_name} просит открыть наряд {wo.number}",
+              reason.strip()[:300], "/access-requests#reopen", wo, skip=ctx.user.id)
+    ctx.db.commit()
+    flash(ctx.request, "Запрос отправлен админу и директору — ответ придёт сообщением")
+    return _to(f"/orders/{wo.id}")
+
+
+@router.post("/reopen-requests/{rid}")
+def reopen_decide(rid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("")):
+    from ..db import now
+    from ..models import Notification, OrderReopen
+    from ..services import notify as nsvc
+    ctx.need("orders.grant_access")
+    r = ctx.db.get(OrderReopen, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    wo = ctx.db.get(WorkOrder, r.work_order_id)
+    back = ctx.request.headers.get("referer") or "/access-requests"
+    if r.status != "pending":
+        flash(ctx.request, "По этому запросу уже решили", "error")
+        return _to(back)
+    r.decided_by, r.decided_at = ctx.user.id, now()
+    if action == "approve" and wo.status in ("closed", "cancel"):
+        r.status = "approved"
+        to = svc.reopen(ctx.db, wo)
+        nsvc.send(ctx.db, [r.user_id, wo.manager_id], "reopen_ok", f"Наряд {wo.number} открыт заново",
+                  f"Разрешил: {ctx.user.full_name} · сейчас: {WO_STATUSES[to]}", f"/orders/{wo.id}", wo)
+        flash(ctx.request, f"Наряд {wo.number} открыт заново — {WO_STATUSES[to]}")
+    else:
+        r.status = "declined"
+        nsvc.send(ctx.db, [r.user_id], "reopen_no", f"Наряд {wo.number}: открыть заново — отказано",
+                  f"Ответил: {ctx.user.full_name}", f"/orders/{wo.id}", wo)
+        flash(ctx.request, "Отказано")
+    for n in ctx.db.scalars(select(Notification).where(Notification.kind == "reopen_req", Notification.read_at.is_(None),
+                                                       Notification.work_order_id == wo.id)):
+        n.read_at = now()
+    ctx.db.commit()
+    return _to(back)
 
 
 @router.get("/photos/{photo_id}")
@@ -470,6 +587,107 @@ def client_regular(client_id: str, ctx: Ctx = Depends(get_ctx)):
     return RedirectResponse(f"/clients/{c.id}", status_code=303)
 
 
+def _can_edit_clients(ctx: Ctx):
+    ctx.need("clients.view")
+    if not (ctx.can("orders.create") or ctx.user.role.code == "admin"):
+        raise Forbidden()
+
+
+@router.post("/clients/{client_id}/edit")
+def client_edit(client_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Form(""), phone: str = Form("")):
+    """Правка клиента (11.11.2026): имя и телефон. Телефон — один на клиента."""
+    _can_edit_clients(ctx)
+    c = ctx.db.get(Client, _uuid(client_id))
+    if not c or c.branch_id != ctx.branch.id:
+        raise Forbidden()
+    ph = svc.norm_phone(phone)
+    if not full_name.strip() or len(ph) < 10:
+        flash(ctx.request, "Нужны имя и телефон", "error")
+        return _to(f"/clients/{c.id}")
+    other = ctx.db.scalar(select(Client).where(Client.branch_id == ctx.branch.id, Client.phone == ph, Client.id != c.id))
+    if other:
+        flash(ctx.request, f"Этот телефон уже у клиента «{other.full_name}»", "error")
+        return _to(f"/clients/{c.id}")
+    if c.phone != ph:
+        svc.event(ctx.db, None, "note", f"Телефон изменён: {svc.fmt_phone(c.phone)} → {svc.fmt_phone(ph)}", client_id=c.id)
+    if c.full_name != full_name.strip():
+        svc.event(ctx.db, None, "note", f"Имя изменено: {c.full_name} → {full_name.strip()[:160]}", client_id=c.id)
+    c.full_name, c.phone = full_name.strip()[:160], ph
+    ctx.db.commit()
+    flash(ctx.request, "Клиент сохранён")
+    return _to(f"/clients/{c.id}")
+
+
+def _vehicle(ctx: Ctx, vid: str) -> Vehicle:
+    v = ctx.db.get(Vehicle, _uuid(vid))
+    if not v or v.branch_id != ctx.branch.id:
+        raise Forbidden()
+    return v
+
+
+@router.post("/vehicles/{vid}/edit")
+def vehicle_edit(vid: str, ctx: Ctx = Depends(get_ctx), make: str = Form(""), model: str = Form(""), plate: str = Form(""),
+                 year: str = Form(""), vin: str = Form(""), mileage: str = Form("")):
+    """Правка машины (11.11.2026). Одинаковый VIN или госномер у другой машины — не даём (это та же машина)."""
+    _can_edit_clients(ctx)
+    v = _vehicle(ctx, vid)
+    p, vn = svc.norm_plate(plate), vin.strip().upper().replace(" ", "")[:32]
+    if not p or not make.strip() or not model.strip():
+        flash(ctx.request, "Нужны марка, модель и госномер", "error")
+        return _to(f"/clients/{v.client_id}")
+    for field, val, label in ((Vehicle.plate, p, "госномер"), (Vehicle.vin, vn, "VIN")):
+        if not val:
+            continue
+        dup = ctx.db.scalar(select(Vehicle).where(Vehicle.branch_id == ctx.branch.id, field == val, Vehicle.id != v.id))
+        if dup:
+            owner = ctx.db.get(Client, dup.client_id)
+            flash(ctx.request, f"Такой {label} уже у машины {dup.make} {dup.model} ({owner.full_name if owner else ''}). "
+                               f"Если это та же машина — передайте её через «Сменить владельца»", "error")
+            return _to(f"/clients/{v.client_id}")
+    if v.plate != p:
+        svc.event(ctx.db, None, "note", f"Госномер изменён: {svc.fmt_plate(v.plate)} → {svc.fmt_plate(p)}",
+                  client_id=v.client_id, vehicle_id=v.id)
+    v.make, v.model, v.plate, v.vin = make.strip()[:60], model.strip()[:60], p, vn
+    v.year = svc._int(year)
+    m = svc._int(mileage)
+    v.mileage = m if m is not None else v.mileage
+    ctx.db.commit()
+    flash(ctx.request, "Машина сохранена")
+    return _to(f"/clients/{v.client_id}")
+
+
+@router.post("/vehicles/{vid}/owner")
+def vehicle_owner(vid: str, ctx: Ctx = Depends(get_ctx), phone: str = Form(""), name: str = Form("")):
+    """Смена владельца: машина и её история ремонтов переходят к другому клиенту (есть в базе — по телефону, нет — новый)."""
+    _can_edit_clients(ctx)
+    v = _vehicle(ctx, vid)
+    ph = svc.norm_phone(phone)
+    if len(ph) < 10:
+        flash(ctx.request, "Телефон нового владельца", "error")
+        return _to(f"/clients/{v.client_id}")
+    old = ctx.db.get(Client, v.client_id)
+    new = ctx.db.scalar(select(Client).where(Client.branch_id == ctx.branch.id, Client.phone == ph))
+    if new is None:
+        if not name.strip():
+            flash(ctx.request, "Такого телефона в базе нет — впишите имя нового владельца", "error")
+            return _to(f"/clients/{v.client_id}")
+        new = Client(full_name=name.strip()[:160], phone=ph)
+        ctx.db.add(new)
+        ctx.db.flush()
+    if new.id == v.client_id:
+        flash(ctx.request, "Это и есть текущий владелец", "error")
+        return _to(f"/clients/{v.client_id}")
+    car = f"{v.make} {v.model} {svc.fmt_plate(v.plate)}".strip()
+    svc.event(ctx.db, None, "note", f"Автомобиль {car} передан новому владельцу: {new.full_name}", client_id=old.id, vehicle_id=v.id)
+    v.client_id = new.id
+    ctx.db.flush()
+    svc.event(ctx.db, None, "note", f"Автомобиль {car} — от прошлого владельца: {old.full_name}. История ремонтов — в карточке",
+              client_id=new.id, vehicle_id=v.id)
+    ctx.db.commit()
+    flash(ctx.request, f"Машина передана: {new.full_name}")
+    return _to(f"/clients/{new.id}")
+
+
 @router.get("/clients/{client_id}")
 def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("clients.view")
@@ -477,7 +695,9 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
     if not c or c.branch_id != ctx.branch.id:
         raise Forbidden()
     vehicles = ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
-    orders = ctx.db.scalars(svc.visible_orders_query(ctx).where(WorkOrder.client_id == c.id)
+    # Наряды клиента + история его машин при прошлых владельцах (смена владельца, 11.11.2026)
+    orders = ctx.db.scalars(svc.visible_orders_query(ctx).where(or_(WorkOrder.client_id == c.id,
+                                                                    WorkOrder.vehicle_id.in_([v.id for v in vehicles])))
                             .order_by(WorkOrder.created_at.desc())).all()
     events = ctx.db.scalars(select(ClientEvent).where(ClientEvent.client_id == c.id)
                             .order_by(ClientEvent.created_at.desc()).limit(300)).all()
@@ -489,6 +709,7 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
                       STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, events=events,
                       recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
                       vmap={v.id: v for v in vehicles}, numbers=numbers,
+                      can_edit=ctx.can("orders.create") or ctx.user.role.code == "admin",
                       lead=ctx.db.get(User, orders[0].manager_id) if orders and orders[0].manager_id else None)
 
 
@@ -537,7 +758,12 @@ def access_requests(ctx: Ctx = Depends(get_ctx)):
 
     def active(a):
         return a.status == "approved" and a.until and (a.until if a.until.tzinfo else a.until.replace(tzinfo=timezone.utc)) > now_
+    from ..models import OrderReopen
+    reopens = ctx.db.scalars(select(OrderReopen).where(OrderReopen.branch_id == ctx.branch.id, OrderReopen.status == "pending")
+                             .order_by(OrderReopen.created_at)).all()
+    reopen_orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([r.work_order_id for r in reopens])))}
     return ctx.render("orders/access.html", title="Доступ ко всем нарядам", rows=rows, people=people, HOURS=ACCESS_HOURS,
+                      reopens=reopens, reopen_orders=reopen_orders,
                       STATUS=ACCESS_STATUS, pending=[a for a in rows if a.status == "pending"],
                       granted=[a for a in rows if active(a)], history=[a for a in rows if a.status != "pending" and not active(a)])
 

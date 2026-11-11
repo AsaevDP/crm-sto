@@ -1,4 +1,5 @@
-{# Блок «Деньги»: итог, скидка, оплаты, предоплата, выдача авто клиенту. #}
+{# Блок «Деньги»: итог, скидки, оплаты, возврат, предоплата, выдача авто клиенту.
+   С 11.11.2026: в долг не работаем — «Выдать авто» только после полной оплаты. #}
 {% if ctx.can("money.view") %}
 <div class="card compact step-card {{ 'now' if flow.cur == 5 }}" id="money" style="--sc:var(--green)">
   <div class="card-h"><span class="headline"><span class="stepno">6</span>Деньги и выдача</span>
@@ -7,56 +8,62 @@
   {% if wo.awaiting_prepay %}<div class="flash error" style="margin:0">Ждёт предоплату {{ (wo.prepay_amount)|money }} ₴ — подбор и закупка заблокированы</div>{% endif %}
 
   <div class="kv"><span>Работы</span><b>{{ (t.works)|money }} ₴</b></div>
+  {% if t.works_discount %}<div class="kv"><span>Скидка на работы {{ wo.works_discount_pct|num }} %</span><b>−{{ (t.works_discount)|money }} ₴</b></div>{% endif %}
   <div class="kv"><span>Запчасти</span><b>{{ (t.parts)|money }} ₴</b></div>
-  {% if t.discount %}<div class="kv"><span>Скидка {{ wo.discount_pct|num }} %{% if wo.payroll_ignore_discount %} · зарплата без скидки{% endif %}</span><b>−{{ (t.discount)|money }} ₴</b></div>{% endif %}
+  {% if t.order_discount %}<div class="kv"><span>Скидка на наряд {{ wo.discount_pct|num }} %</span><b>−{{ (t.order_discount)|money }} ₴</b></div>{% endif %}
+  {% if t.discount and wo.payroll_ignore_discount %}<div class="kv"><span class="footnote">Зарплата считается без учёта скидок</span><b></b></div>{% endif %}
   <div class="kv total"><span>Итого</span><b>{{ "{:,.2f}".format(t.total).replace(",", " ") }} ₴</b></div>
   <div class="kv"><span>Оплачено</span><b>{{ (t.paid)|money }} ₴</b></div>
-  <div class="kv due {{ 'zero' if t.due <= 0 else '' }}"><span>Остаток</span><b>{{ (t.due)|money }} ₴</b></div>
+  <div class="kv due {{ 'zero' if t.due <= 0 else '' }}"><span>{{ "Переплата" if t.due < 0 else "Остаток" }}</span><b>{{ (t.due|abs if t.due < 0 else t.due)|money }} ₴</b></div>
 
   {% if payments %}
   <details><summary class="caption">Оплаты · {{ payments|length }}</summary>
-    {% for p in payments %}<div class="kv"><span>{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}{% if people.get(p.created_by) %} · принял(а) {{ people[p.created_by].short_name }}{% endif %}</span><b>{{ (p.amount)|money }}</b></div>{% endfor %}
+    {% for p in payments %}<div class="kv"><span>{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}{% if p.purpose == "refund" and p.comment %} · {{ p.comment }}{% endif %}{% if people.get(p.created_by) %} · {{ "оформил(а)" if p.purpose == "refund" else "принял(а)" }} {{ people[p.created_by].short_name }}{% endif %}</span><b {% if p.amount < 0 %}style="color:var(--red)"{% endif %}>{{ (p.amount)|money }}</b></div>{% endfor %}
   </details>
   {% endif %}
 
   {% if can_money %}
+  {% if wo.status not in ("paid",) %}
   <details class="add-finding" {% if wo.status == "ready" and t.due > 0 %}open{% endif %}>
     <summary class="btn btn-block btn-sm">Принять оплату</summary>
-    <form class="form dense" method="post" action="/orders/{{ wo.id }}/payments" style="margin-top:8px">
+    <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/payments" style="margin-top:8px">
+      <input type="hidden" name="token" value="{{ pay_token }}">
       <div class="form-row"><label>Сумма, ₴<input class="field" name="amount" inputmode="decimal" value="{{ '%.2f'|format(t.due if t.due > 0 else 0) }}" required></label>
         <label>№ чека (ПРРО)<input class="field" name="receipt_no" placeholder="необязательно"></label></div>
       <div class="segmented seg-wide pick" data-name="method">
         {% for k, v in PAY_METHODS.items() %}<button type="button" data-v="{{ k }}" aria-pressed="{{ (loop.first)|lower }}" title="{{ v }}">{{ {"cash": "Нал", "card": "Безнал", "terminal": "Терминал"}[k] }}</button>{% endfor %}</div>
       <input type="hidden" name="method" value="cash">
       <label>Назначение<select class="field" name="purpose">
-        {% for k, v in PAY_PURPOSES.items() %}<option value="{{ k }}" {% if k == ('prepay' if wo.awaiting_prepay else 'full') %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+        {% for k, v in PAY_IN.items() %}<option value="{{ k }}" {% if k == ('prepay' if wo.awaiting_prepay else 'full') %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
       <button class="btn btn-sm">Провести оплату</button>
+      <p class="hint" style="margin:0">Больше остатка не принимаем — сдачу отдайте клиенту.</p>
     </form>
   </details>
 
+  {% if wo.status != "closed" %}
   <details class="work-edit">
-    <summary class="caption">Предоплата и скидка</summary>
+    <summary class="caption">Предоплата</summary>
     <form class="form dense" method="post" action="/orders/{{ wo.id }}/money">
       <div class="segmented seg-wide pick" data-name="payment_type">
         <button type="button" data-v="post" aria-pressed="{{ (wo.payment_type != 'prepay')|lower }}">По факту</button>
         <button type="button" data-v="prepay" aria-pressed="{{ (wo.payment_type == 'prepay')|lower }}">С предоплатой</button></div>
       <input type="hidden" name="payment_type" value="{{ wo.payment_type }}">
-      <div class="form-row"><label>Предоплата, ₴<input class="field" name="prepay_amount" inputmode="decimal" value="{{ '%.2f'|format(wo.prepay_amount or 0) }}"></label>
-        <label>Скидка, %<input class="field" name="discount_pct" type="number" min="0" max="100" step="0.5" value="{{ wo.discount_pct|num }}"></label></div>
+      <label>Предоплата, ₴<input class="field" name="prepay_amount" inputmode="decimal" value="{{ '%.2f'|format(wo.prepay_amount or 0) }}"></label>
       <input class="field" name="prepay_for" value="{{ wo.prepay_for }}" placeholder="За что предоплата (работы, детали)">
-      {% if is_admin %}
-      <label class="row" style="padding:0"><span class="grow">Зарплата без учёта скидки</span>
-        <input type="hidden" name="payroll_ignore_discount" value="0">
-        <input type="checkbox" class="switch" name="payroll_ignore_discount" value="1" {% if wo.payroll_ignore_discount %}checked{% endif %}></label>
-      {% endif %}
       <button class="btn btn-sm btn-tinted">Сохранить</button>
     </form>
   </details>
+  {% endif %}
+  {% endif %}
 
-  {% if wo.status == "paid" or (wo.status == "ready" and is_admin) %}
-  <details class="add-finding" {% if wo.status == "paid" %}open{% endif %}>
+  {% if left_parts %}
+  <div class="flash error" style="margin:0">Не выданы со склада: {{ left_parts|map(attribute="name")|join(", ") }}. Пока их не выдадут слесарю (или не уберут из наряда), машину выдать нельзя.</div>
+  {% endif %}
+
+  {% if wo.status == "paid" or (wo.status == "ready" and t.due <= 0) %}
+  <details class="add-finding" open>
     <summary class="btn btn-block btn-sm" style="background:var(--green);color:#fff">Выдать авто клиенту</summary>
-    <form class="form dense" method="post" action="/orders/{{ wo.id }}/close" style="margin-top:8px">
+    <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/close" style="margin-top:8px">
       <div class="headline" style="font-size:14px">Акт выдачи: автомобиль…</div>
       <div class="radio-list">
         <label><input type="radio" name="state" value="ok" checked> Полностью исправен</label>
@@ -64,17 +71,51 @@
         <label><input type="radio" name="state" value="advice"> Исправен, есть рекомендации</label></div>
       <textarea class="field st-partial" name="defects" rows="2" placeholder="Что неисправно (каждое с новой строки) *" hidden></textarea>
       <textarea class="field st-advice" name="advice" rows="2" placeholder="Рекомендации: деталь ещё рабочая, но стоит обратить внимание" hidden></textarea>
-      {% if t.due > 0 or wo.status == "ready" %}<input class="field" name="debt_comment" placeholder="Закрытие с долгом {{ '%.2f'|format(t.due) }} ₴: комментарий *" required>{% endif %}
       <button class="btn btn-sm">Выдать и закрыть наряд</button>
       <p class="hint" style="margin:0">Рекомендации и неисправности попадут в карту клиента.</p>
     </form>
   </details>
+  {% elif wo.status == "ready" and t.due > 0 %}
+  <p class="hint" style="margin:0">Выдать машину можно после полной оплаты — в долг не работаем.</p>
   {% endif %}
+
+  {% endif %}
+
+  {% if ctx.can("money.accept") and refund_max > 0 %}
+  <details class="work-edit" {% if wo.status == "cancel" %}open{% endif %}>
+    <summary class="caption">Возврат клиенту</summary>
+    <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/refund">
+      <div class="form-row"><label>Сумма, ₴<input class="field" name="amount" inputmode="decimal" value="{{ '%.2f'|format(refund_max) }}" required></label>
+        <label>Как вернули<select class="field" name="method">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label></div>
+      <input class="field" name="reason" placeholder="Причина возврата *" required>
+      <button class="btn btn-sm btn-tinted">Оформить возврат</button>
+      <p class="hint" style="margin:0">Можно вернуть до {{ refund_max|money }} ₴. В «Деньгах» возврат вычитается из принятого.</p>
+    </form>
+  </details>
+  {% endif %}
+
+  {% if can_money and wo.status not in ("paid", "closed") %}
+  {# Скидки — редко: спокойная ссылка внизу (решение брата 11.11.2026) #}
+  <details class="work-edit">
+    <summary class="caption">Скидка{% if t.discount %} · −{{ t.discount|money }} ₴{% endif %}</summary>
+    <form class="form dense" method="post" action="/orders/{{ wo.id }}/money">
+      <div class="form-row">
+        <label>На работы, %<input class="field" name="works_discount_pct" type="number" min="0" max="100" step="0.5" value="{{ (wo.works_discount_pct or 0)|num }}"></label>
+        <label>На весь наряд, %<input class="field" name="discount_pct" type="number" min="0" max="100" step="0.5" value="{{ wo.discount_pct|num }}"></label></div>
+      <p class="hint" style="margin:0">Сначала считается скидка на работы, потом — на весь наряд. Обычно хватает одной.</p>
+      {% if is_admin %}
+      <label class="row" style="padding:0"><span class="grow">Зарплата без учёта скидок</span>
+        <input type="hidden" name="payroll_ignore_discount" value="0">
+        <input type="checkbox" class="switch" name="payroll_ignore_discount" value="1" {% if wo.payroll_ignore_discount %}checked{% endif %}></label>
+      {% endif %}
+      <button class="btn btn-sm btn-tinted">Сохранить скидку</button>
+    </form>
+  </details>
   {% endif %}
 
   {% if wo.status == "closed" and wo.handover_state %}
   <div class="kv"><span>Акт выдачи</span><b>{{ {"ok": "исправен", "partial": "не полностью исправен", "advice": "есть рекомендации"}[wo.handover_state] }}</b></div>
-  {% if wo.closed_with_debt_comment %}<div class="kv"><span>Закрыт с долгом</span><b>{{ wo.closed_with_debt_comment }}</b></div>{% endif %}
+  {% if wo.closed_with_debt_comment %}<div class="kv"><span>Закрыт с долгом (до 11.11.2026)</span><b>{{ wo.closed_with_debt_comment }}</b></div>{% endif %}
   {% endif %}
 </div>
 {% endif %}

@@ -90,6 +90,10 @@ class WorkOrder(Entity):
     closed_with_debt_comment: Mapped[str] = mapped_column(Text, default="")
     # Деньги
     discount_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)  # скидка клиенту на весь наряд, %
+    # 11.11.2026 (брат): отдельно скидка только на работы, %. Сначала скидка на работы, потом — на весь наряд.
+    works_discount_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=0, nullable=True)
+    # Метка формы приёмки: повторная отправка той же формы не создаёт второй наряд
+    intake_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
@@ -196,6 +200,22 @@ class OrderAccess(Entity):
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
     hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
+REOPEN_STATUS = {"pending": "Ждёт решения", "approved": "Открыт заново", "declined": "Отказано"}
+
+
+class OrderReopen(Entity):
+    """Запрос «открыть закрытый / отменённый наряд заново» (11.11.2026): просит любой, кто видит наряд,
+    решают админ / директор / зам (право orders.grant_access) — как с доступом ко всем нарядам."""
+    __tablename__ = "order_reopen"
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    reason: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    from_status: Mapped[str] = mapped_column(String(20), default="")   # closed / cancel — каким был наряд
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 

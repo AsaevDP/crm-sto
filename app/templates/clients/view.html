@@ -25,8 +25,41 @@
       {% for v in vehicles %}
       <div class="li">{{ icon("lift") }}<span><b>{{ v.make }} {{ v.model }}</b>{% if v.year %} · {{ v.year }}{% endif %}
         <span class="caption mono" style="display:block">{{ fmt_plate(v.plate) }}{% if v.vin %} · {{ v.vin }}{% endif %}{% if v.mileage %} · {{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</span></span></div>
+      {% if can_edit %}
+      <details class="work-edit">
+        <summary class="caption">Изменить машину / сменить владельца</summary>
+        <form class="form dense" method="post" action="/vehicles/{{ v.id }}/edit">
+          <div class="form-row"><label>Марка<input class="field" name="make" value="{{ v.make }}" required></label>
+            <label>Модель<input class="field" name="model" value="{{ v.model }}" required></label></div>
+          <div class="form-row"><label>Госномер<input class="field" name="plate" value="{{ fmt_plate(v.plate) }}" required></label>
+            <label>Год<input class="field" name="year" inputmode="numeric" maxlength="4" value="{{ v.year or '' }}"></label></div>
+          <div class="form-row"><label>VIN<input class="field mono" name="vin" value="{{ v.vin }}" maxlength="32"></label>
+            <label>Пробег, км<input class="field" name="mileage" inputmode="numeric" value="{{ v.mileage or '' }}"></label></div>
+          <button class="btn btn-sm btn-tinted">Сохранить машину</button>
+          <p class="hint" style="margin:0">Номер меняется и в старых нарядах этой машины — старый номер останется в истории клиента.</p>
+        </form>
+        <form class="form dense one-shot" method="post" action="/vehicles/{{ v.id }}/owner" style="margin-top:10px">
+          <div class="headline" style="font-size:14px">Сменить владельца</div>
+          <div class="form-row"><label>Телефон нового владельца<input class="field" name="phone" inputmode="tel" required></label>
+            <label>Имя<input class="field" name="name" placeholder="если клиента ещё нет в базе"></label></div>
+          <button class="btn btn-sm">Передать машину</button>
+          <p class="hint" style="margin:0">Машина и вся её история ремонтов перейдут новому владельцу.</p>
+        </form>
+      </details>
+      {% endif %}
       {% endfor %}
     </div>
+
+    {% if can_edit %}
+    <details class="card compact">
+      <summary class="footnote" style="cursor:pointer">Изменить данные клиента…</summary>
+      <form class="form dense" method="post" action="/clients/{{ c.id }}/edit" style="margin-top:8px">
+        <div class="form-row"><label>Имя<input class="field" name="full_name" value="{{ c.full_name }}" required></label>
+          <label>Телефон<input class="field" name="phone" inputmode="tel" value="{{ fmt_phone(c.phone) }}" required></label></div>
+        <button class="btn btn-sm btn-tinted">Сохранить</button>
+      </form>
+    </details>
+    {% endif %}
 
     <div class="card compact">
       <div class="card-h"><span class="headline">Рекомендации · {{ recs|length }}</span></div>
@@ -43,7 +76,7 @@
       <div class="card-h"><span class="headline">Наряды</span></div>
       {% for x in cards %}
       <a class="li link" href="/orders/{{ x.o.id }}"><span class="chip" data-s="{{ x.o.status }}">{{ STATUS_SHORT.get(x.o.status, STATUSES[x.o.status]) }}</span>
-        <span><span class="mono footnote">{{ x.o.number }}</span> · {{ x.v.make }} {{ x.v.model }}<span class="caption" style="display:block">{{ x.o.created_at.astimezone().strftime("%d.%m.%Y") }}</span></span></a>
+        <span><span class="mono footnote">{{ x.o.number }}</span> · {{ x.v.make }} {{ x.v.model }}<span class="caption" style="display:block">{{ x.o.created_at.astimezone().strftime("%d.%m.%Y") }}{% if x.o.client_id != c.id %} · при прошлом владельце{% endif %}</span></span></a>
       {% else %}<p class="footnote">Нарядов нет</p>{% endfor %}
     </div>
   </section>

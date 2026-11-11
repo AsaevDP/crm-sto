@@ -18,8 +18,12 @@ from .web import Forbidden, NotLoggedIn, ViewOnly, flash, templates
 @asynccontextmanager
 async def lifespan(_app):
     # До шага 8 таблицы создаются напрямую. Перед боевой базой подключим Alembic-миграции.
+    from .services import backup
+    backup.on_start()   # копия базы ДО любых изменений при запуске (11.11.2026)
     Base.metadata.create_all(engine)
     add_missing_columns()
+    from .db import ensure_unique_indexes
+    ensure_unique_indexes()
     seed()
     from .db import SessionLocal
     from .services.stock import backfill_categories
@@ -47,6 +51,7 @@ async def lifespan(_app):
             for b in db.scalars(select(Branch)).all():
                 razbor_svc.seed_refs(db, b.id)
             db.commit()
+    backup.start_daily()   # и раз в сутки, пока CRM работает
     yield
 
 
@@ -83,6 +88,37 @@ async def _not_logged_in(request: Request, _exc):
 @app.exception_handler(Forbidden)
 async def _forbidden(request: Request, _exc):
     return templates.TemplateResponse(request, "forbidden.html", {}, status_code=403)
+
+
+def _problem(request: Request, text: str, code: int):
+    """Понятный ответ вместо «Internal Server Error» (отчёт тестировщика 11.11.2026)."""
+    from fastapi.responses import HTMLResponse, JSONResponse
+    if request.headers.get("x-requested-with") == "fetch" or "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"ok": False, "error": text, "errors": [text]}, status_code=code)
+    back = request.headers.get("referer") or "/"
+    from html import escape
+    return HTMLResponse(
+        f'<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+        f'<title>Не получилось</title><link rel="stylesheet" href="/static/css/app.css"></head>'
+        f'<body style="padding:32px;font-family:-apple-system,Segoe UI,sans-serif"><h2>Не получилось</h2>'
+        f'<p>{escape(text)}</p><p><a class="btn" href="{escape(back)}">← Назад</a></p></body></html>', status_code=code)
+
+
+from sqlalchemy.exc import OperationalError  # noqa: E402
+
+
+@app.exception_handler(OperationalError)
+async def _db_busy(request: Request, exc: OperationalError):
+    if "locked" in str(exc).lower() or "busy" in str(exc).lower():
+        return _problem(request, "База сейчас занята — изменения не сохранены. Подождите пару секунд и нажмите ещё раз.", 503)
+    return _problem(request, "Ошибка базы данных — изменения не сохранены. Сообщите админу, что вы делали.", 500)
+
+
+@app.exception_handler(Exception)
+async def _any_error(request: Request, exc: Exception):
+    import logging
+    logging.getLogger("crm").exception("Ошибка на %s %s", request.method, request.url.path)
+    return _problem(request, "Что-то пошло не так — изменения не сохранены. Проверьте введённые данные и попробуйте ещё раз.", 500)
 
 
 @app.exception_handler(ViewOnly)

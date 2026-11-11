@@ -305,16 +305,11 @@ def history():
                 db.flush()
                 due = msvc.totals(db, wo).due
                 method = rnd.choices(("cash", "card", "terminal"), weights=(5, 3, 4))[0]
-                if rnd.random() < 0.05 and due > 500:   # долг: оплатил часть
-                    msvc.add_payment(db, wo, (due / 2).quantize(Decimal(1)), method, "full", "")
-                    as_user("admin")
-                    msvc.close(db, wo, True, "ok", "", "", "Остаток обещал занести на следующей неделе")
-                else:
-                    msvc.add_payment(db, wo, due, method, "full", "")
-                    adv = rnd.random() < 0.2
-                    msvc.close(db, wo, False, "advice" if adv else "ok", "",
-                               rnd.choice(("Задние колодки ~40 % — проверить при следующем ТО", "Шины: износ протектора, к зиме менять",
-                                           "Течь масла с сальника — следить", "Аккумулятор слабый, заменить до морозов")) if adv else "")
+                msvc.add_payment(db, wo, due, method, "full", "")   # в долг не работаем (11.11.2026)
+                adv = rnd.random() < 0.2
+                msvc.close(db, wo, "advice" if adv else "ok", "",
+                           rnd.choice(("Задние колодки ~40 % — проверить при следующем ТО", "Шины: износ протектора, к зиме менять",
+                                       "Течь масла с сальника — следить", "Аккумулятор слабый, заменить до морозов")) if adv else "")
                 shift(mark, d, hh, rnd.randint(0, 59))
                 orders_made += 1
                 if days_ago <= 7:

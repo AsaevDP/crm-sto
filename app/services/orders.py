@@ -79,7 +79,9 @@ def visible_orders_query(ctx):
     q = select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id)
     if not sees_all_orders(ctx):
         me = ctx.user.id
-        q = q.where(or_(WorkOrder.partsman_id == me, WorkOrder.mechanic_id == me, WorkOrder.manager_id == me))
+        # слесарь видит и наряды, где ему дали отдельную работу (второй слесарь)
+        q = q.where(or_(WorkOrder.partsman_id == me, WorkOrder.mechanic_id == me, WorkOrder.manager_id == me,
+                        WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me))))
     return q
 
 
@@ -88,7 +90,12 @@ def can_view(ctx, wo: WorkOrder) -> bool:
         return False
     if sees_all_orders(ctx):
         return True
-    return ctx.can("orders.view_own", "orders.view_all") and ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id)
+    if not ctx.can("orders.view_own", "orders.view_all"):
+        return False
+    if ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id):
+        return True
+    return ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == ctx.user.id)
+                         .limit(1)) is not None
 
 
 # ---------- Справочники для формы ----------
@@ -107,6 +114,16 @@ def lifts_with_load(db: Session, branch_id) -> list[tuple[Lift, WorkOrder | None
                                                  WorkOrder.status.in_(WO_ACTIVE)).order_by(WorkOrder.created_at)):
         busy[wo.lift_id] = wo
     return [(l, busy.get(l.id)) for l in lifts]
+
+
+def lift_busy(db: Session, lift: Lift | None, wo: WorkOrder | None = None) -> WorkOrder | None:
+    """На подъёмнике уже стоит другая машина (активный наряд)? Одна машина — один подъёмник (отчёт тестировщика)."""
+    if not lift:
+        return None
+    q = select(WorkOrder).where(WorkOrder.lift_id == lift.id, WorkOrder.status.in_(WO_ACTIVE))
+    if wo is not None:
+        q = q.where(WorkOrder.id != wo.id)
+    return db.scalar(q.order_by(WorkOrder.created_at).limit(1))
 
 
 def search_clients(db: Session, branch_id, q: str, limit: int = 8) -> list[dict]:
@@ -214,11 +231,29 @@ class IntakeForm:
             e.append("Марка и модель")
         if n_photos < 1:
             e.append("Хотя бы одно фото")
+        if _int(self.mileage) is None:
+            e.append("Пробег")
         if self.scenario == "A":
             if not self.work_lines():
                 e.append("Работы (сценарий А — что делаем)")
             if not self.partsman_id:
                 e.append("Запчастист (сценарий А)")
+        elif not self.complaint.strip():
+            e.append("Жалоба клиента — что беспокоит")
+        return e
+
+    def problems(self, db: Session, branch_id) -> list[str]:
+        """Проверки по базе: занятый подъёмник, пробег меньше прошлого."""
+        e = []
+        lift_id = _uuid(self.lift_id)
+        lift = db.get(Lift, lift_id) if lift_id else None
+        busy = lift_busy(db, lift) if lift and lift.branch_id == branch_id else None
+        if busy:
+            e.append(f"Подъёмник {lift.number} занят (наряд {busy.number}) — выберите другой или без подъёмника")
+        v, _ = find_vehicle(db, branch_id, self)
+        mileage = _int(self.mileage)
+        if v and mileage is not None and v.mileage and mileage < v.mileage:
+            e.append(f"Пробег {mileage:,} км меньше прошлого ({v.mileage:,} км) — проверьте цифры".replace(",", " "))
         return e
 
     def work_lines(self) -> list[str]:
@@ -251,33 +286,68 @@ def set_status(db: Session, wo: WorkOrder, new: str, comment: str = ""):
     wo.status = new
 
 
+def find_vehicle(db: Session, bid, f: IntakeForm) -> tuple[Vehicle | None, bool]:
+    """Какая это машина. Возвращает (машина, сменился ли госномер у той же машины).
+    Правила (отчёт тестировщика 11.11.2026):
+      • выбрали машину и вписали другой номер → это другая машина, у старой номер НЕ меняем
+        (исключение: тот же VIN — машину перерегистрировали, номер обновляем и пишем в историю);
+      • VIN — главный признак машины: одинаковый VIN = та же машина, даже у другого владельца;
+      • тот же госномер в базе (у кого угодно) = та же машина."""
+    plate, vin = norm_plate(f.plate), (f.vin or "").strip().upper()[:32]
+    chosen = db.get(Vehicle, _uuid(f.vehicle_id)) if f.vehicle_id and _uuid(f.vehicle_id) else None
+    if chosen and chosen.branch_id != bid:
+        chosen = None
+    if chosen and chosen.plate == plate:
+        return chosen, False
+    if chosen and vin and chosen.vin == vin:
+        return chosen, True
+    if vin:
+        v = db.scalar(select(Vehicle).where(Vehicle.branch_id == bid, Vehicle.vin == vin).order_by(Vehicle.updated_at.desc()))
+        if v:
+            return v, v.plate != plate
+    v = db.scalar(select(Vehicle).where(Vehicle.branch_id == bid, Vehicle.plate == plate).order_by(Vehicle.updated_at.desc()))
+    return v, False
+
+
 def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     bid = ctx.branch.id
-    # Клиент: выбран из поиска или новый (если такой телефон уже есть — берём его)
+    # Клиент: выбран из поиска или новый (если такой телефон уже есть — берём его).
+    # Имя существующего клиента при приёмке НЕ меняем — для этого «Изменить» в карточке клиента.
     phone = norm_phone(f.phone)
-    client = db.get(Client, _uuid(f.client_id)) if f.client_id else None
-    if client is None or client.branch_id != bid:
+    client = db.get(Client, _uuid(f.client_id)) if f.client_id and _uuid(f.client_id) else None
+    if client is None or client.branch_id != bid or client.phone != phone:
         client = db.scalar(select(Client).where(Client.branch_id == bid, Client.phone == phone))
     if client is None:
         client = Client(full_name=f.name.strip()[:160], phone=phone)
         db.add(client)
         db.flush()
-    else:
-        client.full_name = f.name.strip()[:160] or client.full_name
 
-    # Авто: выбрано или новое (тот же госномер у этого клиента — то же авто)
     plate = norm_plate(f.plate)
-    vehicle = db.get(Vehicle, _uuid(f.vehicle_id)) if f.vehicle_id else None
-    if vehicle is None or vehicle.client_id != client.id:
-        vehicle = db.scalar(select(Vehicle).where(Vehicle.client_id == client.id, Vehicle.plate == plate))
+    vehicle, replated = find_vehicle(db, bid, f)
+    if vehicle is not None and vehicle.client_id != client.id:
+        # Смена владельца: машина (и вся её история ремонтов) переходит новому владельцу
+        old = db.get(Client, vehicle.client_id)
+        event(db, None, "note", f"Автомобиль {fmt_plate(vehicle.plate)} перешёл другому владельцу: {client.full_name}",
+              client_id=vehicle.client_id, vehicle_id=vehicle.id)
+        vehicle.client_id = client.id
+        db.flush()
+        event(db, None, "note", f"Автомобиль {fmt_plate(vehicle.plate)} — от прошлого владельца"
+                                  f"{': ' + old.full_name if old else ''}. История ремонтов — в карточке",
+              client_id=client.id, vehicle_id=vehicle.id)
     if vehicle is None:
-        vehicle = Vehicle(client_id=client.id)
+        vehicle = Vehicle(client_id=client.id, plate=plate, make=f.make.strip()[:60], model=f.model.strip()[:60])
         db.add(vehicle)
-    vehicle.plate, vehicle.make, vehicle.model = plate, f.make.strip()[:60], f.model.strip()[:60]
-    vehicle.year = _int(f.year) or vehicle.year
-    vehicle.vin = (f.vin.strip().upper()[:32]) or vehicle.vin
+    elif replated:
+        event(db, None, "note", f"Госномер изменён: {fmt_plate(vehicle.plate)} → {fmt_plate(plate)}",
+              client_id=client.id, vehicle_id=vehicle.id)
+        vehicle.plate = plate
+    # У известной машины дополняем только пустое (правка — через «Изменить» в карточке клиента)
+    vehicle.make = vehicle.make or f.make.strip()[:60]
+    vehicle.model = vehicle.model or f.model.strip()[:60]
+    vehicle.year = vehicle.year or _int(f.year)
+    vehicle.vin = vehicle.vin or (f.vin.strip().upper()[:32])
     mileage = _int(f.mileage)
-    if mileage:
+    if mileage and mileage >= (vehicle.mileage or 0):
         vehicle.mileage = mileage
     db.flush()
 
@@ -380,6 +450,39 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
         color = "green"
     tab = "main" if cur <= 2 else ("diag" if cur <= 4 else "hist")
     return {"steps": steps, "cur": cur, "title": title, "text": text, "color": color, "tab": tab}
+
+
+def reopen(db: Session, wo: WorkOrder) -> str:
+    """Открыть заново закрытый / отменённый наряд (по одобренному запросу). Возвращает новый статус.
+    Выданный: → «Готово» — можно добавить работы, оформить возврат, снова выдать; невыплаченная зарплата по нему
+    снимается и начислится заново при оплате. Отменённый: → туда, где остановились (запчасти подбираются заново)."""
+    from ..models import WoPart
+    from ..models.orders import PART_OFF
+    if wo.status == "closed":
+        from . import payroll
+        payroll.cancel_for_order(db, wo)
+        to = "ready"
+        wo.closed_at = None
+    else:
+        prev = db.scalar(select(WoStatusHistory.from_status).where(WoStatusHistory.work_order_id == wo.id,
+                                                                   WoStatusHistory.to_status == "cancel")
+                         .order_by(WoStatusHistory.created_at.desc()).limit(1)) or "created"
+        parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
+        works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all()
+        if prev in ("created", "diag", "approve"):
+            to = prev
+        elif parts:
+            to = "picking"
+        elif works and all(w.status == "done" for w in works):
+            to = "ready"
+        elif works:
+            to = "work"
+        else:
+            to = "created"
+        wo.cancel_reason = ""
+    set_status(db, wo, to, "Открыт заново по запросу")
+    event(db, wo, "status", "Наряд открыт заново")
+    return to
 
 
 # ---------- Хронология клиента ----------

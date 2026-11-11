@@ -29,7 +29,8 @@
     </div>
     {% endif %}
 
-    {% if can_work and w.status != "done" %}
+    {# второй слесарь, назначенный на отдельную работу, отмечает свою работу сам (отчёт тестировщика 11.11.2026) #}
+    {% if (can_work or (wo.status == "work" and w.mechanic_id == ctx.user.id)) and w.status != "done" %}
     <div class="work-btns">
       {% if w.status in ("todo", "paused") %}
       <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="start"><button class="btn btn-sm">{{ "Продолжить" if w.status == "paused" else "Начал" }}</button></form>

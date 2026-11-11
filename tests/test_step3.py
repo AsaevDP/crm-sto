@@ -24,7 +24,8 @@ def _create(c, scenario="A", photos=5, plate="AA1234BC", phone="0671234567", **e
     data = {"phone": phone, "name": "Олег Коваленко", "plate": plate, "make": "Toyota", "model": "Camry",
             "year": "2018", "mileage": "125 000", "scenario": scenario, "complaint": "Скрипят тормоза",
             "works": "Замена передних колодок\nЗамена масла", "partsman_id": u["oleg"], "mechanic_id": u["andrey"],
-            "lift_id": lifts[4], "fuel_level": "50", "intake_items": ["docs", "spare"], **extra}
+            # подъёмник по умолчанию не ставим: одна машина — один подъёмник (11.11.2026), а тестов на базе много
+            "lift_id": "", "fuel_level": "50", "intake_items": ["docs", "spare"], **extra}
     files = [("photos", (f"p{i}.jpg", JPEG, "image/jpeg")) for i in range(photos)]
     files += [("thumbs", (f"t{i}.jpg", JPEG, "image/jpeg")) for i in range(photos)]
     return c.post("/orders/new", data=data, files=files or None, headers={"x-requested-with": "fetch"})
@@ -98,7 +99,12 @@ def test_numbers_increment_and_client_reused(client):
 
 def test_pult_shows_busy_lift(client):
     login(client, "irina", "irina123")
-    _create(client, plate="КА 5555 КА", phone="0501234567")
+    from app.services.orders import lift_busy
+    with SessionLocal() as db:
+        free = next(l for l in db.scalars(select(Lift).order_by(Lift.number)) if not lift_busy(db, l))
+        free_id = str(free.id)
+    r = _create(client, plate="КА 5555 КА", phone="0501234567", lift_id=free_id)
+    assert r.status_code == 200, r.text
     html = client.get("/pult").text
     assert "КА 5555 КА" in html
 

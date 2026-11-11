@@ -9,6 +9,16 @@
     return r.ok ? r.json() : null;
   }
 
+  // Формы «один раз» (оплата, возврат, выдача): после нажатия кнопка гаснет — второй клик не отправит форму снова.
+  // На сервере всё равно стоит защита меткой формы — это для спокойствия на медленном Wi-Fi.
+  document.addEventListener('submit', e => {
+    const f = e.target;
+    if (!(f instanceof HTMLFormElement) || !f.classList.contains('one-shot')) return;
+    if (f.dataset.sent) { e.preventDefault(); return; }
+    f.dataset.sent = '1';
+    setTimeout(() => f.querySelectorAll('button:not([type=button])').forEach(b => { b.disabled = true; }), 0);
+  }, true);
+
   // Переключатели прав роли — сохраняются сразу
   document.querySelectorAll('input[data-perm][data-url]').forEach(sw => {
     sw.addEventListener('change', async () => {

@@ -18,6 +18,11 @@
   table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; }
   td, th { border: 1px solid #bbb; padding: 5px 8px; text-align: left; vertical-align: top; }
   th { background: #f3f3f6; font-weight: 600; }
+  /* Длинный наряд на нескольких листах: шапка таблицы повторяется, строка не рвётся пополам, итоги и подписи — целиком */
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  h2 { break-after: avoid; page-break-after: avoid; }
+  .sum, .sign { break-inside: avoid; page-break-inside: avoid; }
   .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   h2 { font-size: 13.5px; margin: 14px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
   .box { border: 1px solid #bbb; min-height: 16mm; padding: 6px 8px; white-space: pre-line; }

@@ -46,10 +46,10 @@
   <tr><td>Оплачено по нарядам</td><td class="num">{{ m.billed|money }}</td></tr><tr><td>+ продажи разбора</td><td class="num">{{ m.used_sales|money }}</td></tr>
   <tr><td>− себестоимость запчастей</td><td class="num">{{ m.parts_cost|money }}</td></tr><tr><td>− зарплата</td><td class="num">{{ m.payroll|money }}</td></tr>
   <tr class="total"><td>Валовая прибыль ({{ m.margin_pct }} %)</td><td class="num">{{ m.gross|money }}</td></tr></table>
-<h2>Долги клиентов</h2>
-<table><thead><tr><th>Наряд</th><th>Клиент</th><th class="num">Итого</th><th class="num">Оплачено</th><th class="num">Долг</th></tr></thead>
+<h2>Ждут оплаты (машина готова)</h2>
+<table><thead><tr><th>Наряд</th><th>Клиент</th><th class="num">Итого</th><th class="num">Оплачено</th><th class="num">Остаток</th></tr></thead>
   {% for d in debts %}<tr><td>{{ d.wo.number }}</td><td>{{ d.c.full_name if d.c else "" }}</td><td class="num">{{ d.t.total|money }}</td><td class="num">{{ d.t.paid|money }}</td><td class="num">{{ d.t.due|money }}</td></tr>
-  {% else %}<tr><td colspan="5" class="muted">Долгов нет</td></tr>{% endfor %}</table>
+  {% else %}<tr><td colspan="5" class="muted">Нет</td></tr>{% endfor %}</table>
 <h2>Закупки по поставщикам</h2>
 <table>{% for s in suppliers %}<tr><td>{{ s.name }}</td><td class="num">{{ s.n }}</td><td class="num">{{ s.sum|money }}</td></tr>{% else %}<tr><td class="muted">Нет</td></tr>{% endfor %}</table>
 <h2>Склад в деньгах</h2>

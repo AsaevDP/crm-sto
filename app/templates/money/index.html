@@ -9,7 +9,9 @@
 {% set debt_sum = debts|sum(attribute="1.due") %}
 {% set it = [{"t": "Принято за день" if one_day else "Принято за период", "n": total|money(0) ~ " ₴", "c": "green", "s": "оплаты + разбор", "zero": not total}] %}
 {% for k, v in PAY_METHODS.items() %}{% set _ = it.append({"t": v, "n": by_method[k]|money(0) ~ " ₴", "c": ["blue", "indigo", "teal"][loop.index0 % 3], "zero": not by_method[k]}) %}{% endfor %}
-{% set _ = it.append({"t": "Долги клиентов", "n": debt_sum|money(0) ~ " ₴", "c": "red", "s": "нарядов: " ~ debts|length, "zero": not debt_sum}) %}
+{% set refunds = pays|selectattr("purpose", "equalto", "refund")|list %}
+{% set _ = it.append({"t": "Ждут оплаты", "n": debt_sum|money(0) ~ " ₴", "c": "orange", "s": "машина готова · нарядов: " ~ debts|length, "zero": not debt_sum}) %}
+{% if refunds %}{% set _ = it.append({"t": "Возвраты клиентам", "n": (refunds|sum(attribute="amount"))|abs|money(0) ~ " ₴", "c": "red", "s": "уже вычтены из «Принято»"}) %}{% endif %}
 {% set _ = it.append({"t": "Ждут предоплату", "n": waiting_prepay|length, "c": "orange", "s": "нарядов"}) %}
 {{ tiles(it) }}
 <div class="cl-grid fill">
@@ -19,7 +21,7 @@
       {% for p in pays %}
       {% set o = orders.get(p.work_order_id) %}
       <div class="kv"><span>{{ p.created_at.astimezone().strftime("%H:%M" if one_day else "%d.%m %H:%M") }} · <a href="/orders/{{ p.work_order_id }}">{{ o.number[-6:] if o else "" }}</a> · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %} · {{ people.get(p.created_by).short_name if people.get(p.created_by) else "" }}</span>
-        <b class="nowrap">{{ p.amount|money }} ₴</b></div>
+        <b class="nowrap" {% if p.amount < 0 %}style="color:var(--red)"{% endif %}>{{ p.amount|money }} ₴</b></div>
       {% else %}<p class="footnote">Оплат нет</p>{% endfor %}
     </div>
     <div class="card compact">
@@ -31,11 +33,21 @@
   </section>
   <section class="ov-col on">
     <div class="card compact">
-      <div class="card-h"><span class="headline">Долги · {{ debts|length }}</span></div>
+      <div class="card-h"><span class="headline">Ждут оплаты · {{ debts|length }}</span></div>
       {% for wo, t, c in debts %}
-      <div class="kv"><span><a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ c.full_name }} · {{ {"ready":"готово","paid":"оплачено","closed":"закрыт с долгом"}[wo.status] }}</span><b class="nowrap" style="color:var(--red)">{{ t.due|money }} ₴</b></div>
-      {% else %}<p class="footnote">Долгов нет</p>{% endfor %}
+      <div class="kv"><span><a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ c.full_name }} · машина готова</span><b class="nowrap" style="color:var(--orange)">{{ t.due|money }} ₴</b></div>
+      {% else %}<p class="footnote">Нет — все готовые машины оплачены</p>{% endfor %}
     </div>
+    {% if old_debts %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Старые долги · {{ old_debts|length }}</span>
+        <span class="footnote nowrap">{{ old_debts|sum(attribute="1.due")|money(0) }} ₴</span></div>
+      <p class="footnote" style="margin:0">Выданы с долгом до 11.11.2026. Теперь так нельзя — машина выдаётся только после оплаты.</p>
+      {% for wo, t, c in old_debts %}
+      <div class="kv"><span><a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ c.full_name }}</span><b class="nowrap" style="color:var(--red)">{{ t.due|money }} ₴</b></div>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="card compact">
       <div class="card-h"><span class="headline">Ждут предоплату · {{ waiting_prepay|length }}</span></div>
       {% for wo in waiting_prepay %}<div class="kv"><span><a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ wo.prepay_for or "предоплата" }}</span><b class="nowrap">{{ wo.prepay_amount|money }} ₴</b></div>

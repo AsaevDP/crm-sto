@@ -195,8 +195,8 @@ def reports_csv(ctx: Ctx = Depends(get_ctx), tab: str = "overview", period: str 
         for x in svc.mechanics_load(db, bid, p.d1, p.d2):
             w.writerow([x["u"].full_name, x["works"], _num(x["hours"]), _num(x["sum"]), x["orders"]])
     elif tab == "accounting" and fin:
-        w.writerow(["Долги клиентов"])
-        w.writerow(["Наряд", "Клиент", "Итого", "Оплачено", "Долг"])
+        w.writerow(["Ждут оплаты (машина готова)"])
+        w.writerow(["Наряд", "Клиент", "Итого", "Оплачено", "Остаток"])
         for d in svc.debts(db, bid):
             w.writerow([d["wo"].number, d["c"].full_name if d["c"] else "", _num(d["t"].total), _num(d["t"].paid), _num(d["t"].due)])
         w.writerow([])

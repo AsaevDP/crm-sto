@@ -41,9 +41,14 @@
         <button class="btn btn-sm" name="action" value="auto">Со склада / заказать</button>
         <button class="btn btn-sm btn-gray" name="action" value="order">Заказать</button></form>
     {% endif %}
-    {% if (can_pick and p.status not in ("issued", "installed")) or (can_offer and p.status in ("need", "option", "declined")) %}
+    {% if (can_pick and p.status not in ("issued", "installed", "returned")) or (can_offer and p.status in ("need", "option", "declined")) %}
     <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать позицию из наряда?')">
       <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
+    {% endif %}
+    {% if p.status in ("issued", "installed") and wo.status not in ("paid", "closed", "cancel")
+          and (ctx.can("stock.manage") or ctx.can("stock.issue") or can_pick) %}
+    <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/return" onsubmit="return confirm('Вернуть эту запчасть на склад? Из счёта клиента позиция уйдёт.')">
+      <button class="btn btn-plain btn-sm">Вернуть на склад</button></form>
     {% endif %}
   </div>
   {% endif %}

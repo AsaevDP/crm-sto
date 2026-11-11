@@ -410,7 +410,7 @@ def populate():
         db.flush()
         due = msvc.totals(db, done_wo).due
         msvc.add_payment(db, done_wo, due, "terminal", "full", "000118")
-        msvc.close(db, done_wo, False, "advice", "", "Передние диски — износ ~60 %, проверить через 10 000 км")
+        msvc.close(db, done_wo, "advice", "", "Передние диски — износ ~60 %, проверить через 10 000 км")
 
         # Слесарь Игорь: оклад 600 ₴/день + 25 % от работ (пример схемы)
         as_user("admin")
@@ -675,7 +675,7 @@ def populate():
         as_user("irina")
         db.flush()
         msvc.add_payment(db, old_wo, msvc.totals(db, old_wo).due, "cash", "full", "")
-        msvc.close(db, old_wo, False, "ok", "", "")
+        msvc.close(db, old_wo, "ok", "", "")
         as_user("admin")
         from .models import PayrollAccrual
         db.add(PayrollAccrual(user_id=roman.id, base_amount=Decimal(1), rate=Decimal(6000), amount=Decimal(6000),
@@ -706,9 +706,8 @@ def populate():
         debtor.mechanic_id = users["sergey"].id
         osvc.set_status(db, debtor, "ready", "Все работы выполнены")
         db.flush()
-        msvc.add_payment(db, debtor, Decimal("300"), "cash", "extra", "")
-        as_user("admin")
-        msvc.close(db, debtor, True, "ok", "", "", "Остаток доплатит в пятницу — договорились по телефону")
+        # В долг не работаем (11.11.2026): машина готова, клиент внёс часть — ждёт оплаты, машина стоит у нас
+        msvc.add_payment(db, debtor, Decimal("300"), "cash", "prepay", "")
 
         # 12.11.2026: Марина видит только свои наряды и просит доступ ко всем — у админа и директора важное окошко
         from .models import OrderAccess

@@ -24,8 +24,8 @@ def test_client_tabs_sort_regular(client):
 
     page = client.get("/clients").text
     # Плитки групп (11.11.2026): заголовок и ссылка-фильтр
-    assert all(f'<span class="ptile-t">{t}</span>' in page for t in ("Постоянные", "Должники", "Давно"))
-    assert "?tab=regular" in page and "?tab=debt" in page
+    assert all(f'<span class="ptile-t">{t}</span>' in page for t in ("Постоянные", "Давно"))
+    assert "?tab=regular" in page and "?tab=debt" not in page   # «Должники» убраны: в долг не работаем
     reg = client.get("/clients?tab=regular").text
     c3 = _client("0673330000")
     c1 = _client("0674440000")

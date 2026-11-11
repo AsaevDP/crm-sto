@@ -231,6 +231,70 @@ def release_part(db: Session, part: WoPart, comment: str = "Позицию уб�
     db.flush()
 
 
+def issued_qty(db: Session, part: WoPart) -> dict:
+    """Сколько этой позиции выдано слесарю и ещё не вернули — по ячейкам."""
+    res = defaultdict(lambda: D0)
+    for sid, typ, qty in db.execute(select(StockMovement.stock_item_id, StockMovement.type, StockMovement.qty)
+                                    .where(StockMovement.wo_part_id == part.id, StockMovement.type.in_(("issue", "return")))):
+        res[sid] += qty if typ == "issue" else -qty
+    return {k: v for k, v in res.items() if v > 0}
+
+
+def return_issued(db: Session, part: WoPart, comment: str = "Возврат на склад") -> Decimal:
+    """Выданную слесарю запчасть вернули на склад (не понадобилась, наряд отменили). Возвращает, сколько вернули."""
+    n = D0
+    for sid, qty in issued_qty(db, part).items():
+        move(db, "return", db.get(StockItem, sid), qty, part, comment=comment)
+        n += qty
+    return n
+
+
+def has_movements(db: Session, part: WoPart) -> bool:
+    return db.scalar(select(StockMovement.id).where(StockMovement.wo_part_id == part.id).limit(1)) is not None
+
+
+def remove_part(db: Session, part: WoPart, comment: str = "Позицию убрали из наряда"):
+    """Убрать позицию из наряда. Если по ней уже были движения склада (резерв, выдача) — строку не удаляем
+    (на неё ссылается история склада, иначе ошибка сервера), а помечаем «возврат» — в счёт она не идёт."""
+    release_part(db, part, comment)
+    if part.status in ("issued", "installed"):
+        return_issued(db, part, comment)
+    for line in db.scalars(select(IssueRequestLine).where(IssueRequestLine.wo_part_id == part.id)):
+        req = db.get(IssueRequest, line.request_id)
+        if req and req.status in ("new", "ready"):
+            db.delete(line)
+    db.flush()
+    from ..models import PayrollAccrual
+    used = (has_movements(db, part)
+            or db.scalar(select(IssueRequestLine.id).where(IssueRequestLine.wo_part_id == part.id).limit(1)) is not None
+            or db.scalar(select(PayrollAccrual.id).where(PayrollAccrual.wo_part_id == part.id).limit(1)) is not None)
+    if used:
+        part.status, part.urgent = "returned", False
+    else:
+        db.delete(part)
+
+
+def release_order(db: Session, wo: WorkOrder) -> int:
+    """Наряд отменили: резервы снимаются, выданное возвращается на склад, черновые закупки чистятся,
+    уже заказанное у поставщика придёт на свободный склад. Позиции снова «нужна» — если наряд откроют заново,
+    запчастист подберёт их ещё раз. Возвращает, сколько позиций вернулось на склад."""
+    n = 0
+    for part in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id)).all():
+        if part.status in ("reserved", "ordered", "need", "arrived"):
+            if reserved_for_part(db, part.id):
+                n += 1
+            release_part(db, part, "Наряд отменён")
+            part.status = "need"
+        elif part.status in ("issued", "installed"):
+            if return_issued(db, part, "Наряд отменён — возврат на склад") > 0:
+                n += 1
+            part.status = "need"
+    for req in db.scalars(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status.in_(("new", "ready")))):
+        req.status = "cancelled"
+    db.flush()
+    return n
+
+
 def unlink_line(db: Session, line: PurchaseLine):
     """Строку убрали из закупки: позиция наряда снова ждёт решения запчастиста («со склада» / «заказать»).
     Пришедшее частями снимается с резерва и становится свободным — «со склада» его же и возьмёт."""
@@ -332,6 +396,9 @@ def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=No
     line.received, line.location_id = line.got >= line.qty, location_id
     if line.wo_part_id:
         part = db.get(WoPart, line.wo_part_id)
+        owner = db.get(WorkOrder, part.work_order_id) if part else None
+        if owner and owner.status in ("cancel", "closed"):   # наряд отменён — пришедшее идёт на свободный склад
+            part = None
         if part and part.status in ("ordered", "need"):
             db.flush()
             have = sum(reserved_for_part(db, part.id).values(), D0)

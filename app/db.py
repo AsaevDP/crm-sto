@@ -10,8 +10,15 @@ from .config import DATABASE_URL
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    # timeout: занятая база — ждём до 15 с, а не падаем через 5 (отчёт тестировщика 11.11.2026)
+    connect_args={"check_same_thread": False, "timeout": 15} if DATABASE_URL.startswith("sqlite") else {},
 )
+
+
+def _lower(s):
+    """lower() для любых букв: встроенный в SQLite понимает только латиницу, и «тест» не находил «Тест»."""
+    return s.lower() if isinstance(s, str) else s
+
 
 if DATABASE_URL.startswith("sqlite"):
     # В SQLite проверка внешних ключей по умолчанию выключена — включаем.
@@ -21,6 +28,8 @@ if DATABASE_URL.startswith("sqlite"):
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA journal_mode=WAL")  # чтобы чтение не блокировалось записью
         cur.close()
+        # Подменяем lower(): ilike в SQLAlchemy = lower(a) LIKE lower(b) → поиск без учёта регистра и по-русски
+        dbapi_conn.create_function("lower", 1, _lower, deterministic=True)
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
@@ -93,6 +102,15 @@ def add_missing_columns():
                 if col.name not in have:
                     ddl = col.type.compile(dialect=engine.dialect)
                     conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
+
+
+def ensure_unique_indexes():
+    """Уникальные метки форм: даже два одновременных нажатия не создадут два платежа / два наряда.
+    (ALTER TABLE ADD COLUMN не умеет UNIQUE — индекс создаём отдельно; пустые значения не мешают.)"""
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_form_token ON payments (form_token)'))
+        conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS ux_work_orders_intake_token ON work_orders (intake_token)'))
 
 
 def get_db():

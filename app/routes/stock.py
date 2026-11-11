@@ -45,9 +45,20 @@ def _to(url):
     return RedirectResponse(url, status_code=303)
 
 
+# Запчастист подбирает и во время ремонта: менеджер добавил деталь в «В работе» — её надо провести
+# (отчёт тестировщика 11.11.2026: раньше отказ 403, деталь в счёте, а склад не тронут)
+PICK_STATUSES = ("picking", "waiting", "instock", "work")
+
+
 def _can_pick(ctx: Ctx, wo: WorkOrder) -> bool:
-    return (ctx.can("parts.pick") and wo.status in ("picking", "waiting") and not wo.awaiting_prepay
+    return (ctx.can("parts.pick") and wo.status in PICK_STATUSES and not wo.awaiting_prepay
             and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
+
+
+def _after_part_added(ctx: Ctx, wo: WorkOrder, part: WoPart):
+    """Запчасти уже были на складе, а новую заказали — наряд снова «Ждёт запчасти» (если ремонт ещё не начат)."""
+    if wo.status == "instock" and part.status in ("ordered", "need"):
+        osvc.set_status(ctx.db, wo, "waiting", f"Добавлена запчасть «{part.name}» — ждём")
 
 
 # ======================= Подбор в наряде =======================
@@ -152,6 +163,9 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
             return _to(f"/orders/{order_id}")
         cat = svc.get_or_create_catalog(ctx.db, name, article, brand, revision)
     q = max(_dec(qty, "1"), Decimal("0.01"))
+    if _dec(cost) < 0 or _dec(price) < 0:   # отрицательные цены не принимаем (отчёт тестировщика)
+        flash(ctx.request, "Цена не может быть меньше нуля", "error")
+        return _to(f"/orders/{order_id}#parts")
     if ctx.can("prices.view_purchase") and _dec(cost) > 0:
         c, m = svc.money(_dec(cost)), _markup(markup_pct, ctx)
         p = svc.sale_price(c, m)
@@ -180,6 +194,7 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
             msg = f"{label} — добавлено в закупку"
         else:
             msg = f"{label} — добавлено, выберите: со склада или заказать"
+    _after_part_added(ctx, wo, part)
     ctx.db.commit()
     flash(ctx.request, msg)
     return _to(f"/orders/{order_id}#parts")
@@ -213,6 +228,7 @@ def part_source(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), action
         raise Forbidden()
     part.picked_by = part.picked_by or ctx.user.id
     msg = svc.source_part(ctx.db, ctx.branch.id, part, action if action in ("auto", "order") else "auto")
+    _after_part_added(ctx, wo, part)
     ctx.db.commit()
     flash(ctx.request, f"«{part.name}» — {msg}")
     return _to(f"/orders/{order_id}#parts")
@@ -227,16 +243,25 @@ def part_markup(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), markup
     part = ctx.db.get(WoPart, _uuid(part_id))
     if not part or part.work_order_id != wo.id or not ctx.can("prices.view_purchase"):
         return JSONResponse({"ok": False}, status_code=400)
+    from ..services import money as msvc
+    if wo.status in msvc.FROZEN:   # оплаченный / выданный наряд: цены уже не меняются (отчёт тестировщика 11.11.2026)
+        return JSONResponse({"ok": False, "error": "Наряд оплачен или закрыт — цены менять нельзя"}, status_code=400)
     new_markup = _markup(markup_pct, ctx)
     # Цену клиенту назвал менеджер (закупки ещё нет): первая закупка не меняет цену — считаем наценку из неё
     keep_price = (cost.strip() and part.cost == 0 and part.price > 0 and new_markup == part.markup_pct)
     if cost.strip():
-        part.cost = svc.money(_dec(cost))
+        part.cost = max(svc.money(_dec(cost)), Decimal(0))
     if keep_price and part.cost > 0:
         part.markup_pct = max(0, min(1000, int(round((part.price / part.cost - 1) * 100))))
     else:
         part.markup_pct = new_markup
         part.price = svc.sale_price(part.cost, part.markup_pct)
+    ctx.db.flush()
+    err = msvc.guard_total(ctx.db, wo)
+    if err:
+        ctx.db.rollback()
+        return JSONResponse({"ok": False, "error": err}, status_code=400)
+    msvc.after_change(ctx.db, wo)
     ctx.db.commit()
     return {"ok": True, "price": str(part.price), "sum": str(svc.money(part.price * part.qty)), "markup": part.markup_pct}
 
@@ -247,11 +272,44 @@ def part_delete(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
     wo = _order(ctx, order_id)
     part = ctx.db.get(WoPart, _uuid(part_id))
     allowed = _can_pick(ctx, wo) or (_can_offer(ctx, wo) and part is not None and part.status in ("need", "option", "declined"))
-    if not allowed or not part or part.work_order_id != wo.id or part.status in ("issued", "installed"):
+    if not allowed or not part or part.work_order_id != wo.id or part.status in ("issued", "installed", "returned"):
         raise Forbidden()
-    svc.release_part(ctx.db, part)
-    ctx.db.delete(part)
+    # Деталь «в резерве» раньше давала ошибку сервера (на неё ссылается история склада) — теперь резерв снимается,
+    # а строка остаётся в истории как «возврат» и в счёт не идёт
+    svc.remove_part(ctx.db, part)
+    ctx.db.flush()
+    from ..services import money as msvc
+    err = msvc.guard_total(ctx.db, wo)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+        return _to(f"/orders/{order_id}#parts")
+    svc.refresh_order_status(ctx.db, wo)   # убрали последнюю недостающую — «Запчасти на складе»
     ctx.db.commit()
+    flash(ctx.request, "Позиция убрана из наряда")
+    return _to(f"/orders/{order_id}#parts")
+
+
+@router.post("/orders/{order_id}/parts/{part_id}/return")
+def part_return(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Выданную слесарю запчасть вернули на склад (не подошла, клиент отказался). Кладовщик или запчастист."""
+    ctx.need("stock.manage", "stock.issue", "parts.pick")
+    wo = _order(ctx, order_id)
+    part = ctx.db.get(WoPart, _uuid(part_id))
+    from ..services import money as msvc
+    if not part or part.work_order_id != wo.id or part.status not in ("issued", "installed") or wo.status in msvc.FROZEN:
+        raise Forbidden()
+    n = svc.return_issued(ctx.db, part, "Вернули на склад из наряда")
+    part.status = "returned"
+    ctx.db.flush()
+    err = msvc.guard_total(ctx.db, wo)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+        return _to(f"/orders/{order_id}#parts")
+    osvc.event(ctx.db, wo, "status", f"Запчасть «{part.name}» вернули на склад ({n.normalize():f} шт)")
+    ctx.db.commit()
+    flash(ctx.request, f"«{part.name}» — вернули на склад")
     return _to(f"/orders/{order_id}#parts")
 
 
@@ -584,8 +642,11 @@ def purchase_line_edit(pid: str, lid: str, ctx: Ctx = Depends(get_ctx), qty: str
         line.qty = new_qty
         line.received = line.got >= line.qty
         if price.strip():
-            line.price = svc.money(_dec(price))
-            if part and part.cost != line.price and part.status in ("need", "ordered"):
+            line.price = max(svc.money(_dec(price)), Decimal(0))
+            wo_ = db.get(WorkOrder, part.work_order_id) if part else None
+            # Оплаченный / закрытый наряд цену клиенту не меняет (отчёт тестировщика 11.11.2026)
+            if (part and part.cost != line.price and part.status in ("need", "ordered")
+                    and wo_ and wo_.status not in ("ready", "paid", "closed", "cancel")):
                 part.cost = line.price
                 part.price = svc.sale_price(part.cost, part.markup_pct)
         msg = "Сохранено"
@@ -985,7 +1046,15 @@ def stock_adjust(item_id: str, ctx: Ctx = Depends(get_ctx), actual: str = Form(.
         flash(ctx.request, "Укажите причину корректировки", "error")
         return _to(f"/stock/items/{item_id}")
     b = svc.balances(ctx.db, ctx.branch.id, [i.id])[i.id]
-    diff = _dec(actual) - b["on_hand"]
+    fact = _dec(actual, "-1")
+    if fact < 0:
+        flash(ctx.request, "Остаток по факту не может быть меньше нуля", "error")
+        return _to(f"/stock/items/{item_id}")
+    if fact < b["reserved"]:   # иначе «свободно» уходит в минус — резерв под наряды висит на пустом месте
+        flash(ctx.request, f"На полке меньше, чем в резерве под наряды ({b['reserved'].normalize():f} шт). "
+                           f"Сначала снимите резерв в нарядах (убрать позицию или отменить наряд)", "error")
+        return _to(f"/stock/items/{item_id}")
+    diff = fact - b["on_hand"]
     if diff:
         svc.move(ctx.db, "adjust", i, diff, comment=f"Инвентаризация: {reason.strip()}")
         ctx.db.commit()

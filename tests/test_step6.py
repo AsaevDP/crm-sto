@@ -127,7 +127,7 @@ def test_prepay_blocks_picking(client):
                        follow_redirects=False).status_code == 303
 
 
-def test_admin_ignore_discount_and_close_with_debt(client):
+def test_admin_ignore_discount_and_no_debt(client):
     url = _order_to_work(client, "МН 6003 МН", "0506003000", "Колодки (без скидки)")
     _as(client, "admin")
     w = _works(url)[0]
@@ -138,10 +138,12 @@ def test_admin_ignore_discount_and_close_with_debt(client):
     client.post(f"{url}/works/{w.id}/state", data={"action": "done"})
     assert _wo(url).status == "ready"
     _as(client, "admin")
-    # Главный админ закрывает с долгом — только с комментарием
-    client.post(f"{url}/close", data={"state": "ok"})
-    assert _wo(url).status == "ready"
+    # В долг не работаем (11.11.2026): даже главный админ не выдаёт машину с остатком
     client.post(f"{url}/close", data={"state": "ok", "debt_comment": "Постоянный клиент, доплатит в пятницу"})
+    assert _wo(url).status == "ready"
+    client.post(f"{url}/payments", data={"amount": "600", "method": "cash", "purpose": "full"})   # (1000 + 200) × 0.5
+    assert _wo(url).status == "paid"
+    client.post(f"{url}/close", data={"state": "ok"})
     assert _wo(url).status == "closed"
     with SessionLocal() as db:
         a = db.scalar(select(PayrollAccrual).where(PayrollAccrual.work_order_id == _wo(url).id, PayrollAccrual.wo_work_id == w.id))

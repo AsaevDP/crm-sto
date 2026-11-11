@@ -257,11 +257,41 @@
     {% if can_cancel %}
     <details class="card compact">
       <summary class="footnote" style="cursor:pointer;color:var(--red)">Отменить наряд…</summary>
-      <form class="form dense" method="post" action="/orders/{{ wo.id }}/cancel" style="margin-top:8px">
+      <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/cancel" style="margin-top:8px">
         <input class="field" name="reason" placeholder="Причина (обязательно)" required>
+        {% if t.paid > 0 %}
+        <p class="hint warn" style="margin:0">Клиент заплатил {{ t.paid|money }} ₴. Сначала оформите возврат в блоке «Деньги» —
+          или отметьте, что деньги остаются СТО.</p>
+        <label class="row" style="padding:0"><span class="grow">Деньги остаются СТО</span>
+          <input type="checkbox" class="switch" name="keep_money" value="1"></label>
+        {% endif %}
+        <p class="hint" style="margin:0">Резервы снимутся, выданные запчасти вернутся на склад, заказанные придут на свободный склад.</p>
         <button class="btn btn-sm btn-danger">Отменить наряд</button>
       </form>
     </details>
+    {% endif %}
+
+    {% if reopen %}
+    <div class="card compact">
+      {% if reopen.pending %}
+      <p class="footnote" style="margin:0">Запрошено открыть заново: «{{ reopen.pending.reason }}» · ждёт решения админа / директора</p>
+      {% if reopen.can_decide %}
+      <div class="form-row">
+        <form method="post" action="/reopen-requests/{{ reopen.pending.id }}" class="one-shot"><button class="btn btn-sm btn-tinted" name="action" value="approve">Открыть заново</button></form>
+        <form method="post" action="/reopen-requests/{{ reopen.pending.id }}" class="one-shot"><button class="btn btn-sm btn-gray" name="action" value="decline">Отказать</button></form>
+      </div>
+      {% endif %}
+      {% else %}
+      <details>
+        <summary class="footnote" style="cursor:pointer">Открыть наряд заново…</summary>
+        <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/reopen-request" style="margin-top:8px">
+          <input class="field" name="reason" placeholder="Зачем открыть (обязательно)" required>
+          <button class="btn btn-sm btn-tinted">Попросить открыть</button>
+          <p class="hint" style="margin:0">Запрос уйдёт админу, директору и заму — откроет тот, кто одобрит.</p>
+        </form>
+      </details>
+      {% endif %}
+    </div>
     {% endif %}
   </section>
 </div>
@@ -332,7 +362,7 @@
     const body = new URLSearchParams({ markup_pct: mk ? mk.value : '' });
     if (cost) body.set('cost', cost.value);
     const r = await fetch(inp.dataset.markupUrl, { method: 'POST', body, headers: { 'x-requested-with': 'fetch' } });
-    if (!r.ok) { alert('Не сохранилось'); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.error || 'Не сохранилось'); location.reload(); return; }
     const j = await r.json(), fmt = v => (+v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (mk && j.markup !== undefined) mk.value = j.markup;
     const pr = row.querySelector('.p-price'), sm = row.querySelector('.p-sum');

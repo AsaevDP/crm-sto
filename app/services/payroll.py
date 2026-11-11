@@ -103,7 +103,8 @@ def _local_day(dt) -> date | None:
 # ---------- Начисление по наряду ----------
 def accrue_for_order(db: Session, wo: WorkOrder):
     """Начислить зарплату по наряду. Повторно не начисляет (идемпотентно)."""
-    factor = Decimal(1) if wo.payroll_ignore_discount else (Decimal(100) - Decimal(wo.discount_pct or 0)) / Decimal(100)
+    from .money import payroll_factor
+    factor, factor_p = payroll_factor(wo, works=True), payroll_factor(wo, works=False)
     today = date.today()
     done = set(db.scalars(select(PayrollAccrual.wo_work_id).where(PayrollAccrual.work_order_id == wo.id,
                                                                   PayrollAccrual.status != "cancelled")))
@@ -144,7 +145,7 @@ def accrue_for_order(db: Session, wo: WorkOrder):
             base, amount = money(qty), money(line.rate * qty)
         else:
             raw = (Decimal(p.price) - Decimal(p.cost)) * qty if line.base == "parts_margin" else Decimal(p.price) * qty
-            base = money(max(raw, Decimal(0)) * factor)
+            base = money(max(raw, Decimal(0)) * factor_p)
             amount = money(base * line.rate / 100)
         db.add(PayrollAccrual(user_id=p.picked_by, work_order_id=wo.id, wo_part_id=p.id, scheme_line_id=line.id,
                               base_amount=base, rate=line.rate, amount=amount, on_date=today, kind=line.kind,

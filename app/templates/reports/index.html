@@ -183,7 +183,7 @@
     <p class="caption" style="margin:4px 0 0">Аренда, коммуналка и прочие расходы СТО в CRM пока не ведутся — это прибыль до них.</p>
   </div>
   <div class="card compact">
-    <div class="card-h"><span class="headline">Долги клиентов · {{ debts|length }}</span><span class="footnote">{{ debts|sum(attribute="t.due")|money(0) }} ₴</span></div>
+    <div class="card-h"><span class="headline">Ждут оплаты · {{ debts|length }}</span><span class="footnote">{{ debts|sum(attribute="t.due")|money(0) }} ₴</span></div>
     {% for d in debts[:30] %}
     <a class="kv" href="/orders/{{ d.wo.id }}"><span>{{ d.wo.number[-6:] }} · {{ d.c.full_name if d.c else "" }}</span><b>{{ d.t.due|money(0) }} ₴</b></a>
     {% else %}<p class="footnote" style="margin:0">Долгов нет</p>{% endfor %}

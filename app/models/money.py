@@ -16,9 +16,12 @@ class Payment(Entity):
     purpose: Mapped[str] = mapped_column(String(10))  # prepay / extra / full
     receipt_no: Mapped[str] = mapped_column(String(60), default="")
     comment: Mapped[str] = mapped_column(String(300), default="")
+    # Метка формы: второе нажатие «Провести оплату» той же формой не создаёт второй платёж (11.11.2026)
+    form_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
 
 PAY_METHODS = {"cash": "Наличные", "card": "Безнал", "terminal": "Терминал"}
-PAY_PURPOSES = {"prepay": "Предоплата", "extra": "Доплата", "full": "Полная оплата"}
+PAY_PURPOSES = {"prepay": "Предоплата", "extra": "Доплата", "full": "Полная оплата", "refund": "Возврат клиенту"}
+PAY_IN = {k: v for k, v in PAY_PURPOSES.items() if k != "refund"}   # для формы «Принять оплату»
 
 
 class AuditLog(Entity):

@@ -6,6 +6,7 @@
 
 <form id="intake" class="intake fill" autocomplete="off" novalidate>
   <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id"><input type="hidden" name="appt_id">
+  <input type="hidden" name="intake_token" value="{{ intake_token }}">
   {% if prefill %}<div class="flash" role="status">Приёмка по записи: {{ prefill.name or "" }} {{ prefill.plate or "" }} — проверьте поля, сделайте фото</div>{% endif %}
   <div class="steps" id="steps"><span class="on">1 · Клиент и авто</span><span>2 · Фото и работы</span><span>3 · Кто и акт</span></div>
   <div class="intake-cols">
@@ -42,7 +43,7 @@
       </div>
       <div class="form-row">
         <label>Год<input class="field" name="year" inputmode="numeric" maxlength="4" placeholder="2018"></label>
-        <label>Пробег, км<input class="field" name="mileage" inputmode="numeric" placeholder="125 000"></label>
+        <label>Пробег, км *<input class="field" name="mileage" inputmode="numeric" placeholder="125 000"></label>
         <label>VIN<input class="field mono" name="vin" maxlength="17" autocapitalize="characters"></label>
       </div>
       <datalist id="makes">{% for m in makes %}<option value="{{ m }}">{% endfor %}</datalist>
@@ -73,7 +74,7 @@
         <button type="button" data-v="A" aria-pressed="false">Без диагностики</button>
       </div>
       <input type="hidden" name="scenario" value="B">
-      <label>Жалоба клиента<textarea class="field" name="complaint" rows="2" placeholder="Стучит спереди справа на кочках"></textarea></label>
+      <label>Жалоба клиента *<textarea class="field" name="complaint" rows="2" placeholder="Стучит спереди справа на кочках"></textarea></label>
       <label data-only="A" hidden>Работы * (каждая с новой строки)
         <textarea class="field" name="works" rows="3" placeholder="Замена передних колодок&#10;Замена масла"></textarea>
       </label>
@@ -241,7 +242,7 @@
       const r = await fetch('/orders/new', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
       const res = await r.json().catch(() => ({}));
       if (r.ok && res.ok) { location.href = res.url; return; }
-      errBox.innerHTML = 'Не хватает: ' + (res.errors || ['ошибка сервера']).map(esc).join(', ');
+      errBox.innerHTML = 'Проверьте: ' + (res.errors || [res.error || 'ошибка сервера']).map(esc).join(', ');
       errBox.hidden = false; errBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (err) {
       errBox.textContent = 'Нет связи с сервером. Проверьте Wi-Fi и нажмите ещё раз.'; errBox.hidden = false;
