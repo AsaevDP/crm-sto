@@ -1087,6 +1087,22 @@ a.wo-step[data-state="todo"]:hover, a.wo-step[data-state="skip"]:hover { backgro
 
 /* ===== Выдача инструмента (11.11.2026) ===== */
 .toast[data-tone="blue"] { border-left-color: var(--blue); }
+.toast[data-tone="yellow"] { border-left-color: var(--orange); }
+/* Сообщения по нарядам (11.11.2026) */
+.msg-to { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-check { display: inline-flex; }
+.chip-check input { position: absolute; opacity: 0; pointer-events: none; }
+.chip-check span { padding: 6px 12px; border-radius: 999px; background: var(--fill); font-size: 14px; cursor: pointer; white-space: nowrap; }
+.chip-check span small { color: var(--text-2); font-size: 13px; }
+.chip-check input:checked + span { background: var(--accent); color: var(--on-accent, #fff); }
+.chip-check input:checked + span small { color: inherit; opacity: .85; }
+.chip-check input:disabled + span { opacity: .45; cursor: default; }
+.chip-check input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.card.msg.now { box-shadow: inset 3px 0 0 var(--orange); }
+.msg-part { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: var(--r-sm, 8px);
+  background: color-mix(in srgb, var(--orange) 10%, var(--surface)); }
+.msg-st[data-st="approved"] { color: var(--green); } .msg-st[data-st="declined"] { color: var(--red); }
+.card.issue.wait { opacity: .85; box-shadow: inset 3px 0 0 var(--orange); }
 .iss-tabs { align-self: center; }
 .tool-req { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-left: 4px solid var(--blue); }
 .tool-req.ret { border-left-color: var(--teal); }

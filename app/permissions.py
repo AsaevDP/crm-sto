@@ -34,6 +34,9 @@ PERMISSIONS = [
     ("purchases.mine", "«Мои заказы» — свои закупки по своим нарядам (запчастист)", "Склад и закупки"),
     ("purchases.by_partsman", "«Заказы запчастистов» — заказы каждого запчастиста", "Склад и закупки"),
     ("stock.view", "Видеть склад и остатки", "Склад и закупки"),
+    # 11.11.2026: слесарь смотрит склад (название, наличие, количество — без цен) и просит запчасть через менеджера
+    ("stock.look", "Смотреть склад и разбор: название и количество, без цен", "Склад и закупки"),
+    ("parts.ask", "Просить запчасть со склада под свой наряд (согласует менеджер)", "Склад и закупки"),
     ("stock.manage", "Приход, ячейки, инвентаризация", "Склад и закупки"),
     ("stock.issue", "Выдача запчастей по запросу", "Склад и закупки"),
     ("stock.request_issue", "Просить выдачу запчастей со склада", "Склад и закупки"),
@@ -81,7 +84,8 @@ DEFAULT_ROLES = {
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
         "prices.view_sale", *_OWN]),
-    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", "lifts.take", "schedule.view", *_OWN]),
+    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", "lifts.take", "schedule.view",
+                                       "stock.look", "parts.ask", *_OWN]),
     # Директор: видит всё и всю бухгалтерию, сам ничего не «крутит» в нарядах
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
@@ -114,7 +118,7 @@ MENU = [
     ("/orders", "Наряды", "orders", ["orders.view_all", "orders.view_own"]),
     ("/schedule", "Запись", "calendar", ["schedule.view", "schedule.manage"]),
     ("/clients", "Клиенты", "users", ["clients.view"]),
-    ("/stock", "Склад", "stock", ["stock.view"]),
+    ("/stock", "Склад", "stock", ["stock.view", "stock.look"]),
     # 12.11.2026: отдельный пункт кладовщику — запросы на выдачу (запчасти по нарядам и инструмент), с цифрой «сколько ждут»
     ("/stock/issues", "Запросы на выдачу", "inbox", ["stock.issue", "tools.manage"]),
     # 12.11.2026: менеджеру — что кладовщик подготовил к выдаче (у кладовщика это в «Запросах на выдачу»)

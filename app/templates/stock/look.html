@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles as tiles_m with context %}
+{# Склад глазами слесаря (11.11.2026): только название, наличие и количество — без цен, ячеек и управления.
+   Нажал на строку → карточка → «Попросить под наряд» (согласует менеджер, выдаёт кладовщик). #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Склад</h1>
+    <p class="footnote" style="margin:4px 0 0">Что есть в наличии. Нужная запчасть → нажмите → «Попросить под наряд». Нет в списке — напишите
+      менеджеру в <a href="/notifications#write">Сообщения</a>, закажут.</p></div>
+</header>
+{% set oq = ("&order=" ~ order) if order else "" %}
+{{ tiles_m([
+  {"t": "ТО", "n": n_sec.get("to", 0), "c": "blue", "s": "масла, фильтры, химия", "href": "/stock?sec=to" ~ oq, "on": sec == "to"},
+  {"t": "Запчасти", "n": n_sec.get("repair", 0), "c": "indigo", "s": "для ремонта", "href": "/stock?sec=repair" ~ oq, "on": sec == "repair"},
+  {"t": "Разбор (б/у)", "n": n_used, "c": "teal", "s": "с машин-доноров", "href": "/stock?sec=used" ~ oq, "on": sec == "used"}], "st-tiles") }}
+<form class="toolbar-row st-bar" method="get" action="/stock">
+  <input type="hidden" name="sec" value="{{ sec }}">{% if order %}<input type="hidden" name="order" value="{{ order }}">{% endif %}
+  <input class="field search" name="q" value="{{ q }}" placeholder="Поиск: название, бренд, артикул, марка машины" autocomplete="off">
+  <button class="btn btn-sm">Найти</button>
+</form>
+<div class="tablewrap">
+  <table class="table st-table">
+    <thead><tr><th>Запчасть</th><th>Подходит для</th><th class="num">Свободно</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr data-href="/stock/items/{{ r.i.id }}{{ ('?order=' ~ order) if order }}">
+      <td>{% if sec == "used" and r.i.code %}<span class="tag">{{ r.i.code }}</span> {% endif %}{{ r.c.name }}
+        <div class="caption">{% if r.c.category %}{{ r.c.category }}{% if r.c.subcategory %} › {{ r.c.subcategory }}{% endif %} · {% endif %}<span class="mono">{{ r.c.brand }} {{ r.c.article }}</span>{% if sec == "used" and r.i.donor_make %} · с {{ r.i.donor_make }} {{ r.i.donor_model }}{% endif %}</div></td>
+      <td class="footnote">{% for f in r.fits[:3] %}<span class="fit-chip">{{ fit_label(f) }}</span>{% else %}{{ r.c.fits or "—" }}{% endfor %}</td>
+      <td class="num"><b>{{ r.free|num if r.free > 0 else "нет" }}</b></td>
+    </tr>
+    {% else %}<tr><td colspan="3" class="footnote">{% if q %}Не нашлось — напишите менеджеру, чтобы заказали{% else %}Пусто{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>document.querySelectorAll('tr[data-href]').forEach(tr => tr.addEventListener('click', () => location.href = tr.dataset.href));</script>
+{% endblock %}

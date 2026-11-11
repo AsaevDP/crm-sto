@@ -1,22 +1,99 @@
 {% extends "base.html" %}
 {% from "_tiles.html" import tiles with context %}
+{# Сообщения (11.11.2026): переписка по нарядам (слесарь ↔ менеджер ↔ запчастист), запросы запчастей на согласование,
+   уведомления. Запчасть из наличия слесарь просит в карточке склада — «Попросить под наряд». #}
 {% block content %}
 <header class="page-head"><div><h1 class="large-title">Сообщения</h1>
-  <p class="footnote" style="margin:4px 0 0">Сюда приходит: «Все запчасти на складе», «Срочная деталь пришла», «Срочно нужна деталь», «Вам передали наряд».</p></div></header>
+  <p class="footnote" style="margin:4px 0 0">Переписка по машинам в ремонте и запросы запчастей. Уведомления — справа.</p></div>
+  {% if ctx.can("parts.ask") %}<div class="ov-actions"><a class="btn btn-sm btn-tinted" href="/stock">Попросить запчасть со склада</a></div>{% endif %}
+</header>
 {% set k = rows|map(attribute="kind")|list %}
+{% set n_pend = pend_ids|length %}
 {{ tiles([
-  {"t": "Всего", "n": rows|length, "c": "gray", "s": "последние сообщения"},
-  {"t": "Запчасти на складе", "n": k|select("equalto", "parts_ready")|list|length, "c": "green", "s": "можно начинать ремонт"},
-  {"t": "Срочно", "n": (k|select("equalto", "urgent_in")|list|length) + (k|select("equalto", "urgent_ask")|list|length), "c": "red", "s": "просят или пришло"},
-  {"t": "Готово к выдаче", "n": k|select("equalto", "issue_ready")|list|length, "c": "teal", "s": "забрать у кладовщика"},
-  {"t": "Передали наряд", "n": k|select("equalto", "handover")|list|length, "c": "blue", "s": "теперь ведёте вы"}]) }}
-<div class="card compact nt-list">
-  {% for n in rows %}
-  <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
-    <span class="nt-ico">{{ {"parts_ready": "✅", "issue_ready": "📦", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤"}.get(n.kind, "•") }}</span>
-    <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
-    <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
-  </a>
-  {% else %}<p class="footnote" style="margin:0">Сообщений пока нет</p>{% endfor %}
+  {"t": "Ждут согласования", "n": n_pend, "c": "red" if n_pend else "gray", "s": "запчасти по просьбе слесаря", "zero": not n_pend},
+  {"t": "Переписка", "n": msgs|length, "c": "blue", "s": "по моим машинам"},
+  {"t": "Уведомления", "n": rows|length, "c": "gray", "s": "последние"},
+  {"t": "Запчасти на складе", "n": k|select("equalto", "parts_ready")|list|length, "c": "green", "s": "можно начинать ремонт"}]) }}
+
+<div class="cl-grid">
+  <section class="ov-col on">
+    {% if write_orders %}
+    <form class="card compact form dense" method="post" action="/messages" id="write">
+      <div class="card-h"><span class="headline">Написать по машине</span></div>
+      <select class="field" name="order_id" id="msg-order" aria-label="Машина (наряд)" required>
+        <option value="">Машина (наряд)…</option>
+        {% for o in write_orders %}{% set v = vehicles.get(o.id) %}
+        <option value="{{ o.id }}" {% if sel_order == o.id|string %}selected{% endif %}
+          data-team='{{ {"manager": teams[o.id].manager.short_name if teams[o.id].manager else "", "partsman": teams[o.id].partsman.short_name if teams[o.id].partsman else "", "mechanic": teams[o.id].mechanic.short_name if teams[o.id].mechanic else ""}|tojson }}'>
+          {{ v.make }} {{ v.model }} · {{ fmt_plate(v.plate) }} · {{ o.number[-6:] }}</option>{% endfor %}
+      </select>
+      <div class="msg-to" id="msg-to">
+        {% for key, lbl in (("manager", "Менеджеру"), ("partsman", "Запчастисту"), ("mechanic", "Слесарю")) %}
+        <label class="chip-check"><input type="checkbox" name="to" value="{{ key }}" {% if key == "manager" and ctx.user.role.code == "mechanic" %}checked{% endif %}><span>{{ lbl }}<small data-who="{{ key }}"></small></span></label>
+        {% endfor %}
+      </div>
+      <textarea class="field" name="text" rows="2" maxlength="1000" placeholder="Например: «нужен ещё хомут глушителя — на складе нет, закажите»" required></textarea>
+      <input type="hidden" name="back" value="/notifications">
+      <button class="btn btn-sm">Отправить</button>
+    </form>
+    {% endif %}
+
+    <div class="group-title">Переписка · {{ msgs|length }}</div>
+    {% for m in msgs %}{% set o = orders.get(m.work_order_id) %}{% set v = vehicles.get(m.work_order_id) %}{% set who = people.get(m.created_by) %}
+    <div class="card compact msg {{ 'now' if m.id in pend_ids }}" id="m-{{ m.id }}" data-kind="{{ m.kind }}" data-st="{{ m.status }}">
+      <div class="card-h"><span class="headline">{{ who.short_name if who else "" }}{% if to_names.get(m.id) %} → {{ to_names[m.id] }}{% endif %}</span>
+        <span class="caption nowrap">{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      {% if o %}<a class="caption" href="/orders/{{ o.id }}">{% if v %}{{ v.make }} {{ v.model }} · {{ fmt_plate(v.plate) }} · {% endif %}наряд {{ o.number[-6:] }}</a>{% endif %}
+      {% if m.kind == "part" %}{% set c = cats.get(m.catalog_id) %}
+      <div class="msg-part"><span class="grow"><b>Просит со склада:</b> {{ c.name if c else "" }}{% if c and c.brand %} · {{ c.brand }}{% endif %}</span>
+        <b class="nowrap">{{ m.qty|num }} шт</b></div>
+      {% endif %}
+      {% if m.text %}<p class="ov-text" style="margin:0">{{ m.text }}</p>{% endif %}
+      {% if m.kind == "part" %}
+        {% if m.status == "pending" and m.id in pend_ids %}
+        <form class="form dense one-shot msg-decide" method="post" action="/messages/{{ m.id }}/decide">
+          {% if show_price %}<label>Цена для клиента, ₴ за шт<input class="field" name="price" inputmode="decimal" value="{{ '%.2f'|format(prices.get(m.id, 0)) }}"></label>{% endif %}
+          <input class="field" name="answer" placeholder="Комментарий (для отказа — обязательно)">
+          <div class="form-row">
+            <button class="btn btn-sm" name="action" value="approve">✓ Согласовать</button>
+            <button class="btn btn-sm btn-gray" name="action" value="decline">Отказать</button></div>
+          <p class="hint" style="margin:0">Согласуете — запчасть встанет в наряд (в счёт клиента) и уйдёт кладовщику на выдачу.</p>
+        </form>
+        {% else %}
+        <p class="caption msg-st" data-st="{{ m.status }}" style="margin:0">{{ {"pending": "Ждёт согласования менеджера", "approved": "✓ Согласовано — кладовщик выдаст", "declined": "Отказано"}.get(m.status, "") }}{% if m.decided_by and people.get(m.decided_by) %} · {{ people[m.decided_by].short_name }}{% endif %}{% if m.answer %} · «{{ m.answer }}»{% endif %}</p>
+        {% endif %}
+      {% endif %}
+      {% if write_orders and o and m.created_by != ctx.user.id %}
+      <a class="caption" href="/notifications?order={{ o.id }}#write">Ответить</a>{% endif %}
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Пока нет. Напишите по машине — сообщение увидят менеджер, запчастист или слесарь.</p></div>{% endfor %}
+  </section>
+
+  <section class="ov-col on">
+    <div class="group-title">Уведомления</div>
+    <div class="card compact nt-list">
+      {% for n in rows %}
+      <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
+        <span class="nt-ico">{{ {"parts_ready": "✅", "issue_ready": "📦", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤", "msg": "💬", "part_ask": "🙋", "part_ask_info": "🙋", "part_ok": "✅", "part_go": "📦", "part_no": "✕"}.get(n.kind, "•") }}</span>
+        <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
+        <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+      </a>
+      {% else %}<p class="footnote" style="margin:0">Уведомлений пока нет</p>{% endfor %}
+    </div>
+  </section>
 </div>
+<script>
+(function () {  // «Кому» — подписываем имена команды выбранной машины; кого нет в наряде — не выбрать
+  const sel = document.getElementById('msg-order'); if (!sel) return;
+  function sync() {
+    const o = sel.selectedOptions[0], t = o && o.dataset.team ? JSON.parse(o.dataset.team) : {};
+    document.querySelectorAll('#msg-to [data-who]').forEach(s => {
+      const k = s.dataset.who, box = s.closest('label').querySelector('input');
+      s.textContent = t[k] ? ' · ' + t[k] : (sel.value ? ' · нет' : '');
+      box.disabled = !!sel.value && !t[k]; if (box.disabled) box.checked = false;
+    });
+  }
+  sel.addEventListener('change', sync); sync();
+})();
+</script>
 {% endblock %}

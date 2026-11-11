@@ -306,6 +306,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         pay_token=uuid.uuid4().hex, refund_max=money_svc.refund_limit(db, wo),
         left_parts=money_svc.not_issued_parts(db, wo) if wo.status in ("ready", "paid") else [],
         reopen=_reopen_state(ctx, wo),
+        order_msgs=_order_msgs(ctx, wo),
         can_money=ctx.can("money.accept") and (wo.status not in ("closed", "cancel")
                                                or (wo.status == "closed" and money_svc.totals(db, wo).due > 0)),
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
@@ -323,6 +324,19 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         lifts=svc.lifts_with_load(db, ctx.branch.id) if can_assign else [],
         **_order_tools(ctx, wo, works),
     )
+
+
+def _order_msgs(ctx: Ctx, wo) -> dict:
+    """Сообщения по этой машине (11.11.2026) — переписка команды и запросы запчастей слесарем."""
+    from ..models import PartCatalog
+    from ..services import messages as msg
+    rows = msg.for_order(ctx.db, wo)
+    t = msg.team(ctx.db, wo)
+    return {"rows": rows, "team": t, "people": _people(ctx, *[m.created_by for m in rows], *[m.decided_by for m in rows]),
+            "cats": {c.id: c for c in ctx.db.scalars(select(PartCatalog).where(PartCatalog.id.in_([m.catalog_id for m in rows if m.catalog_id])))},
+            "can_write": wo.status in msg.OPEN_STATUSES,
+            "can_ask": ctx.can("parts.ask") and wo.status in msg.ASK_STATUSES
+                       and wo.id in {o.id for o in msg.my_orders(ctx)}}
 
 
 def _order_tools(ctx: Ctx, wo, works) -> dict:

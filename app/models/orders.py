@@ -204,7 +204,32 @@ class OrderAccess(Entity):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
-REOPEN_STATUS = {"pending": "Ждёт решения", "approved": "Открыт заново", "declined": "Отказано"}
+MSG_STATUS = {"pending": "Ждёт согласования", "approved": "Согласовано", "declined": "Отказано"}
+
+
+class OrderMessage(Entity):
+    """Сообщение по наряду (11.11.2026): общение внутри команды наряда — слесарь ↔ менеджер ↔ запчастист.
+    kind="text" — просто текст («нужно заказать хомут», «клиент просил ещё…»).
+    kind="part" — слесарь выбрал запчасть на складе (есть в наличии) и просит её под наряд: менеджер согласует
+    (тогда она в наряде, в резерве, и уходит кладовщику на выдачу) или отказывает. Кладовщик видит запрос заранее,
+    но выдать может только после согласования. Инструмент сюда не идёт — его слесарь просит у кладовщика напрямую."""
+    __tablename__ = "order_messages"
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10), default="text")
+    to_ids: Mapped[list] = mapped_column(JSON, default=list)        # кому (id сотрудников)
+    text: Mapped[str] = mapped_column(Text, default="")
+    # Запрос запчасти
+    stock_item_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("stock_items.id"), nullable=True)
+    catalog_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("parts_catalog.id"), nullable=True)
+    qty: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(10), default="", index=True)   # "" (текст) / pending / approved / declined
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    answer: Mapped[str] = mapped_column(String(300), default="")    # причина отказа / комментарий менеджера
+    wo_part_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+REOPEN_STATUS ={"pending": "Ждёт решения", "approved": "Открыт заново", "declined": "Отказано"}
 
 
 class OrderReopen(Entity):

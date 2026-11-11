@@ -737,8 +737,9 @@ def _stock_rows(ctx: Ctx, q: str, only: str, sec: str, cat: str, sub: str, make:
     from ..services import stock_cat as sc
     db = ctx.db
     items = db.scalars(select(StockItem).where(StockItem.branch_id == ctx.branch.id)).all()
+    used = sec == "used"   # 11.11.2026: слесарю — вкладка «Разбор (б/у)», только наличие, без цен
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.branch_id == ctx.branch.id,
-                                                                  PartCatalog.kind != "used"))}
+                                                                  (PartCatalog.kind == "used") if used else (PartCatalog.kind != "used")))}
     locs = {l.id: l for l in db.scalars(select(Location).where(Location.branch_id == ctx.branch.id))}
     fits = sc.fits_map(db, cats.keys())
     bal = svc.balances(db, ctx.branch.id)
@@ -746,7 +747,7 @@ def _stock_rows(ctx: Ctx, q: str, only: str, sec: str, cat: str, sub: str, make:
     ql = q.strip().lower()
     for i in items:
         c = cats.get(i.catalog_id)
-        if not c or (c.section or "repair") != sec:
+        if not c or (not used and (c.section or "repair") != sec):
             continue
         b = bal[i.id]
         if only == "free" and b["free"] <= 0:
@@ -777,18 +778,26 @@ def _stock_args(sec, cat, sub, make, model, q, only):
 
 @router.get("/stock")
 def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: str = "to", cat: str = "", sub: str = "",
-               make: str = "", model: str = ""):
-    """Склад (10.11.2026): вкладки «ТО» и «Запчасти», дерево категорий, фильтр по марке и модели, штрихкоды."""
-    ctx.need("stock.view")
+               make: str = "", model: str = "", order: str = ""):
+    """Склад (10.11.2026): вкладки «ТО» и «Запчасти», дерево категорий, фильтр по марке и модели, штрихкоды.
+    Слесарь (stock.look, 11.11.2026) — только смотрит: название, наличие, количество; ещё вкладка «Разбор (б/у)»."""
+    ctx.need("stock.view", "stock.look")
     from ..services import stock_cat as sc
     db = ctx.db
-    sec = sec if sec in SECTIONS else "to"
+    look = not ctx.can("stock.view")
+    sec = sec if sec in SECTIONS or (sec == "used" and look) else "to"
     hit = sc.by_barcode(db, ctx.branch.id, q)   # сканер «напечатал» штрихкод — сразу в карточку
     if hit:
         return _to(f"/stock/items/{hit.id}")
     sc.seed(db, ctx.branch.id)
     db.commit()
+    order = order if osvc._uuid(order) else ""
     rows, counts = _stock_rows(ctx, q, only, sec, cat, sub, make, model)
+    if look:   # слесарь: простой список — название, наличие, количество; б/у — отдельной вкладкой
+        n_used = len(_stock_rows(ctx, "", "", "used", "", "", "", "")[0]) if sec != "used" else len(rows)
+        return ctx.render("stock/look.html", title="Склад", rows=rows, q=q, sec=sec, order=order, n_used=n_used,
+                          SECTIONS=SECTIONS, fit_label=sc.fit_label,
+                          n_sec={s: len(_stock_rows(ctx, "", "", s, "", "", "", "")[0]) for s in SECTIONS})
     new_requests = db.scalar(select(func.count()).select_from(IssueRequest)
                              .where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == "new"))
     if ctx.can("tools.manage"):   # + запросы по инструменту (11.11.2026)
@@ -860,15 +869,21 @@ def stock_xlsx(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
 
 
 @router.get("/stock/items/{item_id}")
-def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx)):
-    ctx.need("stock.view")
+def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx), order: str = ""):
+    ctx.need("stock.view", "stock.look")
     from ..services import stock_cat as sc
     i = ctx.db.get(StockItem, _uuid(item_id))
     if not i or i.branch_id != ctx.branch.id:
         raise Forbidden()
     c = ctx.db.get(PartCatalog, i.catalog_id)
-    moves = ctx.db.scalars(select(StockMovement).where(StockMovement.stock_item_id == i.id)
-                           .order_by(StockMovement.created_at.desc()).limit(200)).all()
+    look = not ctx.can("stock.view")   # слесарь: без движений, наклеек и цен
+    moves = [] if look else ctx.db.scalars(select(StockMovement).where(StockMovement.stock_item_id == i.id)
+                                           .order_by(StockMovement.created_at.desc()).limit(200)).all()
+    ask_orders = []
+    if ctx.can("parts.ask"):
+        from ..services import messages as msg
+        ask_orders = msg.my_orders(ctx)
+    ask_vehicles = {o.id: ctx.db.get(Vehicle, o.vehicle_id) for o in ask_orders}
     orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([m.work_order_id for m in moves if m.work_order_id])))}
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.id.in_([m.created_by for m in moves if m.created_by])))}
     sc.seed(ctx.db, ctx.branch.id)
@@ -877,6 +892,9 @@ def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx)):
     return ctx.render("stock/item.html", title=c.name, i=i, c=c, b=svc.balances(ctx.db, ctx.branch.id, [i.id])[i.id],
                       loc=svc.location_label(ctx.db.get(Location, i.location_id) if i.location_id else None),
                       moves=moves, orders=orders, people=people, MOVEMENT_TYPES=MOVEMENT_TYPES,
+                      look=look, ask_orders=ask_orders, ask_vehicles=ask_vehicles, sel_order=order,
+                      free_all=svc.catalog_free(ctx.db, ctx.branch.id, [i.catalog_id])[i.catalog_id],
+                      fmt_plate=osvc.fmt_plate,
                       tree_json={s: [{"name": x["c"].name, "subs": [y.name for y in x["subs"]]}
                                      for x in sc.tree(ctx.db, ctx.branch.id, s)] for s in SECTIONS},
                       fits=sc.fits_map(ctx.db, [c.id]).get(c.id, []), fit_label=sc.fit_label,
@@ -1132,6 +1150,16 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
                     t_out=tsvc.out_on_orders(ctx.db, ctx.branch.id), t_done=tsvc.requests_list(ctx.db, ctx.branch.id, "done", 15),
                     can_manage=ctx.can("tools.manage"))
     else:
+        # 11.11.2026: слесарь попросил запчасть — кладовщик видит заранее, но выдаёт только после согласования менеджера
+        from ..services import messages as msg
+        pend = []
+        for m in msg.pending_parts(ctx.db, ctx.branch.id):
+            wo = ctx.db.get(WorkOrder, m.work_order_id)
+            item = ctx.db.get(StockItem, m.stock_item_id) if m.stock_item_id else None
+            pend.append({"m": m, "wo": wo, "v": ctx.db.get(Vehicle, wo.vehicle_id), "cat": ctx.db.get(PartCatalog, m.catalog_id),
+                         "who": ctx.db.get(User, m.created_by), "mgr": ctx.db.get(User, wo.manager_id) if wo.manager_id else None,
+                         "cell": svc.location_label(ctx.db.get(Location, item.location_id) if item and item.location_id else None)})
+        data["pend"] = pend
         data["done"] = _requests(ctx, "issued")[:15]
         data["ready"] = _requests(ctx, "ready")
         data["people"] = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
@@ -1243,14 +1271,135 @@ def notify_read(nid: str, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.get("/notifications")
-def notifications(ctx: Ctx = Depends(get_ctx)):
-    """Колокольчик: последние сообщения сотруднику."""
+def notifications(ctx: Ctx = Depends(get_ctx), order: str = ""):
+    """«Сообщения» (11.11.2026): переписка по нарядам (слесарь ↔ менеджер ↔ запчастист), запросы запчастей
+    на согласование и уведомления («Все запчасти на складе», «Вам передан наряд»…)."""
+    from ..models import OrderMessage, PartCatalog
+    from ..services import messages as msg
     from ..services import notify as nsvc
     rows = nsvc.recent(ctx.db, ctx.user.id)
     if not ctx.viewing_as:   # глазами сотрудника — не отмечаем его сообщения прочитанными
         nsvc.mark_read(ctx.db, ctx.user.id)
         ctx.db.commit()
-    return ctx.render("notifications.html", title="Сообщения", rows=rows)
+    mine = msg.visible(ctx)
+    # Менеджеру — все ждущие согласования по его нарядам (даже если писали не лично ему)
+    pend = [m for m in msg.pending_parts(ctx.db, ctx.branch.id)
+            if msg.can_decide(ctx, ctx.db.get(WorkOrder, m.work_order_id))]
+    ids = {m.id for m in mine}
+    mine = [m for m in pend if m.id not in ids] + mine
+    orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([m.work_order_id for m in mine])))}
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    cats = {c.id: c for c in ctx.db.scalars(select(PartCatalog).where(PartCatalog.id.in_([m.catalog_id for m in mine if m.catalog_id])))}
+    prices = {m.id: msg.client_price(ctx.db, ctx.branch.id, ctx.db.get(StockItem, m.stock_item_id))
+              for m in pend if m.stock_item_id}
+    write_orders = msg.my_orders(ctx, msg.OPEN_STATUSES)
+    import uuid as _u
+
+    def _names(m):
+        out = []
+        for x in m.to_ids or []:
+            try:
+                u = people.get(_u.UUID(str(x)))
+            except ValueError:
+                u = None
+            if u:
+                out.append(u.short_name)
+        return ", ".join(out)
+    return ctx.render("notifications.html", title="Сообщения", rows=rows, msgs=mine, pend_ids={m.id for m in pend},
+                      to_names={m.id: _names(m) for m in mine},
+                      orders=orders, people=people, cats=cats, prices=prices, write_orders=write_orders,
+                      teams={o.id: {k: (u if u and u.id != ctx.user.id else None) for k, u in msg.team(ctx.db, o).items()}
+                             for o in write_orders}, sel_order=order,
+                      vehicles={o.id: ctx.db.get(Vehicle, o.vehicle_id) for o in [*write_orders, *orders.values()]},
+                      fmt_plate=osvc.fmt_plate, show_price=ctx.can("prices.view_sale"))
+
+
+def _msg_order(ctx: Ctx, order_id: str) -> WorkOrder:
+    """Наряд, в команде которого я есть (или который вижу) — писать можно только по таким."""
+    from ..services import messages as msg
+    wo = ctx.db.get(WorkOrder, _uuid(order_id))
+    if not wo or wo.branch_id != ctx.branch.id:
+        raise Forbidden()
+    if wo.id not in {o.id for o in msg.my_orders(ctx, msg.OPEN_STATUSES)} and not osvc.can_view(ctx, wo):
+        raise Forbidden()
+    return wo
+
+
+@router.post("/messages")
+def message_send(ctx: Ctx = Depends(get_ctx), order_id: str = Form(""), to: list[str] = Form([]), text: str = Form(""),
+                 back: str = Form("")):
+    """Текстовое сообщение команде наряда: менеджеру, запчастисту, слесарю."""
+    from ..services import messages as msg
+    back = _safe_back(back, "/notifications")
+    if not order_id:
+        flash(ctx.request, "Выберите машину (наряд)", "error")
+        return _to(back)
+    wo = _msg_order(ctx, order_id)
+    t = msg.team(ctx.db, wo)
+    err = msg.send_text(ctx.db, ctx, wo, [t[k].id for k in to if k in t and t[k]], text)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Сообщение отправлено")
+    return _to(back)
+
+
+@router.post("/messages/ask")
+def message_ask(ctx: Ctx = Depends(get_ctx), item_id: str = Form(...), order_id: str = Form(""), qty: str = Form("1"),
+                text: str = Form("")):
+    """Слесарь просит запчасть со склада под свой наряд — согласует менеджер."""
+    from ..services import messages as msg
+    ctx.need("parts.ask")
+    item = ctx.db.get(StockItem, _uuid(item_id))
+    if not item or item.branch_id != ctx.branch.id:
+        raise Forbidden()
+    back = f"/stock/items/{item.id}"
+    mine = {str(o.id): o for o in msg.my_orders(ctx)}
+    wo = mine.get(order_id)
+    if not wo:
+        flash(ctx.request, "Выберите свою машину (наряд в ремонте)", "error")
+        return _to(back)
+    err = msg.ask_part(ctx.db, ctx, wo, item, _dec(qty, "0"), text)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+        return _to(back)
+    ctx.db.commit()
+    flash(ctx.request, "Запрос отправлен менеджеру. Кладовщик выдаст после согласования")
+    return _to(back)
+
+
+@router.post("/messages/{mid}/decide")
+def message_decide(mid: str, ctx: Ctx = Depends(get_ctx), action: str = Form(""), price: str = Form(""),
+                   answer: str = Form("")):
+    """Менеджер: «Согласовать» (запчасть в наряд, кладовщику на выдачу) или «Отказать» (с причиной)."""
+    from ..models import OrderMessage
+    from ..services import messages as msg
+    m = ctx.db.get(OrderMessage, _uuid(mid))
+    if not m or m.branch_id != ctx.branch.id or m.kind != "part":
+        raise Forbidden()
+    wo = ctx.db.get(WorkOrder, m.work_order_id)
+    if not msg.can_decide(ctx, wo):
+        raise Forbidden()
+    if action == "approve":
+        pr = None
+        if price.strip() and ctx.can("prices.view_sale"):
+            pr = _dec(price, "-1")
+            if pr < 0:
+                flash(ctx.request, "Цена не может быть меньше нуля", "error")
+                return _to(f"/notifications#m-{m.id}")
+        err = msg.approve(ctx.db, ctx, m, pr, answer)
+    else:
+        err = msg.decline(ctx.db, ctx, m, answer)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Согласовано — кладовщик получил запрос на выдачу" if action == "approve" else "Отказано — слесарь получил ответ")
+    return _to(f"/notifications#m-{m.id}")
 
 
 # ======================= Срочная деталь (11.11.2026) =======================

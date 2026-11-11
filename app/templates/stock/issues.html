@@ -14,6 +14,19 @@
 {% if tab == "parts" %}
 <div class="cl-grid">
   <section class="ov-col on">
+    {% if pend %}
+    <div class="group-title">Слесарь просит — ждёт согласования менеджера · {{ pend|length }}</div>
+    {% for x in pend %}
+    <div class="card compact issue wait">
+      <div class="card-h"><span class="headline">{{ x.who.full_name if x.who else "" }} просит</span>
+        <span class="caption">{{ x.m.created_at.astimezone().strftime("%H:%M") }}</span></div>
+      <div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
+      <div class="kv"><span>{{ x.cat.name if x.cat else "" }} <span class="mono caption">{{ x.cat.article if x.cat else "" }}</span></span><b>{{ x.m.qty|num }} шт · {{ x.cell }}</b></div>
+      {% if x.m.text %}<p class="ov-text" style="margin:0">«{{ x.m.text }}»</p>{% endif %}
+      <p class="hint warn" style="margin:0">Пока не выдавать: ждём «Согласовать» от {{ x.mgr.short_name if x.mgr else "менеджера" }}. После согласования запрос появится ниже.</p>
+    </div>
+    {% endfor %}
+    {% endif %}
     <div class="group-title">Ждут выдачи · {{ new|length }}</div>
     {% for x in new %}
     <div class="card compact issue">

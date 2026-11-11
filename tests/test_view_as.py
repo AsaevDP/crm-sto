@@ -26,7 +26,7 @@ def test_admin_views_as_mechanic(client):
     client.post(f"/view-as/{_uid('andrey')}")
     html = client.get("/more").text
     assert "Вы работаете как" in html and "Андрей Демченко" in html
-    assert _menu(html) == ["/orders", "/schedule", "/timesheet", "/payroll", "/tools"]  # меню слесаря
+    assert _menu(html) == ["/orders", "/schedule", "/stock", "/timesheet", "/payroll", "/tools"]  # меню слесаря
     assert "--accent: var(--green)" in html                            # его цвет
     assert client.get("/settings").status_code == 403                  # его права
     client.post("/view-as/stop")

@@ -254,6 +254,34 @@
       </div>
     </div>
 
+    {# 11.11.2026: переписка по машине — слесарь ↔ менеджер ↔ запчастист; запчасть из наличия — через склад #}
+    {% set om = order_msgs %}
+    <div class="card compact" id="msgs">
+      <div class="card-h"><span class="headline">Сообщения · {{ om.rows|length }}</span>
+        {% if om.can_ask %}<a class="btn btn-sm btn-tinted" href="/stock?order={{ wo.id }}">🙋 Запчасть со склада</a>{% endif %}</div>
+      {% for m in om.rows[-6:] %}{% set who = om.people.get(m.created_by) %}
+      <div class="kv" style="align-items:flex-start"><span><b>{{ who.short_name if who else "" }}</b>
+        {% if m.kind == "part" %}{% set c = om.cats.get(m.catalog_id) %}просит со склада: {{ c.name if c else "" }} × {{ m.qty|num }}
+          <span class="caption msg-st" data-st="{{ m.status }}">· {{ {"pending": "ждёт менеджера", "approved": "согласовано", "declined": "отказано"}.get(m.status, "") }}{% if m.answer %} «{{ m.answer }}»{% endif %}</span>{% endif %}
+        {% if m.text %}<span style="display:block">{{ m.text }}</span>{% endif %}</span>
+        <span class="caption nowrap">{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      {% else %}<p class="footnote" style="margin:0">Пока нет. Нужно что-то докупить или уточнить — напишите здесь.</p>{% endfor %}
+      {% if om.rows|selectattr("status", "equalto", "pending")|list and ctx.can("orders.approve") %}
+      <a class="btn btn-sm" href="/notifications">Согласовать запросы →</a>{% endif %}
+      {% if om.can_write %}
+      <form class="form dense" method="post" action="/messages">
+        <input type="hidden" name="order_id" value="{{ wo.id }}"><input type="hidden" name="back" value="/orders/{{ wo.id }}#msgs">
+        <div class="msg-to">
+          {% for key, lbl in (("manager", "Менеджеру"), ("partsman", "Запчастисту"), ("mechanic", "Слесарю")) %}{% set u = om.team[key] %}
+          {% if u and u.id != ctx.user.id %}<label class="chip-check"><input type="checkbox" name="to" value="{{ key }}" {% if key == "manager" or ctx.user.role.code != "mechanic" %}checked{% endif %}><span>{{ lbl }}<small> · {{ u.short_name }}</small></span></label>{% endif %}
+          {% endfor %}
+        </div>
+        <textarea class="field" name="text" rows="2" maxlength="1000" placeholder="Сообщение по этой машине" required></textarea>
+        <button class="btn btn-sm">Отправить</button>
+      </form>
+      {% endif %}
+    </div>
+
     {% if can_cancel %}
     <details class="card compact">
       <summary class="footnote" style="cursor:pointer;color:var(--red)">Отменить наряд…</summary>

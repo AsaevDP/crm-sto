@@ -34,6 +34,13 @@ def compute(ctx) -> dict:
     out: dict = {}
     see_all = role in ALL_ROLES
 
+    # ---------- Слесарь просит запчасть (11.11.2026) — кладовщику «для сведения»; менеджеру цифра — у «Сообщений» ----------
+    if ctx.can("stock.issue"):
+        from ..models import OrderMessage
+        _add(out, "/stock/issues", "yellow", db.scalar(select(func.count()).select_from(OrderMessage).where(
+            OrderMessage.branch_id == bid, OrderMessage.kind == "part", OrderMessage.status == "pending")) or 0,
+             "слесарь просит — ждёт согласования менеджера")
+
     # ---------- Наряды ----------
     if ctx.can("orders.view_all", "orders.view_own"):
         mine = or_(WorkOrder.manager_id == me.id, WorkOrder.mechanic_id == me.id, WorkOrder.partsman_id == me.id)

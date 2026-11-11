@@ -6,15 +6,17 @@
     <div><h1 class="title-1">{{ c.name }}</h1>
       <div class="subhead mono">{% if c.kind == "used" %}{{ c.category or "Прочее" }}{% else %}{{ SECTIONS.get(c.section, "") }}{% if c.category %} · {{ c.category }}{% endif %}{% if c.subcategory %} › {{ c.subcategory }}{% endif %}{% endif %} · {{ c.brand }} {{ c.article }}{% if c.revision %} · рев. {{ c.revision }}{% endif %} · ячейка {{ loc }}</div></div>
     <div class="ov-actions">
+      {% if not look %}
       <form method="get" action="/stock/labels" target="_blank" class="label-form">
         <input type="hidden" name="ids" value="{{ i.id }}">
         <input class="field" type="number" name="copies" value="1" min="1" max="50" aria-label="Сколько наклеек">
         <button class="btn btn-sm">🏷 Наклейка</button>
       </form>
+      {% endif %}
     </div>
   </div>
 </header>
-{% if barcode_svg %}<div class="bc-strip" title="Штрихкод для сканера">{{ barcode_svg|safe }}<span class="mono">{{ i.barcode }}</span></div>{% endif %}
+{% if barcode_svg and not look %}<div class="bc-strip" title="Штрихкод для сканера">{{ barcode_svg|safe }}<span class="mono">{{ i.barcode }}</span></div>{% endif %}
 <div class="stats" style="grid-template-columns:repeat(3,1fr)">
   <div class="stat"><span class="footnote">На складе</span><b>{{ b.on_hand|num }}</b></div>
   <div class="stat"><span class="footnote">В резерве</span><b>{{ b.reserved|num }}</b></div>
@@ -22,6 +24,31 @@
 </div>
 <div class="cl-grid fill item-grid">
   <section class="ov-col on">
+    {# 11.11.2026: слесарь просит эту запчасть под свою машину — согласует менеджер, выдаёт кладовщик #}
+    {% if ctx.can("parts.ask") %}
+    <div class="card compact form dense" id="ask">
+      <div class="card-h"><span class="headline">Попросить под наряд</span></div>
+      {% if free_all <= 0 %}
+      <p class="footnote" style="margin:0">Свободных нет — попросить со склада нельзя. Напишите менеджеру или запчастисту,
+        чтобы заказали: <a href="/notifications#write">Сообщения →</a></p>
+      {% elif not ask_orders %}
+      <p class="footnote" style="margin:0">У вас нет машины в ремонте — просить не для кого.</p>
+      {% else %}
+      <form class="form dense one-shot" method="post" action="/messages/ask">
+        <input type="hidden" name="item_id" value="{{ i.id }}">
+        <select class="field" name="order_id" required aria-label="Машина (наряд)">
+          {% if ask_orders|length > 1 %}<option value="">Для какой машины?</option>{% endif %}
+          {% for o in ask_orders %}{% set v = ask_vehicles.get(o.id) %}
+          <option value="{{ o.id }}" {% if sel_order == o.id|string %}selected{% endif %}>{{ v.make }} {{ v.model }} · {{ fmt_plate(v.plate) }} · {{ o.number[-6:] }}</option>{% endfor %}
+        </select>
+        <label>Сколько, шт (свободно {{ free_all|num }})<input class="field" name="qty" inputmode="decimal" value="1" required></label>
+        <textarea class="field" name="text" rows="2" maxlength="1000" placeholder="Комментарий менеджеру: зачем нужна (необязательно)"></textarea>
+        <button class="btn btn-sm">🙋 Попросить</button>
+        <p class="hint" style="margin:0">Менеджер согласует — кладовщик выдаст. До согласования не выдают.</p>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if ctx.can("stock.manage", "parts.pick") %}
     <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/category">
       <div class="card-h"><span class="headline">Раздел и категория</span></div>
@@ -88,6 +115,7 @@
     </form>
     {% endif %}
   </section>
+  {% if not look %}
   <section class="ov-col on">
     <div class="card compact">
       <div class="card-h"><span class="headline">Движения</span></div>
@@ -101,5 +129,6 @@
       </div>
     </div>
   </section>
+  {% endif %}
 </div>
 {% endblock %}
