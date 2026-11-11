@@ -1573,8 +1573,8 @@ main a:not([class]):hover { text-decoration: underline; }
 .sh-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-top: 8px; border-top: 0.5px solid var(--separator); margin: 0; }
 .sh-form .field { width: auto; flex: 1 1 160px; min-width: 0; }
 .sh-form .btn { white-space: nowrap; }
-.sh-ret { display: contents; }
-.sh-ret[open] { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+.sh-ret[open] { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; width: 100%; }
+.sh-ret[open] .btn { white-space: nowrap; }
 .cr-row.off { opacity: .6; }
 .cr-row .form-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .cr-row .field { flex: 1 1 160px; width: auto; }

@@ -18,11 +18,11 @@
   .lab { width: {{ W }}mm; height: {{ H }}mm; background: #fff; padding: {{ [W, H]|min * 0.05 }}mm; display: flex; flex-direction: column; gap: 0.8mm;
     overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,.15); border: {{ "0" if cfg.mode == "label" else "0.2mm dashed #999" }}; }
   .top { display: flex; justify-content: space-between; gap: 2mm; font-size: {{ (H * 0.07)|round(1) }}pt; color: #333; }
-  .to { font-weight: 800; font-size: {{ (H * 0.12)|round(1) }}pt; line-height: 1.1; }
-  .addr { font-size: {{ (H * 0.09)|round(1) }}pt; line-height: 1.15; }
-  .meta { font-size: {{ (H * 0.075)|round(1) }}pt; color: #222; line-height: 1.15; white-space: nowrap; overflow: hidden; }
-  .ttn { font: 700 {{ (H * 0.1)|round(1) }}pt "Consolas", monospace; }
-  .bc { width: 100%; flex: 1 1 auto; min-height: {{ (H * 0.18)|round(1) }}mm; display: block; }
+  .to { font-weight: 800; font-size: {{ (H * 0.17)|round(1) }}pt; line-height: 1.1; }
+  .addr { font-weight: 600; font-size: {{ (H * 0.14)|round(1) }}pt; line-height: 1.15; }
+  .meta { font-size: {{ (H * 0.1)|round(1) }}pt; color: #222; line-height: 1.15; white-space: nowrap; overflow: hidden; }
+  .ttn { font: 700 {{ (H * 0.13)|round(1) }}pt "Consolas", monospace; }
+  .bc { width: 100%; flex: 0 0 auto; height: {{ (H * 0.22)|round(1) }}mm; margin-top: auto; display: block; }
   .cod { font-weight: 800; border: 0.4mm solid #000; padding: 0 1mm; }
   @media print {
     body { background: #fff; } .bar { display: none; }

@@ -54,9 +54,9 @@
       {% if s.delivery != "pickup" %}
       <select class="field" name="carrier_id" aria-label="Служба доставки">
         {% for c in carriers %}<option value="{{ c.id }}" {% if c.id == s.carrier_id or (not s.carrier_id and s.delivery == "np" and c.name.lower().startswith("нова")) %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-      <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН (с наклейки службы)" inputmode="numeric">
+      <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН" title="Номер с наклейки службы доставки" inputmode="numeric">
       {% endif %}
-      <input class="field" name="place" value="{{ s.place or '' }}" placeholder="Где лежит: полка отправок 1, у окошка…">
+      <input class="field" name="place" value="{{ s.place or '' }}" placeholder="Где лежит" title="Например: полка отправок 1, у окошка">
       <a class="btn btn-sm btn-gray" href="/razbor/shipping/labels?ids={{ s.id }}" target="_blank">🏷 Наша наклейка</a>
       <button class="btn btn-sm">{{ "📦 Готово к отправке" if s.delivery != "pickup" else "🙋 Готово к выдаче" }}</button>
     </form>
@@ -73,7 +73,7 @@
     {% elif r.stage == "ready_ship" %}
     <form class="sh-form" method="post" action="/razbor/sales/{{ s.id }}">
       <input type="hidden" name="back" value="/razbor/shipping?st=ready_ship">
-      <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН{% if not r.ttn_need %} (необязательно){% endif %}" {% if r.ttn_need %}required{% endif %} inputmode="numeric">
+      <input class="field mono" name="ttn" value="{{ s.ttn }}" placeholder="ТТН{% if not r.ttn_need %} (не обяз.){% endif %}" {% if r.ttn_need %}required{% endif %} inputmode="numeric">
       {% if not s.cod %}<label class="caption"><input type="checkbox" name="paid" value="1" {% if s.paid %}checked{% endif %}> предоплата получена</label>{% endif %}
       <button class="btn btn-sm" name="action" value="ship">🚚 Отправлено</button>
       <a class="btn btn-sm btn-gray" href="/razbor/shipping/labels?ids={{ s.id }}" target="_blank">🏷 Наклейка</a>
