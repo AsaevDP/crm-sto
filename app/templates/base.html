@@ -27,8 +27,11 @@
       <span><span class="headline brand-name">{{ branding.name }}</span><span class="caption">{{ user.role.name }}</span></span>
     </a>
     <nav class="sidebar">
+      {# подсвечиваем самый точный пункт: на /stock/issues — «Запросы на выдачу», а не «Склад» #}
+      {% set nav = namespace(cur="") %}
+      {% for m in menu if active.startswith(m.href) and m.href|length > nav.cur|length %}{% set nav.cur = m.href %}{% endfor %}
       {% for m in menu %}
-      <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}{{ m.title }}</a>
+      <a href="{{ m.href }}" {% if m.href == nav.cur %}aria-current="page"{% endif %}>{{ icon(m.icon) }}{{ m.title }}</a>
       {% endfor %}
     </nav>
     <nav class="sidebar side-extra" aria-label="Личное">
@@ -77,6 +80,7 @@
       const r = await fetch('/api/notify', { headers: { 'x-requested-with': 'fetch' } });
       if (!r.ok) return;
       const j = await r.json(); badge('.sidebar a[href="/stock"], .tabbar a[href="/stock"]', (j.issues || 0) + (j.receive || 0));
+      badge('.sidebar a[href="/stock/issues"], .tabbar a[href="/stock/issues"]', j.issues || 0);   // «Запросы на выдачу»: 1, 2…
       badge('.sidebar a[href="/notifications"]', j.unread);
       (j.notes || []).forEach(n => window.crmToast && window.crmToast({
         id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', handover: 'Наряд' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,

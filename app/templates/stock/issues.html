@@ -2,7 +2,7 @@
 {# Выдача (11.11.2026): вкладки «Запчасти» и «Инструмент». Кладовщик видит, что выдать, что сдают, что на руках. #}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Выдача</h1></div>
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Запросы на выдачу</h1></div>
   {% if can_tools %}
   <nav class="segmented iss-tabs" aria-label="Что выдаём">
     <a href="/stock/issues?tab=parts" aria-pressed="{{ (tab == 'parts')|lower }}">Запчасти{% if n_parts %} · {{ n_parts }}{% endif %}</a>

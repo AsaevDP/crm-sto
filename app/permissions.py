@@ -112,6 +112,8 @@ MENU = [
     ("/schedule", "Запись", "calendar", ["schedule.view", "schedule.manage"]),
     ("/clients", "Клиенты", "users", ["clients.view"]),
     ("/stock", "Склад", "stock", ["stock.view"]),
+    # 12.11.2026: отдельный пункт кладовщику — запросы на выдачу (запчасти по нарядам и инструмент), с цифрой «сколько ждут»
+    ("/stock/issues", "Запросы на выдачу", "inbox", ["stock.issue", "tools.manage"]),
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
     ("/my-orders", "Мои заказы", "list", ["purchases.mine"]),
     ("/purchases/by-partsman", "Заказы запчастистов", "users", ["purchases.by_partsman"]),

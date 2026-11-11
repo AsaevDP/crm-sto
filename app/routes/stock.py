@@ -1064,7 +1064,7 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
                     can_manage=ctx.can("tools.manage"))
     else:
         data["done"] = _requests(ctx, "issued")[:15]
-    return ctx.render("stock/issues.html", title="Выдача", **data)
+    return ctx.render("stock/issues.html", title="Запросы на выдачу", **data)
 
 
 @router.post("/stock/issues/{rid}/issue")
