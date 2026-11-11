@@ -243,13 +243,8 @@ class IntakeForm:
         return e
 
     def problems(self, db: Session, branch_id) -> list[str]:
-        """Проверки по базе: занятый подъёмник, пробег меньше прошлого."""
+        """Проверки по базе: пробег меньше прошлого. (Занятый подъёмник — не ошибка: машина встаёт в очередь.)"""
         e = []
-        lift_id = _uuid(self.lift_id)
-        lift = db.get(Lift, lift_id) if lift_id else None
-        busy = lift_busy(db, lift) if lift and lift.branch_id == branch_id else None
-        if busy:
-            e.append(f"Подъёмник {lift.number} занят (наряд {busy.number}) — выберите другой или без подъёмника")
         v, _ = find_vehicle(db, branch_id, self)
         mileage = _int(self.mileage)
         if v and mileage is not None and v.mileage and mileage < v.mileage:
@@ -355,23 +350,28 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
         u = db.get(User, _uuid(v)) if v else None
         return u.id if u and u.branch_id == bid and u.active and u.role.code == role else None
 
-    lift = db.get(Lift, _uuid(f.lift_id)) if f.lift_id else None
+    lift = db.get(Lift, _uuid(f.lift_id)) if f.lift_id and _uuid(f.lift_id) else None
     if lift and lift.branch_id != bid:
         lift = None
+    # Подъёмник занят — машину всё равно принимаем, она ждёт в очереди (решение брата 11.11.2026).
+    # На подъёмник её ставят, когда он освободится («Кто и где» в наряде). Слесарь поста — тот же.
+    queue_for = lift if lift and lift_busy(db, lift) else None
     fuel = _int(f.fuel_level)
     mechanic = staff(f.mechanic_id, "mechanic") or (lift.mechanic_id if lift else None)
     wo = WorkOrder(
         number=numbering.next_number(db, bid), client_id=client.id, vehicle_id=vehicle.id,
         status="created", scenario="A" if f.scenario == "A" else "B", manager_id=ctx.user.id,
         partsman_id=staff(f.partsman_id, "partsman"), mechanic_id=mechanic,
-        lift_id=lift.id if lift else None,
+        lift_id=lift.id if lift and not queue_for else None,
         mileage_in=mileage, complaint=f.complaint.strip(),
         fuel_level=fuel if fuel in FUEL_LEVELS else None,
         intake_items=[i for i in f.intake_items if i in INTAKE_ITEMS], intake_note=f.intake_note.strip(),
     )
     db.add(wo)
     db.flush()
-    db.add(WoStatusHistory(work_order_id=wo.id, from_status="", to_status="created", comment="Приёмка"))
+    db.add(WoStatusHistory(work_order_id=wo.id, from_status="", to_status="created",
+                           comment=f"Приёмка · в очереди на подъёмник {queue_for.number}" if queue_for else "Приёмка"))
+    wo.queued_for = queue_for.number if queue_for else None   # для сообщения после приёмки (в базу не пишется)
     event(db, wo, "order", f"Приёмка. {wo.complaint or ''}".strip())
     if wo.scenario == "A":
         rate = _hour_rate(db, bid)

@@ -205,7 +205,8 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
         if same:
             return {"ok": True, "url": f"/orders/{same.id}"}
         raise
-    flash(request, f"Наряд {wo.number} создан")
+    q = getattr(wo, "queued_for", None)
+    flash(request, f"Наряд {wo.number} создан" + (f" — подъёмник {q} занят, машина в очереди" if q else ""))
     return {"ok": True, "url": f"/orders/{wo.id}"}
 
 

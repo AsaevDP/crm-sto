@@ -99,7 +99,7 @@
             {% for u in mechanics %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
         </label>
         <label>Подъёмник
-          <select class="field" name="lift_id" id="lift"><option value="">Без поста</option>
+          <select class="field" name="lift_id" id="lift"><option value="">В очередь (без поста)</option>
             {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if busy %}data-busy="{{ busy.number }}"{% endif %}>{{ l.number }} · {{ l.name }}{% if busy %} · занят{% endif %}</option>{% endfor %}</select>
         </label>
       </div>
@@ -160,14 +160,14 @@
   seg('scen', 'scenario', v => document.querySelectorAll('[data-only]').forEach(el => el.hidden = el.dataset.only !== v));
   seg('fuel', 'fuel_level');
 
-  // ---- Подъёмник занят: предупреждаем, но не запрещаем ----
+  // ---- Подъёмник занят: машину принимаем, она ждёт в очереди на этот пост ----
   const lift = document.getElementById('lift'), lw = document.getElementById('liftwarn');
   lift.onchange = () => {
     const mech = lift.selectedOptions[0].dataset.mech;
     if (mech) $('mechanic_id').value = mech;   // слесарь, закреплённый за постом
     const busy = lift.selectedOptions[0].dataset.busy;
     lw.hidden = !busy;
-    if (busy) lw.textContent = `На этом подъёмнике уже стоит наряд ${busy}. Если машину сняли — всё ок.`;
+    if (busy) lw.textContent = `Подъёмник занят (наряд ${busy}) — машину примем, она встанет в очередь. Поставите на подъёмник, когда он освободится.`;
   };
 
   // ---- Поиск клиента ----

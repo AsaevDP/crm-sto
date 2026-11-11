@@ -361,8 +361,19 @@ def test_lift_one_car_and_stock_adjust_limits(client):
         free = next(l for l in db.scalars(select(Lift).order_by(Lift.number.desc())) if not lift_busy(db, l))
         lid = str(free.id)
     assert _create(client, plate="КЕ 1115 КЕ", phone="0501115000", lift_id=lid).status_code == 200
+    # Подъёмник занят — машину всё равно принимаем, в очередь (без подъёмника), а не вторую на тот же пост
     r = _create(client, plate="КЕ 1116 КЕ", phone="0501116000", lift_id=lid)
-    assert r.status_code == 400 and "занят" in r.text
+    assert r.status_code == 200
+    queued = _wo(r.json()["url"])
+    assert queued.lift_id is None
+    from app.models import WoStatusHistory
+    with SessionLocal() as db:
+        assert "в очереди на подъёмник" in db.scalar(select(WoStatusHistory.comment).where(
+            WoStatusHistory.work_order_id == queued.id))
+    # Поставить на занятый подъёмник из наряда нельзя — сначала освободить
+    client.post(f"/orders/{queued.id}/assign", data={"lift_id": lid, "partsman_id": "", "mechanic_id": "",
+                                                     "manager_id": str(queued.manager_id)})
+    assert _wo(r.json()["url"]).lift_id is None
     # Инвентаризация: минус и ниже резерва — нельзя
     _as(client, "pavel")
     with SessionLocal() as db:
