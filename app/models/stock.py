@@ -172,6 +172,8 @@ class Purchase(Entity):
     # 11.11.2026: когда отправили поставщику и когда обещали привезти
     ordered_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     expected_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # 12.11.2026: у каждого запчастиста свои закупки (кто заказал = created_by), под наряд — отдельная на каждый наряд
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
 
 class PurchaseLine(Entity):

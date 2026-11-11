@@ -282,11 +282,15 @@ PURCHASE_TABS = {"draft": "Черновики", "wait": "Ждём", "arrived": "
 
 
 @router.get("/purchases")
-def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = ""):
+def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: str = ""):
     ctx.need("purchases.view")
     db = ctx.db
     allp = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id)
                       .order_by(Purchase.created_at.desc())).all()
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    buyers = sorted({p.created_by for p in allp if p.created_by in people}, key=lambda i: people[i].full_name)
+    if who:   # 12.11.2026: закупки одного запчастиста
+        allp = [p for p in allp if str(p.created_by) == who]
     counts = {"draft": sum(p.status == "draft" for p in allp),
               "wait": sum(p.status in ("ordered", "partial") for p in allp),
               "arrived": sum(p.status == "arrived" for p in allp), "all": len(allp)}
@@ -311,10 +315,57 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = ""):
                                                        PurchaseLine.wo_part_id.in_(urgent_parts or [uuid.uuid4()]))):
             stats[l.purchase_id]["urgent"] += 1
     suppliers = db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all()
+    p_orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([p.work_order_id for p in rows if p.work_order_id])))}
+    p_veh = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in p_orders.values()])))}
     from datetime import date as _d
     return ctx.render("stock/purchases.html", title="Закупки", rows=rows, stats=stats,
+                      people=people, buyers=[people[i] for i in buyers], who=who, p_orders=p_orders, p_veh=p_veh,
                       suppliers={s.id: s for s in suppliers}, supplier_list=suppliers, tab=tab, sup=sup,
                       counts=counts, TABS=PURCHASE_TABS, PURCHASE_STATUS=PURCHASE_STATUS, today=_d.today())
+
+
+def _orders_board(ctx: Ctx, uid, st: str, mode: str, people_tiles=None):
+    rows = svc.partsman_lines(ctx.db, ctx.branch.id, uid)
+    counts = svc.order_counts(rows)
+    if st == "late":
+        shown = [r for r in rows if r["late"]]
+    elif st in svc.ORDER_STATES:
+        shown = [r for r in rows if r["st"] == st]
+    else:
+        shown = [r for r in rows if r["st"] != "arrived"] or rows
+    shown.sort(key=lambda r: (not r["late"], not (r["part"] and r["part"].urgent), r["st"] == "arrived"))
+    return dict(rows=shown[:300], counts=counts, st=st, mode=mode, people_tiles=people_tiles or [],
+                STATES=svc.ORDER_STATES, fmt_plate=osvc.fmt_plate, cost_ok=ctx.can("prices.view_purchase"))
+
+
+@router.get("/my-orders")
+def my_orders(ctx: Ctx = Depends(get_ctx), st: str = ""):
+    """Мои заказы (запчастист, 12.11.2026): всё, что он заказал по своим нарядам и на склад, и пришло ли."""
+    ctx.need("purchases.mine")
+    return ctx.render("stock/partsman_orders.html", title="Мои заказы", who=ctx.user,
+                      **_orders_board(ctx, ctx.user.id, st, "mine"))
+
+
+@router.get("/purchases/by-partsman")
+def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
+    """Заказы запчастистов (кладовщик, директор, админ): плитки по каждому, внутри — его заказы."""
+    ctx.need("purchases.by_partsman")
+    db = ctx.db
+    all_rows = svc.partsman_lines(db, ctx.branch.id)
+    staff = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True))).all()
+    ids = {u_.id for u_ in staff if u_.role.code == "partsman"} | {r["buyer"].id for r in all_rows if r["buyer"]}
+    tiles = []
+    for p in sorted((x for x in db.scalars(select(User).where(User.id.in_(list(ids))))), key=lambda x: x.full_name):
+        mine = [r for r in all_rows if r["buyer"] and r["buyer"].id == p.id]
+        c = svc.order_counts(mine)
+        tiles.append({"u": p, "wait": c["wait"] + c["partial"], "late": c["late"], "arrived": c["arrived"], "draft": c["draft"]})
+    who = db.get(User, _uuid(u)) if u else None
+    if who and who.branch_id != ctx.branch.id:
+        raise Forbidden()
+    board = _orders_board(ctx, who.id, st, "all", tiles) if who else dict(
+        rows=[], counts={}, st="", mode="all", people_tiles=tiles, STATES=svc.ORDER_STATES, fmt_plate=osvc.fmt_plate,
+        cost_ok=ctx.can("prices.view_purchase"))
+    return ctx.render("stock/partsman_orders.html", title="Заказы запчастистов", who=who, **board)
 
 
 @router.post("/purchases/new")
@@ -351,14 +402,17 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx)):
     lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id).order_by(PurchaseLine.created_at)).all()
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([l.catalog_id for l in lines])))}
     parts = {x.id: x for x in db.scalars(select(WoPart).where(WoPart.id.in_([l.wo_part_id for l in lines if l.wo_part_id])))}
-    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([x.work_order_id for x in parts.values()])))}
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_(
+        [x.work_order_id for x in parts.values()] + ([p.work_order_id] if p.work_order_id else []))))}
     locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id).order_by(Location.rack, Location.shelf, Location.place)).all()
     vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
     drafts = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id, Purchase.status == "draft",
                                                Purchase.id != p.id).order_by(Purchase.created_at)).all()
     sup_all = db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all()
     from ..services import brands as _br
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     return ctx.render("stock/purchase.html", title="Закупка", p=p, lines=lines, cats=cats, parts=parts, orders=orders,
+                      buyer=people.get(p.created_by), people=people,
                       vehicles=vehicles, BRANDS=_br.names(db, ctx.branch.id), suppliers=sup_all,
                       sup_names={s.id: s.name for s in sup_all}, drafts=drafts,
                       supplier=db.get(Supplier, p.supplier_id) if p.supplier_id else None,
@@ -1077,11 +1131,14 @@ def part_urgent(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
 
 
 # ======================= Приход у кладовщика (11.11.2026) =======================
-def _receive_lines(ctx: Ctx):
-    """Что ждём от поставщиков: непринятые строки заказанных закупок, по закупкам; срочное — сверху."""
+def _receive_lines(ctx: Ctx, who: str = ""):
+    """Что ждём от поставщиков: непринятые строки заказанных закупок, по закупкам; срочное — сверху.
+    who — только закупки этого запчастиста (12.11.2026)."""
     db = ctx.db
     purchases = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
                                                   Purchase.status.in_(("ordered", "partial"))).order_by(Purchase.created_at)).all()
+    if who:
+        purchases = [p for p in purchases if str(p.created_by) == who]
     groups = []
     for p in purchases:
         rows = []
@@ -1095,7 +1152,8 @@ def _receive_lines(ctx: Ctx):
         if rows:
             rows.sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["c"].name if r["c"] else ""))
             groups.append({"p": p, "sup": db.get(Supplier, p.supplier_id) if p.supplier_id else None, "rows": rows,
-                           "urgent": any(r["urgent"] for r in rows)})
+                           "urgent": any(r["urgent"] for r in rows),
+                           "buyer": db.get(User, p.created_by) if p.created_by else None})
     groups.sort(key=lambda g: not g["urgent"])
     return groups
 
@@ -1107,13 +1165,14 @@ def _receive_count(ctx: Ctx) -> int:
 
 
 @router.get("/stock/receive")
-def receive_page(ctx: Ctx = Depends(get_ctx)):
+def receive_page(ctx: Ctx = Depends(get_ctx), who: str = ""):
     ctx.need("stock.manage")
     db = ctx.db
     locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
                            .order_by(Location.rack, Location.shelf, Location.place)).all()
     last = ctx.request.session.pop("last_received", None)
-    return ctx.render("stock/receive.html", title="Приход", groups=_receive_lines(ctx), locations=locations,
+    wu = db.get(User, _uuid(who)) if who else None
+    return ctx.render("stock/receive.html", title="Приход", groups=_receive_lines(ctx, who), locations=locations, who_user=wu,
                       last=last, loc_label=svc.location_label, fmt_plate=osvc.fmt_plate)
 
 

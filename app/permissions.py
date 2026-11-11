@@ -28,6 +28,8 @@ PERMISSIONS = [
     ("parts.pick", "Подбор запчастей в наряд", "Склад и закупки"),
     ("purchases.view", "Видеть закупки", "Склад и закупки"),
     ("purchases.manage", "Создавать закупки", "Склад и закупки"),
+    ("purchases.mine", "«Мои заказы» — свои закупки по своим нарядам (запчастист)", "Склад и закупки"),
+    ("purchases.by_partsman", "«Заказы запчастистов» — заказы каждого запчастиста", "Склад и закупки"),
     ("stock.view", "Видеть склад и остатки", "Склад и закупки"),
     ("stock.manage", "Приход, ячейки, инвентаризация", "Склад и закупки"),
     ("stock.issue", "Выдача запчастей по запросу", "Склад и закупки"),
@@ -68,10 +70,10 @@ DEFAULT_ROLES = {
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.view", "money.view", "money.accept",
         "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
-        "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "stock.view",
+        "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "purchases.mine", "stock.view",
         "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
     "storekeeper": ("Кладовщик", "orange", [
-        "orders.view_all", "purchases.view", "stock.view", "stock.manage", "stock.issue",
+        "orders.view_all", "purchases.view", "purchases.by_partsman", "stock.view", "stock.manage", "stock.issue",
         "razbor.view", "tools.view", "tools.manage", *_OWN]),
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
@@ -80,7 +82,7 @@ DEFAULT_ROLES = {
     # Директор: видит всё и всю бухгалтерию, сам ничего не «крутит» в нарядах
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
-        "purchases.view", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
+        "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
@@ -111,6 +113,8 @@ MENU = [
     ("/clients", "Клиенты", "users", ["clients.view"]),
     ("/stock", "Склад", "stock", ["stock.view"]),
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
+    ("/my-orders", "Мои заказы", "list", ["purchases.mine"]),
+    ("/purchases/by-partsman", "Заказы запчастистов", "users", ["purchases.by_partsman"]),
     ("/razbor", "Разбор", "car", ["razbor.view"]),
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
@@ -138,4 +142,6 @@ def menu_for(perms: set[str]) -> list[dict]:
         {"href": href, "title": title, "icon": icon}
         for href, title, icon, need in MENU
         if any(p in perms for p in need)
+        # «Мои заказы» — только у запчастиста; кто видит заказы всех (админ, директор, кладовщик) — смотрит там
+        and not (href == "/my-orders" and "purchases.by_partsman" in perms)
     ]

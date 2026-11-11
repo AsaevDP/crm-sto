@@ -13,7 +13,9 @@
   <a class="back" href="/purchases?tab={{ 'draft' if p.status == 'draft' else ('arrived' if p.status == 'arrived' else 'wait') }}">{{ icon("back") }}Закупки</a>
   <div class="ov-title">
     <div><h1 class="title-1">{{ supplier.name if supplier else "Закупка без поставщика" }}</h1>
-      <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div></div>
+      <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div>
+      <div class="subhead">Заказал: <b>{{ buyer.full_name if buyer else "—" }}</b>
+        {%- set po = orders.get(p.work_order_id) %}{% if po %}{% set pv = vehicles.get(po.vehicle_id) %} · под наряд <a href="/orders/{{ po.id }}">{{ po.number }}</a>{% if pv %} ({{ pv.make }} {{ pv.model }} {{ fmt_plate(pv.plate) }}){% endif %}{% elif not p.work_order_id %} · на склад и под разные наряды{% endif %}</div></div>
     <span class="chip chip-lg" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
   </div>
 </header>
@@ -70,7 +72,8 @@
         <div class="caption mono">{{ c.brand }} {{ c.article }}</div></td>
       <td class="pu-for">{% if wo %}<a href="/orders/{{ wo.id }}#parts">{{ v.make if v }} {{ v.model if v }}</a> {% if v %}<span class="ov-plate">{{ fmt_plate(v.plate) }}</span>{% endif %}
           <div class="caption">наряд {{ wo.number }} · нужно {{ part.qty|num }}{% if l.qty > part.qty %}, на склад {{ (l.qty - part.qty)|num }}{% endif %}</div>
-        {% elif l.wo_part_id %}<span class="caption">позицию убрали из наряда — на склад</span>{% else %}<span class="tag">на склад</span>{% endif %}</td>
+        {% elif l.wo_part_id %}<span class="caption">позицию убрали из наряда — на склад</span>{% else %}<span class="tag">на склад</span>{% endif %}
+        {% if l.created_by and l.created_by != p.created_by and l.created_by in people %}<div class="caption">добавил {{ people[l.created_by].short_name }}</div>{% endif %}</td>
       {% if edit and not l.received and p.status == "draft" %}
       <td class="num" data-l="шт"><input class="mini" form="lf-{{ l.id }}" name="qty" value="{{ l.qty|num }}" inputmode="decimal" size="4" aria-label="Количество"></td>
       {% if cost_ok %}<td class="num" data-l="₴ за шт"><input class="mini" form="lf-{{ l.id }}" name="price" value="{{ '%.2f'|format(l.price) }}" inputmode="decimal" size="7" aria-label="Цена за шт"></td>{% endif %}

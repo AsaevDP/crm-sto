@@ -4,7 +4,8 @@
    менеджер, слесарь и запчастист получают сообщение «Все запчасти на складе». #}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Приход</h1></div>
+  <div>{% if who_user %}<a class="back" href="/purchases/by-partsman?u={{ who_user.id }}">{{ icon("back") }}Заказы запчастистов</a>{% else %}<a class="back" href="/stock">{{ icon("back") }}Склад</a>{% endif %}
+    <h1 class="large-title">Приход{% if who_user %} · {{ who_user.short_name }}{% endif %}</h1></div>
   <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/purchases">Все закупки</a><a class="btn btn-sm btn-gray" href="/stock/issues">Выдача</a></div>
 </header>
 <p class="footnote rc-hint">Что ждём от поставщиков. Пришло — нажмите «Пришло» у строки или «Принять всё» у поставщика.
@@ -22,7 +23,8 @@
 {% for g in groups %}
 <form class="card compact rc-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
   <div class="card-h">
-    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.p.supplier_invoice %} <span class="caption">· счёт {{ g.p.supplier_invoice }}</span>{% endif %}</span>
+    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.p.supplier_invoice %} <span class="caption">· счёт {{ g.p.supplier_invoice }}</span>{% endif %}
+      {% if g.buyer %}<span class="caption">· заказал {{ g.buyer.short_name }}</span>{% endif %}</span>
     <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/purchases/{{ g.p.id }}">Закупка</a>
       <button class="btn btn-sm" name="all" value="{{ g.p.id }}">Принять всё · {{ g.rows|length }}</button></span>
   </div>

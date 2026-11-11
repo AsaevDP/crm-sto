@@ -14,23 +14,27 @@
 <div class="pult-tiles pu-tiles">
   {% for key, title, color, sub in [("draft", "Черновики", "gray", "собираем заказ"), ("wait", "Ждём", "orange", "заказано, едет"),
                                      ("arrived", "Пришли", "green", "приняты на склад"), ("all", "Все", "blue", "за всё время")] %}
-  <a class="ptile {{ 'zero' if not counts[key] }} {{ 'on' if tab == key }}" href="/purchases?tab={{ key }}{% if sup %}&sup={{ sup }}{% endif %}" style="--tc:{{ color_css(color) }}">
+  <a class="ptile {{ 'zero' if not counts[key] }} {{ 'on' if tab == key }}" href="/purchases?tab={{ key }}{% if sup %}&sup={{ sup }}{% endif %}{% if who %}&who={{ who }}{% endif %}" style="--tc:{{ color_css(color) }}">
     <span class="ptile-t">{{ title }}</span><b>{{ counts[key] }}</b><span class="ptile-s">{{ sub }}</span></a>
   {% endfor %}
 </div>
 
 <div class="pu-filter">
-  <form method="get" action="/purchases"><input type="hidden" name="tab" value="{{ tab }}">
+  <form method="get" action="/purchases" class="pu-filter-f"><input type="hidden" name="tab" value="{{ tab }}">
     <select class="field" name="sup" onchange="this.form.submit()" aria-label="Поставщик">
       <option value="">Все поставщики</option>
       {% for s in supplier_list %}<option value="{{ s.id }}" {% if sup == s.id|string %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+    </select>
+    <select class="field" name="who" onchange="this.form.submit()" aria-label="Кто заказал">
+      <option value="">Все запчастисты</option>
+      {% for b in buyers %}<option value="{{ b.id }}" {% if who == b.id|string %}selected{% endif %}>{{ b.full_name }}{{ " (я)" if b.id == ctx.user.id }}</option>{% endfor %}
     </select></form>
-  <p class="footnote" style="margin:0">«Заказать» в наряде кладёт строку в черновик того поставщика, у кого брали эту деталь раньше, иначе — в общий черновик. Строки можно переносить между черновиками.</p>
+  <p class="footnote" style="margin:0">У каждого запчастиста свои закупки. «Заказать» в наряде кладёт деталь в закупку этого наряда (одна накладная — один наряд), поставщик подставляется тот, у кого брали в прошлый раз.</p>
 </div>
 
 <div class="tablewrap">
   <table class="table pu-table">
-    <thead><tr><th>Создана</th><th>Поставщик</th><th>Статус</th><th class="num">Строк</th><th class="num">Под наряды</th>{% if cost_ok %}<th class="num">Сумма</th>{% endif %}<th>Привезут</th></tr></thead>
+    <thead><tr><th>Создана</th><th>Поставщик</th><th>Заказал · наряд</th><th>Статус</th><th class="num">Строк</th><th class="num">Под наряды</th>{% if cost_ok %}<th class="num">Сумма</th>{% endif %}<th>Привезут</th></tr></thead>
     <tbody>
     {% for p in rows %}
     {% set s = stats.get(p.id, {"n": 0, "total": 0, "orders": 0, "urgent": 0, "got": 0}) %}
@@ -39,6 +43,10 @@
       <td><a href="/purchases/{{ p.id }}"><b>{{ suppliers[p.supplier_id].name if p.supplier_id in suppliers else "Без поставщика" }}</b></a>
         {% if p.supplier_invoice %}<div class="caption">счёт {{ p.supplier_invoice }}</div>{% endif %}
         {% if p.note %}<div class="caption">{{ p.note }}</div>{% endif %}</td>
+      <td>{% set b = people.get(p.created_by) %}<b>{{ b.short_name if b else "—" }}</b>
+        {% set o = p_orders.get(p.work_order_id) %}{% if o %}{% set v = p_veh.get(o.vehicle_id) %}
+        <div class="caption"><a href="/orders/{{ o.id }}" onclick="event.stopPropagation()">{{ o.number }}</a>{% if v %} · {{ v.make }} {{ v.model }}{% endif %}</div>
+        {% elif s.orders %}<div class="caption">под наряды: {{ s.orders }}</div>{% else %}<div class="caption">на склад</div>{% endif %}</td>
       <td><span class="chip" data-s="{{ {'draft':'created','ordered':'waiting','partial':'picking','arrived':'ready'}[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
         {% if s.urgent %}<span class="urg-tag">🔥 {{ s.urgent }}</span>{% endif %}</td>
       <td class="num nowrap">{% if p.status in ("partial",) %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>
@@ -46,7 +54,7 @@
       {% if cost_ok %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
       <td class="nowrap">{% if p.expected_on %}<span class="{{ 'late' if p.status in ('ordered','partial') and p.expected_on < today }}">{{ p.expected_on.strftime("%d.%m") }}</span>{% elif p.status in ("ordered","partial") %}<span class="caption">не указано</span>{% else %}—{% endif %}</td>
     </tr>
-    {% else %}<tr><td colspan="7" class="footnote">Здесь пусто{% if tab == "draft" %} — нажмите «Новая закупка» или «Заказать» в наряде{% endif %}</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="8" class="footnote">Здесь пусто{% if tab == "draft" %} — нажмите «Новая закупка» или «Заказать» в наряде{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
 </div>

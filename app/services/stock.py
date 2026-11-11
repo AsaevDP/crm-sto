@@ -171,14 +171,25 @@ def unreserve(db: Session, part: WoPart, comment="Снятие резерва"):
         move(db, "unreserve", db.get(StockItem, sid), qty, part, comment=comment)
 
 
-def draft_purchase(db: Session, branch_id, supplier_id=None) -> Purchase:
-    """Черновик закупки. Черновиков может быть несколько — по одному на поставщика (11.11.2026).
-    supplier_id задан — черновик этого поставщика; иначе — общий черновик без поставщика."""
+def _find_draft(db: Session, branch_id, supplier_id, work_order_id) -> Purchase | None:
+    """Черновик текущего пользователя у этого поставщика (None — без поставщика) под этот наряд (None — на склад)."""
+    from ..db import current_user_id
+    me = current_user_id.get()
     q = select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft")
     q = q.where(Purchase.supplier_id == supplier_id) if supplier_id else q.where(Purchase.supplier_id.is_(None))
-    p = db.scalar(q.order_by(Purchase.created_at))
+    q = q.where(Purchase.work_order_id == work_order_id) if work_order_id else q.where(Purchase.work_order_id.is_(None))
+    if me:
+        q = q.where(Purchase.created_by == me)
+    return db.scalar(q.order_by(Purchase.created_at))
+
+
+def draft_purchase(db: Session, branch_id, supplier_id=None, work_order_id=None) -> Purchase:
+    """Черновик закупки. С 12.11.2026 у каждого запчастиста свои черновики (кто заказал = created_by):
+    по поставщику и, если под наряд, — отдельный на каждый наряд (одна накладная — один наряд, проще с рекламациями).
+    supplier_id не задан — черновик без поставщика (запчастист впишет)."""
+    p = _find_draft(db, branch_id, supplier_id, work_order_id)
     if p is None:
-        p = Purchase(status="draft", supplier_id=supplier_id)
+        p = Purchase(status="draft", supplier_id=supplier_id, work_order_id=work_order_id)
         db.add(p)
         db.flush()
     return p
@@ -193,13 +204,12 @@ def last_supplier(db: Session, catalog_id):
 
 def order_part(db: Session, branch_id, part: WoPart, qty_total=None) -> PurchaseLine:
     """Заказать у поставщика: строка закупки «под наряд». qty_total > нужного — излишек пойдёт на склад.
-    Если уже есть черновик у поставщика, у которого брали эту деталь раньше, — строка идёт туда, иначе в общий."""
+    Строка идёт в черновик этого запчастиста под этот наряд (12.11.2026). Поставщик подставляется тот,
+    у кого брали эту деталь в прошлый раз (если есть такой черновик — туда же)."""
     sup = last_supplier(db, part.catalog_id)
-    p = None
-    if sup:
-        p = db.scalar(select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft",
-                                             Purchase.supplier_id == sup).order_by(Purchase.created_at))
-    p = p or draft_purchase(db, branch_id)
+    p = (_find_draft(db, branch_id, sup, part.work_order_id) if sup else None) \
+        or _find_draft(db, branch_id, None, part.work_order_id) \
+        or draft_purchase(db, branch_id, sup, part.work_order_id)
     line = PurchaseLine(purchase_id=p.id, catalog_id=part.catalog_id, qty=Decimal(qty_total or part.qty),
                         price=part.cost, wo_part_id=part.id)
     if line.qty < part.qty:
@@ -358,7 +368,7 @@ def move_rest(db: Session, branch_id, line: PurchaseLine, target: Purchase | Non
     rest = line.left
     if rest <= 0:
         return None
-    target = target or draft_purchase(db, branch_id)
+    target = target or draft_purchase(db, branch_id, None, db.get(Purchase, line.purchase_id).work_order_id)
     new = PurchaseLine(purchase_id=target.id, catalog_id=line.catalog_id, qty=rest, price=line.price,
                        wo_part_id=line.wo_part_id, received_qty=0)
     db.add(new)
@@ -487,3 +497,64 @@ def backfill_categories(db: Session):
             c.section = guess_section(c.name)
         if not c.category:
             c.category = guess_category(c.name, c.section)
+
+
+# ======================= Заказы запчастистов (12.11.2026) =======================
+# Кто заказал = created_by закупки (или строки, если добавил в чужую). Пришло — по приходу на склад (received_qty).
+ORDER_STATES = {"draft": ("Черновики", "gray", "ещё не отправлено"), "wait": ("Заказано", "orange", "ждём от поставщика"),
+                "partial": ("Пришло частично", "purple", "ждём остальное"), "late": ("Опаздывают", "red", "срок прошёл"),
+                "arrived": ("Пришло", "green", "за 60 дней")}
+
+
+def partsman_lines(db: Session, branch_id, uid=None, days: int = 60) -> list[dict]:
+    """Строки закупок запчастиста (uid=None — всех): деталь, наряд, сколько нужно под наряд и сколько на склад,
+    поставщик, сколько пришло, статус. Пришедшее — за последние `days` дней."""
+    from datetime import date, datetime, timedelta, timezone
+    from ..models import Supplier, User, Vehicle, WorkOrder
+    q = (select(PurchaseLine, Purchase).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+         .where(Purchase.branch_id == branch_id))
+    if uid:
+        q = q.where(or_(Purchase.created_by == uid, PurchaseLine.created_by == uid))
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    today = date.today()
+    raw = []
+    for l, p in db.execute(q.order_by(Purchase.created_at.desc(), PurchaseLine.created_at)):
+        if p.status == "draft":
+            st = "draft"
+        elif l.received:
+            st = "arrived"
+            when = l.updated_at or p.updated_at
+            if when and when.replace(tzinfo=when.tzinfo or timezone.utc) < since:
+                continue
+        elif l.got > 0:
+            st = "partial"
+        else:
+            st = "wait"
+        late = st in ("wait", "partial") and p.expected_on is not None and p.expected_on < today
+        raw.append((l, p, st, late))
+    parts = {x.id: x for x in db.scalars(select(WoPart).where(WoPart.id.in_([l.wo_part_id for l, *_ in raw if l.wo_part_id])))}
+    wo_ids = {x.work_order_id for x in parts.values()} | {p.work_order_id for _, p, *_ in raw if p.work_order_id}
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_(list(wo_ids))))}
+    vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
+    cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([l.catalog_id for l, *_ in raw])))}
+    sups = {s.id: s for s in db.scalars(select(Supplier).where(Supplier.branch_id == branch_id))}
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == branch_id))}
+    out = []
+    for l, p, st, late in raw:
+        part = parts.get(l.wo_part_id)
+        wo = orders.get(part.work_order_id) if part else None
+        need = Decimal(part.qty) if part else Decimal(0)
+        out.append({"l": l, "p": p, "st": st, "late": late, "c": cats.get(l.catalog_id), "part": part, "wo": wo,
+                    "v": vehicles.get(wo.vehicle_id) if wo else None, "sup": sups.get(p.supplier_id),
+                    "buyer": people.get(l.created_by if l.created_by and l.created_by != p.created_by else p.created_by),
+                    "need": need, "extra": max(Decimal(l.qty) - need, Decimal(0)) if part else Decimal(l.qty)})
+    return out
+
+
+def order_counts(rows: list[dict]) -> dict:
+    c = {k: 0 for k in ORDER_STATES}
+    for r in rows:
+        c[r["st"]] += 1
+        if r["late"]:
+            c["late"] += 1
+    return c

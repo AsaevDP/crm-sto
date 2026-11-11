@@ -135,7 +135,7 @@ def populate():
             ssvc.receive_line(db, branch.id, line, locs[cell].id)
         ssvc.refresh_purchase_status(db, stock_purchase)
         # Закупки (11.11.2026): заказ у второго поставщика едет — пришёл частями; черновик списком из Excel
-        as_user("oleg")
+        as_user("vasyl")   # 12.11.2026: у каждого запчастиста свои закупки — эта Василия
         from datetime import date as _date, timedelta as _td
         p2 = Purchase(supplier_id=sup2.id, status="ordered", supplier_invoice="ЭУ-78040", ordered_on=_date.today() - _td(days=2),
                       expected_on=_date.today() + _td(days=1), note="Доставка до 16:00")
@@ -152,7 +152,7 @@ def populate():
         as_user("pavel")
         ssvc.receive_line(db, branch.id, p2_lines[0], locs["A / 2 / 1"].id, Decimal(2))   # привезли 2 из 4
         ssvc.refresh_purchase_status(db, p2)
-        as_user("oleg")
+        as_user("denys")   # черновик Дениса
         draft = Purchase(supplier_id=sup.id, status="draft", note="Заказ на следующую неделю")
         db.add(draft)
         db.flush()
@@ -284,8 +284,9 @@ def populate():
         add_part(wo, "Масло моторное 5W-30, 4 л", markup=30)
         as_user("oleg")
         ssvc.finish_picking(db, wo)
-        p = ssvc.draft_purchase(db, branch.id)
-        p.supplier_id, p.status, p.supplier_invoice = sup2.id, "ordered", "ЭУ-78040"
+        p = ssvc.draft_purchase(db, branch.id, None, wo.id)   # закупка Олега под этот наряд
+        p.supplier_id, p.status, p.supplier_invoice = sup2.id, "ordered", "ЭУ-78111"
+        p.ordered_on, p.expected_on = _date.today() - _td(days=3), _date.today() - _td(days=1)   # опаздывает
 
         # 6) Запчасти на складе, слесарь просит выдать → у кладовщика окошко (пост 5)
         wo = intake(3, "A", 5, works="Замена передних тормозных колодок\nЗамена передних тормозных дисков",
