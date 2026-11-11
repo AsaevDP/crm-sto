@@ -24,8 +24,15 @@
     <div class="card compact" id="u-{{ u.id }}">
       <div class="card-h"><span><b>{{ u.full_name }}</b> <span class="caption">{{ u.role.name }}</span></span></div>
       {% for l, desc in schemes[u.id] %}
-      <div class="kv"><span>{{ desc }}</span>
-        {% if is_admin %}<form method="post" action="/settings/payroll/lines/{{ l.id }}/delete"><input type="hidden" name="role" value="{{ role }}"><button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>{% endif %}</div>
+      <div class="kv pl-line"><span>{{ desc }}</span>
+        {% if is_admin %}<span class="pl-acts">
+          {# Исправить сумму оклада / процент прямо в строке (11.11.2026) #}
+          <form class="pl-edit" method="post" action="/settings/payroll/lines/{{ l.id }}"><input type="hidden" name="role" value="{{ role }}">
+            <input class="mini" name="rate" value="{{ l.rate|num }}" inputmode="decimal" aria-label="Новая сумма" required>
+            <span class="caption">{{ "%" if l.kind == "percent" else "₴" }}</span>
+            <button class="btn btn-sm btn-gray">Сохранить</button></form>
+          <form method="post" action="/settings/payroll/lines/{{ l.id }}/delete" onsubmit="return confirm('Убрать эту строку схемы?')"><input type="hidden" name="role" value="{{ role }}"><button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
+        </span>{% endif %}</div>
       {% else %}
       <p class="footnote" style="margin:0">{% if default_desc[u.id] %}По умолчанию: {{ default_desc[u.id]|join(", ") }}{% else %}Схема не задана{% endif %}</p>
       {% endfor %}

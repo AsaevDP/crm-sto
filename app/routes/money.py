@@ -768,6 +768,24 @@ def payroll_line_add(user_id: str, ctx: Ctx = Depends(get_ctx), kind: str = Form
     return _to(f"/settings/payroll?role={u.role.code}#u-{user_id}")
 
 
+@router.post("/settings/payroll/lines/{line_id}")
+def payroll_line_edit(line_id: str, ctx: Ctx = Depends(get_ctx), rate: str = Form(...), role: str = Form("")):
+    """Исправить сумму оклада (или процент) в строке схемы, не удаляя её. Пишется в журнал."""
+    _admin_only(ctx)
+    l = ctx.db.get(PaySchemeLine, _uuid(line_id))
+    if not l or l.branch_id != ctx.branch.id:
+        raise Forbidden()
+    r = max(_dec(rate), Decimal(0))
+    if l.kind == "percent" and l.base == "parts_margin":
+        r = min(r, Decimal(30))   # запчастисту — не больше 30 % от наценки
+    old = l.rate
+    l.rate = r
+    ctx.db.commit()
+    from ..web import num
+    flash(ctx.request, f"Сохранено: было {num(old)}, стало {num(r)}")
+    return _to("/settings/payroll" + (f"?role={role}" if role.isidentifier() else ""))
+
+
 @router.post("/settings/payroll/lines/{line_id}/delete")
 def payroll_line_delete(line_id: str, ctx: Ctx = Depends(get_ctx), role: str = Form("")):
     _admin_only(ctx)
