@@ -7,7 +7,7 @@
   <thead><tr><th style="width:5%">№</th><th>Наименование работы</th><th style="width:20%">Исполнитель</th>
     <th class="num" style="width:10%">Кол-во</th><th class="num" style="width:12%">Цена, ₴</th><th class="num" style="width:13%">Сумма, ₴</th></tr></thead>
   {% for w in works %}{% set m = people.get(w.mechanic_id or wo.mechanic_id) %}
-  <tr><td>{{ loop.index }}</td><td>{{ w.name }}{% if w.status != "done" %} <span class="muted">(не завершена)</span>{% endif %}</td>
+  <tr><td>{{ loop.index }}</td><td>{{ w.name }}{% if w.is_warranty %} <b>(по гарантии)</b>{% endif %}{% if w.status != "done" %} <span class="muted">(не завершена)</span>{% endif %}</td>
     <td>{% if m %}<span class="muted" style="font-size:9pt">{{ MASTERS.get(m.role.code, m.role.name) }}</span><br>{{ m.full_name }}{% endif %}</td>
     <td class="num">{% if w.pricing == "hours" %}{{ ((w.hours or 0) * (w.qty or 1))|num }} н/ч{% else %}{{ (w.qty or 1)|num }}{% endif %}</td>
     <td class="num">{{ w.rate|money }}</td><td class="num">{{ w.price|money }}</td></tr>
@@ -33,6 +33,16 @@
   {% if t.order_discount %}<tr><td>Скидка на наряд {{ wo.discount_pct|num }} %</td><td class="num">−{{ t.order_discount|money }} ₴</td></tr>{% endif %}
   <tr><td><b>Всего по наряду</b></td><td class="num"><b>{{ t.total|money }} ₴</b></td></tr>
 </table>
+{% if wo.warranty in ("open", "done", "rejected") %}
+<h2>Гарантийный ремонт</h2>
+<table>
+  <tr><th style="width:30%">Клиент вернулся{% if wo.warranty_opened_at %} {{ wo.warranty_opened_at.astimezone().strftime("%d.%m.%Y") }}{% endif %}</th><td>{{ wo.warranty_reason }}</td></tr>
+  <tr><th>Гарантийные работы</th><td>{% for w in works if w.is_warranty %}{{ w.name }}{% if not loop.last %}; {% endif %}{% else %}—{% endfor %} (бесплатно)</td></tr>
+  <tr><th>{{ "Итог" if wo.warranty != "rejected" else "Не гарантийный случай" }}{% if wo.warranty_closed_at %} {{ wo.warranty_closed_at.astimezone().strftime("%d.%m.%Y") }}{% endif %}</th>
+    <td>{{ wo.warranty_result or "в работе" }}</td></tr>
+  <tr><th>Комментарий / что произошло</th><td style="height:18mm"></td></tr>
+</table>
+{% endif %}
 <h2>Гарантия на работы</h2>
 <p>______ месяцев или ______ км пробега (что наступит раньше). Гарантия не распространяется на запчасти заказчика и на работы,
   от которых заказчик отказался.</p>

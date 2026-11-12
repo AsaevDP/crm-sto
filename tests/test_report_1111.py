@@ -268,7 +268,7 @@ def test_reopen_by_request(client):
     # Менеджер сам не открывает
     assert client.post(f"/reopen-requests/{r.id}", data={"action": "approve"}).status_code == 403
     _as(client, "director")
-    assert "Открыть наряд заново · 1" in client.get("/access-requests").text
+    assert "Открыть наряд заново / ремонт по гарантии · 1" in client.get("/access-requests").text
     client.post(f"/reopen-requests/{r.id}", data={"action": "approve"})
     assert _wo(url).status == "ready"
     # Открыли — можно добавить работу и снова выдать после оплаты

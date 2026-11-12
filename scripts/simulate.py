@@ -45,12 +45,13 @@ def install():
         s.backup(d)
         d.close(), s.close()
         print(f"Прежняя база сохранена: {b.name}")
-    for suffix in ("-wal", "-shm"):
-        Path(str(dst) + suffix).unlink(missing_ok=True)
+    # Копия средствами SQLite: работает, даже если базу держит открытой другой сервер (журнал -wal он ведёт сам)
     s, d = sqlite3.connect(src), sqlite3.connect(dst)
     s.backup(d)
     d.close(), s.close()
-    print("Готово: рабочая база = результат живого прогона")
+    # фото нарядов, разбора, инструмента — тоже в рабочую папку (имена случайные, ничего не затираем)
+    shutil.copytree(SIM / "photos", ROOT / "data" / "photos", dirs_exist_ok=True)
+    print("Готово: рабочая база = результат живого прогона (вместе с фото)")
 
 
 if "--install" in sys.argv:

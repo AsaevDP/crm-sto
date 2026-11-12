@@ -107,9 +107,10 @@
                   part_ask_info: 'Для сведения', part_ok: 'Согласовано', part_go: 'Выдать', part_no: 'Отказано',
                   reopen_req: 'Важно · открыть наряд', reopen_ok: 'Наряд', reopen_no: 'Наряд',
                   client_req: 'Важно · доступ к клиенту', client_ok: 'Доступ к клиенту', client_no: 'Доступ к клиенту',
-                  chem_ask: 'Химия · просят', chem_ok: 'Химия выдана', chem_no: 'Химия' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,
+                  chem_ask: 'Химия · просят', chem_ok: 'Химия выдана', chem_no: 'Химия',
+                  self_decided: 'Решили без вас', warranty_done: 'Гарантия' }[n.kind] || 'Срочно', title: n.title, text: n.text, href: n.url,
         tone: { parts_ready: 'green', handover: 'blue', issue_ready: 'green', access_ok: 'green', access_no: 'blue', msg: 'blue',
-                part_ask: 'yellow', part_ask_info: 'blue', part_ok: 'green', part_go: 'green', part_no: 'blue', reopen_ok: 'green', reopen_no: 'blue', client_ok: 'green', client_no: 'blue', chem_ask: 'yellow', chem_ok: 'green', chem_no: 'blue' }[n.kind] || 'red', readUrl: '/api/notify/' + n.id + '/read',
+                part_ask: 'yellow', part_ask_info: 'blue', part_ok: 'green', part_go: 'green', part_no: 'blue', reopen_ok: 'green', reopen_no: 'blue', client_ok: 'green', client_no: 'blue', chem_ask: 'yellow', chem_ok: 'green', chem_no: 'blue', self_decided: 'yellow', warranty_done: 'green' }[n.kind] || 'red', readUrl: '/api/notify/' + n.id + '/read',
         action: n.request_url ? { label: 'Запросить выдачу', url: n.request_url, done: 'Запрос отправлен кладовщику' } : null }));
       if ((j.notes || []).some(n => !seen.has('n' + n.id))) { try { navigator.vibrate && navigator.vibrate(200); } catch (e) {} }
       (j.notes || []).forEach(n => seen.add('n' + n.id));

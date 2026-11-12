@@ -31,7 +31,7 @@
     <div class="card compact ac-card ok">
       <div class="card-h"><span class="headline">{{ u.full_name if u else "" }}</span>
         <b class="nowrap">до {{ a.until.astimezone().strftime("%d.%m %H:%M") }}</b></div>
-      <p class="caption" style="margin:0">«{{ a.reason }}» · разрешил {{ d.full_name if d else "" }} на {{ HOURS.get(a.hours, "") }}</p>
+      <p class="caption" style="margin:0">«{{ a.reason }}» · {% if a.self_decided %}<b class="self-mark">решил(а) сам(а) {{ d.full_name if d else "" }} — директора и зама не было на месте</b>{% else %}разрешил {{ d.full_name if d else "" }}{% endif %} на {{ HOURS.get(a.hours, "") or (a.hours ~ " ч") }}</p>
       <form method="post" action="/access-requests/{{ a.id }}"><input type="hidden" name="action" value="close">
         <button class="btn btn-sm btn-gray">Закрыть доступ сейчас</button></form>
     </div>
@@ -57,14 +57,14 @@
     {% endfor %}
 
     {# 11.11.2026: открыть закрытый / отменённый наряд заново — по запросу #}
-    <div class="group-title" id="reopen">Открыть наряд заново · {{ reopens|length }}</div>
+    <div class="group-title" id="reopen">Открыть наряд заново / ремонт по гарантии · {{ reopens|length }}</div>
     {% for r in reopens %}{% set u = people.get(r.user_id) %}{% set o = reopen_orders.get(r.work_order_id) %}
     <div class="card compact ac-card now">
       <div class="card-h"><span class="headline"><a href="/orders/{{ r.work_order_id }}">{{ o.number if o else "" }}</a> · {{ u.full_name if u else "" }}</span>
         <span class="caption nowrap">{{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
-      <p class="ov-text" style="margin:0">«{{ r.reason }}» · {{ "выдан клиенту" if r.from_status == "closed" else "отменён" }}</p>
+      <p class="ov-text" style="margin:0">{% if r.kind == "warranty" %}<b class="warranty-mark">🛡 Ремонт по гарантии:</b> {% endif %}«{{ r.reason }}» · {{ "выдан клиенту" if r.from_status == "closed" else "отменён" }}</p>
       <div class="ac-btns">
-        <form method="post" action="/reopen-requests/{{ r.id }}" class="one-shot"><button class="btn btn-sm btn-tinted" name="action" value="approve">Открыть заново</button></form>
+        <form method="post" action="/reopen-requests/{{ r.id }}" class="one-shot"><button class="btn btn-sm btn-tinted" name="action" value="approve">{{ "Открыть по гарантии" if r.kind == "warranty" else "Открыть заново" }}</button></form>
         <form method="post" action="/reopen-requests/{{ r.id }}" class="one-shot"><button class="btn btn-sm btn-plain danger" name="action" value="decline">Отказать</button></form>
       </div>
     </div>
@@ -76,7 +76,7 @@
     <div class="card compact">
       {% for a in history %}{% set u = people.get(a.user_id) %}{% set d = people.get(a.decided_by) %}
       <div class="kv"><span>{{ u.full_name if u else "" }} · «{{ a.reason }}»
-        <span class="caption" style="display:block">{{ STATUS.get(a.status, a.status) }}{% if a.hours %} на {{ HOURS.get(a.hours, "") }}{% endif %}{% if d %} · {{ d.full_name }}{% endif %}</span></span>
+        <span class="caption" style="display:block">{{ STATUS.get(a.status, a.status) }}{% if a.hours %} на {{ HOURS.get(a.hours, "") or (a.hours ~ " ч") }}{% endif %}{% if d %} · {{ d.full_name }}{% endif %}{% if a.self_decided %} · <b class="self-mark">решил(а) сам(а) — вас не было на месте</b>{% endif %}</span></span>
         <b class="nowrap">{{ a.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% else %}<p class="footnote" style="margin:0">Пока пусто</p>{% endfor %}
     </div>

@@ -101,6 +101,9 @@ def add_missing_columns():
             for col in table.columns:
                 if col.name not in have:
                     ddl = col.type.compile(dialect=engine.dialect)
+                    sd = getattr(col.server_default, "arg", None)   # 12.11.2026: старые строки получают значение по умолчанию
+                    if isinstance(sd, str):
+                        ddl += " DEFAULT '" + sd.replace("'", "''") + "'"
                     conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
 
 

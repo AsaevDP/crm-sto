@@ -1769,3 +1769,11 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .iss-acts details > summary { list-style: none; display: inline-flex; }
 .iss-acts details > summary::-webkit-details-marker { display: none; }
 @media (min-width: 900px) { .cl-grid.wash-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) !important; } }
+/* Гарантия и «решил сам» (12.11.2026) */
+.self-mark { color: var(--orange); font-weight: 600; }
+.warranty-mark { color: color-mix(in srgb, var(--purple) 80%, var(--text)); }
+.warranty-ask > summary, .warranty-close > summary { list-style: none; display: inline-flex; }
+.warranty-ask > summary::-webkit-details-marker, .warranty-close > summary::-webkit-details-marker { display: none; }
+.warranty-ask { margin-bottom: 8px; }
+.warranty-bar { flex-wrap: wrap; }
+.warranty-close[open] { flex: 1 1 100%; }

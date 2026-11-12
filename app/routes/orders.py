@@ -74,8 +74,18 @@ ORDER_STAGES = {
 
 @router.get("/orders")
 def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", status: str = "",
-                p: str = "", d: str = "", f: str = "", t: str = ""):
+                p: str = "", d: str = "", f: str = "", t: str = "", found: str = ""):
     ctx.need("orders.view_all", "orders.view_own")
+    # 12.11.2026: менеджер видит свои наряды (и 3 дня после выдачи). Клиент вернулся (гарантия) — ищет по ТОЧНЫМ данным
+    # (полный госномер / телефон / VIN / номер наряда): найденный клиент и все его наряды открыты ему 1 час, поиск — в журнал.
+    if q.strip() and not found and svc.manager_limited(ctx):
+        from ..services import decisions as dsvc
+        hits = dsvc.exact_clients(ctx.db, ctx.branch.id, q)
+        dsvc.grant_by_search(ctx.db, ctx, hits, q)
+        ctx.db.commit()
+        if hits:
+            from urllib.parse import urlencode
+            return RedirectResponse("/orders?" + urlencode({"tab": "all", "q": q.strip(), "found": "1", "p": "all"}), status_code=303)
     from ..services import periods
     from ..services.attendance import day_bounds
     per = periods.parse(p, d, f, t, default="all", allowed=("day", "week", "month", "quarter", "year", "custom", "all"))
@@ -100,7 +110,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         query = query.where(WorkOrder.status.in_(ORDER_STAGES[tab][2]))
     elif status in WO_STATUSES:
         query = query.where(WorkOrder.status == status)
-    elif tab == "active":
+    elif tab == "active" and not q.strip():   # с поиском — и закрытые тоже
         query = query.where(WorkOrder.status.in_(WO_ACTIVE))
     q = q.strip()
     if q:
@@ -121,9 +131,10 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     acc = None
     if ctx.user.role.code == "manager" and ctx.can("orders.view_all"):
         from ..models import OrderAccess
-        acc = {"until": svc.access_until(ctx.db, ctx.user.id),
-               "pending": ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.user_id == ctx.user.id,
-                                                                     OrderAccess.status == "pending")) is not None}
+        from ..services import decisions as dsvc
+        pend = ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.user_id == ctx.user.id, OrderAccess.status == "pending"))
+        acc = {"until": svc.access_until(ctx.db, ctx.user.id), "pending": pend,
+               "self_ok": bool(pend) and dsvc.can_self_decide(ctx.db, ctx.branch.id)}
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
@@ -530,7 +541,12 @@ def _reopen_state(ctx: Ctx, wo: WorkOrder) -> dict | None:
         return None
     from ..models import OrderReopen
     pending = ctx.db.scalar(select(OrderReopen).where(OrderReopen.work_order_id == wo.id, OrderReopen.status == "pending"))
-    return {"pending": pending, "can_decide": ctx.can("orders.grant_access")}
+    from ..services import decisions as dsvc
+    # 12.11.2026: директора и зама нет в здании (по табелю) — «открыть заново» (не гарантию) может решить сам тот, кто просил
+    self_ok = bool(pending and pending.kind != "warranty" and pending.user_id == ctx.user.id
+                   and dsvc.reopen_self_ok(wo) and dsvc.can_self_decide(ctx.db, ctx.branch.id))
+    return {"pending": pending, "can_decide": ctx.can("orders.grant_access"), "self_ok": self_ok,
+            "warranty_ok": wo.status == "closed" and ctx.can("orders.approve", "orders.grant_access")}
 
 
 @router.post("/orders/{order_id}/reopen-request")
@@ -554,6 +570,73 @@ def reopen_request(order_id: str, ctx: Ctx = Depends(get_ctx), reason: str = For
     return _to(f"/orders/{wo.id}")
 
 
+@router.post("/orders/{order_id}/warranty-request")
+def warranty_request(order_id: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    """«Ремонт по гарантии»: клиент вернулся — запрос директору и заму (решают только они, гарантию всегда разбирают)."""
+    from ..models import OrderReopen
+    from ..services import notify as nsvc
+    ctx.need("orders.approve", "orders.grant_access")
+    wo = _order(ctx, order_id)
+    if wo.status != "closed":
+        raise Forbidden()
+    if not reason.strip():
+        flash(ctx.request, "Опишите, с чем вернулся клиент — это увидят директор и зам", "error")
+        return _to(f"/orders/{wo.id}")
+    if ctx.db.scalar(select(OrderReopen.id).where(OrderReopen.work_order_id == wo.id, OrderReopen.status == "pending")):
+        flash(ctx.request, "Запрос уже отправлен — ждём ответа")
+        return _to(f"/orders/{wo.id}")
+    ctx.db.add(OrderReopen(work_order_id=wo.id, user_id=ctx.user.id, reason=reason.strip()[:300], from_status=wo.status,
+                           kind="warranty"))
+    nsvc.send(ctx.db, [u.id for u in _deciders(ctx)], "reopen_req", f"Гарантия: {ctx.user.full_name} просит открыть наряд {wo.number}",
+              reason.strip()[:300], "/access-requests#reopen", wo, skip=ctx.user.id)
+    ctx.db.commit()
+    flash(ctx.request, "Запрос «Ремонт по гарантии» отправлен директору и заму — ответ придёт сообщением")
+    return _to(f"/orders/{wo.id}")
+
+
+@router.post("/reopen-requests/{rid}/self")
+def reopen_self(rid: str, ctx: Ctx = Depends(get_ctx)):
+    """Директора и зама нет в здании — «открыть заново» (наряд закрыт не больше суток назад) решает сам тот, кто просил."""
+    from ..db import now
+    from ..models import OrderReopen
+    from ..services import decisions as dsvc
+    r = ctx.db.get(OrderReopen, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id or r.status != "pending" or r.user_id != ctx.user.id or r.kind == "warranty":
+        raise Forbidden()
+    wo = ctx.db.get(WorkOrder, r.work_order_id)
+    if not dsvc.can_self_decide(ctx.db, ctx.branch.id):
+        flash(ctx.request, "Директор или зам на месте (по табелю) — найдите их, решают они", "error")
+        return _to(f"/orders/{wo.id}")
+    if not dsvc.reopen_self_ok(wo):
+        flash(ctx.request, "Сам можно открыть только наряд, закрытый не больше суток назад — ждите директора или зама", "error")
+        return _to(f"/orders/{wo.id}")
+    r.status, r.decided_by, r.decided_at, r.self_decided = "approved", ctx.user.id, now(), True
+    to = svc.reopen(ctx.db, wo)
+    note = dsvc.absent_note(ctx.db, ctx.branch.id)
+    svc.event(ctx.db, wo, "status", f"Открыт заново: решил(а) сам(а) {ctx.user.full_name} — {note}. Причина: {r.reason}")
+    dsvc.tell_deciders(ctx.db, ctx, f"открыт заново наряд {wo.number}", f"Причина: {r.reason}", f"/orders/{wo.id}", wo)
+    ctx.db.commit()
+    flash(ctx.request, f"Наряд {wo.number} открыт заново — {WO_STATUSES[to]}. Директору и заму отправлено сообщение")
+    return _to(f"/orders/{wo.id}")
+
+
+@router.post("/orders/{order_id}/warranty-done")
+def warranty_done(order_id: str, ctx: Ctx = Depends(get_ctx), result: str = Form(""), action: str = Form("done")):
+    """«Выполнены гарантийные работы» (закрыть второй раз) или «Не гарантийный случай»."""
+    from ..services import warranty as wsvc
+    ctx.need("orders.approve", "orders.grant_access")
+    wo = _order(ctx, order_id)
+    err = (wsvc.reject if action == "reject" else wsvc.done)(ctx.db, wo, ctx.user, result)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Гарантийный ремонт выполнен — наряд закрыт второй раз" if action != "reject"
+              else "Не гарантийный случай — наряд закрыт как был. Ремонт оформите новым нарядом через приёмку")
+    return _to(f"/orders/{order_id}")
+
+
 @router.post("/reopen-requests/{rid}")
 def reopen_decide(rid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("")):
     from ..db import now
@@ -569,7 +652,15 @@ def reopen_decide(rid: str, ctx: Ctx = Depends(get_ctx), action: str = Form(""))
         flash(ctx.request, "По этому запросу уже решили", "error")
         return _to(back)
     r.decided_by, r.decided_at = ctx.user.id, now()
-    if action == "approve" and wo.status in ("closed", "cancel"):
+    if action == "approve" and r.kind == "warranty" and wo.status == "closed":
+        r.status = "approved"
+        from ..services import warranty as wsvc
+        wsvc.open_(ctx.db, wo, r.reason)
+        to = wo.status
+        nsvc.send(ctx.db, [r.user_id, wo.manager_id], "reopen_ok", f"Наряд {wo.number} открыт по гарантии",
+                  f"Разрешил: {ctx.user.full_name}. Добавьте гарантийные работы (0 ₴) и мастера", f"/orders/{wo.id}", wo)
+        flash(ctx.request, f"Наряд {wo.number} открыт по гарантии")
+    elif action == "approve" and wo.status in ("closed", "cancel"):
         r.status = "approved"
         to = svc.reopen(ctx.db, wo)
         nsvc.send(ctx.db, [r.user_id, wo.manager_id], "reopen_ok", f"Наряд {wo.number} открыт заново",
@@ -939,6 +1030,27 @@ def access_requests(ctx: Ctx = Depends(get_ctx)):
                       reopens=reopens, reopen_orders=reopen_orders, **_client_access_lists(ctx),
                       STATUS=ACCESS_STATUS, pending=[a for a in rows if a.status == "pending"],
                       granted=[a for a in rows if active(a)], history=[a for a in rows if a.status != "pending" and not active(a)])
+
+
+@router.post("/access-requests/{aid}/self")
+def access_self(aid: str, ctx: Ctx = Depends(get_ctx)):
+    """Директора и зама нет в здании (по табелю) — менеджер разрешает себе сам доступ ко всем нарядам, только на 1 час."""
+    from datetime import timedelta
+    from ..db import now
+    from ..models import OrderAccess
+    from ..services import decisions as dsvc
+    a = ctx.db.get(OrderAccess, _uuid(aid))
+    if not a or a.branch_id != ctx.branch.id or a.user_id != ctx.user.id or a.status != "pending":
+        raise Forbidden()
+    if not dsvc.can_self_decide(ctx.db, ctx.branch.id):
+        flash(ctx.request, "Директор или зам на месте (по табелю) — найдите их, решают они", "error")
+        return _to("/orders")
+    a.status, a.hours, a.until = "approved", dsvc.SELF_HOURS, now() + timedelta(hours=dsvc.SELF_HOURS)
+    a.decided_by, a.decided_at, a.self_decided = ctx.user.id, now(), True
+    dsvc.tell_deciders(ctx.db, ctx, "доступ ко всем нарядам на 1 час", f"Причина: {a.reason}", "/access-requests")
+    ctx.db.commit()
+    flash(ctx.request, "Доступ ко всем нарядам — на 1 час (директора и зама нет на месте). Им отправлено сообщение")
+    return _to("/orders")
 
 
 @router.post("/access-requests/{aid}")

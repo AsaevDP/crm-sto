@@ -109,6 +109,15 @@ class WorkOrder(Entity):
     fuel_level: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0, 25, 50, 75, 100 (%)
     intake_items: Mapped[list] = mapped_column(JSON, default=list)          # коды из INTAKE_ITEMS
     intake_note: Mapped[str] = mapped_column(Text, default="")              # замечания: повреждения и т.п.
+    # Ремонт по гарантии (12.11.2026): open — открыт по гарантии, done — «Выполнены гарантийные работы» (закрыт второй раз),
+    # rejected — «Не гарантийный случай» (закрыт обратно, ремонт — новым нарядом)
+    warranty: Mapped[str] = mapped_column(String(10), default="", server_default="")
+    warranty_reason: Mapped[str] = mapped_column(Text, default="", server_default="")     # с чем вернулся клиент
+    warranty_result: Mapped[str] = mapped_column(Text, default="", server_default="")     # что произошло и почему
+    warranty_opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    warranty_closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    warranty_closed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    warranty_prev_closed: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)   # первая выдача (для отчётов)
 
 
 class WoStatusHistory(Entity):
@@ -153,6 +162,7 @@ class WoWork(Entity):
     mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="todo")  # todo / doing / paused / done
     done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    is_warranty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")   # гарантийная работа (0 ₴)
     done_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # кто нажал «Готово»
 
 
@@ -206,6 +216,8 @@ class OrderAccess(Entity):
     until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 12.11.2026: директора и зама не было на месте (по табелю) — решил сам тот, кто просил (на 1 час)
+    self_decided: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 CLIENT_ACCESS_HOURS = {1: "1 час", 3: "3 часа", 24: "1 день", 48: "2 дня"}
@@ -266,6 +278,9 @@ class OrderReopen(Entity):
     from_status: Mapped[str] = mapped_column(String(20), default="")   # closed / cancel — каким был наряд
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 12.11.2026: fix — открыть исправить ошибку; warranty — ремонт по гарантии (решает только директор / зам)
+    kind: Mapped[str] = mapped_column(String(10), default="fix", server_default="fix")
+    self_decided: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class ClientEvent(Entity):

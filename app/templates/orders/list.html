@@ -22,7 +22,9 @@
 {% if acc %}
 <div class="acc-bar {{ 'on' if acc.until }}">
   {% if acc.until %}<span>👁 Доступ ко <b>всем нарядам</b> до <b>{{ acc.until.astimezone().strftime("%d.%m %H:%M") }}</b> — потом снова только ваши</span>
-  {% elif acc.pending %}<span>⏳ Запрос на доступ ко всем нарядам отправлен — ждём ответа админа или директора. Сейчас видны только ваши наряды.</span>
+  {% elif acc.pending %}<span>⏳ Запрос на доступ ко всем нарядам отправлен — ждём ответа директора или зама. Сейчас видны только ваши наряды.</span>
+  {% if acc.self_ok %}<form method="post" action="/access-requests/{{ acc.pending }}/self" class="one-shot" onsubmit="return confirm('Директора и зама нет на месте по табелю. Разрешить себе доступ ко всем нарядам на 1 час? Им придёт сообщение.')">
+    <button class="btn btn-sm btn-tinted">Директора нет — решаю сам (1 час)</button></form>{% endif %}
   {% else %}<span>Видны наряды, которые ведёте вы.</span>
   <details class="acc-ask"><summary class="btn btn-sm btn-gray">Попросить доступ ко всем нарядам</summary>
     <form class="form-row" method="post" action="/orders/access-request">

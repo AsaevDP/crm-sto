@@ -62,6 +62,8 @@ def _apply_work(ctx: Ctx, w: WoWork, name, pricing, hours, rate, qty, mechanic_i
         uid = _uuid_or_none(mechanic_id)
         u = ctx.db.get(User, uid) if uid else None
         w.mechanic_id = u.id if u and u.branch_id == ctx.branch.id and u.role.code in MASTERS else None
+    if w.is_warranty:   # гарантийная работа — бесплатно (12.11.2026)
+        w.rate = Decimal(0)
     w.price = msvc.work_price(w)
 
 
@@ -72,7 +74,7 @@ def work_add(order_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(...), 
     wo = _order(ctx, order_id)
     if wo.status not in EDITABLE or not name.strip():
         raise Forbidden()
-    w = WoWork(work_order_id=wo.id, name=name, status="todo")
+    w = WoWork(work_order_id=wo.id, name=name, status="todo", is_warranty=wo.warranty == "open")
     if not rate:
         rate = str(st.get(ctx.db, ctx.branch.id, "pricing")["hour_rate"]) if pricing != "fixed" else "0"
     _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id or (str(wo.mechanic_id) if wo.mechanic_id else ""))
@@ -247,6 +249,9 @@ def order_close(order_id: str, ctx: Ctx = Depends(get_ctx), state: str = Form(""
                 advice: str = Form("")):
     ctx.need("money.accept")
     wo = _order(ctx, order_id)
+    if wo.warranty == "open":
+        flash(ctx.request, "Это ремонт по гарантии — закройте кнопкой «Выполнены гарантийные работы» (или «Не гарантийный случай»)", "error")
+        return _to(f"/orders/{order_id}")
     err = msvc.close(ctx.db, wo, state, defects, advice)
     if err:
         ctx.db.rollback()

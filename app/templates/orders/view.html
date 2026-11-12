@@ -111,6 +111,19 @@
   {% if last_change %}<span class="wo-last caption">Последнее изменение: <b>{{ last_change.who }}</b> · {{ last_change.ago }} — {{ last_change.text }}</span>{% endif %}
 </div>
 {# 12.11.2026: наряд передали мне — пока не нажал «Принял», он в плитке «Мне передали» и горит в меню #}
+{% if wo.warranty == "open" %}
+<div class="wo-now warranty-bar" style="--sc:var(--purple)">
+  <div class="grow"><b>🛡 Ремонт по гарантии</b><span class="wo-now-t">{{ wo.warranty_reason }}{% if wo.warranty_opened_at %} · открыт {{ wo.warranty_opened_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Работы, добавленные сейчас, — гарантийные (0 ₴).</span></div>
+  {% if ctx.can("orders.approve", "orders.grant_access") %}
+  <details class="warranty-close"><summary class="btn btn-sm">Закрыть гарантию…</summary>
+    <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/warranty-done" style="margin-top:8px">
+      <textarea class="field" name="result" rows="3" placeholder="Что произошло и почему (обязательно) — попадёт в наряд, историю клиента и акт" required></textarea>
+      <div class="form-row"><button class="btn btn-sm" name="action" value="done">✓ Выполнены гарантийные работы</button>
+        <button class="btn btn-sm btn-gray" name="action" value="reject">Не гарантийный случай</button></div>
+    </form></details>
+  {% endif %}
+</div>
+{% endif %}
 {% if history_only %}
 <div class="wo-now" style="--sc:var(--gray)">
   <div class="grow"><b>Прошлый визит клиента</b><span class="wo-now-t">{% set hm = team[0][1] %}Наряд вёл(а) {{ hm.full_name if hm else "другой менеджер" }} — открыт для просмотра истории.</span></div>
@@ -323,8 +336,10 @@
 
     {% if reopen %}
     <div class="card compact">
+      {% if wo.warranty in ("done", "rejected") %}<p class="footnote warranty-mark" style="margin:0 0 6px">{{ "🛡 Гарантийный ремонт выполнен" if wo.warranty == "done" else "Возврат по гарантии: не гарантийный случай" }}{% if wo.warranty_closed_at %} · {{ wo.warranty_closed_at.astimezone().strftime("%d.%m.%Y") }}{% endif %}: {{ wo.warranty_result }}</p>{% endif %}
       {% if reopen.pending %}
-      <p class="footnote" style="margin:0">Запрошено открыть заново: «{{ reopen.pending.reason }}» · ждёт решения админа / директора</p>
+      <p class="footnote" style="margin:0">{{ "🛡 Запрошен ремонт по гарантии" if reopen.pending.kind == "warranty" else "Запрошено открыть заново" }}: «{{ reopen.pending.reason }}» · ждёт решения директора / зама</p>
+      {% if reopen.self_ok %}<form method="post" action="/reopen-requests/{{ reopen.pending.id }}/self" class="one-shot" style="margin-top:6px" onsubmit="return confirm('Директора и зама нет на месте по табелю. Открыть наряд заново самому? Им придёт сообщение.')"><button class="btn btn-sm btn-tinted">Директора нет — открываю сам</button></form>{% endif %}
       {% if reopen.can_decide %}
       <div class="form-row">
         <form method="post" action="/reopen-requests/{{ reopen.pending.id }}" class="one-shot"><button class="btn btn-sm btn-tinted" name="action" value="approve">Открыть заново</button></form>
@@ -332,12 +347,22 @@
       </div>
       {% endif %}
       {% else %}
+      {% if reopen.warranty_ok %}
+      <details class="warranty-ask">
+        <summary class="btn btn-sm btn-tinted">🛡 Ремонт по гарантии</summary>
+        <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/warranty-request" style="margin-top:8px">
+          <textarea class="field" name="reason" rows="2" placeholder="С чем вернулся клиент (обязательно)" required></textarea>
+          <button class="btn btn-sm">Отправить директору и заму</button>
+          <p class="hint" style="margin:0">Гарантию всегда разбирает руководитель: после разрешения наряд откроется по гарантии, работы — 0 ₴. Не гарантийный случай — ремонт новым нарядом через приёмку.</p>
+        </form>
+      </details>
+      {% endif %}
       <details>
-        <summary class="footnote" style="cursor:pointer">Открыть наряд заново…</summary>
+        <summary class="footnote" style="cursor:pointer">Открыть наряд заново (исправить ошибку)…</summary>
         <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/reopen-request" style="margin-top:8px">
           <input class="field" name="reason" placeholder="Зачем открыть (обязательно)" required>
           <button class="btn btn-sm btn-tinted">Попросить открыть</button>
-          <p class="hint" style="margin:0">Запрос уйдёт админу, директору и заму — откроет тот, кто одобрит.</p>
+          <p class="hint" style="margin:0">Запрос уйдёт директору и заму. Если их нет на месте по табелю, наряд, закрытый не больше суток назад, можно открыть самому.</p>
         </form>
       </details>
       {% endif %}
