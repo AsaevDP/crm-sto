@@ -355,10 +355,20 @@ a.btn { text-decoration: none; }
 .tabbar .nbadge { position: absolute; margin: -4px 0 0 18px; }
 .tabbar a { position: relative; }
 /* Уведомления в углу: стопка, каждое закрывается только крестиком */
+/* 12.11.2026: стопка листается (колёсиком, пальцем и полоской), окошки не наезжают друг на друга, новое — сверху */
 .toasts { position: fixed; z-index: 60; right: 16px; left: 16px; bottom: calc(86px + env(safe-area-inset-bottom));
-  display: grid; gap: 8px; justify-items: end; pointer-events: none; max-height: 70vh; overflow-y: auto; }
-@media (min-width: 900px) { .toasts { bottom: 24px; left: auto; width: 380px; } }
-.toast { pointer-events: auto; width: 100%; max-width: 380px; background: var(--surface); border-radius: var(--r-lg);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-height: 70vh; overflow-y: auto;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 2px 4px 6px 2px; }
+.toasts[hidden] { display: none; }
+@media (min-width: 900px) { .toasts { bottom: 24px; left: auto; width: 392px; } }
+.toasts-head { position: sticky; top: -2px; z-index: 2; display: flex; justify-content: flex-end; width: 100%; max-width: 380px; flex: none;
+  padding: 4px 0 8px; margin-bottom: -6px; border-radius: var(--r-lg);
+  background: linear-gradient(color-mix(in srgb, var(--bg) 92%, transparent) 65%, transparent); }
+.toasts-head[hidden] { display: none; }
+.toasts-all { border: 0; cursor: pointer; white-space: nowrap; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-2);
+  background: var(--surface); box-shadow: var(--shadow-3); border-radius: 999px; padding: 6px 12px; display: inline-flex; gap: 6px; align-items: center; }
+.toasts-all:hover { color: var(--text); background: var(--fill); }
+.toast { flex: none; width: 100%; max-width: 380px; background: var(--surface); border-radius: var(--r-lg);
   box-shadow: var(--shadow-3); border-left: 4px solid var(--accent); animation: flash-in .3s var(--ease);
   display: grid; grid-template-columns: 1fr auto; align-items: start; }
 .toast-body { display: grid; gap: 4px; padding: 14px 4px 14px 16px; color: inherit; text-decoration: none; min-width: 0; overflow-wrap: anywhere; }

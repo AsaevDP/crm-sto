@@ -104,7 +104,7 @@
 <script>
 (function () {
   // 12.11.2026: окошки сообщений хранятся в браузере — стереть окошки прошлого сотрудника (один ПК на несколько человек)
-  try { localStorage.removeItem('crm-toasts'); } catch (e) {}
+  try { localStorage.removeItem('crm-toasts'); localStorage.removeItem('crm-toasts-closed'); } catch (e) {}
   // ---- Вкладки. По умолчанию: iPhone → PIN, ПК → карта ----
   const touch = matchMedia('(pointer: coarse)').matches;
   const initial = {% if DEMO %}"password"{% else %}"{{ tab }}" || (touch ? "pin" : "card"){% endif %};

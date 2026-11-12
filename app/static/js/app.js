@@ -97,12 +97,39 @@
 
   // ===== Уведомления в углу экрана: исчезают ТОЛЬКО по крестику =====
   // Открытые окошки хранятся в браузере и показываются снова на каждой странице, пока их не закроют.
-  const KEY = 'crm-toasts';
+  // 12.11.2026: закрытые крестиком (или «Закрыть все») больше не всплывают — их номера помнит браузер;
+  // новое уведомление — новый номер, оно показывается. Список стирает страница входа (другой сотрудник).
+  const KEY = 'crm-toasts', XKEY = 'crm-toasts-closed';
   function load() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { return []; } }
   function save(list) { try { localStorage.setItem(KEY, JSON.stringify(list.slice(-20))); } catch (e) {} }
+  function closedIds() { try { return JSON.parse(localStorage.getItem(XKEY) || '[]'); } catch (e) { return []; } }
+  function markClosed(ids) {
+    const s = closedIds(); ids.forEach(i => { if (!s.includes(i)) s.push(i); });
+    try { localStorage.setItem(XKEY, JSON.stringify(s.slice(-400))); } catch (e) {}
+  }
+  function read(t) { if (t.readUrl) fetch(t.readUrl, { method: 'POST', headers: { 'x-requested-with': 'fetch' } }).catch(() => {}); }
+  function sync() {   // «Закрыть все» — когда окошек два и больше; пустая стопка не видна
+    const s = document.querySelector('.toasts'); if (!s) return;
+    const n = s.querySelectorAll('.toast').length;
+    s.hidden = !n;
+    s.querySelector('.toasts-head').hidden = n < 2;
+  }
+  function closeAll() {
+    const list = load();
+    markClosed(list.map(t => t.id)); list.forEach(read); save([]);
+    document.querySelectorAll('.toasts .toast').forEach(el => el.remove());
+    sync();
+  }
   function stack() {
     let s = document.querySelector('.toasts');
-    if (!s) { s = document.createElement('div'); s.className = 'toasts'; s.setAttribute('aria-live', 'polite'); document.body.appendChild(s); }
+    if (!s) {
+      s = document.createElement('div'); s.className = 'toasts'; s.setAttribute('aria-live', 'polite');
+      const head = document.createElement('div'); head.className = 'toasts-head';
+      const all = document.createElement('button');
+      all.type = 'button'; all.className = 'toasts-all'; all.innerHTML = '<span aria-hidden="true">✕</span> Закрыть все';
+      all.addEventListener('click', closeAll);
+      head.appendChild(all); s.appendChild(head); document.body.appendChild(s);
+    }
     return s;
   }
   function render(t) {
@@ -120,8 +147,7 @@
     const close = document.createElement('button');
     close.className = 'toast-x'; close.type = 'button'; close.title = 'Закрыть'; close.setAttribute('aria-label', 'Закрыть'); close.textContent = '×';
     const done = () => {
-      save(load().filter(x => x.id !== t.id)); el.remove();
-      if (t.readUrl) fetch(t.readUrl, { method: 'POST', headers: { 'x-requested-with': 'fetch' } }).catch(() => {});
+      markClosed([t.id]); save(load().filter(x => x.id !== t.id)); el.remove(); sync(); read(t);
     };
     close.addEventListener('click', done);
     el.append(body, close);
@@ -137,10 +163,12 @@
       });
       el.appendChild(b);
     }
-    stack().appendChild(el);
+    const s = stack();
+    s.querySelector('.toasts-head').after(el);   // новое — сверху, сразу видно
+    sync();
   }
   window.crmToast = function (t) {
-    if (!t || !t.id) return;
+    if (!t || !t.id || closedIds().includes(t.id)) return;   // закрытое не всплывает снова
     const list = load();
     if (!list.some(x => x.id === t.id)) { list.push(t); save(list); }
     render(t);
