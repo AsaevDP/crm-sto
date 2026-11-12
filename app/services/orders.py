@@ -202,10 +202,14 @@ def can_view(ctx, wo: WorkOrder) -> bool:
 
 
 # ---------- Справочники для формы ----------
-def staff_by_role(db: Session, branch_id, role_code: str) -> list[User]:
+def staff_by_role(db: Session, branch_id, role_code) -> list[User]:
+    """Сотрудники роли. role_code — код или список кодов; "masters" — все мастера (слесарь, автоэлектрик, моторист,
+    мойщик, детейлер — 12.11.2026)."""
     from ..models import Role
+    from ..permissions import MASTERS
+    codes = list(MASTERS) if role_code == "masters" else ([role_code] if isinstance(role_code, str) else list(role_code))
     return db.scalars(select(User).join(Role, User.role_id == Role.id)
-                      .where(User.branch_id == branch_id, User.active.is_(True), Role.code == role_code)
+                      .where(User.branch_id == branch_id, User.active.is_(True), Role.code.in_(codes))
                       .order_by(User.full_name)).all()
 
 
@@ -451,7 +455,9 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
 
     def staff(v, role):
         u = db.get(User, _uuid(v)) if v else None
-        return u.id if u and u.branch_id == bid and u.active and u.role.code == role else None
+        from ..permissions import MASTERS
+        ok = u and u.branch_id == bid and u.active and (u.role.code in MASTERS if role == "masters" else u.role.code == role)
+        return u.id if ok else None
 
     lift = db.get(Lift, _uuid(f.lift_id)) if f.lift_id and _uuid(f.lift_id) else None
     if lift and lift.branch_id != bid:
@@ -460,7 +466,7 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     # На подъёмник её ставят, когда он освободится («Кто и где» в наряде). Слесарь поста — тот же.
     queue_for = lift if lift and lift_busy(db, lift) else None
     fuel = _int(f.fuel_level)
-    mechanic = staff(f.mechanic_id, "mechanic") or (lift.mechanic_id if lift else None)
+    mechanic = staff(f.mechanic_id, "masters") or (lift.mechanic_id if lift else None)
     wo = WorkOrder(
         number=numbering.next_number(db, bid), client_id=client.id, vehicle_id=vehicle.id,
         status="created", scenario="A" if f.scenario == "A" else "B", manager_id=ctx.user.id,

@@ -11,7 +11,7 @@ from ..models import Appointment, Lift, User, WorkOrder, WoWork, WoWorkSession
 from ..models.orders import WO_ACTIVE
 
 # Роль сотрудника в наряде: поле наряда → (код роли для замены, подпись)
-SLOTS = {"mechanic_id": ("mechanic", "Слесарь"), "manager_id": ("manager", "Менеджер"),
+SLOTS = {"mechanic_id": ("masters", "Мастер"), "manager_id": ("manager", "Менеджер"),
          "partsman_id": ("partsman", "Запчастист")}
 
 

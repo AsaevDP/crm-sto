@@ -9,6 +9,7 @@ from ..models import Client, ClientEvent, Lift, User, Vehicle, WoFinding, WoPhot
 from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, URGENCY, WO_ACTIVE, WO_STATUSES
 from ..services import orders as svc
 from ..web import Ctx, Forbidden, flash, get_ctx
+from ..permissions import MASTERS, is_master
 
 router = APIRouter()
 
@@ -113,7 +114,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
                  .where(or_(*conds)))
     orders = ctx.db.scalars(query.order_by(WorkOrder.created_at.desc()).limit(200)).all()
     lifts = []
-    if ctx.can("lifts.take") and ctx.user.role.code == "mechanic":
+    if ctx.can("lifts.take") and is_master(ctx.user):
         lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.active.is_(True))
                                .order_by(Lift.number)).all()
     # 12.11.2026: менеджер видит свои наряды; ко всем — по запросу на срок
@@ -135,7 +136,7 @@ def lift_take(ctx: Ctx = Depends(get_ctx), lift_id: str = Form("")):
     """Слесарь сам закрепляется за подъёмником (или открепляется — пустое значение).
     Занятый другим слесарем пост забрать нельзя — это решает админ в настройках."""
     ctx.need("lifts.take")
-    if ctx.user.role.code != "mechanic":
+    if not is_master(ctx.user):
         raise Forbidden()
     lift = ctx.db.get(Lift, _uuid(lift_id)) if lift_id else None
     if lift and (lift.branch_id != ctx.branch.id or not lift.active):
@@ -163,7 +164,7 @@ def order_new(ctx: Ctx = Depends(get_ctx), appt: str = ""):
     partsmen = svc.staff_by_role(ctx.db, bid, "partsman")
     return ctx.render("orders/new.html", title="Приёмка",
                       partsmen=partsmen, my_partsman=svc.paired_partsman(ctx.db, ctx.user.id, partsmen),
-                      mechanics=svc.staff_by_role(ctx.db, bid, "mechanic"),
+                      mechanics=svc.staff_by_role(ctx.db, bid, "masters"),
                       lifts=svc.lifts_with_load(ctx.db, bid), makes=svc.known_makes(ctx.db, bid),
                       INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS, MAX_PHOTOS=svc.MAX_PHOTOS,
                       fmt_plate=svc.fmt_plate, prefill=prefill, intake_token=uuid.uuid4().hex)
@@ -296,10 +297,10 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
         can_offer=can_offer, can_choose=_can_choose(ctx, wo), flow=flow,
         feed=feed, last_change=feed[0] if feed else None, managers=managers,
-        team=[("ведёт", mg), ("запчастист", pm), ("слесарь", mc)],
+        team=[("ведёт", mg), ("запчастист", pm), (MASTERS.get(mc.role.code, "мастер").lower() if mc else "мастер", mc)],
         can_urgent=(wo.status in WO_ACTIVE and (ctx.user.id == wo.mechanic_id or is_manager or ctx.user.role.code == "admin")),
         BRANDS=brands_svc.names(db, ctx.branch.id) if (can_pick or can_offer) else [],
-        diag_mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if is_manager and wo.status == "created" else [],
+        diag_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters") if is_manager and wo.status == "created" else [],
         diag_lifts=svc.lifts_with_load(db, ctx.branch.id) if is_manager and wo.status == "created" else [],
         cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,
         show_cost=ctx.can("prices.view_purchase"), show_price=ctx.can("prices.view_sale") or ctx.can("prices.view_purchase"),
@@ -324,14 +325,14 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_work=(wo.status == "work" and (ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all"))
                   and ctx.can("orders.view_own", "orders.view_all")),
         is_admin=ctx.user.role.code == "admin", pauses=pauses,
-        all_mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic"),
+        all_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters"),
         hour_rate=st_.get(db, ctx.branch.id, "pricing")["hour_rate"],
         people=people, STATUSES=WO_STATUSES, INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS,
         fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, can_assign=can_assign,
         can_add_photo=(ctx.can("orders.create") or ctx.can("orders.diagnose")) and wo.status in WO_ACTIVE,
         can_cancel=ctx.can("orders.cancel") and wo.status in WO_ACTIVE and wo.status != "paid",
         partsmen=svc.staff_by_role(db, ctx.branch.id, "partsman") if can_assign else [],
-        mechanics=svc.staff_by_role(db, ctx.branch.id, "mechanic") if can_assign else [],
+        mechanics=svc.staff_by_role(db, ctx.branch.id, "masters") if can_assign else [],
         lifts=svc.lifts_with_load(db, ctx.branch.id) if can_assign else [],
         **_order_tools(ctx, wo, works),
     )
@@ -409,7 +410,8 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
     def pick(v, role):
         uid = svc._uuid(v)   # мусор в форме — просто «не выбрано», а не ошибка сервера
         u = ctx.db.get(User, uid) if uid else None
-        return u.id if u and u.branch_id == bid and u.role.code == role else None
+        ok = u and u.branch_id == bid and (u.role.code in MASTERS if role == "masters" else u.role.code == role)
+        return u.id if ok else None
 
     if wo.status not in WO_ACTIVE:
         raise Forbidden()
@@ -420,7 +422,7 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
     if busy:
         flash(ctx.request, f"На подъёмнике {lift.number} уже стоит машина (наряд {busy.number}) — сначала освободите его", "error")
         return RedirectResponse(f"/orders/{order_id}", status_code=303)
-    wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), pick(mechanic_id, "mechanic")
+    wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), pick(mechanic_id, "masters")
     # Передать наряд другому менеджеру (11.11.2026) — новому приходит сообщение. Передаёт только менеджер (и админ).
     new_uuid = svc._uuid(manager_id)
     new_mg = ctx.db.get(User, new_uuid) if new_uuid else None

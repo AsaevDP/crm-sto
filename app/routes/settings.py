@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from ..config import MEDIA_DIR
 from ..models import Permission, Role, RolePermission, StaffCard, User, UserPermission
-from ..permissions import ADMIN_ROLE, SYSTEM_COLORS, effective_permissions
+from ..permissions import ADMIN_ROLE, MASTERS, SYSTEM_COLORS, effective_permissions
 from ..security import hash_secret
 from ..services import numbering
 from ..services import settings as st
@@ -505,7 +505,7 @@ def lifts_view(ctx: Ctx = Depends(get_ctx)):
     from ..models import Lift
     from ..services.orders import staff_by_role
     lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id).order_by(Lift.number)).all()
-    mechanics = staff_by_role(ctx.db, ctx.branch.id, "mechanic")
+    mechanics = staff_by_role(ctx.db, ctx.branch.id, "masters")
     return ctx.render("settings/lifts.html", title="Подъёмники", lifts=lifts, mechanics=mechanics,
                       by_id={m.id: m for m in mechanics})
 
@@ -520,7 +520,7 @@ def lift_save(lift_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(""), m
         raise Forbidden()
     lift.name = name.strip()[:60] or f"Пост {lift.number}"
     mech = ctx.db.get(User, uuid.UUID(mechanic_id)) if mechanic_id else None
-    lift.mechanic_id = mech.id if mech and mech.branch_id == ctx.branch.id and mech.role.code == "mechanic" else None
+    lift.mechanic_id = mech.id if mech and mech.branch_id == ctx.branch.id and mech.role.code in MASTERS else None
     lift.active = bool(active)
     ctx.db.commit()
     flash(ctx.request, f"Подъёмник {lift.number} сохранён")

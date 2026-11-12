@@ -17,11 +17,14 @@ MOVEMENT_TYPES = {
 
 
 # Склад делится на два основных раздела, внутри — категории (список можно дополнять: поле свободное)
-SECTIONS = {"to": "ТО", "repair": "Запчасти для ремонта"}
+# 12.11.2026: третий раздел — химия для мойки и детейлинга (расход СТО; отдельная полка на складе)
+SECTIONS = {"to": "ТО", "repair": "Запчасти для ремонта", "chem": "Химия для ухода за авто"}
+SECTION_SHORT = {"to": "ТО", "repair": "Запчасти", "chem": "Химия"}
 CATEGORIES = {
     "to": ["Масла", "Фильтры", "Свечи", "Жидкости", "Ремни и ролики", "Щётки и лампы", "Расходники"],
     "repair": ["Двигатель", "Ходовая и подвеска", "Тормоза", "Рулевое", "Трансмиссия", "Охлаждение",
                "Электрика", "Выхлоп", "Кузов и оптика", "Салон"],
+    "chem": ["Шампуни", "Полироли и воски", "Очистители", "Для салона", "Для шин и дисков", "Расходники для мойки"],
 }
 # Категории разбора (б/у детали)
 RAZBOR_CATEGORIES = ["Двигатель и навесное", "КПП и привод", "Ходовая и подвеска", "Тормоза", "Рулевое",
@@ -48,13 +51,19 @@ def guess_razbor_category(name: str) -> str:
     return "Прочее"
 
 
+# Только явная химия для мойки и ухода («очиститель тормозов» — расходник слесаря, не сюда)
+_CHEM_WORDS = ("шампун", "активная пена", "полирол", "воск для", "чернител", "микрофибр", "кондиционер для кож",
+               "для салона", "для мойки", "антидожд", "очиститель пластик", "очиститель кож", "очиститель битум",
+               "очиститель стёк", "очиститель стек", "очиститель диск", "очиститель салон")
 _TO_WORDS = ("масл", "фильтр", "свеч", "антифриз", "тосол", "жидкост", "омывай", "ремень", "ремня", "ролик",
              "щётк", "щетк", "дворник", "лампа", "смазк", "присадк", "oil", "filter")
 
 
 def guess_section(name: str) -> str:
-    """Раздел по названию: расходники ТО — «ТО», остальное — «Запчасти для ремонта»."""
+    """Раздел по названию: расходники ТО — «ТО», химия для мойки — «Химия», остальное — «Запчасти для ремонта»."""
     n = (name or "").lower()
+    if any(w in n for w in _CHEM_WORDS):
+        return "chem"
     return "to" if any(w in n for w in _TO_WORDS) else "repair"
 
 
@@ -72,6 +81,9 @@ def guess_category(name: str, section: str) -> str:
                    ("датчик", "Электрика"), ("генератор", "Электрика"), ("стартер", "Электрика"), ("аккумул", "Электрика"),
                    ("глушит", "Выхлоп"), ("катализ", "Выхлоп"), ("фара", "Кузов и оптика"), ("бампер", "Кузов и оптика"),
                    ("прокладк", "Двигатель"), ("поршн", "Двигатель"), ("грм", "Двигатель")],
+        "chem": [("шампун", "Шампуни"), ("пена", "Шампуни"), ("полирол", "Полироли и воски"), ("воск", "Полироли и воски"),
+                 ("чернител", "Для шин и дисков"), ("диск", "Для шин и дисков"), ("кож", "Для салона"), ("пластик", "Для салона"),
+                 ("салон", "Для салона"), ("очистит", "Очистители"), ("микрофибр", "Расходники для мойки"), ("губк", "Расходники для мойки")],
     }
     for word, cat in rules.get(section, []):
         if word in n:
@@ -177,6 +189,8 @@ class Purchase(Entity):
     # 12.11.2026: кладовщик отметил «Привезли» — товар на СТО, ждёт приёмки (пересчёт, ячейки). Только кладовщик.
     delivered_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     delivered_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 12.11.2026: "chem" — закупка химии для мойки (заводят менеджер / директор / зам из «Мойки», право wash.buy)
+    kind: Mapped[str] = mapped_column(String(10), default="", server_default="")
 
 
 class PurchaseLine(Entity):
@@ -232,3 +246,18 @@ class IssueRequestLine(Entity):
     wo_part_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("wo_parts.id"))
     qty: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     issued_qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+
+
+class ChemRequest(Entity):
+    """Мойщик / детейлер просит химию у кладовщика (12.11.2026). Химия — расход СТО, в счёт клиенту не идёт.
+    Кладовщик «Выдал» → движение «выдача» со склада (остаток уменьшается), в журнале — кто и сколько взял."""
+    __tablename__ = "chem_requests"
+    catalog_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("parts_catalog.id"))
+    qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)  # для какой машины
+    note: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="new")   # new / issued / declined / cancelled
+    issued_qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    reason: Mapped[str] = mapped_column(String(200), default="")

@@ -12,6 +12,7 @@ from ..services import orders as osvc
 from ..services import schedule as svc
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _uuid
+from ..permissions import MASTERS
 
 router = APIRouter()
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
@@ -48,7 +49,7 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     day = per.anchor
     by = by if by in BY else ("mech" if view in ("day", "month") else "date")
     bar = periods.Bar(per, "/schedule", {"by": by})
-    mechanics = osvc.staff_by_role(db, bid, "mechanic")
+    mechanics = osvc.staff_by_role(db, bid, "masters")
     if _own_only(ctx):
         mechanics = [m for m in mechanics if m.id == ctx.user.id]
     lifts = db.scalars(select(Lift).where(Lift.branch_id == bid, Lift.active.is_(True)).order_by(Lift.number)).all()
@@ -56,7 +57,7 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     editing = db.get(Appointment, _uuid(edit)) if edit else None
     if editing and editing.branch_id != bid:
         editing = None
-    colors = svc.mech_colors(osvc.staff_by_role(db, bid, "mechanic"))  # цвет мастера один и тот же у всех
+    colors = svc.mech_colors(osvc.staff_by_role(db, bid, "masters"))  # цвет мастера один и тот же у всех
     own_lift = {l.mechanic_id: l for l in lifts if l.mechanic_id}
     base = dict(day=day, view=view, mechanics=mechanics, lifts=lifts, editing=editing, APPT_STATUS=APPT_STATUS,
                 fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, local=svc.local, WEEKDAYS=WEEKDAYS,
@@ -116,7 +117,7 @@ def _lists(ctx: Ctx, show: str, by: str):
     appts = svc.between(db, bid, d1, d2, mechanic_id=mine, with_cancelled=True)
     if show == "past":
         appts = list(reversed(appts))
-    mechanics = osvc.staff_by_role(db, bid, "mechanic")
+    mechanics = osvc.staff_by_role(db, bid, "masters")
     people = {u.id: u for u in mechanics}
     by = by if by in BY else "date"
     groups = []
@@ -151,7 +152,7 @@ def _fill(ctx: Ctx, a: Appointment, f: dict):
     except ValueError:
         a.duration_min = 60
     m = ctx.db.get(User, uuid.UUID(f["mechanic_id"])) if f["mechanic_id"] else None
-    a.mechanic_id = m.id if m and m.branch_id == bid and m.role.code == "mechanic" else None
+    a.mechanic_id = m.id if m and m.branch_id == bid and m.role.code in MASTERS else None
     lift = ctx.db.get(Lift, uuid.UUID(f["lift_id"])) if f["lift_id"] else None
     a.lift_id = lift.id if lift and lift.branch_id == bid else None
     if not a.lift_id and a.mechanic_id:   # пост мастера по умолчанию

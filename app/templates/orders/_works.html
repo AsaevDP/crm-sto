@@ -2,6 +2,13 @@
 {% set WST = {"todo": "ждёт", "doing": "в работе", "paused": "пауза", "done": "готово"} %}
 {% set WCOL = {"todo": "created", "doing": "work", "paused": "waiting", "done": "ready"} %}
 {% from "orders/_card.html" import progress %}
+{# Исполнитель работы (12.11.2026): мастера по типам — слесарь, автоэлектрик, моторист, мойщик, детейлер #}
+{% macro master_select(sel, name="mechanic_id", auto=False) -%}
+<select class="field" name="{{ name }}" aria-label="Исполнитель"{% if auto %} onchange="this.form.submit()"{% endif %}><option value="">Исполнитель не выбран</option>
+  {% for code, label in MASTERS.items() %}{% set grp = all_mechanics|selectattr("role.code", "equalto", code)|list %}{% if grp %}
+  <optgroup label="{{ label }}">{% for m in grp %}<option value="{{ m.id }}" {% if m.id == sel %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+</select>
+{%- endmacro %}
 {% set n_done = works|selectattr("status", "equalto", "done")|list|length %}
 <div class="card compact step-card {{ 'now' if flow.cur == 4 }}" id="works" style="--sc:var(--teal)">
   <div class="card-h"><span class="headline"><span class="stepno">5</span>Работы · {{ n_done }} из {{ works|length }}</span>
@@ -13,7 +20,7 @@
   {% set mech = people.get(w.mechanic_id) %}
   <div class="part work" data-ws="{{ w.status }}">
     <div class="part-main">
-      <span class="part-name">{{ w.name }}{% if mech %}<span class="caption" style="display:block">{{ mech.full_name }}</span>{% endif %}</span>
+      <span class="part-name">{{ w.name }}{% if mech %}<span class="caption work-who">{{ MASTERS.get(mech.role.code, mech.role.name) }} · {{ mech.full_name }}</span>{% elif works|length %}<span class="caption work-who none">исполнитель не выбран</span>{% endif %}</span>
       <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
     </div>
     {% if w.status == "done" and w.done_at %}{% set by = people.get(w.done_by) %}
@@ -45,12 +52,11 @@
 
     {% if can_edit_works and w.status != "done" %}
     <details class="work-edit">
-      <summary class="caption">Изменить цену / слесаря</summary>
+      <summary class="caption">Изменить цену / исполнителя</summary>
       <form class="form dense" method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}">
         <input class="field" name="name" value="{{ w.name }}" aria-label="Название работы">
         {% include "orders/_work_price.html" %}
-        <select class="field" name="mechanic_id" aria-label="Слесарь"><option value="">Слесарь не выбран</option>
-          {% for m in all_mechanics %}<option value="{{ m.id }}" {% if m.id == w.mechanic_id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}</select>
+        <label class="caption">Исполнитель{{ master_select(w.mechanic_id) }}</label>
         <div class="form-row"><button class="btn btn-sm">Сохранить</button><button class="btn btn-sm btn-danger" name="delete" value="1">Удалить</button></div>
       </form>
     </details>
@@ -67,6 +73,7 @@
     <form class="form dense" method="post" action="/orders/{{ wo.id }}/works" style="margin-top:8px">
       <input class="field" name="name" placeholder="Название работы *" required>
       {% include "orders/_work_price.html" %}
+      <label class="caption">Исполнитель{{ master_select(wo.mechanic_id) }}</label>
       <button class="btn btn-sm">Добавить</button>
     </form>
   </details>

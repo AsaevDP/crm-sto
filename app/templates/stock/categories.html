@@ -8,7 +8,7 @@
 <div class="cat-grid fill">
   {% for sec, tree in trees.items() %}
   <section class="card compact cat-col">
-    <div class="card-h"><span class="headline">{{ "ТО" if sec == "to" else "Запчасти" }}</span><span class="caption">{{ tree|length }} категорий</span></div>
+    <div class="card-h"><span class="headline">{{ SECTION_SHORT.get(sec, sec) }}</span><span class="caption">{{ tree|length }} категорий</span></div>
     {% for x in tree %}
     <details class="cat-item">
       <summary><span class="grow"><b>{{ x.c.name }}</b> <span class="caption">· {{ x.subs|length }} подкат. · {{ used[x.c.id] }} шт</span></span></summary>

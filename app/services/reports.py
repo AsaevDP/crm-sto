@@ -16,6 +16,7 @@ from ..models.money import PAY_METHODS
 from .money import money, totals
 from .schedule import day_range
 from ..models.orders import PART_OFF
+from ..permissions import MASTERS
 
 D0 = Decimal(0)
 MONTHS = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"]
@@ -214,7 +215,7 @@ def mechanics_load(db: Session, bid, d1: date, d2: date) -> list[dict]:
         r["sum"] += Decimal(w.price or 0)
         r["orders"].add(w.work_order_id)
     users = db.scalars(select(User).join(Role, User.role_id == Role.id).where(
-        User.branch_id == bid, User.active.is_(True), Role.code == "mechanic").order_by(User.full_name)).all()
+        User.branch_id == bid, User.active.is_(True), Role.code.in_(list(MASTERS))).order_by(User.full_name)).all()
     out = []
     for u in users:
         r = rows.get(u.id, {"works": 0, "hours": D0, "sum": D0, "orders": set()})
@@ -261,7 +262,7 @@ def stock_value(db: Session, bid) -> dict:
     from .stock import balances
     bal = balances(db, bid)
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.branch_id == bid))}
-    out = {"new": D0, "used": D0, "positions": 0, "by_section": {"to": D0, "repair": D0}}
+    out = {"new": D0, "used": D0, "positions": 0, "by_section": {"to": D0, "repair": D0, "chem": D0}}
     for i in db.scalars(select(StockItem).where(StockItem.branch_id == bid)):
         q = Decimal(bal[i.id]["on_hand"])
         if q <= 0:

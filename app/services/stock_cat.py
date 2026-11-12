@@ -30,6 +30,15 @@ DEFAULT_TREE = {
         "Кузов и оптика": [],
         "Салон": [],
     },
+    # 12.11.2026: химия для мойки и детейлинга
+    "chem": {
+        "Шампуни": ["Активная пена", "Ручная мойка"],
+        "Полироли и воски": ["Полироли", "Воски и защита"],
+        "Очистители": ["Кузов и битум", "Стёкла", "Двигатель", "Диски"],
+        "Для салона": ["Пластик", "Кожа", "Ткань"],
+        "Для шин и дисков": [],
+        "Расходники для мойки": ["Микрофибра", "Губки и щётки"],
+    },
 }
 
 
@@ -61,9 +70,11 @@ def by_barcode(db: Session, branch_id, code: str) -> StockItem | None:
 # ---------- Категории ----------
 def seed(db: Session, branch_id):
     """Первое открытие: стартовое дерево + категории, которые уже встречаются в справочнике."""
-    if db.scalar(select(StockCategory.id).where(StockCategory.branch_id == branch_id).limit(1)):
-        return
+    # По разделам: новый раздел (химия, 12.11.2026) получает стартовое дерево и в уже работающей базе
+    have_sec = set(db.scalars(select(StockCategory.section).where(StockCategory.branch_id == branch_id).distinct()))
     for sec, cats in DEFAULT_TREE.items():
+        if sec in have_sec:
+            continue
         for i, (name, subs) in enumerate(cats.items()):
             c = StockCategory(section=sec, name=name, sort=i, branch_id=branch_id)
             db.add(c)

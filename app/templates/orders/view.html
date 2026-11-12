@@ -126,8 +126,8 @@
   <div class="grow"><b>{{ flow.title }}</b><span class="wo-now-t">{{ flow.text }}</span></div>
   {% if can_route %}
   <form class="wo-now-acts" method="post" action="/orders/{{ wo.id }}/to-diag">
-    <select class="field" name="mechanic_id" required aria-label="Слесарь"><option value="">Слесарь…</option>
-      {% for u in diag_mechanics %}<option value="{{ u.id }}">{{ u.short_name }}</option>{% endfor %}</select>
+    <select class="field" name="mechanic_id" required aria-label="Мастер"><option value="">Мастер…</option>
+      {% for u in diag_mechanics %}<option value="{{ u.id }}">{{ u.short_name }} · {{ MASTERS.get(u.role.code, '')|lower }}</option>{% endfor %}</select>
     <select class="field" name="lift_id" aria-label="Пост"><option value="">Пост…</option>
       {% for l, busy in diag_lifts %}<option value="{{ l.id }}">{{ l.number }}{% if busy %} · занят{% endif %}</option>{% endfor %}</select>
     <button class="btn btn-sm">На диагностику</button>
@@ -233,8 +233,9 @@
           {% for u in managers %}<option value="{{ u.id }}" {% if u.id == wo.manager_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
         <label>Подъёмник<select class="field" name="lift_id"><option value="">Без поста</option>
           {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
-        <label>Слесарь<select class="field" name="mechanic_id"><option value="">Не выбран</option>
-          {% for u in mechanics %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+        <label>Ведущий мастер<select class="field" name="mechanic_id"><option value="">Не выбран</option>
+          {% for code, label in MASTERS.items() %}{% set grp = mechanics|selectattr("role.code", "equalto", code)|list %}{% if grp %}<optgroup label="{{ label }}">
+          {% for u in grp %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}</select></label>
         <label>Запчастист<select class="field" name="partsman_id"><option value="">Не выбран</option>
           {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
         <button class="btn btn-sm">Сохранить</button>
@@ -242,11 +243,20 @@
       {% else %}
       {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
       <div class="kv"><span>Подъёмник</span><b>{{ lift.number ~ " · " ~ lift.name if lift else "—" }}</b></div>
-      <div class="kv"><span>Слесарь</span><b>{{ mc.full_name if mc else "—" }}</b></div>
+      <div class="kv"><span>Ведущий мастер</span><b>{{ mc.full_name if mc else "—" }}</b></div>
       <div class="kv"><span>Запчастист</span><b>{{ pm.full_name if pm else "—" }}</b></div>
       <div class="kv"><span>Менеджер</span><b>{{ mg.full_name if mg else "—" }}</b></div>
       {% endif %}
     </div>
+
+    {# Кто работает с машиной (12.11.2026): исполнители работ — слесарь, автоэлектрик, моторист, мойщик, детейлер #}
+    {% set crew = works|map(attribute="mechanic_id")|select|unique|list %}
+    {% if crew %}<div class="card compact">
+      <div class="card-h"><span class="headline">Работают с машиной · {{ crew|length }}</span></div>
+      {% for uid in crew %}{% set u = people.get(uid) %}{% if u %}{% set mine = works|selectattr("mechanic_id", "equalto", uid)|list %}
+      <div class="kv"><span>{{ MASTERS.get(u.role.code, u.role.name) }}</span><b>{{ u.full_name }} <span class="caption">· {{ mine|selectattr("status", "equalto", "done")|list|length }} из {{ mine|length }}</span></b></div>
+      {% endif %}{% endfor %}
+    </div>{% endif %}
 
     {# Лента действий (11.11.2026): кто, что и когда менял в этом наряде — по журналу, сверху новое #}
     <div class="card compact" id="feed">
@@ -284,8 +294,8 @@
       <form class="form dense" method="post" action="/messages">
         <input type="hidden" name="order_id" value="{{ wo.id }}"><input type="hidden" name="back" value="/orders/{{ wo.id }}#msgs">
         <div class="msg-to">
-          {% for key, lbl in (("manager", "Менеджеру"), ("partsman", "Запчастисту"), ("mechanic", "Слесарю")) %}{% set u = om.team[key] %}
-          {% if u and u.id != ctx.user.id %}<label class="chip-check"><input type="checkbox" name="to" value="{{ key }}" {% if key == "manager" or ctx.user.role.code != "mechanic" %}checked{% endif %}><span>{{ lbl }}<small> · {{ u.short_name }}</small></span></label>{% endif %}
+          {% for key, lbl in (("manager", "Менеджеру"), ("partsman", "Запчастисту"), ("mechanic", "Мастеру")) %}{% set u = om.team[key] %}
+          {% if u and u.id != ctx.user.id %}<label class="chip-check"><input type="checkbox" name="to" value="{{ key }}" {% if key == "manager" or not is_master(ctx.user) %}checked{% endif %}><span>{{ lbl }}<small> · {{ u.short_name }}</small></span></label>{% endif %}
           {% endfor %}
         </div>
         <textarea class="field" name="text" rows="2" maxlength="1000" placeholder="Сообщение по этой машине" required></textarea>

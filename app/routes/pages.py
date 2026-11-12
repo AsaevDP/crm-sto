@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from ..models import AuditLog, Lift, User
 from ..web import Ctx, get_ctx
+from ..permissions import MASTERS
 
 router = APIRouter()
 
@@ -38,7 +39,8 @@ for _p in SECTIONS:
     router.add_api_route(_p, _section(_p), methods=["GET"])
 
 
-STAFF_GROUPS = [("mechanic", "Слесари"), ("partsman", "Запчастисты"), ("storekeeper", "Кладовщики"),
+STAFF_GROUPS = [("mechanic", "Слесари"), ("electrician", "Автоэлектрики"), ("motorist", "Мотористы"),
+                ("washer", "Мойка и детейлинг"), ("detailer", "Мойка и детейлинг"), ("partsman", "Запчастисты"), ("storekeeper", "Кладовщики"),
                 ("content", "Кладовщики"), ("manager", "Менеджеры"), ("office", "Офис")]
 
 
@@ -55,12 +57,12 @@ def _staff_groups(ctx, staff, presence) -> list[dict]:
         code = u.role.code
         if not is_mgr:
             return u.id != me.id
-        if code in ("mechanic", "storekeeper", "content"):
+        if code in ("mechanic", "electrician", "motorist", "washer", "detailer", "storekeeper", "content"):
             return True
         return code == "partsman" and u.works_with_id == me.id
 
     people = [u for u in staff if visible(u)]
-    mech_ids = [u.id for u in people if u.role.code == "mechanic"]
+    mech_ids = [u.id for u in people if u.role.code in MASTERS]
     sess = {}
     for s in db.scalars(select(WoWorkSession).where(WoWorkSession.mechanic_id.in_(mech_ids), WoWorkSession.ended_at.is_(None))
                         .order_by(WoWorkSession.started_at)):
@@ -81,7 +83,7 @@ def _staff_groups(ctx, staff, presence) -> list[dict]:
         pr = presence.get(u.id)
         here = "in" if pr and pr[0] == "in" else ("out" if pr else "none")
         since = pr[1] if pr else ""
-        if code == "mechanic":
+        if code in MASTERS:
             s = sess.get(u.id)
             if here == "out":
                 state, text = "out", f"ушёл {since}"
@@ -144,7 +146,7 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     from datetime import date as _date
     from ..services import schedule as ssvc
     from ..services.orders import staff_by_role
-    colors = ssvc.mech_colors(staff_by_role(db, bid, "mechanic"))
+    colors = ssvc.mech_colors(staff_by_role(db, bid, "masters"))
     appts = ssvc.between(db, bid, _date.today(), _date.today())
     on_site = sum(1 for v in presence.values() if v and v[0] == "in")
     staff_groups = _staff_groups(ctx, staff, presence)

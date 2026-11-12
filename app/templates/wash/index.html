@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles as tiles_m with context %}
+{# Мойка (12.11.2026): машины на мойке, химия (сколько есть, кто сколько взял), закупка химии для мойки.
+   Химия — расход СТО, входит в стоимость мойки, клиенту в счёт не идёт. #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Мойка</h1></div>
+  <div class="ov-actions">
+    <a class="btn btn-sm btn-gray" href="/stock?sec=chem">Химия на складе</a>
+    {% if ctx.can("wash.buy") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('wnew').showModal()">{{ icon("plus") }}Заказать химию</button>{% endif %}
+  </div>
+</header>
+
+{{ tiles_m([
+  {"t": "На мойке", "n": cars|length, "c": "blue", "s": "машин по нарядам", "href": "/wash?tab=now", "on": tab == "now"},
+  {"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"},
+  {"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=chem", "zero": not asks},
+  {"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low},
+  {"t": "Закупка для мойки", "n": n_open, "c": "teal", "s": "заказы химии в работе", "href": "/wash?tab=buy", "on": tab == "buy", "zero": not n_open},
+], "wash-tiles") }}
+
+{% if tab == "now" %}
+<div class="wash-cars">
+  {% for x in cars %}{% set s = WASH_ST[x.st] %}
+  <a class="card compact wash-car" href="/orders/{{ x.o.id }}#works" data-st="{{ x.st }}">
+    <div class="card-h"><span class="headline">{{ x.v.make }} {{ x.v.model }}</span><span class="chip" data-s="{{ s[1] }}">{{ s[0] }}</span></div>
+    <div class="subhead"><span class="mono">{{ fmt_plate(x.v.plate) }}</span> · наряд {{ x.o.number }}</div>
+    {% for w in x.works %}<div class="kv"><span>{{ w.name }}</span><b class="caption">{{ {"todo": "ждёт", "doing": "в работе", "paused": "пауза", "done": "✓ готово"}[w.status] }}</b></div>{% endfor %}
+    <div class="caption">{% for u in x.who %}{{ MASTERS.get(u.role.code, "") }} · {{ u.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if x.mgr %} · ведёт {{ x.mgr.short_name }}{% endif %}</div>
+  </a>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">Сейчас машин на мойке нет. Мойка и детейлинг — работы в наряде: менеджер добавляет работу «Мойка» и выбирает исполнителя (мойщик или детейлер).</p></div>
+  {% endfor %}
+</div>
+
+{% elif tab == "chem" %}
+<div class="cl-grid wash-grid">
+  <section class="ov-col on">
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Химия на складе · {{ items|length }}</span><a class="caption" href="/stock?sec=chem">на складе →</a></div>
+      <div class="tablewrap"><table class="table dense-table">
+        <thead><tr><th>Название</th><th>Ячейка</th><th class="num">Свободно</th></tr></thead>
+        <tbody>{% for x in items %}
+        <tr class="{{ 'low' if x.free <= 2 }}"><td><b>{{ x.c.name }}</b><div class="caption">{{ x.c.category }}{% if x.c.brand %} · {{ x.c.brand }}{% endif %}</div></td>
+          <td class="caption nowrap">{{ locs.get(x.loc, "—") if x.loc else "—" }}</td>
+          <td class="num nowrap"><b class="{{ 'late' if x.free <= 2 }}">{{ x.free|num }}</b></td></tr>
+        {% else %}<tr><td colspan="3" class="footnote">Химии на складе пока нет — оформите «Заказать химию», кладовщик примет на полку «Химия».</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+  </section>
+  <section class="ov-col on">
+    {% if asks %}<div class="card compact">
+      <div class="card-h"><span class="headline">Просят у кладовщика · {{ asks|length }}</span></div>
+      {% for a in asks %}<div class="kv"><span>{{ a.who.short_name if a.who else "" }} · {{ a.c.name if a.c else "" }}{% if a.wo %} · {{ a.wo.number }}{% endif %}</span><b class="nowrap">{{ a.r.qty|num }} шт</b></div>{% endfor %}
+    </div>{% endif %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Кто сколько взял · 30 дней</span></div>
+      {% for u in usage %}<div class="kv"><span>{{ u.u.full_name }} <span class="caption">· {{ MASTERS.get(u.u.role.code, u.u.role.name) }}</span></span>
+        <b class="nowrap">{{ u.n }} раз · {{ u.qty|num }} шт{% if cost_ok %} · {{ u.sum|money(0) }} ₴{% endif %}</b></div>
+      {% else %}<p class="footnote" style="margin:0">За 30 дней химию не выдавали.</p>{% endfor %}
+    </div>
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Последние выдачи</span></div>
+      {% for d in done %}<div class="kv"><span>{{ d.r.decided_at.astimezone().strftime("%d.%m %H:%M") if d.r.decided_at else "" }} · {{ d.who.short_name if d.who else "" }} · {{ d.c.name if d.c else "" }}{% if d.r.status == "declined" %} <span class="caption">— отказ{% if d.r.reason %}: {{ d.r.reason }}{% endif %}</span>{% endif %}</span>
+        <b class="nowrap">{{ d.r.issued_qty|num if d.r.status == "issued" else "—" }}</b></div>
+      {% else %}<p class="footnote" style="margin:0">Пока пусто.</p>{% endfor %}
+    </div>
+  </section>
+</div>
+
+{% elif tab == "buy" %}
+{% if low %}<div class="card compact wash-low"><b>Заканчивается:</b> {% for x in low %}{{ x.c.name }} — {{ x.free|num }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+<div class="tablewrap">
+  <table class="table pu-table">
+    <thead><tr><th>Создана</th><th>Поставщик</th><th>Заказал</th><th>Статус</th><th class="num">Строк</th>{% if ctx.can("prices.view_purchase") or ctx.can("wash.buy") %}<th class="num">Сумма</th>{% endif %}<th>Привезут</th></tr></thead>
+    <tbody>
+    {% for p in purchases %}{% set s = stats.get(p.id, {"n": 0, "total": 0}) %}
+    <tr class="row-link" onclick="location.href='/purchases/{{ p.id }}'">
+      <td class="footnote nowrap">{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}</td>
+      <td><a href="/purchases/{{ p.id }}"><b>{{ suppliers[p.supplier_id].name if p.supplier_id in suppliers else "Без поставщика" }}</b></a></td>
+      <td>{% set b = people.get(p.created_by) %}{{ b.short_name if b else "—" }}</td>
+      <td><span class="chip" data-s="{{ {'draft': 'created', 'ordered': 'waiting', 'delivered': 'diag', 'partial': 'picking', 'arrived': 'ready'}[p.status] }}">{{ {'draft': 'черновик', 'ordered': 'заказано', 'delivered': 'привезли', 'partial': 'неполная', 'arrived': '✓ на складе'}[p.status] }}</span></td>
+      <td class="num">{{ s.n }}</td>
+      {% if ctx.can("prices.view_purchase") or ctx.can("wash.buy") %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
+      <td class="nowrap">{{ p.expected_on.strftime("%d.%m") if p.expected_on else "—" }}</td>
+    </tr>
+    {% else %}<tr><td colspan="7" class="footnote">Закупок химии пока не было — нажмите «Заказать химию».</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="footnote">Закупка химии — как обычная: строки (можно вставить списком из Excel), «✓ Заказал», кладовщик принимает на полку «Химия».</p>
+{% endif %}
+
+{% if ctx.can("wash.buy") %}
+<dialog id="wnew" class="sheet">
+  <form method="post" action="/wash/purchases/new" class="form">
+    <h2 class="title-2">Заказать химию</h2>
+    <label class="caption">Поставщик
+      <select class="field" name="supplier_id"><option value="">— выбрать —</option>
+        {% for s in (supplier_list or []) %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></label>
+    <input class="field" name="supplier_new" placeholder="или новый поставщик — название">
+    <p class="footnote" style="margin:0">Дальше откроется закупка: добавите строки по одной или вставите весь список.</p>
+    <div class="form-row"><button class="btn">Создать</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

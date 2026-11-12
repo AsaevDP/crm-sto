@@ -40,7 +40,7 @@
 <div class="wrap">
   {% for l in labels %}
   <div class="lab">
-    <div class="top"><span>{{ branding.name }}</span><span>{{ l.i.code or ("ТО" if l.c.section == "to" else "Запчасти") }}</span></div>
+    <div class="top"><span>{{ branding.name }}</span><span>{{ l.i.code or SECTION_SHORT.get(l.c.section, "Запчасти") }}</span></div>
     <div class="name">{{ l.c.name }}</div>
     <div class="meta">{{ l.c.brand }} {{ l.c.article }}{% if l.c.kind == "used" and l.i.donor_make %} · б/у с {{ l.i.donor_make }} {{ l.i.donor_model }}{% endif %}</div>
     {% if cfg.show_fits and l.fits %}<div class="meta">для: {{ l.fits }}</div>{% endif %}

@@ -55,7 +55,7 @@
       {% if c.kind == "used" %}
       <select class="field" name="category" aria-label="Категория разбора">{% for k in RAZBOR_CATEGORIES %}<option {% if k == c.category %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
       {% else %}
-      <select class="field" name="section" id="f-sec" aria-label="Раздел">{% for k, v in SECTIONS.items() %}<option value="{{ k }}" {% if c.section == k %}selected{% endif %}>{{ "ТО" if k == "to" else "Запчасти" }}</option>{% endfor %}</select>
+      <select class="field" name="section" id="f-sec" aria-label="Раздел">{% for k, v in SECTIONS.items() %}<option value="{{ k }}" {% if c.section == k %}selected{% endif %}>{{ SECTION_SHORT.get(k, v) }}</option>{% endfor %}</select>
       <div class="form-row">
         <select class="field" name="category" id="f-cat" aria-label="Категория"></select>
         <select class="field" name="subcategory" id="f-sub" aria-label="Подкатегория"></select>

@@ -472,6 +472,16 @@ def purchase_new(ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), suppl
     return _to(f"/purchases/{p.id}")
 
 
+def can_manage(ctx: Ctx, p: Purchase) -> bool:
+    """Править закупку: запчастист (purchases.manage) — любую; менеджер / директор / зам — только закупку химии для мойки."""
+    return ctx.can("purchases.manage") or (p.kind == "chem" and ctx.can("wash.buy"))
+
+
+def _need_manage(ctx: Ctx, p: Purchase):
+    if not can_manage(ctx, p):
+        raise Forbidden()
+
+
 def _purchase(ctx: Ctx, pid: str) -> Purchase:
     p = ctx.db.get(Purchase, _uuid(pid))
     if not p or p.branch_id != ctx.branch.id:
@@ -496,7 +506,8 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx), short: str = ""):
     sup_all = db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name)).all()
     from ..services import brands as _br
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    return ctx.render("stock/purchase.html", title="Закупка", p=p, lines=lines, cats=cats, parts=parts, orders=orders,
+    return ctx.render("stock/purchase.html", title="Закупка химии" if p.kind == "chem" else "Закупка", p=p, lines=lines,
+                      can_manage=can_manage(ctx, p), cats=cats, parts=parts, orders=orders,
                       buyer=people.get(p.created_by), people=people, short=bool(short),
                       vehicles=vehicles, BRANDS=_br.names(db, ctx.branch.id), suppliers=sup_all,
                       sup_names={s.id: s.name for s in sup_all}, drafts=drafts,
@@ -510,8 +521,8 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx), short: str = ""):
 @router.post("/purchases/{pid}/ordered")
 def purchase_ordered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
     """«✓ Заказал» (12.11.2026) — из «Моих заказов», у каждого черновика. Поставщик, счёт, дата не трогаются."""
-    ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
+    _need_manage(ctx, p)
     db = ctx.db
     to = back if back.startswith("/my-orders") else f"/purchases/{pid}"
     if p.status != "draft":
@@ -540,8 +551,8 @@ def _date(v: str):
 def purchase_save(pid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form(""),
                   supplier_invoice: str = Form(""), note: str = Form(""), action: str = Form("save"),
                   expected_on: str = Form(""), supplier_phone: str = Form("")):
-    ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
+    _need_manage(ctx, p)
     db = ctx.db
     if action == "delete":
         if p.status != "draft":
@@ -593,6 +604,9 @@ def _add_line(ctx: Ctx, p: Purchase, name, article, brand, qty, price, catalog_i
         if brand:
             brands.add(ctx.db, ctx.branch.id, brand)
         cat = svc.get_or_create_catalog(ctx.db, name, article, brand)
+    if p.kind == "chem":   # 12.11.2026: закупка для мойки — позиция в разделе «Химия»
+        from ..models.stock import guess_category
+        cat.section, cat.category = "chem", (cat.category if cat.section == "chem" else "") or guess_category(cat.name, "chem")
     ctx.db.add(PurchaseLine(purchase_id=p.id, catalog_id=cat.id, qty=max(Decimal(qty), Decimal("0.01")),
                             price=svc.money(price), received_qty=0))
     return True
@@ -608,8 +622,8 @@ def purchase_line_add(pid: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = F
                       article: str = Form(""), brand: str = Form(""), qty: str = Form("1"), price: str = Form("0"),
                       paste: str = Form("")):
     """Строка «на склад» (впрок, без наряда) или сразу список — вставкой из Excel / счёта поставщика."""
-    ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
+    _need_manage(ctx, p)
     if not _editable(p):
         raise Forbidden()
     if paste.strip():
@@ -628,8 +642,8 @@ def purchase_line_add(pid: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = F
 @router.post("/purchases/{pid}/lines/{lid}")
 def purchase_line_edit(pid: str, lid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form(""), price: str = Form(""),
                        delete: str = Form(""), action: str = Form("save"), target: str = Form("")):
-    ctx.need("purchases.manage")
     p = _purchase(ctx, pid)
+    _need_manage(ctx, p)
     db = ctx.db
     line = db.get(PurchaseLine, _uuid(lid))
     if not _editable(p) or not line or line.purchase_id != p.id:
@@ -1234,11 +1248,19 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
     can_tools = ctx.can("tools.manage", "tools.view")
     tool_new = tsvc.requests_list(ctx.db, ctx.branch.id, "new") if can_tools else []
     new = _requests(ctx, "new")
-    if tab not in ("parts", "tools") or (tab == "tools" and not can_tools):
+    # 12.11.2026: химия для мойки — мойщик / детейлер просит, кладовщик выдаёт (расход СТО)
+    from ..services import chem as csvc
+    can_chem = ctx.can("stock.issue")
+    chem_new = csvc.requests(ctx.db, ctx.branch.id, "new", days=0) if can_chem else []
+    if tab not in ("parts", "tools", "chem") or (tab == "tools" and not can_tools) or (tab == "chem" and not can_chem):
         tab = "parts"
     data = dict(tab=tab, new=new, n_parts=len(new), can_tools=can_tools, n_tools=len(tool_new),
-                fmt_plate=osvc.fmt_plate)
-    if tab == "tools":
+                can_chem=can_chem, n_chem=len(chem_new), fmt_plate=osvc.fmt_plate)
+    if tab == "chem":
+        free = {x["c"].id: x for x in csvc.items(ctx.db, ctx.branch.id)}
+        data.update(chem_new=chem_new, chem_free=free, chem_done=csvc.requests(ctx.db, ctx.branch.id, ("issued", "declined"), days=7)[:20],
+                    locs={l.id: svc.location_label(l) for l in ctx.db.scalars(select(Location).where(Location.branch_id == ctx.branch.id))})
+    elif tab == "tools":
         data.update(t_issue=[x for x in tool_new if x["r"].kind == "issue"], t_return=[x for x in tool_new if x["r"].kind == "return"],
                     t_out=tsvc.out_on_orders(ctx.db, ctx.branch.id), t_done=tsvc.requests_list(ctx.db, ctx.branch.id, "done", 15),
                     can_manage=ctx.can("tools.manage"))

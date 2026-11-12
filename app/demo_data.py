@@ -718,6 +718,79 @@ def populate():
                   "Марина Приёмкина просит доступ ко всем нарядам", "Ирина в отпуске до пятницы — клиенты звонят по её нарядам",
                   "/access-requests")
         db.flush()
+        _demo_wash(db, branch, users, as_user)
 
         current_user_id.set(None)
         db.commit()
+
+
+CHEM = [
+    # название, бренд, закупка, кол-во, место на полке «Химия»
+    ("Активная пена для бесконтактной мойки, 5 л", "Koch Chemie", "1350", 4, 1),
+    ("Шампунь для ручной мойки, 1 л", "Grass", "260", 6, 1),
+    ("Полироль для кузова с воском, 0,5 л", "Meguiar's", "690", 3, 2),
+    ("Очиститель битума и смолы, 0,5 л", "Grass", "240", 1, 2),
+    ("Очиститель пластика салона, 0,5 л", "Koch Chemie", "420", 5, 3),
+    ("Кондиционер для кожи, 0,5 л", "Leather Expert", "560", 2, 3),
+    ("Чернитель шин, 1 л", "Grass", "310", 4, 4),
+    ("Салфетка микрофибра 40×40", "", "75", 20, 4),
+]
+
+
+def _demo_wash(db, branch, users, as_user):
+    """Мойка и химия (12.11.2026): полка «Химия», закупка химии менеджером, приход, запрос мойщика, работа мойщика в наряде."""
+    from .models import PurchaseLine, Supplier, WoWork
+    from .models.stock import guess_category
+    from .services import chem as csvc
+    from .services import stock_cat
+    if "moyka" not in users:
+        return
+    stock_cat.seed(db, branch.id)
+    as_user("pavel")
+    shelf = []
+    for p in range(1, 5):
+        loc = Location(rack="Х", shelf="1", place=str(p), label=f"Химия / 1 / {p}")
+        db.add(loc)
+        shelf.append(loc)
+    sup = Supplier(name="Химтрейд (демо)", phone="+380 67 000 11 22")
+    db.add(sup)
+    db.flush()
+    as_user("irina")   # химию заказывает менеджер (право wash.buy)
+    p = Purchase(supplier_id=sup.id, status="ordered", kind="chem", supplier_invoice="ХТ-3310")
+    db.add(p)
+    db.flush()
+    lines = []
+    for name, brand, cost, qty, place in CHEM:
+        c = ssvc.get_or_create_catalog(db, name, "", brand)
+        c.section, c.category = "chem", guess_category(name, "chem") or "Расходники для мойки"
+        ln = PurchaseLine(purchase_id=p.id, catalog_id=c.id, qty=Decimal(qty), price=Decimal(cost), received_qty=0)
+        db.add(ln)
+        lines.append((ln, shelf[place - 1]))
+    db.flush()
+    as_user("pavel")
+    for ln, loc in lines:
+        ssvc.receive_line(db, branch.id, ln, loc.id)
+    ssvc.refresh_purchase_status(db, p)
+    db.flush()
+    # Мойщик просил: одно выдано, одно ждёт кладовщика
+    cats = {c.name: c for c in db.scalars(select(ssvc.PartCatalog).where(ssvc.PartCatalog.section == "chem"))}
+    as_user("moyka")
+    r1 = csvc.ask(db, users["moyka"], cats[CHEM[0][0]].id, Decimal(1), None, "Закончилась в пеногенераторе")
+    r2 = csvc.ask(db, users["moyka"], cats[CHEM[6][0]].id, Decimal(1))
+    db.flush()
+    as_user("pavel")
+    csvc.issue(db, r1, users["pavel"])
+    # Работа мойщика в открытом наряде (машина сейчас на мойке)
+    as_user("irina")
+    wo = db.scalar(select(WorkOrder).where(WorkOrder.status == "work").order_by(WorkOrder.created_at))
+    if wo:
+        w = WoWork(work_order_id=wo.id, name="Мойка кузова и салона", status="todo", pricing="fixed", rate=Decimal(600),
+                   qty=Decimal(1), mechanic_id=users["moyka"].id)
+        w.price = msvc.work_price(w)
+        db.add(w)
+        if "detail" in users:
+            w2 = WoWork(work_order_id=wo.id, name="Полировка фар", status="todo", pricing="fixed", rate=Decimal(450),
+                        qty=Decimal(1), mechanic_id=users["detail"].id)
+            w2.price = msvc.work_price(w2)
+            db.add(w2)
+    db.flush()

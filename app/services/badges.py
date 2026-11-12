@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 
 from ..models import IssueRequest, Purchase, PurchaseLine, UsedSale, WoPart, WorkOrder
+from ..permissions import MASTERS
 
 ALL_ROLES = ("admin", "director", "deputy")
 
@@ -61,7 +62,7 @@ def compute(ctx) -> dict:
             if not see_all:
                 uq = uq.where(mine)
             _add(out, "/orders", "red", db.scalar(uq) or 0, "срочные запчасти", "/orders?tab=parts")
-        if role == "mechanic":
+        if role in MASTERS:
             _add(out, "/orders", "red", n_status("created", "diag", field=WorkOrder.mechanic_id), "новые — посмотреть",
                  "/orders?tab=intake")
         if ctx.can("orders.approve"):   # 12.11.2026: мне передали наряд — горит, пока не нажал «Принял»
@@ -77,7 +78,7 @@ def compute(ctx) -> dict:
         if ctx.can("orders.approve"):
             _add(out, "/orders", "green", n_status("ready", field=None if see_all else WorkOrder.manager_id),
                  "готовы к выдаче клиенту", "/orders?tab=ready")
-        if role == "mechanic":
+        if role in MASTERS:
             _add(out, "/orders", "green", n_status("instock", field=WorkOrder.mechanic_id), "запчасти на складе — можно начинать",
                  "/orders?tab=parts")
 
@@ -116,6 +117,10 @@ def compute(ctx) -> dict:
             n += db.scalar(select(func.count()).select_from(ToolRequest).where(ToolRequest.branch_id == bid,
                                                                                ToolRequest.status == "new")) or 0
         _add(out, "/stock/issues", "red", n, "просят выдать")
+        if ctx.can("stock.issue"):   # 12.11.2026: мойщик / детейлер просит химию
+            from ..models import ChemRequest
+            _add(out, "/stock/issues", "red", db.scalar(select(func.count()).select_from(ChemRequest).where(
+                ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "просят химию для мойки", "/stock/issues?tab=chem")
         if ctx.can("stock.issue"):
             _add(out, "/stock/issues", "green", db.scalar(select(func.count()).select_from(IssueRequest).where(
                 IssueRequest.branch_id == bid, IssueRequest.status == "ready")) or 0, "готово — ждут, когда заберут")

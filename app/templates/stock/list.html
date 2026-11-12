@@ -13,6 +13,7 @@
 {% set it = [
   {"t": "ТО", "n": tiles.sec.get("to", 0), "c": "blue", "s": "масла, фильтры, свечи", "href": "/stock?sec=to", "on": sec == "to"},
   {"t": "Запчасти", "n": tiles.sec.get("repair", 0), "c": "indigo", "s": "для ремонта", "href": "/stock?sec=repair", "on": sec == "repair"},
+  {"t": "Химия для ухода за авто", "n": tiles.sec.get("chem", 0), "c": "purple", "s": "мойка и детейлинг", "href": "/stock?sec=chem", "on": sec == "chem"},
   {"t": "В резерве", "n": tiles.reserved, "c": "orange", "s": "позиций под наряды", "zero": not tiles.reserved}]
 %}
 {% if ctx.can("stock.manage") %}{% set _ = it.append({"t": "Приход", "n": to_receive, "c": "green", "s": "ждём от поставщиков", "href": "/stock/receive"}) %}{% endif %}

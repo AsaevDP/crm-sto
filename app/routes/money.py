@@ -20,6 +20,7 @@ from ..services.staff import staff_for_period
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
 from ..models.orders import PART_OFF
+from ..permissions import MASTERS, is_master
 
 router = APIRouter()
 
@@ -60,7 +61,7 @@ def _apply_work(ctx: Ctx, w: WoWork, name, pricing, hours, rate, qty, mechanic_i
     if mechanic_id is not None:
         uid = _uuid_or_none(mechanic_id)
         u = ctx.db.get(User, uid) if uid else None
-        w.mechanic_id = u.id if u and u.branch_id == ctx.branch.id and u.role.code == "mechanic" else None
+        w.mechanic_id = u.id if u and u.branch_id == ctx.branch.id and u.role.code in MASTERS else None
     w.price = msvc.work_price(w)
 
 
@@ -130,7 +131,7 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     if not (ctx.user.id in (w.mechanic_id, wo.mechanic_id) or ctx.can("orders.view_all")):
         raise Forbidden()
     db, t = ctx.db, now()
-    mech = ctx.user.id if ctx.user.role.code == "mechanic" else (w.mechanic_id or wo.mechanic_id)
+    mech = ctx.user.id if is_master(ctx.user) else (w.mechanic_id or wo.mechanic_id)
 
     def close_open():
         for s in db.scalars(select(WoWorkSession).where(WoWorkSession.wo_work_id == w.id, WoWorkSession.ended_at.is_(None))):
@@ -148,7 +149,7 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     elif action == "done" and w.status in ("todo", "doing", "paused"):
         close_open()
         w.status, w.done_at, w.done_by = "done", t, ctx.user.id
-        if ctx.user.role.code == "mechanic":   # зарплата — тому, кто сделал (наряд могли передать другому)
+        if is_master(ctx.user):   # зарплата — тому, кто сделал (наряд могли передать другому)
             w.mechanic_id = ctx.user.id
         db.flush()
         msvc.after_change(db, wo)
@@ -787,7 +788,7 @@ def payroll_settings(ctx: Ctx = Depends(get_ctx), role: str = ""):
     from ..services.attendance import days_present
     t = date.today()
     present = {u.id: days_present(db, ctx.branch.id, u.id, t.year, t.month) for u in staff}
-    order = ["mechanic", "partsman", "manager", "storekeeper", "content", "accountant", "director", "admin"]
+    order = ["mechanic", "electrician", "motorist", "washer", "detailer", "partsman", "manager", "storekeeper", "content", "accountant", "director", "admin"]
     role_list = sorted(roles.values(), key=lambda x: (order.index(x["role"].code) if x["role"].code in order else 99, x["role"].name))
     return ctx.render("money/payroll_settings.html", title="Зарплата: схемы", staff=staff, schemes=schemes, groups=groups,
                       present=present, role_list=role_list, role=role if role in roles else "",

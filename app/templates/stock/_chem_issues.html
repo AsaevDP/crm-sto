@@ -1,0 +1,34 @@
+{# Химия для мойки (12.11.2026): мойщик / детейлер просит — кладовщик «Выдать» (списание как расход СТО) или «Отказать». #}
+<div class="cl-grid">
+  <section class="ov-col on">
+    <div class="group-title">Просят химию · {{ chem_new|length }}</div>
+    {% for x in chem_new %}{% set st = chem_free.get(x.r.catalog_id) %}
+    <div class="card compact issue">
+      <div class="card-h"><span class="headline">{{ x.who.full_name if x.who else "" }} просит</span>
+        <span class="caption">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      {% if x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · для мойки машины</div>{% endif %}
+      <div class="kv"><span>{{ x.c.name if x.c else "" }} <span class="caption">{{ x.c.category if x.c else "" }}</span></span>
+        <b class="nowrap">{{ x.r.qty|num }} шт · {{ locs.get(st.loc, "—") if st and st.loc else "—" }}</b></div>
+      <div class="caption">На складе свободно: <b class="{{ 'late' if not st or st.free < x.r.qty }}">{{ st.free|num if st else 0 }}</b></div>
+      {% if x.r.note %}<p class="ov-text" style="margin:0">«{{ x.r.note }}»</p>{% endif %}
+      <div class="iss-acts">
+        <form method="post" action="/chem/{{ x.r.id }}/issue" class="form-row">
+          <input class="field mini" name="qty" value="{{ x.r.qty|num }}" inputmode="decimal" aria-label="Сколько выдать">
+          <button class="btn btn-sm">✓ Выдать</button></form>
+        <details><summary class="btn btn-sm btn-gray">Отказать</summary>
+          <form method="post" action="/chem/{{ x.r.id }}/decline" class="form-row" style="margin-top:6px">
+            <input class="field" name="reason" placeholder="Причина (нет, закончилась…)"><button class="btn btn-sm btn-gray">Отказать</button></form></details>
+      </div>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов химии нет.</p></div>{% endfor %}
+  </section>
+  <section class="ov-col on">
+    <div class="group-title">Недавно · 7 дней</div>
+    <div class="card compact">
+      {% for d in chem_done %}<div class="kv"><span>{{ d.r.decided_at.astimezone().strftime("%d.%m %H:%M") if d.r.decided_at else "" }} · {{ d.who.short_name if d.who else "" }} · {{ d.c.name if d.c else "" }}{% if d.r.status == "declined" %} <span class="caption">— отказ</span>{% endif %}</span>
+        <b class="nowrap">{{ d.r.issued_qty|num if d.r.status == "issued" else "—" }}</b></div>
+      {% else %}<p class="footnote" style="margin:0">Пока пусто.</p>{% endfor %}
+    </div>
+    <p class="footnote">Выданная химия списывается со склада как расход мойки — клиенту в счёт не идёт.</p>
+  </section>
+</div>

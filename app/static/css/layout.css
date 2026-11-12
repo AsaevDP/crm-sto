@@ -1734,3 +1734,38 @@ main a:not([class]):hover { text-decoration: underline; }
   .po-ord-m { display: flex; align-items: center; margin-top: 8px; }
   .po-ord-d { display: none; }
 }
+
+/* ===== Мойка и химия (12.11.2026) ===== */
+.wash-tiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.wash-cars { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.wash-car { display: grid; gap: 4px; color: var(--text); text-decoration: none; border-left: 4px solid var(--blue); min-width: 0; }
+.wash-car[data-st="doing"] { border-left-color: var(--teal); }
+.wash-car[data-st="paused"] { border-left-color: var(--orange); }
+.wash-car[data-st="done"] { border-left-color: var(--green); }
+a.wash-car:hover { background: var(--fill-2); }
+.wash-car .card-h .chip { flex: none; }
+.wash-low { border-left: 4px solid var(--red); }
+tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
+.chem-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); align-items: start; }
+.chem-card { display: grid; gap: 6px; min-width: 0; border-top: 3px solid var(--purple); }
+.chem-card.out { opacity: .7; border-top-color: var(--gray); }
+.chem-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.chem-top b { overflow-wrap: anywhere; min-width: 0; }
+.chem-free { flex: none; font: 700 20px/1 var(--font-display, inherit); font-variant-numeric: tabular-nums; color: var(--green); }
+.chem-free.zero { color: var(--text-2); }
+.chem-ask > summary { list-style: none; display: inline-flex; }
+.chem-ask > summary::-webkit-details-marker { display: none; }
+.chem-ask form { margin-top: 8px; }
+.chem-ask .form-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.chem-ask .form-row label { display: grid; gap: 4px; flex: 1 1 120px; min-width: 0; }
+.chem-mine { flex-wrap: wrap; }
+.chem-mine > b { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; }
+/* Работы в наряде: исполнитель — специальность и имя (12.11.2026) */
+.work-who { display: block; }
+.work-who.none { color: var(--orange); }
+
+.iss-acts .form-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.iss-acts .field.mini { width: 80px; flex: none; }
+.iss-acts details > summary { list-style: none; display: inline-flex; }
+.iss-acts details > summary::-webkit-details-marker { display: none; }
+@media (min-width: 900px) { .cl-grid.wash-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) !important; } }

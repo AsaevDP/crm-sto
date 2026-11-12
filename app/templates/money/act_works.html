@@ -8,11 +8,24 @@
     <th class="num" style="width:10%">Кол-во</th><th class="num" style="width:12%">Цена, ₴</th><th class="num" style="width:13%">Сумма, ₴</th></tr></thead>
   {% for w in works %}{% set m = people.get(w.mechanic_id or wo.mechanic_id) %}
   <tr><td>{{ loop.index }}</td><td>{{ w.name }}{% if w.status != "done" %} <span class="muted">(не завершена)</span>{% endif %}</td>
-    <td>{{ m.full_name if m else "" }}</td>
+    <td>{% if m %}<span class="muted" style="font-size:9pt">{{ MASTERS.get(m.role.code, m.role.name) }}</span><br>{{ m.full_name }}{% endif %}</td>
     <td class="num">{% if w.pricing == "hours" %}{{ ((w.hours or 0) * (w.qty or 1))|num }} н/ч{% else %}{{ (w.qty or 1)|num }}{% endif %}</td>
     <td class="num">{{ w.rate|money }}</td><td class="num">{{ w.price|money }}</td></tr>
   {% else %}<tr><td colspan="6" class="muted">Работ нет</td></tr>{% endfor %}
 </table>
+{# Кто работал с машиной (12.11.2026): 1–3 мастера разных специальностей — у каждого свои работы #}
+{% set crew = [] %}{% for w in works %}{% set uid = w.mechanic_id or wo.mechanic_id %}{% if uid and uid not in crew %}{% set _ = crew.append(uid) %}{% endif %}{% endfor %}
+{% if crew|length > 1 %}
+<h2>С автомобилем работали</h2>
+<table>
+  <thead><tr><th>Мастер</th><th style="width:22%">Специальность</th><th class="num" style="width:12%">Работ</th><th class="num" style="width:14%">Нормо-часов</th><th class="num" style="width:16%">Сумма, ₴</th></tr></thead>
+  {% for uid in crew %}{% set m = people.get(uid) %}{% set mine = [] %}{% for w in works %}{% if (w.mechanic_id or wo.mechanic_id) == uid %}{% set _ = mine.append(w) %}{% endif %}{% endfor %}
+  <tr><td>{{ m.full_name if m else "" }}</td><td>{{ MASTERS.get(m.role.code, m.role.name) if m else "" }}</td><td class="num">{{ mine|length }}</td>
+    <td class="num">{% set ns = namespace(h=0, s=0) %}{% for w in mine %}{% if w.pricing == "hours" %}{% set ns.h = ns.h + (w.hours or 0) * (w.qty or 1) %}{% endif %}{% set ns.s = ns.s + (w.price or 0) %}{% endfor %}{{ ns.h|num if ns.h else "—" }}</td>
+    <td class="num">{{ ns.s|money }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
 <table class="sum" style="width:55%;margin-left:auto">
   <tr class="big"><td>Итого работы</td><td class="num">{{ t.works|money }} ₴</td></tr>
   {% if t.parts %}<tr><td>Запчасти (см. акт на запчасти)</td><td class="num">{{ t.parts|money }} ₴</td></tr>{% endif %}

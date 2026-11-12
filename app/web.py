@@ -78,7 +78,7 @@ def asset(path: str) -> str:
 
 
 from .models.orders import WO_STATUS_SHORT  # noqa: E402
-from .models.stock import CATEGORIES, RAZBOR_CATEGORIES, SECTIONS  # noqa: E402
+from .models.stock import CATEGORIES, RAZBOR_CATEGORIES, SECTION_SHORT, SECTIONS  # noqa: E402
 
 def money_fmt(x, digits: int = 2) -> str:
     """12345.5 → «12 345,50» — деньги в таблицах и печати."""
@@ -98,8 +98,10 @@ templates.env.globals["INTAKE_LABELS"] = INTAKE_LABELS
 templates.env.filters["num"] = num
 templates.env.filters["money"] = money_fmt
 templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO,
-                             STATUS_SHORT=WO_STATUS_SHORT, SECTIONS=SECTIONS, CATEGORIES=CATEGORIES,
+                             STATUS_SHORT=WO_STATUS_SHORT, SECTIONS=SECTIONS, SECTION_SHORT=SECTION_SHORT, CATEGORIES=CATEGORIES,
                              RAZBOR_CATEGORIES=RAZBOR_CATEGORIES)
+from .permissions import MASTERS, WASHERS, is_master  # noqa: E402
+templates.env.globals.update(MASTERS=MASTERS, WASHERS=WASHERS, is_master=is_master)
 
 
 @dataclass

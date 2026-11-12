@@ -10,7 +10,7 @@ from . import audit  # noqa: F401 — подключает автоматиче�
 from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
 from .routes import (attendance, auth, diagnosis, folders, money, orders, pages, razbor, reports, schedule,
-                     settings, stock, tools)
+                     settings, stock, tools, wash)
 from .seed import seed
 from .web import Forbidden, NotLoggedIn, ViewOnly, flash, templates
 
@@ -75,6 +75,7 @@ app.include_router(folders.router)
 app.include_router(schedule.router)
 app.include_router(reports.router)
 app.include_router(settings.router)
+app.include_router(wash.router)
 
 
 @app.exception_handler(NotLoggedIn)

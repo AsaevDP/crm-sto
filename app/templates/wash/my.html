@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{# Химия для мойщика и детейлера (12.11.2026): что есть на складе → «Попросить» → кладовщик выдаёт.
+   Химия — расход СТО (входит в стоимость мойки), клиенту в счёт не идёт. #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Химия</h1><p class="footnote" style="margin:0">Попросите у кладовщика — он выдаст со склада</p></div>
+  <form class="vs-search" method="get" action="/wash/my"><input class="field search" name="q" value="{{ q }}" placeholder="Найти: шампунь, полироль…" autocomplete="off"></form>
+</header>
+
+{% set waiting = mine|selectattr("r.status", "equalto", "new")|list %}
+{% if mine %}
+<div class="card compact">
+  <div class="card-h"><span class="headline">Мои запросы · 14 дней</span>{% if waiting %}<span class="chip" data-s="waiting">ждут: {{ waiting|length }}</span>{% endif %}</div>
+  {% for x in mine %}
+  <div class="kv chem-mine"><span>{{ x.c.name if x.c else "" }} · {{ x.r.qty|num }} шт{% if x.wo %} <span class="caption">· {{ x.wo.number }}</span>{% endif %}
+      <span class="caption">· {{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% if x.r.reason %} <span class="caption">— {{ x.r.reason }}</span>{% endif %}</span>
+    <b class="nowrap"><span class="chip" data-s="{{ {'new': 'waiting', 'issued': 'ready', 'declined': 'cancel', 'cancelled': 'closed'}[x.r.status] }}">{{ STATUS[x.r.status] }}</span>
+      {% if x.r.status == "new" %}<form method="post" action="/wash/requests/{{ x.r.id }}/cancel" style="display:inline"><button class="btn btn-plain btn-sm">Отменить</button></form>{% endif %}</b></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="chem-grid">
+  {% for x in items %}
+  <div class="card compact chem-card {{ 'out' if x.free <= 0 }}">
+    <div class="chem-top"><b>{{ x.c.name }}</b><span class="chem-free {{ 'zero' if x.free <= 0 }}">{{ x.free|num }}</span></div>
+    <div class="caption">{{ x.c.category or "Химия" }}{% if x.c.brand %} · {{ x.c.brand }}{% endif %}{% if x.loc %} · {{ locs.get(x.loc, "") }}{% endif %}</div>
+    {% if x.free > 0 %}
+    <details class="chem-ask">
+      <summary class="btn btn-sm btn-tinted">Попросить</summary>
+      <form class="form dense" method="post" action="/wash/ask">
+        <input type="hidden" name="catalog_id" value="{{ x.c.id }}">
+        <div class="form-row"><label class="caption">Сколько<input class="field" name="qty" value="1" inputmode="decimal"></label>
+          {% if orders %}<label class="caption">Для машины<select class="field" name="order_id"><option value="">— без машины —</option>
+            {% for o in orders %}{% set v = vehicles.get(o.vehicle_id) %}<option value="{{ o.id }}">{{ v.make ~ " " ~ v.model ~ " · " ~ fmt_plate(v.plate) if v else o.number }}</option>{% endfor %}</select></label>{% endif %}</div>
+        <input class="field" name="note" placeholder="Комментарий (необязательно)">
+        <button class="btn btn-sm">Отправить кладовщику</button>
+      </form>
+    </details>
+    {% else %}<p class="caption" style="margin:0">Нет на складе — скажите менеджеру, он закажет</p>{% endif %}
+  </div>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">{% if q %}Ничего не нашлось{% else %}Химии на складе пока нет{% endif %}.</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

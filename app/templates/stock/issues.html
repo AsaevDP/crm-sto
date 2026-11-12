@@ -3,15 +3,17 @@
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Запросы на выдачу</h1></div>
-  {% if can_tools %}
+  {% if can_tools or can_chem %}
   <nav class="segmented iss-tabs" aria-label="Что выдаём">
     <a href="/stock/issues?tab=parts" aria-pressed="{{ (tab == 'parts')|lower }}">Запчасти{% if n_parts %} · {{ n_parts }}{% endif %}</a>
-    <a href="/stock/issues?tab=tools" aria-pressed="{{ (tab == 'tools')|lower }}">Инструмент{% if n_tools %} · {{ n_tools }}{% endif %}</a>
+    {% if can_tools %}<a href="/stock/issues?tab=tools" aria-pressed="{{ (tab == 'tools')|lower }}">Инструмент{% if n_tools %} · {{ n_tools }}{% endif %}</a>{% endif %}
+    {% if can_chem %}<a href="/stock/issues?tab=chem" aria-pressed="{{ (tab == 'chem')|lower }}">Химия{% if n_chem %} · {{ n_chem }}{% endif %}</a>{% endif %}
   </nav>
   {% endif %}
 </header>
 
-{% if tab == "parts" %}
+{% if tab == "chem" %}{% include "stock/_chem_issues.html" %}
+{% elif tab == "parts" %}
 <div class="cl-grid">
   <section class="ov-col on">
     {% if pend %}

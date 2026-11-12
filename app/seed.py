@@ -25,6 +25,11 @@ TEST_USERS = [
     ("director", "Виктор Директоров", "director",    "director123", "1007", "0000100008"),
     ("deputy",  "Наталья Заместитель", "deputy",     "deputy123",  "1008", "0000100009"),
     ("buh",     "Оксана Бухгалтерова", "accountant", "buh123",     "1009", "0000100010"),
+    # 12.11.2026: новые мастера
+    ("elektro", "Роман Электриков",   "electrician", "elektro123", "1010", "0000100011"),
+    ("motor",   "Василий Моторов",    "motorist",    "motor123",   "1011", "0000100012"),
+    ("moyka",   "Артём Мойкин",       "washer",      "moyka123",   "1012", "0000100013"),
+    ("detail",  "Ольга Полирова",     "detailer",    "detail123",  "1013", "0000100014"),
 ]
 
 
@@ -71,6 +76,12 @@ def sync_roles(db: Session):
         current_branch_id.set(branch.id)
         for i, (code, (name, color, perms)) in enumerate(DEFAULT_ROLES.items()):
             if code in have:
+                # Роль есть, а сотрудников в ней нет совсем (роль появилась раньше тестового входа) — заводим тестового
+                r = db.scalar(select(Role).where(Role.branch_id == branch.id, Role.code == code))
+                if r and not db.scalar(select(User.id).where(User.role_id == r.id).limit(1)):
+                    for login, uname, role, pwd, pin, card in TEST_USERS:
+                        if role == code and not db.scalar(select(User).where(User.login == login)):
+                            _add_user(db, login, uname, r, pwd, pin, card)
                 continue
             r = Role(code=code, name=name, color=color, is_system=True, sort=i, branch_id=branch.id)
             db.add(r)

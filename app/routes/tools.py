@@ -12,6 +12,7 @@ from ..services import orders as osvc
 from ..services import tools as svc
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _uuid
+from ..permissions import MASTERS
 
 router = APIRouter()
 
@@ -110,7 +111,7 @@ def _tool_overview(ctx: Ctx, all_rows):
     for c in db.scalars(select(ToolCheck).where(ToolCheck.branch_id == ctx.branch.id).order_by(ToolCheck.created_at)):
         last_check[c.user_id] = c
     # Карточки: у кого что-то числится + все слесари (даже с пустыми руками)
-    cards = [u for u in staff if u.id in per or u.role.code == "mechanic"]
+    cards = [u for u in staff if u.id in per or u.role.code in MASTERS]
     cards.sort(key=lambda u: (-(len(per.get(u.id, {}).get("temp", [])) > 0), u.full_name))
     shared_live = [t for t in live if not t.is_personal]
     tiles = {

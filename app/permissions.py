@@ -40,6 +40,10 @@ PERMISSIONS = [
     ("stock.manage", "Приход, ячейки, инвентаризация", "Склад и закупки"),
     ("stock.issue", "Выдача запчастей по запросу", "Склад и закупки"),
     ("stock.request_issue", "Просить выдачу запчастей со склада", "Склад и закупки"),
+    # 12.11.2026 (брат): мойка и детейлинг — химия со склада (расход СТО, в счёт клиенту не идёт)
+    ("chem.ask", "Просить у кладовщика химию для мойки и ухода (мойщик, детейлер)", "Мойка"),
+    ("wash.view", "Раздел «Мойка»: машины на мойке, химия, кто сколько взял", "Мойка"),
+    ("wash.buy", "Заказывать химию для мойки у поставщика («Закупка для мойки»)", "Мойка"),
     ("razbor.view", "Видеть разбор (б/у)", "Разбор"),
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
@@ -72,11 +76,23 @@ ALL_CODES = [p[0] for p in PERMISSIONS]
 
 # Роли по умолчанию: код → (название, цвет, права). Совпадает с docs/statuses.md, раздел 3.
 _OWN = ["payroll.view_own", "attendance.view_own", "tools.view_own"]
+_MASTER = ["orders.view_own", "orders.diagnose", "stock.request_issue", "lifts.take", "schedule.view", "stock.look",
+           "parts.ask", *_OWN]
+_WASH = ["orders.view_own", "schedule.view", "chem.ask", *_OWN]
+
+# Мастера — кто делает работы в наряде (12.11.2026): у каждой работы свой исполнитель. Код роли → название типа работ
+MASTERS = {"mechanic": "Слесарь", "electrician": "Автоэлектрик", "motorist": "Моторист",
+           "washer": "Мойщик", "detailer": "Детейлер"}
+WASHERS = ("washer", "detailer")
+
+
+def is_master(user) -> bool:
+    return bool(user and user.role and user.role.code in MASTERS)
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve", "parts.offer",
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
-        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.buy", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "purchases.mine", "stock.view",
         "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
@@ -86,19 +102,24 @@ DEFAULT_ROLES = {
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
         "prices.view_sale", *_OWN]),
-    "mechanic": ("Слесарь", "green", ["orders.view_own", "orders.diagnose", "stock.request_issue", "lifts.take", "schedule.view",
-                                       "stock.look", "parts.ask", *_OWN]),
+    "mechanic": ("Слесарь", "green", _MASTER),
+    # 12.11.2026 (брат): автоэлектрик и моторист — как слесарь (свои работы в наряде, запчасти, сообщения)
+    "electrician": ("Автоэлектрик", "yellow", _MASTER),
+    "motorist": ("Моторист", "red", _MASTER),
+    # Мойщик и детейлер: свои работы в наряде, химия у кладовщика; без разбора и запчастей
+    "washer": ("Мойщик", "teal", _WASH),
+    "detailer": ("Детейлер", "indigo", _WASH),
     # Директор: видит всё и всю бухгалтерию, сам ничего не «крутит» в нарядах
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
-        "payroll.advance", *_OWN]),
+        "payroll.advance", "wash.view", "wash.buy", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
         "reports.view", "money.view", "attendance.view_all", "payroll.view_all", "payroll.check", "payroll.pay",
@@ -129,6 +150,9 @@ MENU = [
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
     ("/my-orders", "Мои заказы", "list", ["purchases.mine"]),
     ("/purchases/by-partsman", "Заказы запчастистов", "users", ["purchases.by_partsman"]),
+    # 12.11.2026: мойка — машины на мойке, химия, закупка химии (менеджер, директор, зам)
+    ("/wash", "Мойка", "drop", ["wash.view"]),
+    ("/wash/my", "Химия", "drop", ["chem.ask"]),
     ("/razbor", "Разбор", "car", ["razbor.view"]),
     # 12.11.2026: второй кладовщик (разбор) — подготовить, выдать, отправить; цифра — сколько подготовить
     ("/razbor/shipping", "Выдача и отправка", "box", ["razbor.manage"]),
@@ -161,4 +185,5 @@ def menu_for(perms: set[str]) -> list[dict]:
         # «Мои заказы» — только у запчастиста; кто видит заказы всех (админ, директор, кладовщик) — смотрит там
         and not (href == "/my-orders" and "purchases.by_partsman" in perms)
         and not (href == "/ready" and "stock.issue" in perms)   # кладовщик и админ видят это в «Запросах на выдачу»
+        and not (href == "/wash/my" and "wash.view" in perms)   # «Химия» — мойщику; руководителю всё видно в «Мойке»
     ]

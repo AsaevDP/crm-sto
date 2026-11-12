@@ -18,6 +18,7 @@ from ..models import (PartGroupItem, PayrollAccrual, PayrollPayout, PayScheme, P
                       WorkOrder, WoWork)
 from . import settings as st
 from .money import money
+from ..permissions import MASTERS
 
 KINDS = {"percent": "Процент", "per_unit": "Фикс за штуку", "salary": "Оклад"}
 BASES = {"works": "от суммы работ", "parts_margin": "от наценки запчастей", "parts_sale": "от цены продажи запчастей"}
@@ -53,7 +54,7 @@ def lines_for(db: Session, user: User) -> list[PaySchemeLine]:
 def default_lines(db: Session, user: User) -> list[PaySchemeLine]:
     """Нет своей схемы → проценты по умолчанию из настроек (объекты не сохраняются в БД)."""
     cfg = st.get(db, user.branch_id, "payroll")
-    if user.role.code == "mechanic":
+    if user.role.code in MASTERS:
         return [PaySchemeLine(kind="percent", base="works", rate=Decimal(str(cfg["mechanic_works_pct"])), priority=0)]
     if user.role.code == "partsman":
         return [PaySchemeLine(kind="percent", base="parts_margin", rate=Decimal(str(cfg["partsman_margin_pct"])), priority=0)]

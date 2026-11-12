@@ -28,8 +28,8 @@
           {{ v.make }} {{ v.model }} · {{ fmt_plate(v.plate) }} · {{ o.number[-6:] }}</option>{% endfor %}
       </select>
       <div class="msg-to" id="msg-to">
-        {% for key, lbl in (("manager", "Менеджеру"), ("partsman", "Запчастисту"), ("mechanic", "Слесарю")) %}
-        <label class="chip-check"><input type="checkbox" name="to" value="{{ key }}" {% if key == "manager" and ctx.user.role.code == "mechanic" %}checked{% endif %}><span>{{ lbl }}<small data-who="{{ key }}"></small></span></label>
+        {% for key, lbl in (("manager", "Менеджеру"), ("partsman", "Запчастисту"), ("mechanic", "Мастеру")) %}
+        <label class="chip-check"><input type="checkbox" name="to" value="{{ key }}" {% if key == "manager" and is_master(ctx.user) %}checked{% endif %}><span>{{ lbl }}<small data-who="{{ key }}"></small></span></label>
         {% endfor %}
       </div>
       <textarea class="field" name="text" rows="2" maxlength="1000" placeholder="Например: «нужен ещё хомут глушителя — на складе нет, закажите»" required></textarea>
