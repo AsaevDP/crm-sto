@@ -1647,7 +1647,7 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .set-ic svg { width: 18px; height: 18px; }
 .au-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .nt-row { border-left: 4px solid var(--separator); padding-left: 10px; }
-.nt-row[data-kind="parts_ready"] { border-left-color: var(--green); }
+.nt-row[data-kind="parts_ready"], .nt-row[data-kind="parts_in"] { border-left-color: var(--green); }
 .nt-row[data-kind="issue_ready"] { border-left-color: var(--teal); }
 .iss-acts { display: grid; gap: 6px; }
 .iss-acts form { margin: 0; }

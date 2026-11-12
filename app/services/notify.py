@@ -40,13 +40,61 @@ def team(wo: WorkOrder) -> list:
     return [wo.manager_id, wo.mechanic_id, wo.partsman_id]
 
 
+def masters(db: Session, wo: WorkOrder) -> list:
+    """Все мастера наряда: ведущий и каждый, у кого в наряде своя работа (электрик, моторист, второй слесарь…)."""
+    from ..models import WoWork
+    ids = [wo.mechanic_id, *db.scalars(select(WoWork.mechanic_id).where(WoWork.work_order_id == wo.id,
+                                                                         WoWork.mechanic_id.is_not(None)))]
+    return list(dict.fromkeys(i for i in ids if i))
+
+
+def team_all(db: Session, wo: WorkOrder) -> list:
+    """Менеджер, запчастист и все мастера наряда (12.11.2026: в одном заказе бывают детали для разных мастеров)."""
+    return [wo.manager_id, wo.partsman_id, *masters(db, wo)]
+
+
 def parts_ready(db: Session, wo: WorkOrder):
-    # «Срочная деталь пришла» по этому наряду больше не нужна — теперь пришло всё
-    for n in db.scalars(select(Notification).where(Notification.work_order_id == wo.id, Notification.kind == "urgent_in",
+    # «Пришли запчасти» / «Срочная деталь пришла» по этому наряду больше не нужны — теперь пришло всё
+    for n in db.scalars(select(Notification).where(Notification.work_order_id == wo.id,
+                                                   Notification.kind.in_(("urgent_in", "parts_in")),
                                                    Notification.read_at.is_(None))):
         n.read_at = now()
-    send(db, team(wo), "parts_ready", "Все запчасти на складе — можно начинать",
+    send(db, team_all(db, wo), "parts_ready", "Все запчасти на складе — можно начинать",
          f"{car(db, wo)} · наряд {wo.number}", f"/orders/{wo.id}#parts", wo)
+
+
+def parts_arrived(db: Session, wo: WorkOrder, parts: list):
+    """Кладовщик принял часть запчастей наряда, остальное ещё едет (12.11.2026) — одно сообщение на приёмку
+    менеджеру, запчастисту и всем мастерам наряда: сколько пришло и сколько всего уже на складе."""
+    from ..models import WoPart
+    from ..models.orders import PART_OFF
+    if not parts:
+        return
+    allp = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
+    have = sum(1 for p in allp if p.status in ("reserved", "issued", "installed"))
+    urgent = any(p.urgent for p in parts)
+    names = ", ".join(("🔥 " if p.urgent else "") + p.name for p in parts[:4]) + ("…" if len(parts) > 4 else "")
+    title = (f"Срочная деталь пришла: {parts[0].name}" if urgent and len(parts) == 1
+             else f"Пришли запчасти: {len(parts)} шт." + (" (есть срочная)" if urgent else ""))
+    send(db, team_all(db, wo), "urgent_in" if urgent else "parts_in", title,
+         f"{names} · на складе {have} из {len(allp)} · {car(db, wo)} · наряд {wo.number}", f"/orders/{wo.id}#parts", wo)
+
+
+def arrived_waiting(db: Session, branch_id, user_id) -> dict:
+    """Зелёная цифра «пришло» (12.11.2026): по моим открытым нарядам — сколько запчастей пришло по закупке и лежит
+    в резерве (ещё не выдано мастеру). Гаснет, когда кладовщик выдал. {наряд: штук}."""
+    from sqlalchemy import func, or_
+    from ..models import PurchaseLine, WoPart, WoWork
+    q = (select(WoPart.work_order_id, func.count(func.distinct(WoPart.id)))
+         .join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
+         .join(PurchaseLine, PurchaseLine.wo_part_id == WoPart.id)
+         .where(WorkOrder.branch_id == branch_id, WoPart.status == "reserved",
+                WorkOrder.status.not_in(("closed", "cancel")),
+                or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0),
+                or_(WorkOrder.manager_id == user_id, WorkOrder.partsman_id == user_id, WorkOrder.mechanic_id == user_id,
+                    WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == user_id))))
+         .group_by(WoPart.work_order_id))
+    return {wid: n for wid, n in db.execute(q)}
 
 
 def unread(db: Session, user_id, limit: int = 10) -> list[Notification]:

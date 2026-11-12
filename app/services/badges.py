@@ -16,16 +16,17 @@ from ..permissions import MASTERS
 ALL_ROLES = ("admin", "director", "deputy")
 
 
-def _add(out: dict, href: str, color: str, n: int, title: str, link: str = ""):
+def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False):
+    """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды)."""
     if not n:
         return
     lst = out.setdefault(href, [])
-    same = next((x for x in lst if x["c"] == color), None)
+    same = None if alone else next((x for x in lst if x["c"] == color and not x.get("alone")), None)
     if same:   # одного цвета — одной цифрой, подсказка перечисляет всё
         same["n"] += int(n)
         same["t"] += f" · {title}"
     else:
-        lst.append({"c": color, "n": int(n), "t": title, "href": link or href})
+        lst.append({"c": color, "n": int(n), "t": title, "href": link or href, "alone": alone})
     lst.sort(key=lambda x: ("red", "yellow", "green").index(x["c"]))
 
 
@@ -78,9 +79,21 @@ def compute(ctx) -> dict:
         if ctx.can("orders.approve"):
             _add(out, "/orders", "green", n_status("ready", field=None if see_all else WorkOrder.manager_id),
                  "готовы к выдаче клиенту", "/orders?tab=ready")
-        if role in MASTERS:
-            _add(out, "/orders", "green", n_status("instock", field=WorkOrder.mechanic_id), "запчасти на складе — можно начинать",
-                 "/orders?tab=parts")
+        # 🟢 12.11.2026: пришли запчасти по закупке и ждут выдачи — менеджеру, запчастисту и всем мастерам наряда.
+        # Цифра = сколько запчастей. Гаснет, когда кладовщик выдал мастеру. Отдельной цифрой — не смешивается с нарядами.
+        arrived = {}
+        if ctx.can("orders.approve", "parts.pick") or role in MASTERS:
+            from .notify import arrived_waiting
+            arrived = arrived_waiting(db, bid, me.id)
+            _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
+                 alone=True)
+        if role in MASTERS:   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
+            qi = select(func.count()).select_from(WorkOrder).where(
+                WorkOrder.branch_id == bid, WorkOrder.status == "instock", WorkOrder.mechanic_id == me.id)
+            if arrived:
+                qi = qi.where(WorkOrder.id.not_in(list(arrived)))
+            n_in = db.scalar(qi) or 0
+            _add(out, "/orders", "green", n_in, "запчасти на складе — можно начинать", "/orders?tab=parts")
 
     # 🔴 менеджер просит доступ ко всем нарядам — админу / директору / заму
     if ctx.can("orders.grant_access"):

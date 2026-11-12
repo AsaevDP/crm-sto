@@ -63,7 +63,8 @@ def test_receive_all_parts_notifies_team_once(client):
     client.post("/stock/receive", data={"line_id": str(belt_line.id), f"loc_{belt_line.id}": str(loc.id)})
     assert _wo(url).status == "waiting"
     assert [k for k, _ in _notes("andrey", url)] == ["urgent_in"]
-    assert not any(k == "parts_ready" for k, _ in _notes("irina", url))  # по обычной детали — молчим
+    assert any(k == "urgent_in" for k, _ in _notes("oleg", url))         # 12.11.2026: и запчастисту, и менеджеру
+    assert not any(k == "parts_ready" for k, _ in _notes("irina", url))
 
     # Принять всё остальное → «Все запчасти на складе» менеджеру, слесарю, запчастисту — по одному разу
     r = client.post("/stock/receive", data={"all": str(pid)})   # ответ — страница «Приход» после приёма

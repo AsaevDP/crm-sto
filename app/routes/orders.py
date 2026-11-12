@@ -104,8 +104,14 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     handed_cond = (WorkOrder.manager_id == ctx.user.id, WorkOrder.handover_pending.is_(True), WorkOrder.status.in_(WO_ACTIVE))
     show_handed = ctx.can("orders.approve")
     stage_counts["handed"] = ctx.db.scalar(select(func.count()).select_from(WorkOrder).where(*handed_cond)) or 0 if show_handed else 0
+    # 12.11.2026: «Пришли запчасти» — мои наряды, где запчасти пришли по закупке и ещё не выданы (зелёная цифра в меню)
+    from ..services.notify import arrived_waiting
+    arrived = arrived_waiting(ctx.db, ctx.branch.id, ctx.user.id)
+    stage_counts["arrived"] = len(arrived)
     if tab == "handed" and show_handed:
         query = query.where(*handed_cond)
+    elif tab == "arrived":
+        query = query.where(WorkOrder.id.in_(list(arrived) or [uuid.uuid4()]))
     elif tab in ORDER_STAGES:
         query = query.where(WorkOrder.status.in_(ORDER_STAGES[tab][2]))
     elif status in WO_STATUSES:

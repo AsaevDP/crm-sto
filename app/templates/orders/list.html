@@ -46,6 +46,9 @@
 {# 12.11.2026: переданные мне наряды — первой плиткой, пока не нажал «Принял» #}
 {% if show_handed %}{% set _ = items.append({"t": "Мне передали", "n": stage_counts.handed, "c": "red" if stage_counts.handed else "gray",
     "href": "?tab=handed" ~ qq, "on": tab == "handed", "s": "нажмите «Принял»" if stage_counts.handed else "новых нет", "zero": not stage_counts.handed}) %}{% endif %}
+{# 12.11.2026: пришли запчасти по закупке, ждут выдачи — плитка видна, пока есть такие наряды (или открыт этот фильтр) #}
+{% if stage_counts.arrived or tab == "arrived" %}{% set _ = items.append({"t": "Пришли запчасти", "n": stage_counts.arrived, "c": "green",
+    "href": "?tab=arrived" ~ qq, "on": tab == "arrived", "s": "ждут выдачи со склада" if stage_counts.arrived else "всё выдано"}) %}{% endif %}
 {% for k, v in STAGES.items() %}{% set _ = items.append({"t": v[0], "n": stage_counts[k], "c": v[1], "href": "?tab=" ~ k ~ qq, "on": tab == k,
     "s": "в работе сейчас" if k == "active" else ""}) %}{% endfor %}
 {% set _ = items.append({"t": "Все", "n": stage_counts.all, "c": "gray", "href": "?tab=all" ~ qq, "on": tab == "all", "s": "за период" if per.kind != "all" else "за всё время"}) %}

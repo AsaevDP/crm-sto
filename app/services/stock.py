@@ -449,12 +449,26 @@ def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=No
                 part.status = "reserved"
                 db.flush()
                 wo = db.get(WorkOrder, part.work_order_id)
-                refresh_order_status(db, wo)
-                if part.urgent and wo.status != "instock":   # срочная пришла, остальное ещё едет — сказать сразу
-                    from . import notify
-                    notify.send(db, [wo.mechanic_id, wo.manager_id], "urgent_in", f"Срочная деталь пришла: {part.name}",
-                                f"{notify.car(db, wo)} · остальное ещё едет · наряд {wo.number}", f"/orders/{wo.id}#parts", wo)
+                refresh_order_status(db, wo)   # пришло всё → «Все запчасти на складе»
+                # Пришло, но не всё — одно сообщение на всю приёмку пишет arrived_notify (12.11.2026)
     return take
+
+
+def arrived_notify(db: Session, parts: list, before: dict):
+    """После приёмки: по каждому наряду, где запчасти пришли, но не всё, — «Пришли запчасти: N» менеджеру,
+    запчастисту и всем мастерам. Наряд, который этой приёмкой стал «Запчасти на складе», уже получил своё."""
+    from . import notify
+    by_wo: dict = {}
+    for p in parts:
+        if p.status == "reserved":
+            by_wo.setdefault(p.work_order_id, []).append(p)
+    for wid, lst in by_wo.items():
+        wo = db.get(WorkOrder, wid)
+        if not wo or wo.status in ("cancel", "closed"):
+            continue
+        if wo.status == "instock" and before.get(wid) != "instock":
+            continue
+        notify.parts_arrived(db, wo, lst)
 
 
 # Закупка ждёт приёмки: заказана / привезли (кладовщик отметил, ещё не принял) / неполная поставка (ждём остальное)

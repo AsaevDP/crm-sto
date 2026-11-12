@@ -750,10 +750,15 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
     else:
         lines = []
     done, ready, item_ids, touched = 0, [], [], set()
+    got_parts, before = [], {}   # 12.11.2026: что пришло под наряды — одно сообщение на приёмку (svc.arrived_notify)
     for l in lines:
         p = db.get(Purchase, l.purchase_id) if l else None
         if not l or l.received or not p or p.id not in ids or p.status not in svc.OPEN:
             continue
+        wp = db.get(WoPart, l.wo_part_id) if l.wo_part_id else None
+        if wp and wp.work_order_id not in before:
+            before[wp.work_order_id] = db.get(WorkOrder, wp.work_order_id).status
+        was = wp.status if wp else None
         raw = str(form.get(f"loc_{l.id}", "") or form.get("location_id", ""))
         loc = db.get(Location, _uuid(raw)) if raw else None
         q = str(form.get(f"qty_{l.id}", "")).strip()
@@ -770,10 +775,13 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
             wo = db.get(WorkOrder, db.get(WoPart, l.wo_part_id).work_order_id)
             if wo.status == "instock" and wo.number not in ready:
                 ready.append(wo.number)
+            if wp and was != "reserved" and wp.status == "reserved" and wp not in got_parts:
+                got_parts.append(wp)
         touched.add(p.id)
         done += 1
     for pid in touched:
         svc.refresh_purchase_status(db, db.get(Purchase, pid))
+    svc.arrived_notify(db, got_parts, before)
     db.commit()
     if done:
         ctx.request.session["last_received"] = {"n": done, "ids": ",".join(dict.fromkeys(item_ids)), "ready": ready}
@@ -1381,14 +1389,14 @@ def ready_page(ctx: Ctx = Depends(get_ctx)):
 @router.get("/api/notify")
 def notify(ctx: Ctx = Depends(get_ctx)):
     """Опрос раз в 15 секунд. Кладовщику — новые запросы на выдачу; всем — их сообщения
-    («Все запчасти на складе», «Срочная деталь пришла», «Слесарь просит срочно»)."""
+    («Все запчасти на складе», «Пришли запчасти», «Срочная деталь пришла», «Слесарь просит срочно»)."""
     from ..services import badges as bsvc
     from ..services import notify as nsvc
     notes = []
     for n in nsvc.unread(ctx.db, ctx.user.id):
         wo = ctx.db.get(WorkOrder, n.work_order_id) if n.work_order_id else None
         can_req = bool(wo and wo.status in ("instock", "work") and ctx.can("stock.request_issue")
-                       and ctx.user.id == wo.mechanic_id
+                       and ctx.user.id in nsvc.masters(ctx.db, wo)   # любой мастер наряда (12.11.2026)
                        and not ctx.db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == wo.id,
                                                                             IssueRequest.status == "new"))
                        and ctx.db.scalar(select(WoPart.id).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved")))
