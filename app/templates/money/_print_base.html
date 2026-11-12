@@ -43,7 +43,8 @@
   </div>
   <table>
     <tr><th style="width:30%">Заказчик</th><td>{{ c.full_name }}, {{ fmt_phone(c.phone) }}</td></tr>
-    <tr><th>Автомобиль</th><td>{{ v.make }} {{ v.model }}{% if v.year %}, {{ v.year }} г.{% endif %} · {{ fmt_plate(v.plate) }}{% if v.vin %} · VIN {{ v.vin }}{% endif %}</td></tr>
+    <tr><th>Автомобиль</th><td>{{ v.make }} {{ v.model }}{% if v.year %}, {{ v.year }} г.{% endif %} · {{ fmt_plate(v.plate) }}</td></tr>
+    <tr><th>VIN</th><td style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.03em">{{ v.vin or "" }}</td></tr>
     <tr><th>Пробег</th><td>{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% else %}—{% endif %}</td></tr>
   </table>
   {% block body %}{% endblock %}

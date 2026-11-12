@@ -341,10 +341,10 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_money=ctx.can("money.accept") and (wo.status not in ("closed", "cancel")
                                                or (wo.status == "closed" and money_svc.totals(db, wo).due > 0)),
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
-        can_work=(wo.status == "work" and (ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all"))
-                  and ctx.can("orders.view_own", "orders.view_all")),
-        # 12.11.2026: второй мастер делает свою работу, не дожидаясь запчастей ведущего (мойка не ждёт колодки)
-        own_work_ok={w.id for w in works if w.mechanic_id == ctx.user.id and svc.can_start_work(db, wo, w)},
+        # 12.11.2026 (брат): «Начал / Пауза / Выполнено» — только мастеру этой работы (работа без исполнителя — ведущему).
+        # Менеджер и админ этих кнопок не видят: менеджер может только «вернуть» и ждать мастера.
+        # Второй мастер делает свою работу, не дожидаясь запчастей ведущего (мойка не ждёт колодки).
+        own_work_ok={w.id for w in works if svc.work_owner(wo, w) == ctx.user.id and svc.can_start_work(db, wo, w)},
         is_admin=ctx.user.role.code == "admin", pauses=pauses,
         all_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters"),
         hour_rate=st_.get(db, ctx.branch.id, "pricing")["hour_rate"],

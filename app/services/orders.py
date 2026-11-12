@@ -154,6 +154,11 @@ def visible_orders_query(ctx):
     return q
 
 
+def work_owner(wo: WorkOrder, w: WoWork):
+    """Кто отмечает работу «Начал / Выполнено» (12.11.2026): её исполнитель, а без исполнителя — ведущий мастер."""
+    return w.mechanic_id or wo.mechanic_id
+
+
 def can_start_work(db: Session, wo: WorkOrder, w: WoWork) -> bool:
     """Можно ли нажимать «Начал / Пауза / Выполнено» по этой работе (12.11.2026, живой прогон).
     Наряд «В работе» — да. Пока ждём запчасти ведущего мастера, второй мастер (мойщик, электрик…) может делать свою

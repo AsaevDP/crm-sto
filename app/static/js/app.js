@@ -95,6 +95,18 @@
   const fl = document.querySelector('.flash:not(.error)');
   if (fl) setTimeout(() => { fl.style.transition = 'opacity .4s'; fl.style.opacity = '0'; setTimeout(() => fl.remove(), 400); }, 2500);
 
+  // Кнопка «Копировать» (VIN и т.п., 12.11.2026). По Wi-Fi (http) буфер обмена браузер не даёт — запасной способ
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-copy]'); if (!b) return;
+    const txt = b.dataset.copy, was = b.textContent;
+    const ok = () => { b.textContent = 'Скопировано ✓'; setTimeout(() => { b.textContent = was; }, 1500); };
+    const old = () => {
+      const t = document.createElement('textarea'); t.value = txt; t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select(); try { document.execCommand('copy'); ok(); } catch (err) {} t.remove();
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(txt).then(ok, old); else old();
+  });
+
   // ===== Уведомления в углу экрана: исчезают ТОЛЬКО по крестику =====
   // Открытые окошки хранятся в браузере и показываются снова на каждой странице, пока их не закроют.
   // 12.11.2026: закрытые крестиком (или «Закрыть все») больше не всплывают — их номера помнит браузер;

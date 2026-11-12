@@ -56,13 +56,21 @@ def test_progress_done_by_and_undo(client):
     _as(client, "irina")
     client.post(f"{url}/works", data={"name": "Диагностика ходовой", "pricing": "fixed", "rate": "300", "qty": "1"})
     w1, w2 = _works(url)
+    # 12.11.2026 (брат): «Выполнено» отмечает только мастер этой работы — менеджеру нельзя
+    assert client.post(f"{url}/works/{w1.id}/state", data={"action": "done"}).status_code == 403
+    owner = w1.mechanic_id or _wo(url).mechanic_id
+    with SessionLocal() as db:
+        from app.models import User
+        _as(client, db.get(User, owner).login)
     client.post(f"{url}/works/{w1.id}/state", data={"action": "done"})
     with SessionLocal() as db:
         assert work_progress(db, [wo.id])[wo.id]["level"] == "part"
-        assert db.get(WoWork, w1.id).done_by == _uid("irina")
+        assert db.get(WoWork, w1.id).done_by == owner
     assert "wprog" in client.get("/orders").text  # полоска на карточке машины
-    # Менеджер может вернуть отметку
+    # Менеджер может вернуть отметку — и кнопок «Начал / Выполнено» у него после этого нет
+    _as(client, "irina")
     client.post(f"{url}/works/{w1.id}/state", data={"action": "undo"})
+    assert "✓ Выполнено</button>" not in client.get(url).text
     with SessionLocal() as db:
         assert db.get(WoWork, w1.id).status == "todo"
 

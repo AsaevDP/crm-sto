@@ -56,8 +56,8 @@ def test_work_per_master_and_act(client):
     assert works["Мойка кузова"].mechanic_id == _uid("moyka")
     page = client.get(url).text
     assert "Работают с машиной" in page and "Автоэлектрик · Роман Электриков" in page
-    act = client.get(f"{url}/act/works").text
-    assert "С автомобилем работали" in act and "Автоэлектрик" in act and "Мойщик" in act
+    act = client.get(f"{url}/act/handover").text   # 12.11.2026: исполнители — в Акте выдачи
+    assert "Автоэлектрик" in act and "Мойщик" in act
     # Электрик видит наряд со своей работой
     client.post("/logout")
     login(client, "elektro", "elektro123")
@@ -167,8 +167,13 @@ def test_new_finding_refused_back_to_work(client):
     assert _wo(url).status == "work"
     with SessionLocal() as db:
         w = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status != "done"))
-    _as(client, "admin")
+    # 12.11.2026 (брат): «Выполнено» — только мастер этой работы, админ — нет
+    assert client.post(f"{url}/works/{w.id}/state", data={"action": "done"}).status_code == 403
+    from app.models import User
+    with SessionLocal() as db:
+        _as(client, db.get(User, w.mechanic_id or wo.mechanic_id).login)
     assert client.post(f"{url}/works/{w.id}/state", data={"action": "done"}).status_code in (200, 303)
+    assert mech
 
 
 def test_second_master_works_while_parts_wait(client):

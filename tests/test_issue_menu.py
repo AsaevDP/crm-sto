@@ -83,7 +83,7 @@ def test_ready_to_issue(client):
     assert client.post(f"/stock/issues/{rid}/issue").status_code == 403
     assert _status(rid) == "new"
     menu = _sidebar(client.get("/orders").text)
-    assert 'href="/ready"' in menu and "Готово к выдаче" in menu
+    assert 'href="/ready"' in menu and "Запросы на выдачу" in menu   # 12.11.2026: так называется у менеджера
     before = client.get("/api/notify").json()["ready"]
 
     # Кладовщик собрал у окошка → «Готово к выдаче»; у менеджера загорается + сообщение

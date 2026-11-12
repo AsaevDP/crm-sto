@@ -88,10 +88,9 @@
         <summary class="btn btn-sm btn-gray">Документы ▾</summary>
         <div class="docs-list">
           <a href="/orders/{{ wo.id }}/act/intake" target="_blank">Акт приёма</a>
-          {% if ctx.can("prices.view_sale", "money.view") %}<a href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a>
-          <a href="/orders/{{ wo.id }}/act/parts" target="_blank">Акт запчастей</a>
-          <a href="/orders/{{ wo.id }}/act/works" target="_blank">Акт выполненных работ</a>{% endif %}
-          {% if wo.status == "closed" %}<a href="/orders/{{ wo.id }}/act/handover" target="_blank">Акт выдачи</a>{% endif %}
+          {% if ctx.can("prices.view_sale", "money.view") %}<a href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a>{% endif %}
+          {# 12.11.2026: документов три; Акт выдачи — уже с «Оплачено», чтобы распечатать заранее #}
+          {% if wo.status in ("paid", "closed") %}<a href="/orders/{{ wo.id }}/act/handover" target="_blank">Акт выдачи</a>{% endif %}
         </div>
       </details>
     </div>
@@ -166,6 +165,11 @@
       <div class="pgallery sm">{% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>
       {% else %}<p class="footnote">Нет фото</p>{% endif %}
       {% if wo.complaint %}<p class="ov-text"><span class="footnote">Со слов клиента:</span> {{ wo.complaint }}</p>{% endif %}
+      {# 12.11.2026 (брат): VIN — на виду, одним нажатием скопировать (запчастисту — для подбора по каталогу) #}
+      <div class="kv kv-vin"><span>VIN</span>{% if v.vin %}<b class="mono" id="wo-vin">{{ v.vin }}</b>
+        <button type="button" class="btn btn-plain btn-sm vin-copy" data-copy="{{ v.vin }}" title="Скопировать VIN">Копировать</button>
+        {% elif ctx.can("orders.create") and ctx.can("clients.view") %}<a class="footnote" href="/clients/{{ c.id }}#cars">не указан — вписать</a>
+        {% else %}<b>не указан</b>{% endif %}</div>
       <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
       <div class="kv"><span>В машине</span><b class="wrap">{% for i in wo.intake_items or [] %}{{ INTAKE_LABELS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
       {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}

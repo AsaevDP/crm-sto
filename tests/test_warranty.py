@@ -79,7 +79,7 @@ def test_exact_search_and_warranty(client):
     o = _wo(url)
     assert o.status == "closed" and o.warranty == "done" and o.warranty_result.startswith("Не дотянули")
     assert o.closed_at and o.closed_at.date() == o.warranty_prev_closed.date()   # в отчётах — день первой выдачи
-    act = client.get(f"{url}/act/works").text
+    act = client.get(f"{url}/act/handover").text
     assert "Гарантийный ремонт" in act and "(по гарантии)" in act
 
 

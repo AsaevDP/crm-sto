@@ -1,17 +1,52 @@
 {% extends "money/_print_base.html" %}
+{# Акт выдачи (12.11.2026, брат): документов три — Акт приёма, Заказ-наряд, Акт выдачи. Сюда перенесено нужное из
+   прежних «Акта запчастей» и «Акта выполненных работ». Печатается заранее — с этапа «Оплачено»: до «Выдать авто»
+   отметки о состоянии пустые, их ставят ручкой. Цены — в заказ-наряде. #}
 {% block doc_title %}АКТ ВЫДАЧИ АВТОМОБИЛЯ{% endblock %}
 {% block body %}
 <h2>Выполненные работы</h2>
-<div class="box">{% for w in works %}{{ loop.index }}. {{ w.name }}
-{% else %}—{% endfor %}</div>
+<table>
+  <thead><tr><th style="width:5%">№</th><th>Наименование работы</th><th style="width:30%">Исполнитель</th></tr></thead>
+  {% for w in works %}{% set m = people.get(w.mechanic_id or wo.mechanic_id) %}
+  <tr><td>{{ loop.index }}</td><td>{{ w.name }}{% if w.is_warranty %} <b>(по гарантии)</b>{% endif %}{% if w.status != "done" %} <span class="muted">(не завершена)</span>{% endif %}</td>
+    <td>{% if m %}{{ m.full_name }} <span class="muted" style="font-size:9pt">· {{ MASTERS.get(m.role.code, m.role.name) }}</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">Работ нет</td></tr>{% endfor %}
+</table>
+
+<h2>Установленные запчасти и материалы</h2>
+<table>
+  <thead><tr><th style="width:5%">№</th><th>Наименование</th><th style="width:18%">Бренд</th><th style="width:20%">Артикул</th>
+    <th class="num" style="width:10%">Кол-во</th></tr></thead>
+  {% for p in parts %}{% set k = cats.get(p.catalog_id) %}
+  <tr><td>{{ loop.index }}</td><td>{{ p.name }}</td><td>{{ k.brand if k else "" }}</td><td>{{ k.article if k else "" }}</td>
+    <td class="num">{{ p.qty|num }}</td></tr>
+  {% else %}<tr><td colspan="5" class="muted">Запчасти не использовались</td></tr>{% endfor %}
+</table>
+<p><b>Снятые (старые) запчасти:</b> &nbsp; <span class="cb"></span>Отданы заказчику &nbsp;&nbsp;
+  <span class="cb"></span>Оставлены на СТО для утилизации по просьбе заказчика</p>
+
+{% if wo.warranty in ("open", "done", "rejected") %}
+<h2>Гарантийный ремонт</h2>
+<table>
+  <tr><th style="width:30%">Клиент вернулся{% if wo.warranty_opened_at %} {{ wo.warranty_opened_at.astimezone().strftime("%d.%m.%Y") }}{% endif %}</th><td>{{ wo.warranty_reason }}</td></tr>
+  <tr><th>Гарантийные работы</th><td>{% for w in works if w.is_warranty %}{{ w.name }}{% if not loop.last %}; {% endif %}{% else %}—{% endfor %} (бесплатно)</td></tr>
+  <tr><th>{{ "Итог" if wo.warranty != "rejected" else "Не гарантийный случай" }}{% if wo.warranty_closed_at %} {{ wo.warranty_closed_at.astimezone().strftime("%d.%m.%Y") }}{% endif %}</th>
+    <td>{{ wo.warranty_result or "в работе" }}</td></tr>
+</table>
+{% endif %}
+
 <h2>Состояние автомобиля при выдаче</h2>
 <p><span class="cb">{% if wo.handover_state == "ok" %}✓{% endif %}</span>Автомобиль полностью исправен</p>
 <p><span class="cb">{% if wo.handover_state == "partial" %}✓{% endif %}</span>Автомобиль выдан НЕ полностью исправным. Неисправно:</p>
 <div class="box">{{ wo.handover_defects }}</div>
 <p><span class="cb">{% if wo.handover_state == "advice" or wo.handover_advice %}✓{% endif %}</span>Рекомендации (детали ещё рабочие, но требуют внимания):</p>
 <div class="box">{{ wo.handover_advice }}</div>
-<p class="muted">Итого по заказ-наряду: {{ (t.total)|money }} ₴, оплачено {{ (t.paid)|money }} ₴.
-  Заказчик автомобиль осмотрел, претензий к объёму и качеству работ не имеет{% if wo.handover_state == "partial" %}, с перечнем неисправностей ознакомлен{% endif %}.</p>
+
+<p class="muted">Итого по заказ-наряду: {{ (t.total)|money }} ₴, оплачено {{ (t.paid)|money }} ₴.</p>
+<p>Работы выполнены{% if done_at %} {{ done_at.astimezone().strftime("%d.%m.%Y") }}{% endif %} в полном объёме.
+  Заказчик автомобиль осмотрел, претензий по объёму, качеству и срокам не имеет{% if wo.handover_state == "partial" %},
+  с перечнем неисправностей ознакомлен{% endif %}.</p>
+<p>Гарантия не распространяется на запчасти заказчика и на работы, от которых заказчик отказался.</p>
 <div class="sign">
   <div>Принял (заказчик): ____________ / {{ c.full_name }}</div>
   <div>Выдал (СТО): ____________ / {{ manager.full_name if manager else "" }}</div>

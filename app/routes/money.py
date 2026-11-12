@@ -130,7 +130,8 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     undo_ok = action == "undo" and ctx.can("orders.view_all") and wo.status in ("work", "ready")
     if not w or w.work_order_id != wo.id or (not osvc.can_start_work(ctx.db, wo, w) and not undo_ok):
         raise Forbidden()
-    if not (ctx.user.id in (w.mechanic_id, wo.mechanic_id) or ctx.can("orders.view_all")):
+    # 12.11.2026 (брат): отмечает только исполнитель этой работы (без исполнителя — ведущий мастер); «вернуть» — менеджер
+    if not undo_ok and ctx.user.id != osvc.work_owner(wo, w):
         raise Forbidden()
     db, t = ctx.db, now()
     mech = ctx.user.id if is_master(ctx.user) else (w.mechanic_id or wo.mechanic_id)
@@ -283,36 +284,29 @@ def order_print(order_id: str, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.get("/orders/{order_id}/act/parts")
-def act_parts(order_id: str, ctx: Ctx = Depends(get_ctx)):
-    """Акт на запчасти (11.11.2026): что поставили на машину — бренд, артикул, кол-во, цена. Из наряда автоматически."""
-    ctx.need("prices.view_sale", "money.view")
-    wo = _order(ctx, order_id)
-    data = _print_data(ctx, wo)
-    from ..models import PartCatalog
-    cats = {c.id: c for c in ctx.db.scalars(select(PartCatalog).where(
-        PartCatalog.id.in_([p.catalog_id for p in data["parts"] if p.catalog_id])))}
-    return ctx.render("money/act_parts.html", title=f"Акт запчастей {wo.number}", cats=cats,
-                      mechanic=ctx.db.get(User, wo.mechanic_id) if wo.mechanic_id else None, **data)
-
-
 @router.get("/orders/{order_id}/act/works")
-def act_works(order_id: str, ctx: Ctx = Depends(get_ctx)):
-    """Акт выполненных работ (11.11.2026): работы, исполнитель, нормо-часы, цена. Из наряда автоматически."""
-    ctx.need("prices.view_sale", "money.view")
-    wo = _order(ctx, order_id)
-    data = _print_data(ctx, wo)
-    ids = {w.mechanic_id for w in data["works"] if w.mechanic_id} | ({wo.mechanic_id} if wo.mechanic_id else set())
-    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.id.in_(ids)))} if ids else {}
-    done = [w.done_at for w in data["works"] if w.done_at]
-    return ctx.render("money/act_works.html", title=f"Акт выполненных работ {wo.number}", people=people,
-                      done_at=max(done) if done else None, **data)
+def act_old(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """12.11.2026 (брат): «Акт запчастей» и «Акт выполненных работ» убраны — всё нужное теперь в Акте выдачи.
+    Старые ссылки (закладки, история) ведут туда."""
+    return _to(f"/orders/{order_id}/act/handover")
 
 
 @router.get("/orders/{order_id}/act/handover")
 def act_handover(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Акт выдачи: работы с исполнителем, установленные запчасти (без цен), старые запчасти, гарантийный ремонт,
+    состояние при выдаче. Печатается заранее — с этапа «Оплачено»."""
     ctx.need("orders.view_all", "orders.view_own")
     wo = _order(ctx, order_id)
-    return ctx.render("money/act_handover.html", title=f"Акт выдачи {wo.number}", **_print_data(ctx, wo))
+    data = _print_data(ctx, wo)
+    from ..models import PartCatalog
+    from ..permissions import MASTERS
+    cats = {c.id: c for c in ctx.db.scalars(select(PartCatalog).where(
+        PartCatalog.id.in_([p.catalog_id for p in data["parts"] if p.catalog_id])))}
+    ids = {w.mechanic_id for w in data["works"] if w.mechanic_id} | ({wo.mechanic_id} if wo.mechanic_id else set())
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.id.in_(ids)))} if ids else {}
+    done = [w.done_at for w in data["works"] if w.done_at]
+    return ctx.render("money/act_handover.html", title=f"Акт выдачи {wo.number}", cats=cats, people=people,
+                      MASTERS=MASTERS, done_at=max(done) if done else None, **data)
 
 
 # ======================= Раздел «Деньги» =======================

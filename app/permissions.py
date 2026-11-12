@@ -145,8 +145,10 @@ MENU = [
     ("/stock", "Склад", "stock", ["stock.view", "stock.look"]),
     # 12.11.2026: отдельный пункт кладовщику — запросы на выдачу (запчасти по нарядам и инструмент), с цифрой «сколько ждут»
     ("/stock/issues", "Запросы на выдачу", "inbox", ["stock.issue", "tools.manage"]),
-    # 12.11.2026: менеджеру — что кладовщик подготовил к выдаче (у кладовщика это в «Запросах на выдачу»)
-    ("/ready", "Готово к выдаче", "check", ["stock.pickup"]),
+    # 12.11.2026: менеджеру — запросы на выдачу по его нарядам (ждут кладовщика / готово — забрать / выдано)
+    ("/ready", "Запросы на выдачу", "inbox", ["stock.pickup"]),
+    # 12.11.2026 (брат): мастерам — что они просили у кладовщика (запчасти, инструмент, химия) и что с этим сейчас
+    ("/my-requests", "Мои запросы на выдачу", "inbox", ["stock.request_issue", "chem.ask"]),
     ("/purchases", "Закупки", "cart", ["purchases.view"]),
     ("/my-orders", "Мои заказы", "list", ["purchases.mine"]),
     ("/purchases/by-partsman", "Заказы запчастистов", "users", ["purchases.by_partsman"]),
@@ -186,4 +188,6 @@ def menu_for(perms: set[str]) -> list[dict]:
         and not (href == "/my-orders" and "purchases.by_partsman" in perms)
         and not (href == "/ready" and "stock.issue" in perms)   # кладовщик и админ видят это в «Запросах на выдачу»
         and not (href == "/wash/my" and "wash.view" in perms)   # «Химия» — мойщику; руководителю всё видно в «Мойке»
+        # «Мои запросы на выдачу» — мастерам; у менеджера — «Запросы на выдачу», у кладовщика и админа — свои
+        and not (href == "/my-requests" and ("stock.pickup" in perms or "stock.issue" in perms or "wash.view" in perms))
     ]

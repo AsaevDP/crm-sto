@@ -113,13 +113,17 @@ def test_manager_problems_options_choice_and_acts(client):
     assert _wo(url).status == "waiting"
     client.post("/logout")
 
-    # Акты: запчасти (только выбранное, с брендом) и работы
+    # 12.11.2026: документов три — запчасти (только выбранное, с брендом, без цен) и работы теперь в Акте выдачи;
+    # старые адреса актов ведут туда
     login(client, "irina", "irina123")
     act = client.get(f"{url}/act/parts").text
-    assert "АКТ НА ЗАПЧАСТИ" in act and "Bosch" in act and "950" in act and "2400" not in act
-    works = client.get(f"{url}/act/works").text
-    assert "АКТ ВЫПОЛНЕННЫХ РАБОТ" in works and "Скрипят передние тормоза" in works
-    assert "Акт запчастей" in client.get(url).text
+    assert "АКТ ВЫДАЧИ" in act and "Bosch" in act and "2400" not in act
+    assert "Скрипят передние тормоза" in client.get(f"{url}/act/works").text
+    assert "Снятые (старые) запчасти" in act and "месяцев" not in act and "Гарантия на работы" not in act
+    assert "претензий по объёму, качеству и срокам не имеет" in act
+    assert "Гарантия не распространяется на запчасти заказчика" in act
+    page = client.get(url).text
+    assert "Акт запчастей" not in page and "Акт выполненных работ" not in page and "Акт приёма" in page
 
 
 def test_options_block_picking_until_client_chooses(client):

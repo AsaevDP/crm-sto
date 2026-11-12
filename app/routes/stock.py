@@ -1376,14 +1376,65 @@ def _ready_mine(ctx: Ctx, x) -> bool:
 
 @router.get("/ready")
 def ready_page(ctx: Ctx = Depends(get_ctx)):
-    """Готово к выдаче (менеджер): кладовщик подготовил запчасти — сверху по моим нарядам, ниже остальные."""
+    """Запросы на выдачу (менеджер; до 12.11.2026 — «Готово к выдаче»): по моим нарядам — что ждёт кладовщика,
+    что он подготовил (забрать → «Выдано»), что недавно выдано. Подготовленное по чужим нарядам — ниже."""
     ctx.need("stock.pickup", "stock.issue")
     rows = _requests(ctx, "ready")
     rows.sort(key=lambda x: x["r"].ready_at or x["r"].created_at)
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    return ctx.render("stock/ready.html", title="Готово к выдаче", mine=[x for x in rows if _ready_mine(ctx, x)],
+    return ctx.render("stock/ready.html", title="Запросы на выдачу", mine=[x for x in rows if _ready_mine(ctx, x)],
                       others=[x for x in rows if not _ready_mine(ctx, x)], people=people, fmt_plate=osvc.fmt_plate,
+                      waiting=[x for x in _requests(ctx, "new") if _ready_mine(ctx, x)],
                       done=[x for x in _requests(ctx, "issued")[:30] if _ready_mine(ctx, x)][:10])
+
+
+def my_requests_data(ctx: Ctx) -> dict:
+    """«Мои запросы на выдачу» мастера (12.11.2026): запчасти по нарядам, где он мастер (просил он или менеджер),
+    его просьбы «под наряд» со склада, инструмент, химия. Открытые — все, закрытые — за 14 дней."""
+    from datetime import timedelta
+    from ..db import now
+    from ..models import ToolRequest
+    from ..services import notify as nsvc
+    db, me, since = ctx.db, ctx.user.id, now() - timedelta(days=14)
+    out = {"parts": [], "asks": [], "tools": [], "chem": []}
+    if ctx.can("stock.request_issue"):
+        for st in ("ready", "new", "issued"):
+            for x in _requests(ctx, st):
+                if st == "issued" and (x["r"].issued_at or x["r"].updated_at) < since:
+                    continue
+                if x["r"].created_by == me or me in nsvc.masters(db, x["wo"]):
+                    out["parts"].append(x)
+        from ..models import OrderMessage
+        for m in db.scalars(select(OrderMessage).where(OrderMessage.branch_id == ctx.branch.id, OrderMessage.kind == "part",
+                                                       OrderMessage.created_by == me, OrderMessage.created_at >= since)
+                            .order_by(OrderMessage.created_at.desc())):
+            wo = db.get(WorkOrder, m.work_order_id)
+            out["asks"].append({"m": m, "wo": wo, "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
+                                "c": db.get(PartCatalog, m.catalog_id) if m.catalog_id else None})
+        from ..models import Tool
+        for r in db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id, ToolRequest.user_id == me)
+                            .order_by(ToolRequest.created_at.desc()).limit(60)):
+            if r.status != "new" and (r.done_at or r.updated_at) < since:
+                continue
+            wo = db.get(WorkOrder, r.work_order_id) if r.work_order_id else None
+            out["tools"].append({"r": r, "tool": db.get(Tool, r.tool_id), "wo": wo})
+    if ctx.can("chem.ask"):
+        from ..services import chem as csvc
+        out["chem"] = csvc.requests(db, ctx.branch.id, who=me, days=14)
+    return out
+
+
+@router.get("/my-requests")
+def my_requests(ctx: Ctx = Depends(get_ctx), tab: str = ""):
+    ctx.need("stock.request_issue", "chem.ask")
+    from ..services import chem as csvc
+    data = my_requests_data(ctx)
+    tabs = ([("parts", "Запчасти"), ("tools", "Инструмент")] if ctx.can("stock.request_issue") else []) \
+        + ([("chem", "Химия")] if ctx.can("chem.ask") else [])
+    tab = tab if tab in dict(tabs) else tabs[0][0]
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    return ctx.render("stock/my_requests.html", title="Мои запросы на выдачу", tab=tab, tabs=tabs, people=people,
+                      fmt_plate=osvc.fmt_plate, CHEM_STATUS=csvc.STATUS, **data)
 
 
 @router.get("/api/notify")

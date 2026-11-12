@@ -129,6 +129,28 @@ def compute(ctx) -> dict:
                 n += 1
         _add(out, "/ready", "green", n, "кладовщик подготовил")
 
+    # ---------- Мои запросы на выдачу (мастер, 12.11.2026) ----------
+    if role in MASTERS:
+        from ..models import ChemRequest, OrderMessage, ToolRequest, WoWork
+        my_wo = select(WorkOrder.id).where(WorkOrder.branch_id == bid, or_(
+            WorkOrder.mechanic_id == me.id, WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me.id))))
+        mine_req = or_(IssueRequest.created_by == me.id, IssueRequest.work_order_id.in_(my_wo))
+        _add(out, "/my-requests", "green", db.scalar(select(func.count()).select_from(IssueRequest).where(
+            IssueRequest.branch_id == bid, IssueRequest.status == "ready", mine_req)) or 0,
+             "готово — забрать у окошка кладовщика", "/my-requests?tab=parts")
+        wait = (db.scalar(select(func.count()).select_from(IssueRequest).where(
+                    IssueRequest.branch_id == bid, IssueRequest.status == "new", mine_req)) or 0) \
+            + (db.scalar(select(func.count()).select_from(OrderMessage).where(
+                OrderMessage.branch_id == bid, OrderMessage.kind == "part", OrderMessage.status == "pending",
+                OrderMessage.created_by == me.id)) or 0)
+        _add(out, "/my-requests", "yellow", wait, "ждут кладовщика или менеджера", "/my-requests?tab=parts")
+        _add(out, "/my-requests", "yellow", db.scalar(select(func.count()).select_from(ToolRequest).where(
+            ToolRequest.branch_id == bid, ToolRequest.status == "new", ToolRequest.user_id == me.id)) or 0,
+             "инструмент — ждёт кладовщика", "/my-requests?tab=tools")
+        _add(out, "/my-requests", "yellow", db.scalar(select(func.count()).select_from(ChemRequest).where(
+            ChemRequest.branch_id == bid, ChemRequest.status == "new", ChemRequest.created_by == me.id)) or 0,
+             "химия — ждёт кладовщика", "/my-requests?tab=chem")
+
     # ---------- Запросы на выдачу (кладовщик) ----------
     if ctx.can("stock.issue", "tools.manage"):
         n = 0

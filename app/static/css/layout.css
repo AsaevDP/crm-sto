@@ -1657,6 +1657,10 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .set-ic svg { width: 18px; height: 18px; }
 .au-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .nt-row { border-left: 4px solid var(--separator); padding-left: 10px; }
+/* VIN в наряде (12.11.2026): моноширинный, выделяется целиком, рядом «Копировать» */
+.kv-vin { align-items: center; }
+.kv-vin b { user-select: all; letter-spacing: .03em; max-width: none; }
+.kv-vin .vin-copy { min-height: 28px; padding: 0 8px; flex: none; }
 .nt-row[data-kind="parts_ready"], .nt-row[data-kind="parts_in"] { border-left-color: var(--green); }
 .nt-row[data-kind="issue_ready"] { border-left-color: var(--teal); }
 .iss-acts { display: grid; gap: 6px; }

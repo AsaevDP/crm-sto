@@ -59,7 +59,8 @@
 {# ---- Нижняя панель (iPhone): первые 4 раздела + «Ещё» ---- #}
 <nav class="tabbar">
   {% for m in menu[:4] %}
-  <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}<span>{{ m.title }}</span></a>
+  {# короткие подписи для нижней панели телефона — длинное название встаёт в две строки (12.11.2026) #}
+  <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}<span>{{ {"/my-requests": "Мои запросы", "/stock/issues": "Выдача", "/ready": "Выдача"}.get(m.href, m.title) }}</span></a>
   {% endfor %}
   <a href="/more" {% if active == "/more" %}aria-current="page"{% endif %}>{{ icon("more") }}<span>Ещё</span></a>
 </nav>

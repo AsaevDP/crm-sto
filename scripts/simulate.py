@@ -325,6 +325,21 @@ CARS = [("Toyota", "Camry"), ("Toyota", "RAV4"), ("Volkswagen", "Passat B8"), ("
 REG, LET = ["АА", "КА", "АІ", "ВІ", "ВС", "СВ", "ВН", "АХ"], "АВСЕНІКМОРТХ"
 
 
+WMI = {"Toyota": "JTN", "Volkswagen": "WVW", "Skoda": "TMB", "Renault": "VF1", "Hyundai": "TMA", "Kia": "U5Y",
+       "Ford": "WF0", "Mazda": "JMZ", "Nissan": "SJN", "BMW": "WBA", "Mercedes-Benz": "WDD", "Audi": "WAU",
+       "Mitsubishi": "JMB", "Honda": "SHS", "Lexus": "JTJ", "Opel": "W0L"}
+VIN_CH = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"   # в VIN нет I, O, Q
+VIN_YEAR = "ABCDEFGHJKLMNPRSTVWXY123456789"    # код года: A=2010 … Y=2030, 1=2031… (2001–2009 — цифры)
+
+
+def make_vin(make, year, r=None):
+    """Реалистичный VIN (12.11.2026): код завода по марке, год, серийный номер."""
+    r = r or rnd
+    y = VIN_YEAR[(year - 2010) % 30] if year >= 2010 else str(year - 2000)
+    return (WMI.get(make, "XTA") + "".join(r.choice(VIN_CH) for _ in range(6)) + y + r.choice(VIN_CH)
+            + "".join(r.choice("0123456789") for _ in range(6)))
+
+
 def make_clients(n):
     out, used = [], set()
     for i in range(n):
@@ -337,7 +352,8 @@ def make_clients(n):
         year = rnd.randint(2008, 2022)
         out.append({"phone": f"0{rnd.choice((50, 63, 66, 67, 68, 73, 93, 95, 96, 97, 98, 99))}{2000000 + i * 7919 % 999999:07d}",
                     "name": f"{rnd.choice(FIRST)} {rnd.choice(LAST)}", "plate": plate, "make": make, "model": model,
-                    "year": year, "km": (TODAY.year - year) * rnd.randint(14000, 21000), "visits": 0})
+                    "year": year, "km": (TODAY.year - year) * rnd.randint(14000, 21000), "visits": 0,
+                    "vin": make_vin(make, year)})
     return out
 
 
@@ -511,7 +527,7 @@ def new_order(day, mgr, hhmm, from_appt=None, kind=None, scen=None):
     c["visits"] += 1
     c["km"] += rnd.randint(1500, 9000)
     data = {"phone": c["phone"], "name": c["name"], "plate": c["plate"], "make": c["make"], "model": c["model"],
-            "year": str(c["year"]), "mileage": str(c["km"]), "scenario": scen,
+            "year": str(c["year"]), "mileage": str(c["km"]), "scenario": scen, "vin": c["vin"],
             "complaint": rnd.choice(COMPLAINTS.get(kind, ["Помыть машину"])) if scen == "B" else "; ".join(j[1] for j in jobs),
             "works": "\n".join(j[1] for j in jobs) if scen == "A" else "",
             "partsman_id": str(uid(pm)), "mechanic_id": "" if (scen == "B" and rnd.random() < 0.3 and not forced) else str(uid(lead)), "lift_id": str(lift.id) if lift else "",
