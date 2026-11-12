@@ -28,7 +28,11 @@ async def finding_add(order_id: str, request: Request, ctx: Ctx = Depends(get_ct
     ctx.need("orders.diagnose")
     wo = _order(ctx, order_id)
     manager_writes = wo.status == "created" and ctx.can("orders.approve")   # менеджер — со слов клиента (11.11.2026)
-    if (wo.status not in ("diag", "approve", "work") and not manager_writes) or not _is_mech(ctx, wo):
+    # 12.11.2026: второй мастер со своей работой в наряде — тоже, пока машина в ремонте
+    from ..models import WoWork
+    second = wo.status == "work" and ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id,
+                                                                            WoWork.mechanic_id == ctx.user.id).limit(1))
+    if not second and ((wo.status not in ("diag", "approve", "work") and not manager_writes) or not _is_mech(ctx, wo)):
         raise Forbidden()
     form = await request.form(max_files=2 * svc.MAX_PHOTOS + 2)
     text = str(form.get("text", "")).strip()

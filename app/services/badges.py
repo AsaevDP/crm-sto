@@ -87,6 +87,16 @@ def compute(ctx) -> dict:
             arrived = arrived_waiting(db, bid, me.id)
             _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
                  alone=True)
+        if role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
+            from ..models import WoWork
+            from .orders import can_start_work
+            n_w = 0
+            for w, wo_ in db.execute(select(WoWork, WorkOrder).join(WorkOrder, WorkOrder.id == WoWork.work_order_id).where(
+                    WorkOrder.branch_id == bid, WoWork.mechanic_id == me.id, WoWork.status != "done",
+                    WorkOrder.status.in_(("picking", "waiting", "instock", "work")))):
+                if can_start_work(db, wo_, w):
+                    n_w += 1
+            _add(out, "/orders", "yellow", n_w, "ваши работы — можно делать", "/orders?tab=active")
         if role in MASTERS:   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
             qi = select(func.count()).select_from(WorkOrder).where(
                 WorkOrder.branch_id == bid, WorkOrder.status == "instock", WorkOrder.mechanic_id == me.id)

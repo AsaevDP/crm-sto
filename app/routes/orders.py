@@ -306,8 +306,10 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
         finding_photos={f.id: [p for p in photos if p.finding_id == f.id] for f in findings}, URGENCY=URGENCY,
-        can_diag=ctx.can("orders.diagnose") and is_mech and (wo.status in ("diag", "approve", "work")
-                                                              or (wo.status == "created" and is_manager)),
+        can_diag=ctx.can("orders.diagnose") and ((is_mech and (wo.status in ("diag", "approve", "work")
+                                                               or (wo.status == "created" and is_manager)))
+                                                 # 12.11.2026: второй мастер (электрик, моторист…) нашёл новое во время ремонта
+                                                 or (wo.status == "work" and any(w.mechanic_id == ctx.user.id for w in works))),
         can_finish_diag=ctx.can("orders.diagnose") and is_mech and wo.status == "diag",
         can_approve=ctx.can("orders.approve") and wo.status == "approve",
         can_route=is_manager and wo.status == "created" and wo.scenario == "B",

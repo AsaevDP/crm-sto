@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SIM = ROOT / "data" / "sim"
-DAYS = int(os.getenv("SIM_DAYS", "42"))   # 6 недель (для пробы: SIM_DAYS=5)
+DAYS = int(os.getenv("SIM_DAYS", "7"))   # 12.11.2026 (брат): неделя истории, машин побольше (для пробы: SIM_DAYS=3)
 SEED = 1211
 
 sys.path.insert(0, str(ROOT))
@@ -125,10 +125,14 @@ def _shift(mark: datetime, target: datetime):
         db.commit()
 
 
+TMAX = [""]
+
+
 @contextmanager
 def at(day: date, hhmm: str):
     """Группа действий «в этот день в это время»."""
     R.day = day
+    TMAX[0] = max(TMAX[0], hhmm)   # самое позднее время шага — следующий шаг наряда не раньше (история по порядку)
     mark = datetime.now(timezone.utc)
     _time.sleep(0.002)
     yield
@@ -236,16 +240,19 @@ def cat_id(name):
 
 
 # ================================================================ справочники прогона
-STAFF_EXTRA = [  # логин, имя, роль — заводит админ кнопкой «Добавить сотрудника»
-    ("marina", "Марина Приёмкина", "manager"), ("vasyl", "Василий Деталькин", "partsman"),
-    ("denys", "Денис Подборов", "partsman"), ("yura", "Юрий Каталогов", "partsman"),
-    ("viktor", "Виктор Слюсаренко", "mechanic"), ("taras", "Тарас Гайко", "mechanic"),
-    ("igor", "Игорь Мельник", "mechanic"), ("roman", "Роман Шевчук", "mechanic"),
-]
-PAIRS = {"oleg": "irina", "vasyl": "irina", "denys": "marina", "yura": "marina"}
-MANAGERS = ["irina", "marina"]
-PARTSMEN = {"irina": ["oleg", "vasyl"], "marina": ["denys", "yura"]}
-MECHS = ["andrey", "sergey", "viktor", "taras", "igor", "roman"]
+# 12.11.2026 (брат): состав СТО для ручной проверки — по одному человеку на должность, кладовщиков двое
+# (склад и разбор). Логины прежние (пароль = логин + 123, PIN как в docs/test-users.md), имена — настоящие.
+NAMES = {
+    "admin": "Администратор", "irina": "Ирина Коваленко", "oleg": "Олег Савчук", "pavel": "Павел Гончаренко",
+    "dmitro": "Дмитрий Лысенко", "andrey": "Андрей Демченко", "director": "Виктор Петренко", "deputy": "Наталья Кравец",
+    "buh": "Оксана Мельничук", "elektro": "Роман Бойко", "motor": "Василий Ткачук", "moyka": "Артём Литвиненко",
+    "detail": "Ольга Захарченко",
+}
+STAFF_EXTRA = []   # больше никого не заводим
+PAIRS = {"oleg": "irina"}
+MANAGERS = ["irina"]
+PARTSMEN = {"irina": ["oleg"]}
+MECHS = ["andrey"]
 
 STOCK = [  # название; артикул; бренд; кол-во; цена закупки — первая закупка «на склад»
     ("Масло моторное 5W-30, 4 л", "EDGE 5W30", "Castrol", 30, 1450), ("Масло моторное 5W-40, 4 л", "Helix HX8", "Shell", 20, 1250),
@@ -347,6 +354,12 @@ def setup():
         for login, name, role in STAFF_EXTRA:
             post("admin", "/settings/users", {"full_name": name, "login": login, "role_id": str(roles[role]),
                                               "password": login + "123", "pin": ""}, what=f"Сотрудник {name}")
+        # 12.11.2026 (брат): кладовщиков двое — Павел на складе, Дмитрий только на разборе (без прихода и выдачи склада)
+        rc = one(M.Role, M.Role.code == "content")
+        if rc:
+            post("admin", f"/settings/roles/{rc.id}/color", {"color": rc.color, "name": "Кладовщик разбора"}, what="Роль: кладовщик разбора")
+            for perm in ("stock.manage", "stock.issue"):
+                post("admin", f"/settings/roles/{rc.id}/perm", {"perm": perm, "on": ""}, what=f"Роль разбора без {perm}", fetch=True)
         for p, m in PAIRS.items():
             post("admin", "/settings/pairs", {"partsman_id": str(uid(p)), "manager_id": str(uid(m))}, what="Пара менеджер ↔ запчастист")
     with at(d0, "09:30"):
@@ -355,9 +368,9 @@ def setup():
             if not one(M.StaffCard, M.StaffCard.user_id == u.id):
                 post("admin", f"/settings/users/{u.id}/cards", {"uid": f"77{i:08d}", "label": "пропуск"}, what=f"Карта {u.full_name}")
         # Посты
-        names = {1: "Пост 1 · ТО", 2: "Пост 2 · Подвеска", 3: "Пост 3 · Тормоза", 4: "Пост 4 · Двигатель", 5: "Пост 5 · Электрика",
-                 6: "Пост 6 · Развал", 7: "Мойка", 8: "Детейлинг"}
-        lift_mech = {1: "andrey", 2: "sergey", 3: "viktor", 4: "motor", 5: "elektro", 6: "taras"}
+        names = {1: "Пост 1 · Слесарный", 2: "Пост 2 · Подвеска", 3: "Пост 3 · Развал", 4: "Пост 4 · Двигатель",
+                 5: "Пост 5 · Электрика", 7: "Мойка", 8: "Детейлинг"}
+        lift_mech = {1: "andrey", 4: "motor", 5: "elektro"}
         for l in q(M.Lift, order=M.Lift.number):
             if l.number in names:
                 m = lift_mech.get(l.number)
@@ -375,9 +388,11 @@ def setup():
                                 ("Компрессометр", 2300, "engine"), ("Полировальная машинка", 9800, "body")):
             post("pavel", "/tools", {"name": name, "category": cat, "cost": str(cost),
                                      "shelf_id": str(shelves[0].id) if shelves else ""}, what=f"Инструмент {name}")
-        for m in MECHS[:4]:
-            post("pavel", "/tools", {"name": "Набор головок 1/2\" 94 пр.", "category": "personal", "cost": "3900",
-                                     "holder_id": str(uid(m))}, what=f"Личный набор {m}")
+        for m, name, cost in (("andrey", "Набор головок 1/2\" 94 пр.", 3900), ("andrey", "Набор ключей комбинированных 8–22", 2100),
+                              ("motor", "Набор головок 1/2\" 94 пр.", 3900), ("elektro", "Мультиметр UNI-T UT33", 900),
+                              ("elektro", "Набор отвёрток диэлектрических", 1100)):
+            post("pavel", "/tools", {"name": name, "category": "personal", "cost": str(cost),
+                                     "holder_id": str(uid(m))}, what=f"Личный инструмент {m}")
         # Проходная: устройство на входе в цех
         pt = one(M.AccessPoint, M.AccessPoint.kind == "gate")
         if pt:
@@ -385,7 +400,7 @@ def setup():
     # Зарплата: оклады офиса (схемы — по умолчанию из настроек)
     with at(d0, "10:30"):
         post("admin", "/settings/payroll/defaults", {"mechanic_works_pct": "40", "partsman_margin_pct": "20"}, what="Схемы по умолчанию")
-        for login, amount in (("irina", 700), ("marina", 700), ("pavel", 600), ("dmitro", 550), ("buh", 650)):
+        for login, amount in (("irina", 700), ("pavel", 600), ("dmitro", 550), ("buh", 650)):
             post("admin", f"/settings/payroll/{uid(login)}/lines", {"kind": "salary", "base": "fixed", "rate": str(amount),
                                                                      "salary_period": "day"}, what=f"Оклад {login}")
 
@@ -468,9 +483,10 @@ def pick_job(kind):
     return rnd.choices(js, weights=[j[0] for j in js])[0]
 
 
-def new_order(day, mgr, hhmm, from_appt=None):
+def new_order(day, mgr, hhmm, from_appt=None, kind=None, scen=None):
     c = from_appt["client"] if from_appt else rnd.choice(CLIENTS[:30] * 2 + CLIENTS)
-    kind = rnd.choices(["mechanic", "electrician", "motorist", "washer", "detailer"], weights=(60, 14, 6, 12, 8))[0]
+    forced = kind is not None
+    kind = kind or rnd.choices(["mechanic", "electrician", "motorist", "washer", "detailer"], weights=(60, 14, 6, 12, 8))[0]
     jobs = [pick_job(kind)]
     if kind == "mechanic" and rnd.random() < 0.25:
         jobs.append(pick_job("mechanic"))
@@ -481,14 +497,15 @@ def new_order(day, mgr, hhmm, from_appt=None):
         extra.append(("washer", pick_job("washer")))
     if kind == "washer" and rnd.random() < 0.3:
         extra.append(("detailer", pick_job("detailer")))
-    lead = rnd.choice([m for m in MASTERS_OF[kind] if m != "roman" or not ROMAN_GONE[0]])
-    scen = "A" if kind in ("washer", "detailer") or rnd.random() < 0.55 else "B"
+    lead = rnd.choice(MASTERS_OF[kind])
+    scen = scen or ("A" if kind in ("washer", "detailer") or rnd.random() < 0.55 else "B")
     o = Order(c, mgr, kind, jobs, scen, lead, extra)
     # Неудачные сценарии — по кругу, чтобы каждый точно случился несколько раз
     N_ORDERS[0] += 1
     k = N_ORDERS[0]
-    o.fail_plan = ("cancel" if k % 37 == 7 else "all_no" if k % 41 == 13 else "reopen" if k % 23 == 11 else
-                   "return_part" if k % 29 == 17 else "handover" if k % 19 == 5 else "part_no" if k % 8 == 3 else None)
+    # Неделя, ~45 машин: каждый неудачный сценарий — хотя бы раз (менеджер один — передачи наряда нет)
+    o.fail_plan = ("cancel" if k % 17 == 7 else "all_no" if k % 19 == 13 else "reopen" if k % 13 == 4 else
+                   "return_part" if k % 15 == 9 else "part_no" if k % 6 == 3 else None)
     lift = one(M.Lift, M.Lift.mechanic_id == uid(lead))
     pm = rnd.choice(PARTSMEN[mgr])
     c["visits"] += 1
@@ -497,7 +514,7 @@ def new_order(day, mgr, hhmm, from_appt=None):
             "year": str(c["year"]), "mileage": str(c["km"]), "scenario": scen,
             "complaint": rnd.choice(COMPLAINTS.get(kind, ["Помыть машину"])) if scen == "B" else "; ".join(j[1] for j in jobs),
             "works": "\n".join(j[1] for j in jobs) if scen == "A" else "",
-            "partsman_id": str(uid(pm)), "mechanic_id": "" if (scen == "B" and rnd.random() < 0.3) else str(uid(lead)), "lift_id": str(lift.id) if lift else "",
+            "partsman_id": str(uid(pm)), "mechanic_id": "" if (scen == "B" and rnd.random() < 0.3 and not forced) else str(uid(lead)), "lift_id": str(lift.id) if lift else "",
             "fuel_level": rnd.choice(("25", "50", "75")), "intake_items": ["docs"] + (["spare"] if rnd.random() < 0.5 else []),
             "intake_token": f"sim-{rnd.random()}"}
     if from_appt:
@@ -508,6 +525,7 @@ def new_order(day, mgr, hhmm, from_appt=None):
         return None
     o.id = uuid.UUID(r.json()["url"].rsplit("/", 1)[1])
     o.last = (day, hhmm)
+    o.born = day
     o.step = "diag" if scen == "B" else "price"
     ACTIVE.append(o)
     return o
@@ -521,7 +539,7 @@ def parts_of(o):
     return q(M.WoPart, M.WoPart.work_order_id == o.id, order=M.WoPart.created_at)
 
 
-def step_diag(o, day, hhmm):
+def step_diag(o, day, hhmm, approve=True):
     wo = o.wo()
     if wo.status == "diag" or (o.kind in ("mechanic", "electrician", "motorist") and rnd.random() < 0.8):
         if wo.status == "created":   # мастер не назначен при приёмке — отправляет менеджер
@@ -544,6 +562,9 @@ def step_diag(o, day, hhmm):
                 post(o.mgr, f"{o.url}/findings", {"text": j[1], "urgency": "soon"}, what="Проблема со слов клиента", fetch=True)
             post(o.mgr, f"{o.url}/to-approve", what="Сразу к согласованию")
     R.check(o.wo().status == "approve", "после диагностики наряд «Согласование»", f"{wo.number}: {o.wo().status}")
+    if not approve:   # сегодня: клиенту ещё не звонили — согласует менеджер руками
+        o.step = "approve_wait"
+        return
     # Согласование с клиентом
     with at(day, _later(hhmm, 90)):
         fs = q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at)
@@ -612,7 +633,8 @@ def step_price(o, day, hhmm):
         o.step = "work"
 
 
-def step_pick(o, day, hhmm):
+def step_pick(o, day, hhmm, send=True):
+    """send=False — запчастист подобрал, но заказ поставщику ещё в черновике (на сегодня: «✓ Заказал» ждёт его)."""
     wo = o.wo()
     pm = one(M.User, M.User.id == wo.partsman_id).login if wo.partsman_id else rnd.choice(PARTSMEN[o.mgr])
     with at(day, hhmm):
@@ -644,7 +666,8 @@ def step_pick(o, day, hhmm):
                 post(pm, f"/purchases/{p.id}", {"action": "save", "supplier_new": rnd.choice(("Элит-Украина", "Автотехнікс", "ОмегаАвто")),
                                                 "expected_on": str(day + timedelta(days=rnd.choice((1, 2, 2, 3))))},
                      what="Поставщик и дата")
-                post(pm, f"/purchases/{p.id}/ordered", {"back": "/my-orders"}, what="✓ Заказал")
+                if send:
+                    post(pm, f"/purchases/{p.id}/ordered", {"back": "/my-orders"}, what="✓ Заказал")
             if rnd.random() < 0.3:
                 urg = [p for p in parts_of(o) if p.status == "ordered"]
                 if urg:
@@ -770,6 +793,9 @@ def step_pay(o, day, hhmm):
 
 
 def step_reopen(o, day, hhmm):
+    if (TODAY - day).days > 2:   # прогон идёт «сейчас»: наряд старше 3 дней менеджер уже не видит — не открываем
+        o.step = "done"
+        return
     with at(day, hhmm):
         post(o.mgr, f"{o.url}/reopen-request", {"reason": "Клиент вернулся: стук остался — гарантия"}, what="Запрос «Открыть заново»")
         r = one(M.OrderReopen, M.OrderReopen.work_order_id == o.id, M.OrderReopen.status == "pending")
@@ -789,6 +815,10 @@ def side_works(o, day, hhmm):
     wo = o.wo()
     for w in works_of(o):
         if w.status == "done" or not w.mechanic_id or w.mechanic_id == wo.mechanic_id:
+            continue
+        # под работу нужны запчасти, а они ещё не выданы — мастер её не начинает (CRM и не даст)
+        if any(p.wo_work_id == w.id and p.status not in ("issued", "installed", "declined", "option", "returned")
+               for p in parts_of(o)):
             continue
         who = one(M.User, M.User.id == w.mechanic_id)
         if not who or rnd.random() < 0.5:
@@ -862,7 +892,7 @@ def tool_flow(login, o):
 
 def tool_check(day):
     with at(day, "17:30"):
-        u = one(M.User, M.User.login == "viktor")
+        u = one(M.User, M.User.login == "andrey")
         r = post("pavel", f"/tools/staff/{u.id}/checks", {"kind": "planned"}, what="Проверка инструмента")
         c = one(M.ToolCheck, M.ToolCheck.user_id == u.id, M.ToolCheck.status == "draft")
         if not c:
@@ -887,7 +917,9 @@ def razbor_start(day):
             post("dmitro", f"/razbor/donors/{d.id}/parts/bulk", {"lines": lines, "condition": "good"}, what="Детали донора списком")
 
 
-def razbor_sale(day):
+def razbor_sale(day, stop=""):
+    """stop: "reserve" — только резерв (подготовить), "pack" — упаковано, ждёт отправки / самовывоза,
+    "ship" — отправлено, ждём, что получат. Пусто — до конца."""
     items = [i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None))]
     sold = {s.stock_item_id for s in q(M.UsedSale)}
     left = [i for i in items if i.id not in sold]
@@ -895,7 +927,7 @@ def razbor_sale(day):
         return
     i = rnd.choice(left)
     c = rnd.choice(CLIENTS)
-    np = rnd.random() < 0.6
+    np = rnd.random() < 0.6 if stop in ("", "reserve") else stop == "ship"
     with at(day, "13:00"):
         post("dmitro", f"/razbor/parts/{i.id}/sell", {"action": "reserve", "qty": "1", "price": str(i.sale_price or 2000),
                                                       "buyer_name": c["name"], "buyer_phone": c["phone"],
@@ -903,15 +935,17 @@ def razbor_sale(day):
                                                       "cod": "1" if np and rnd.random() < 0.5 else "", "channel": "olx"},
              what="Разбор: резерв под покупателя")
     s = one(M.UsedSale, M.UsedSale.stock_item_id == i.id, M.UsedSale.status == "reserved")
-    if not s:
+    if not s or stop == "reserve":
         return
     carrier = one(M.Carrier, M.Carrier.name.like("Нова%")) if np else None
     with at(day, "15:00"):
         post("dmitro", f"/razbor/sales/{s.id}", {"action": "pack", "place": "Полка выдачи 1",
                                                   "carrier_id": str(carrier.id) if carrier else ""}, what="Упаковано")
-        if np:
+        if np and stop != "pack":
             post("dmitro", f"/razbor/sales/{s.id}", {"action": "ship", "ttn": f"2045{rnd.randint(10**10, 10**11 - 1)}", "paid": ""},
                  what="Отправлено (ТТН)")
+    if stop:
+        return
     with at(day + timedelta(days=2), "12:00") if day + timedelta(days=2) < TODAY else at(day, "18:00"):
         if np and rnd.random() < 0.15:
             post("dmitro", f"/razbor/sales/{s.id}", {"action": "return", "note": "Не забрал на почте"}, what="Возврат посылки")
@@ -947,7 +981,6 @@ def payroll_week(monday):
     d = str(prev)
     with at(monday, "09:30"):
         post("admin", f"/payroll/weeks/{d}/salary", what="Начислить оклад за неделю")
-        post("buh", f"/payroll/weeks/{d}/status", {"status": "checked"}, what="Бухгалтер: проверил всех")
         if rnd.random() < 0.5:
             post("admin", f"/payroll/weeks/{d}/adjust", {"user_id": str(uid("andrey")), "amount": "500", "kind": "bonus",
                                                          "note": "За срочную машину в субботу"}, what="Премия")
@@ -957,22 +990,27 @@ def payroll_week(monday):
         with SessionLocal() as db:
             br = db.scalar(select(M.Branch))
             data = wsvc.week_data(db, br.id, prev, staff_for_period(db, br.id, prev))
-        for u_id, r in data["rows"].items():
-            if r["accrued"] > 0 and r["pst"] in ("checked", "open"):
-                if r["pst"] == "open":
-                    post("buh", f"/payroll/weeks/{d}/people/{u_id}", {"status": "checked"}, what="Проверил")
+        # 12.11.2026: неделя пройдена не до конца — у бухгалтера и директора остаётся работа на сегодня:
+        # двое не проверены, двое проверены, но не утверждены, остальные утверждены (выдана часть)
+        act = [(u_id, r) for u_id, r in data["rows"].items() if r["accrued"] > 0]
+        for i, (u_id, r) in enumerate(act):
+            if i < 2:
+                continue   # ждут проверки бухгалтера
+            if r["pst"] == "open":
+                post("buh", f"/payroll/weeks/{d}/people/{u_id}", {"status": "checked"}, what="Проверил")
+            if i >= 4:
                 post("admin", f"/payroll/weeks/{d}/people/{u_id}", {"status": "approved"}, what="Утвердил")
-    with at(monday + timedelta(days=rnd.choice((0, 1))), "17:00"):
+    with at(monday + timedelta(days=1), "17:00"):
         with SessionLocal() as db:
             br = db.scalar(select(M.Branch))
             data = wsvc.week_data(db, br.id, prev, staff_for_period(db, br.id, prev))
-        for u_id, r in data["rows"].items():
-            if r["pst"] == "approved" and r["due"] > 0:
-                post("buh", f"/payroll/weeks/{d}/pay", {"user_id": str(u_id)}, what="Выдал зарплату")
+        appr = [(u_id, r) for u_id, r in data["rows"].items() if r["pst"] == "approved" and r["due"] > 0]
+        for u_id, r in appr[: max(1, len(appr) - 2)]:   # двоим ещё не выдали
+            post("buh", f"/payroll/weeks/{d}/pay", {"user_id": str(u_id)}, what="Выдал зарплату")
         with SessionLocal() as db:
             data = wsvc.week_data(db, br.id, prev, staff_for_period(db, br.id, prev))
         for u_id, r in data["rows"].items():
-            if r["pst"] in ("approved", "paid"):
+            if r["pst"] == "paid":
                 R.check(r["due"] <= 0, "после выдачи за неделю долг сотруднику 0", f"{prev}: {u_id} осталось {r['due']}")
 
 
@@ -982,10 +1020,10 @@ def schedule_tomorrow(day):
     nxt = day + timedelta(days=1)
     if nxt >= TODAY + timedelta(days=3) or nxt.weekday() == 6:
         return out
-    for _ in range(rnd.choice((0, 1, 1, 2))):
+    for _ in range(rnd.choice((1, 2, 2, 3))):
         c = rnd.choice(CLIENTS)
         mgr = rnd.choice(MANAGERS)
-        mech = rnd.choice(MECHS[:5])
+        mech = rnd.choice(["andrey", "andrey", "elektro", "motor"])
         hh = rnd.randint(9, 15)
         with at(day, f"{rnd.randint(14, 17)}:{rnd.randint(0, 59):02d}"):
             post(mgr, "/schedule", {"day": str(nxt), "time": f"{hh:02d}:00", "duration": "60", "mechanic_id": str(uid(mech)),
@@ -1026,12 +1064,115 @@ def dismiss_roman(day):
 
 
 # ================================================================ главный цикл
+STAFF = ("admin", "irina", "oleg", "pavel", "dmitro", "andrey", "director", "deputy", "buh",
+         "elektro", "motor", "moyka", "detail")
+
+
+def prepare_staff():
+    """12.11.2026: тестовые входы при первом запуске — только нужный состав и с настоящими именами
+    (второго слесаря нет). Меняется только список для этой базы, app/seed.py не трогаем."""
+    from app import seed as sd
+    sd.TEST_USERS[:] = [(lg, NAMES.get(lg, nm), *rest) for lg, nm, *rest in sd.TEST_USERS if lg in STAFF]
+
+
+def end_of_day(day):
+    """Вечер: каждый открыл «Сообщения» — прочитанное за день не висит окошками на следующий."""
+    with at(day, "19:20"):
+        for lg in STAFF:
+            get(lg, "/notifications")
+
+
+def leave_for_today(day):
+    """Сегодня у каждого — своё незаконченное дело, чтобы зайти под ним и пройти путь дальше руками."""
+    # Мастерам — свои машины: электрику и мотористу — на диагностику, детейлеру — сразу в работу
+    for kind, hh in (("electrician", "15:10"), ("motorist", "15:30")):
+        new_order(day, "irina", hh, kind=kind, scen="B")
+    o = new_order(day, "irina", "15:50", kind="detailer", scen="A")
+    if o:
+        step_price(o, day, "16:00")
+        step_pick(o, day, "16:10")
+    # Запчастист: подобрал, но заказ поставщику ещё в черновике → «✓ Заказал»
+    o = next((o for o in ACTIVE if o.wo() and o.wo().status == "picking" and o.kind in ("mechanic", "electrician", "motorist")
+              and o.step in ("price", "pick")), None)
+    if o:
+        if o.step == "price":
+            step_price(o, day, "16:30")
+        with at(day, "16:35"):
+            post("oleg", f"{o.url}/parts", {"name": "Колодки тормозные задние (оригинал)", "article": "04466-42060",
+                                            "brand": "Toyota", "qty": "1", "cost": "2350", "markup_pct": "30", "action": "order"},
+                 what="Заказать: колодки задние (оригинал)")
+        step_pick(o, day, "16:40", send=False)
+        if o.step == "wait_parts":
+            o.step = "draft"
+    # Кладовщик: привезли — ждёт приёмки
+    p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
+    if p is None:
+        restock(day)
+        p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
+    if p:
+        with at(day, "17:05"):
+            post("pavel", f"/purchases/{p.id}/delivered", {"invoice": f"ТТН-{rnd.randint(10000, 99999)}"}, what="🚚 Привезли (принять — руками)")
+    # Мастер просит выдать, кладовщик ещё не выдал; второй наряд — «Готово к выдаче», менеджер не забрал
+    issue = [o for o in ACTIVE if o.wo() and o.wo().status == "instock"]
+    for i, o in enumerate(issue[:2]):
+        with at(day, "17:10"):
+            post(o.lead, f"{o.url}/issue-request", {"comment": "к 18:00"}, what="Запросить выдачу (выдать — руками)")
+            if i == 1:
+                r = one(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "new")
+                if r:
+                    post("pavel", f"/stock/issues/{r.id}/ready", what="📦 Готово к выдаче (забрать — руками)")
+    # Слесарь просит инструмент из шкафа; мойщик — химию; слесарь — запчасть со склада под наряд (согласует менеджер)
+    work = sorted([o for o in ACTIVE if o.wo() and o.wo().status in ("work", "instock") and o.lead == "andrey"],
+                  key=lambda o: o.wo().status != "work")   # «попросить под наряд» — только машина в ремонте
+    if work:
+        o = work[0]
+        tools = [t for t in q(M.Tool, M.Tool.category.notin_(("personal", "spare"))) if not t.holder_id]
+        if tools:
+            with at(day, "17:15"):
+                post(o.lead, f"{o.url}/tool-requests", {"tool_id": str(tools[0].id), "comment": "под эту машину"},
+                     what="Попросить инструмент (выдать — руками)")
+        it = next((i for i in q(M.StockItem) if i.catalog_id == cat_id("Очиститель тормозов, 500 мл")), None)
+        if it:
+            with at(day, "17:20"):
+                post("andrey", "/messages/ask", {"item_id": str(it.id), "order_id": str(o.id), "qty": "1",
+                                                 "text": "Нужен очиститель тормозов, свой закончился"}, what="Попросить под наряд")
+        with at(day, "17:25"):
+            post("andrey", "/messages", {"order_id": str(o.id), "to": "manager",
+                                         "text": "Клиенту стоит поменять задние колодки — осталось ~3 мм", "back": o.url},
+                 what="Сообщение менеджеру")
+    with at(day, "17:30"):
+        chem_ask("moyka")
+        chem_ask("detail")
+    # Разбор: подготовить, упаковано, отправлено
+    for stop in ("reserve", "reserve", "pack", "ship"):
+        razbor_sale(day, stop=stop)
+    # Директору и заму: открыть закрытый наряд, гарантия, доступ ко всем нарядам, доступ к клиенту
+    # недавно выданные (менеджер видит выданное за 3 дня), сначала самые свежие
+    closed = sorted([o for o in DONE if o.wo() and o.wo().status == "closed" and o.wo().closed_at
+                     and (TODAY - o.wo().closed_at.astimezone(LOCAL).date()).days <= 1],
+                    key=lambda o: o.wo().closed_at, reverse=True)
+    if len(closed) >= 2:
+        with at(day, "17:40"):
+            post("irina", f"{closed[0].url}/reopen-request", {"reason": "Забыли поменять салонный фильтр — клиент вернулся"},
+                 what="Запрос «Открыть заново»")
+            post("irina", f"{closed[1].url}/warranty-request", {"reason": "Через 3 дня снова скрипят передние колодки"},
+                 what="Запрос «Ремонт по гарантии»")
+    with at(day, "17:45"):
+        post("irina", "/orders/access-request", {"reason": "Клиент спрашивает про прошлый ремонт у другого менеджера"},
+             what="Доступ ко всем нарядам")
+        old = [o for o in DONE if o.wo() and o.wo().closed_at and o.wo().status == "closed"
+               and (TODAY - o.wo().closed_at.astimezone(LOCAL).date()).days >= 4]
+        if old:
+            post("irina", "/clients/access-request", {"reason": f"Звонит {old[0].c['name']} ({old[0].c['plate']}) — уточнить прошлый ремонт"},
+                 what="Доступ к клиенту")
+
+
 def run():
     t0 = _time.time()
+    prepare_staff()
     with TestClient(app):   # запуск программы: таблицы, роли, тестовые входы
         pass
-    for lg in ("admin", "irina", "oleg", "pavel", "dmitro", "andrey", "sergey", "director", "deputy", "buh",
-               "elektro", "motor", "moyka", "detail"):
+    for lg in STAFF:
         PASS[lg] = lg + "123"
     setup()
     first_stock()
@@ -1043,28 +1184,17 @@ def run():
             continue
         print(f"\r{day} · активных нарядов {len(ACTIVE)} · ошибок {len(R.fails)}   ", end="", flush=True)
         attendance(day)
-        if day.weekday() == 0 and n > 6:
+        if day.weekday() == 0 and n > 0:
             payroll_week(day)
-        if n == 2:
+        if n == 1:
             razbor_start(day)
-        if n > 3 and rnd.random() < 0.5:
+        if 2 <= n and day < TODAY and rnd.random() < 0.8:
             razbor_sale(day)
-        if n == 25:
+        if n == 3:
             tool_check(day)
-        if n % 9 == 4:   # Марина просит доступ к клиенту Ирины
-            other = [o for o in DONE if o.mgr == "irina"]
-            if other:
-                with at(day, "12:15"):
-                    post("marina", "/clients/access-request", {"reason": f"Клиент {other[-1].c['name']} звонит по гарантии"},
-                         what="Доступ к чужому клиенту")
-                    req = one(M.ClientAccess, M.ClientAccess.status == "pending")
-                    cl = one(M.Client, M.Client.phone.like("%" + other[-1].c["phone"][-9:]))
-                    if req and cl:
-                        post("director", f"/clients/{cl.id}/grant", {"user_id": str(uid("marina")), "hours": "3",
-                                                                     "request_id": str(req.id)}, what="Директор дал доступ на 3 ч")
-        if n % 7 == 3:   # пополнение склада: запчастист заказывает, чего мало
+        if n % 3 == 1:   # пополнение склада: запчастист заказывает, чего мало
             restock(day)
-        if n % 10 == 6:
+        if n == 5:
             with at(day, "18:00"):   # инвентаризация одной позиции
                 it = one(M.StockItem, M.StockItem.catalog_id == cat_id("Лампа H7"))
                 if it:
@@ -1072,22 +1202,37 @@ def run():
                                                                    "reason": "Пересчёт: одна разбита"}, what="Инвентаризация")
         deliveries(day)
         # Записанные на сегодня приехали
-        today_appts = [a for a in appts if a["day"] == day]
-        for a in today_appts:
+        for a in [a for a in appts if a["day"] == day]:
             with at(day, f"{a['hh']:02d}:00"):
                 post(a["mgr"], f"/schedule/{a['id']}/status", {"status": "arrived", "view": "day"}, what="Приехал по записи")
             new_order(day, a["mgr"], f"{a['hh']:02d}:05", from_appt=a)
-        for _ in range(rnd.choice((2, 3, 3, 4)) if day.weekday() < 5 else 1):
-            new_order(day, rnd.choice(MANAGERS), f"{rnd.randint(8, 13):02d}:{rnd.randint(0, 59):02d}")
+        # Машин больше среднего: 5–7 в будни, 3 в субботу
+        for _ in range(rnd.choice((5, 6, 6, 7)) if day.weekday() < 5 else 3):
+            new_order(day, rnd.choice(MANAGERS), f"{rnd.randint(8, 14):02d}:{rnd.randint(0, 59):02d}")
         # Двигаем наряды по шагам
+        approve_left = [0]
         for o in list(ACTIVE):
             hh = f"{rnd.randint(9, 16):02d}:{rnd.randint(0, 59):02d}"
             if getattr(o, "last", None) and o.last[0] == day and o.last[1] >= hh:   # не раньше, чем машину приняли
                 hh = _later(o.last[1], 20)
+            if day == TODAY and getattr(o, "born", None) == TODAY:
+                # Приняли сегодня: часть ждёт диагностики (мастер), две — согласования (менеджер),
+                # половина «без диагностики» — с ценами, ждёт подбора (запчастист), остальные — цены ставит менеджер
+                TMAX[0] = ""
+                if o.step == "diag" and approve_left[0] < 2 and o.wo().status == "diag":
+                    step_diag(o, day, hh, approve=False)
+                    approve_left[0] += 1
+                elif o.step == "price" and rnd.random() < 0.5:
+                    step_price(o, day, hh)
+                continue
             for _ in range(3):   # за день — до трёх шагов
                 before = o.step
+                if day == TODAY and o.step in ("issue", "pick", "pay") and rnd.random() < (0.85 if o.step == "issue" else 0.6):
+                    break   # сегодня часть нарядов ждёт выдачи / подбора / оплаты — их доделает человек
+                TMAX[0] = ""
                 try:
                     advance(o, day, hh)
+                    hh = max(hh, TMAX[0])
                     o.last = (day, hh)
                 except Exception as e:   # ошибка в самом скрипте — тоже в отчёт, идём дальше
                     R.fail("скрипт", f"шаг «{o.step}»", o.url, f"{type(e).__name__}: {e}"[:300])
@@ -1101,12 +1246,13 @@ def run():
                 hh = _later(hh, rnd.randint(30, 120))
                 if day == TODAY and rnd.random() < 0.5:
                     break   # сегодня — остаются наряды на всех этапах
-        chem_desk(day)
-        if n == DAYS - 10 and not ROMAN_GONE[0]:
-            dismiss_roman(day)
+        if day < TODAY:
+            chem_desk(day)
         appts += schedule_tomorrow(day)
         if day == TODAY:
+            leave_for_today(day)
             break
+        end_of_day(day)
     print()
     final_checks()
     write_report(_time.time() - t0)
@@ -1149,15 +1295,15 @@ def restock(day):
     if not low:
         return
     with at(day, "09:15"):
-        r = post("vasyl", "/purchases/new", {"supplier_new": "Автотехнікс"}, what="Пополнение склада")
+        r = post("oleg", "/purchases/new", {"supplier_new": "Автотехнікс"}, what="Пополнение склада")
         pid = r.url.path.rsplit("/", 1)[1] if r is not None else None
         if not pid or not pid.count("-"):
             return
-        post("vasyl", f"/purchases/{pid}/lines", {"paste": "\n".join(f"{n}; {a}; {b}; {q_}; {c}" for n, a, b, q_, c in low)},
+        post("oleg", f"/purchases/{pid}/lines", {"paste": "\n".join(f"{n}; {a}; {b}; {q_}; {c}" for n, a, b, q_, c in low)},
              what="Список из Excel")
-        post("vasyl", f"/purchases/{pid}", {"action": "save", "expected_on": str(day + timedelta(days=2)), "supplier_invoice": ""},
+        post("oleg", f"/purchases/{pid}", {"action": "save", "expected_on": str(day + timedelta(days=2)), "supplier_invoice": ""},
              what="Дата «привезут»")
-        post("vasyl", f"/purchases/{pid}/ordered", {"back": "/my-orders"}, what="✓ Заказал")
+        post("oleg", f"/purchases/{pid}/ordered", {"back": "/my-orders"}, what="✓ Заказал")
 
 
 # ================================================================ проверки логики и экраны
@@ -1196,12 +1342,14 @@ def menu_pages():
     for login, hrefs in menus.items():
         if login not in PASS and login not in dict((s[0], 1) for s in STAFF_EXTRA):
             continue
-        for h in hrefs + ["/more", "/notifications"]:
+        for h in hrefs + ["/more"]:   # «Сообщения» не открываем — иначе сегодняшние станут прочитанными
+            if h == "/notifications":
+                continue
             r = get(login, h)
             if r is not None and r.status_code == 200 and FLASH_ERR.search(r.text):
                 R.fail(login, "открыть " + h, h, "красное сообщение при открытии")
         # и все вкладки внутри (ссылки страницы на тот же раздел)
-        for h in hrefs[:20]:
+        for h in [x for x in hrefs if x != "/notifications"][:20]:
             r = get(login, h)
             if r is None or r.status_code != 200:
                 continue
