@@ -269,6 +269,18 @@ a.btn { text-decoration: none; }
 .rec:last-child { border-bottom: 0; }
 .rec .grow { flex: 1; }
 .note-form { display: flex; gap: 8px; }
+/* 12.11.2026: на узком экране поля и кнопки формы переносятся, а не уезжают за край карточки */
+@media (max-width: 600px) {
+  .note-form { flex-wrap: wrap; align-items: center; }
+  .note-form .field { flex: 1 1 140px; min-width: 0; width: auto; }
+  .note-form .btn { flex: 1 1 auto; }
+  .card-h { flex-wrap: wrap; row-gap: 2px; }
+}
+.sale .kv { flex-wrap: wrap; }
+.sale .kv > b { margin-left: auto; max-width: none; }
+.sale .note-form { flex-wrap: wrap; align-items: center; }
+.sale .note-form .field { flex: 1 1 140px; min-width: 0; width: auto; }
+.sale .note-form .btn { white-space: nowrap; }
 .note-form .field { min-height: 38px; }
 
 /* Приёмка: ПК — 3 колонки, iPhone — 3 шага */
@@ -481,6 +493,8 @@ select.field { text-overflow: ellipsis; }
 
 /* Плашки статусов не сжимаются; причина паузы — отдельной строкой */
 .part-main .chip, .li .chip, .finding-top .chip, .card-h .chip { flex: none; }
+/* 12.11.2026: метка статуса не сжимается и не режется («Исправ…») — сжимается текст рядом */
+.tl-card-h > .chip, .tl-item > .chip, .rz-sale-h > .chip, .sh-top > .chip, .dt-head > .chip, .dn-part-a > .chip { flex: none; max-width: none; }
 .pause-why { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--orange); }
 .radio-list { display: grid; gap: 6px; font-size: 14px; }
 .radio-list label { display: flex; gap: 8px; align-items: center; color: var(--text); cursor: pointer; }
@@ -577,7 +591,11 @@ tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red
 /* iPhone: двухколоночные страницы — в одну колонку; фильтры переносятся, а не вылезают */
 @media (max-width: 899px) {
   .razbor-grid, .tools-grid, .donor-grid, .pay-grid, .cl-grid { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: auto !important; }
-  .donor-grid > *, .pay-grid > * { grid-column: auto !important; grid-row: auto !important; }
+  .donor-grid > *, .pay-grid > *, .pay-grid > [data-t] { grid-column: auto !important; grid-row: auto !important; }
+  /* 12.11.2026: любые двух-/трёхколоночные экраны (.ov-grid) на телефоне — одна колонка, блоки друг под другом
+     (раньше правая колонка с data-t="diag" вставала во 2-ю колонку, а левая сжималась в ноль — блоки наезжали) */
+  .ov-grid { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: auto !important; }
+  .ov-grid > [data-t], .ov-grid > * { grid-column: auto !important; grid-row: auto !important; }
   .toolbar-row { flex-wrap: wrap; }
   .toolbar-row .segmented { max-width: 100%; overflow-x: auto; }
   .page-head .ov-actions { flex-wrap: wrap; }
@@ -950,6 +968,17 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
 .plift-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }.pcal-pop { min-width: 360px; }
 .pcal-range .field { width: 136px; }
 @media (max-width: 899px) { .pcal-pop { min-width: 0; } }
+/* 12.11.2026: на телефоне окно «Перейти к дате» — в потоке страницы (не наезжает на «День / Неделя…»),
+   а переключатель периода — в две строки по 3, без обрезанного «Всё время» */
+@media (max-width: 600px) {
+  .pcal[open] { flex: 1 1 100%; }
+  .pcal[open] .pcal-pop { position: static; margin-top: 6px; box-shadow: var(--shadow-1); }
+  .pbar-kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .pbar-kinds a, .pbar-kinds button { text-align: center; justify-content: center; white-space: nowrap; }
+  /* Переключатели-вкладки не прячут кнопки за краем («…аметки», «Опл…») — переносятся на вторую строку */
+  main .segmented:not(.pbar-kinds) { display: flex; flex-wrap: wrap; overflow: visible; max-width: 100%; }
+  main .segmented:not(.pbar-kinds) > a, main .segmented:not(.pbar-kinds) > button { flex: 1 1 auto; text-align: center; justify-content: center; }
+}
 /* ===== Наряд по шагам (11.11.2026): полоса этапов, «Сейчас», цветные номера, варианты запчастей ===== */
 .wo-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .wo-step { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px; border-radius: 10px; background: var(--fill-2, var(--fill)); color: var(--text-2); font-size: 13px; font-weight: 500; }

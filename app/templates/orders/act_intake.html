@@ -38,6 +38,7 @@
   .small { font-size: 10px; }
   @media print { body { background: #fff; } .bar { display: none; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; } }
 </style>
+<script src="{{ asset('/static/js/print-fit.js') }}" defer></script>
 </head>
 <body>
 <div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="/orders/{{ wo.id }}">← К наряду</a></div>

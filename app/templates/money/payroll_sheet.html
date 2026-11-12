@@ -33,6 +33,7 @@
     .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; page-break-after: always; }
     .sheet:last-child { page-break-after: auto; } }
 </style>
+<script src="{{ asset('/static/js/print-fit.js') }}" defer></script>
 </head>
 <body>
 <div class="bar"><button onclick="print()">Печать / сохранить PDF</button><a href="/payroll/weeks?d={{ start }}">← К зарплате</a></div>
