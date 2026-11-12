@@ -1802,3 +1802,6 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 @media (max-width: 600px) { .pult-tiles.st-mini { grid-template-columns: repeat(2, minmax(0, 1fr)); } .st-mini .ptile-s { display: none; } }
 .to-wo > summary { white-space: nowrap; }
 .tablewrap:has(details.to-wo[open]) { overflow: visible; }
+/* Выбранный запчастист — бордовая рамка и подложка, не цвет его плитки (12.11.2026) */
+.pm-people .ptile.on { outline: 3px solid var(--bordo); outline-offset: 1px; background: color-mix(in srgb, var(--bordo) 10%, var(--surface)); }
+.pm-people .ptile.on .ptile-t { color: var(--bordo); font-weight: 700; }

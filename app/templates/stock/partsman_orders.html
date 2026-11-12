@@ -26,7 +26,7 @@
 </header>
 
 {% if mode == "all" %}
-<div class="pult-tiles vs-tiles">
+<div class="pult-tiles vs-tiles pm-people">
   {% for t in people_tiles %}
   <a class="ptile {{ 'on' if who and t.u.id == who.id }} {{ 'zero' if not (t.wait or t.draft or t.arrived) }}" href="/purchases/by-partsman?u={{ t.u.id }}"
      style="--tc:{{ color_css('red' if t.late else ('teal' if t.delivered else ('orange' if t.wait else 'green'))) }}">
