@@ -1689,6 +1689,19 @@ main a:not([class]):hover { text-decoration: underline; }
 .pr-swap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pr-swap .field { width: auto; flex: 1 1 160px; }
 
-/* «✓ Заказал» в «Моих заказах» (12.11.2026): на ПК — в колонке «Статус», на телефоне — под названием детали */
+/* «Мои заказы» / «Заказы запчастистов» (12.11.2026): на ПК — таблица, «✓ Заказал» в колонке «Статус».
+   На телефоне — карточка на деталь (без прокрутки вбок), кнопка «✓ Заказал» — под названием детали. */
 .po-ord-m { display: none; }
-@media (max-width: 600px) { .po-ord-m { display: flex; margin-top: 6px; } .po-ord-d { display: none; } }
+@media (max-width: 899px) {
+  .po-table thead { display: none; }
+  .po-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 12px 0; border-bottom: 0.5px solid var(--separator); }
+  .po-table td { border: 0; padding: 0; text-align: left; min-width: 0; }
+  .po-table td:nth-child(1), .po-table td:nth-child(2), .po-table td:nth-child(5) { grid-column: 1 / -1; }
+  .po-table td:nth-child(4) { align-self: start; text-align: right; }
+  .po-table td:nth-child(4)::before { content: "пришло "; color: var(--text-2); font-size: 12px; }
+  .po-table td:nth-child(5) { display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+  .po-table td:nth-child(5) .caption { margin: 0; }
+  .po-table td[colspan] { grid-column: 1 / -1; }
+  .po-ord-m { display: flex; align-items: center; margin-top: 8px; }
+  .po-ord-d { display: none; }
+}
