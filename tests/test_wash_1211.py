@@ -117,3 +117,33 @@ def test_chem_purchase_ask_issue(client):
     _as(client, "irina")
     page = client.get("/wash?tab=chem").text
     assert "Артём Мойкин" in page and "Кто сколько взял" in page
+
+
+def test_second_master_can_request_tool(client):
+    """12.11.2026: второй мастер на машине (электрик со своей работой) просит общий инструмент под наряд."""
+    from app.models import Tool, ToolRequest
+    _as(client, "pavel")
+    client.post("/tools", data={"name": "Мультиметр (тест 2-й мастер)", "category": "electric", "cost": "3000"})
+    with SessionLocal() as db:
+        tool = db.scalar(select(Tool).where(Tool.name == "Мультиметр (тест 2-й мастер)"))
+    from .test_step6 import _order_to_work
+    url = _order_to_work(client, "КТ 1211 КТ", "0501211000", "Колодки (инструмент)")
+    _as(client, "irina")
+    client.post(f"{url}/works", data={"name": "Диагностика проводки", "pricing": "fixed", "rate": "600",
+                                      "mechanic_id": str(_uid("elektro"))})
+    client.post("/logout")
+    login(client, "moyka", "moyka123")   # без своей работы в наряде — нельзя
+    assert client.post(f"{url}/tool-requests", data={"tool_id": str(tool.id)}).status_code == 403
+    client.post("/logout")
+    login(client, "elektro", "elektro123")
+    assert "Попросить инструмент" in client.get(url).text
+    client.post(f"{url}/tool-requests", data={"tool_id": str(tool.id)})
+    with SessionLocal() as db:
+        r = db.scalar(select(ToolRequest).where(ToolRequest.tool_id == tool.id, ToolRequest.status == "new"))
+        w = db.get(WoWork, r.wo_work_id) if r and r.wo_work_id else None
+    assert r and r.user_id == _uid("elektro") and w and w.name == "Диагностика проводки"
+    client.post("/logout")
+    _as(client, "pavel")
+    client.post(f"/tool-requests/{r.id}/done", data={"result": "ok"})
+    with SessionLocal() as db:
+        assert db.get(Tool, tool.id).holder_id == _uid("elektro")

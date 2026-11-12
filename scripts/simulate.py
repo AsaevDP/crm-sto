@@ -369,9 +369,10 @@ def setup():
         post("pavel", "/tools/cabinets", {"action": "add", "name": "Шкаф 1 · общий", "shelves": "3"}, what="Шкаф инструмента")
     shelves = q(M.ToolShelf)
     with at(d0, "10:00"):
-        for name, cost in (("Динамометрический ключ 40–200 Нм", 4200), ("Съёмник шаровых опор", 1800), ("Мультиметр Fluke", 6500),
-                           ("Набор для замены ГРМ", 7800), ("Компрессометр", 2300), ("Полировальная машинка", 9800)):
-            post("pavel", "/tools", {"name": name, "category": "shared", "cost": str(cost),
+        for name, cost, cat in (("Динамометрический ключ 40–200 Нм", 4200, "measure"), ("Съёмник шаровых опор", 1800, "pullers"),
+                                ("Мультиметр Fluke", 6500, "electric"), ("Набор для замены ГРМ", 7800, "engine"),
+                                ("Компрессометр", 2300, "engine"), ("Полировальная машинка", 9800, "body")):
+            post("pavel", "/tools", {"name": name, "category": cat, "cost": str(cost),
                                      "shelf_id": str(shelves[0].id) if shelves else ""}, what=f"Инструмент {name}")
         for m in MECHS[:4]:
             post("pavel", "/tools", {"name": "Набор головок 1/2\" 94 пр.", "category": "personal", "cost": "3900",
@@ -821,7 +822,7 @@ def chem_desk(day):
 
 
 def tool_flow(login, o):
-    tools = [t for t in q(M.Tool, M.Tool.category == "shared") if not t.holder_id]
+    tools = [t for t in q(M.Tool, M.Tool.category.notin_(("personal", "spare"))) if not t.holder_id]
     if not tools:
         return
     t = rnd.choice(tools)

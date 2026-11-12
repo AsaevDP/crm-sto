@@ -364,7 +364,8 @@ def _order_tools(ctx: Ctx, wo, works) -> dict:
     holders = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     # Слесарь сам просит инструмент и сдаёт его (11.11.2026) — у кладовщика всплывает окошко
     from ..models import ToolRequest
-    can_req = wo.status in WO_ACTIVE and (ctx.user.id == wo.mechanic_id or ctx.user.role.code == "admin")
+    # 12.11.2026: попросить может и второй мастер этой машины (своя работа в наряде), не только ведущий
+    can_req = wo.status in WO_ACTIVE and tsvc.can_request_for_order(ctx.db, ctx.user, wo)
     pending = ctx.db.scalars(select(ToolRequest).where(ToolRequest.work_order_id == wo.id, ToolRequest.status == "new")
                              .order_by(ToolRequest.created_at)).all()
     asked = {r.tool_id for r in ctx.db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id,

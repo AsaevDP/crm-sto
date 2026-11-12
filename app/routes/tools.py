@@ -558,10 +558,13 @@ async def tool_request_issue(order_id: str, ctx: Ctx = Depends(get_ctx)):
     from ..models import WorkOrder, WoWork
     form = await ctx.request.form()
     wo = ctx.db.get(WorkOrder, _uuid(order_id))
-    if not wo or wo.branch_id != ctx.branch.id or not (ctx.user.id == wo.mechanic_id or ctx.user.role.code == "admin"):
+    if not wo or wo.branch_id != ctx.branch.id or not svc.can_request_for_order(ctx.db, ctx.user, wo):
         raise Forbidden()
     t = ctx.db.get(Tool, _uuid(str(form.get("tool_id", ""))))
     w = ctx.db.get(WoWork, _uuid(str(form["work_id"]))) if form.get("work_id") else None
+    if w is None and ctx.user.id != wo.mechanic_id:   # второй мастер — под свою работу в этом наряде
+        w = ctx.db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == ctx.user.id,
+                                               WoWork.status != "done").order_by(WoWork.created_at))
     if not t or t.branch_id != ctx.branch.id:
         raise Forbidden()
     err = svc.request_issue(ctx.db, t, ctx.user, wo, w if w and w.work_order_id == wo.id else None, str(form.get("comment", "")))

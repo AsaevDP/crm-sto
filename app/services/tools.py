@@ -141,6 +141,21 @@ def open_request(db: Session, tool_id):
     return db.scalar(select(ToolRequest).where(ToolRequest.tool_id == tool_id, ToolRequest.status == "new"))
 
 
+def can_request_for_order(db: Session, user: User, wo) -> bool:
+    """Кто может попросить общий инструмент под наряд (12.11.2026): ведущий мастер наряда и любой мастер,
+    у которого в этом наряде есть своя невыполненная работа (электрик, моторист рядом со слесарем), и админ."""
+    from ..models import WoWork
+    from ..models.orders import WO_ACTIVE
+    if user.role.code == "admin":
+        return True
+    if wo.status not in WO_ACTIVE:
+        return False
+    if user.id == wo.mechanic_id:
+        return True
+    return db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == user.id,
+                                             WoWork.status != "done").limit(1)) is not None
+
+
 def request_issue(db: Session, tool: Tool, user: User, wo=None, work=None, comment: str = "") -> str:
     """Слесарь просит общий инструмент под наряд. Ошибка или ''."""
     from ..models import ToolRequest
