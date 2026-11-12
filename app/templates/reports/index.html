@@ -37,8 +37,9 @@
   {% if fin %}{{ kpi("Закупка, ₴", rep.totals.cost|money(0)) }}{{ kpi("Наценка, ₴", rep.totals.margin|money(0), "", "tone-ok") }}{% endif %}
   {% elif tab == "razbor" %}
   {{ kpi("Продано деталей", rep.totals.count) }}{{ kpi("На сумму, ₴", rep.totals.sum|money(0)) }}
-  {% if ctx.can("razbor.view") %}<a class="btn btn-sm btn-gray cab-to-sales" href="/razbor/sales">🛒 Продажи и отправки →</a>{% endif %}
   {% for name, val, _ in rep.groups %}{{ kpi(name, val|money(0)) }}{% endfor %}
+  {# 12.11.2026: переход в «Продажи и отправки» — такой же плиткой, как соседние (была серая кнопка) #}
+  {% if ctx.can("razbor.view") %}<a class="stat" style="--tc:var(--orange)" href="/razbor/sales"><span class="footnote">Продажи и отправки</span><b>Открыть →</b><span class="caption">резерв, отправки, возвраты</span></a>{% endif %}
   {% elif tab == "donors" %}
   {{ kpi("Доноров", rep.totals.count) }}{{ kpi("Вложено, ₴", rep.totals.spent|money(0)) }}{{ kpi("Выручено, ₴", rep.totals.sold|money(0)) }}
   {{ kpi("На складе на, ₴", rep.totals.left_sum|money(0)) }}{{ kpi("Итог, ₴", rep.totals.profit|money(0), "без учёта остатков", "tone-ok" if rep.totals.profit >= 0 else "tone-bad") }}
