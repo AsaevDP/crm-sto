@@ -50,6 +50,18 @@ def _uid(v) -> uuid.UUID | None:
         return None
 
 
+def missing_transfers(db: Session, u: User, form: dict) -> list[str]:
+    """Открытые наряды, которые не передали (12.11.2026): уволенный войти не может — наряд повис бы без хозяина."""
+    allowed = candidates(db, u)
+    out = []
+    for o, slots in open_orders(db, u):
+        for slot in slots:
+            new = _uid(form.get(f"wo_{o.id}_{slot}"))
+            if not new or new not in {x.id for x in allowed[slot]}:
+                out.append(f"{o.number} ({SLOTS[slot][1].lower()})")
+    return out
+
+
 def dismiss(db: Session, u: User, by: User, on: date, reason: str, form: dict) -> int:
     """Уволить. form: wo_<id>_<поле> = кому передать (пусто — оставить), appts_to = кому записи клиентов.
     Возвращает, сколько нарядов передано."""
@@ -67,6 +79,11 @@ def dismiss(db: Session, u: User, by: User, on: date, reason: str, form: dict) -
                                                          WoWork.status != "done")):
                     w.mechanic_id = new
             moved += 1
+    # 12.11.2026 (живой прогон): его невыполненные работы в чужих нарядах (был вторым мастером) — ведущему мастеру машины
+    for w in db.scalars(select(WoWork).join(WorkOrder, WorkOrder.id == WoWork.work_order_id).where(
+            WoWork.mechanic_id == u.id, WoWork.status != "done", WorkOrder.status.in_(WO_ACTIVE))):
+        o = db.get(WorkOrder, w.work_order_id)
+        w.mechanic_id = o.mechanic_id if o.mechanic_id != u.id else None
     # Открытые таймеры работ закрываем, пост освобождаем
     for s in db.scalars(select(WoWorkSession).where(WoWorkSession.mechanic_id == u.id, WoWorkSession.ended_at.is_(None))):
         s.ended_at = now()

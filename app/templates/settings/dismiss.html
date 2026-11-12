@@ -37,7 +37,7 @@
     <div class="card compact">
       <div class="card-h"><span class="headline">Незакрытые наряды · {{ orders|length }}</span></div>
       {% if orders %}
-      <p class="footnote" style="margin:0">Выберите, кому передать. «Оставить за ним» — наряд останется без изменений, передать можно позже в самом наряде.</p>
+      <p class="footnote" style="margin:0">Выберите, кому передать каждый наряд — уволенный не сможет войти и закончить работу. Его работы в чужих нарядах (был вторым мастером) перейдут ведущему мастеру машины.</p>
       <div class="tablewrap">
         <table class="table">
           <thead><tr><th>Наряд</th><th>Кому передать</th></tr></thead>
@@ -49,9 +49,9 @@
                 {% if v %}<div class="caption">{{ v.make }} {{ v.model }} <span class="nowrap">{{ fmt_plate(v.plate) }}</span></div>{% endif %}
                 <span class="chip" data-s="{{ o.status }}">{{ STATUSES.get(o.status) }}</span></td>{% endif %}
               <td style="min-width:190px"><div class="caption">{{ SLOTS[slot][1] }}</div>
-                <select class="field" name="wo_{{ o.id }}_{{ slot }}">
-                  <option value="">Оставить за ним</option>
-                  {% for c in cands[slot] %}<option value="{{ c.id }}">{{ c.full_name }}</option>{% endfor %}
+                <select class="field" name="wo_{{ o.id }}_{{ slot }}" required>
+                  <option value="">— кому передать —</option>
+                  {% for c in cands[slot] %}<option value="{{ c.id }}">{{ c.full_name }}{% if slot == "mechanic_id" %} · {{ MASTERS.get(c.role.code, "")|lower }}{% endif %}</option>{% endfor %}
                 </select></td>
             </tr>
             {% endfor %}

@@ -154,6 +154,19 @@ def visible_orders_query(ctx):
     return q
 
 
+def can_start_work(db: Session, wo: WorkOrder, w: WoWork) -> bool:
+    """Можно ли нажимать «Начал / Пауза / Выполнено» по этой работе (12.11.2026, живой прогон).
+    Наряд «В работе» — да. Пока ждём запчасти ведущего мастера, второй мастер (мойщик, электрик…) может делать свою
+    работу, если под неё запчасти не нужны или уже выданы."""
+    from ..models import WoPart
+    if wo.status == "work":
+        return True
+    if wo.status not in ("picking", "waiting", "instock") or not w.mechanic_id or w.mechanic_id == wo.mechanic_id:
+        return False
+    return db.scalar(select(WoPart.id).where(WoPart.wo_work_id == w.id, WoPart.status.in_(
+        ("need", "ordered", "arrived", "reserved", "option"))).limit(1)) is None
+
+
 def history_order(ctx, wo: WorkOrder) -> bool:
     """История клиента (12.11.2026, решение брата): менеджер, который сейчас работает с клиентом, видит ВСЕ его прошлые
     визиты — и у других менеджеров (выданные / отменённые наряды), и ремонты его машин при прошлых владельцах.
@@ -644,6 +657,17 @@ def finish_approval(db: Session, wo: WorkOrder) -> str:
                           pricing="hours", rate=rate))
     summary = f"Согласовано: {len(yes)}, отказ: {len(findings) - len(yes)}"
     event(db, wo, "approval", summary)
+    # 12.11.2026 (живой прогон): новая находка во время ремонта, клиент от неё отказался — машина возвращается туда,
+    # где была (обычно «В работе»), а не в подбор запчастей: иначе мастер не может закончить работы.
+    new_yes = [f for f in yes if f.id not in have]
+    prev = db.scalar(select(WoStatusHistory.from_status).where(WoStatusHistory.work_order_id == wo.id,
+                                                                WoStatusHistory.to_status == "approve")
+                     .order_by(WoStatusHistory.created_at.desc()).limit(1))
+    if have and not new_yes and prev in ("work", "instock", "waiting", "picking"):
+        works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all()
+        back = "ready" if prev == "work" and works and all(w.status == "done" for w in works) else prev
+        set_status(db, wo, back, summary + ". Новое не согласовано — продолжаем, где остановились")
+        return ""
     if yes:
         set_status(db, wo, "picking", summary)
     else:

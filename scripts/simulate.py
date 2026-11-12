@@ -457,6 +457,7 @@ class Order:
         return one(M.WorkOrder, M.WorkOrder.id == self.id) if self.id else None
 
 
+N_ORDERS = [0]
 ACTIVE: list[Order] = []
 DONE: list[Order] = []
 
@@ -482,10 +483,11 @@ def new_order(day, mgr, hhmm, from_appt=None):
     lead = rnd.choice([m for m in MASTERS_OF[kind] if m != "roman" or not ROMAN_GONE[0]])
     scen = "A" if kind in ("washer", "detailer") or rnd.random() < 0.55 else "B"
     o = Order(c, mgr, kind, jobs, scen, lead, extra)
-    # Неудачные сценарии
-    roll = rnd.random()
-    o.fail_plan = ("cancel" if roll < 0.03 else "all_no" if roll < 0.05 else "part_no" if roll < 0.15 else
-                   "return_part" if roll < 0.18 else "reopen" if roll < 0.20 else "handover" if roll < 0.23 else None)
+    # Неудачные сценарии — по кругу, чтобы каждый точно случился несколько раз
+    N_ORDERS[0] += 1
+    k = N_ORDERS[0]
+    o.fail_plan = ("cancel" if k % 37 == 7 else "all_no" if k % 41 == 13 else "reopen" if k % 23 == 11 else
+                   "return_part" if k % 29 == 17 else "handover" if k % 19 == 5 else "part_no" if k % 8 == 3 else None)
     lift = one(M.Lift, M.Lift.mechanic_id == uid(lead))
     pm = rnd.choice(PARTSMEN[mgr])
     c["visits"] += 1
@@ -504,6 +506,7 @@ def new_order(day, mgr, hhmm, from_appt=None):
     if r is None or r.status_code != 200:
         return None
     o.id = uuid.UUID(r.json()["url"].rsplit("/", 1)[1])
+    o.last = (day, hhmm)
     o.step = "diag" if scen == "B" else "price"
     ACTIVE.append(o)
     return o
@@ -780,12 +783,32 @@ def step_reopen(o, day, hhmm):
     o.fail_plan = None
 
 
+def side_works(o, day, hhmm):
+    """Пока ведущий ждёт запчасти, мойщик / электрик делают свои работы (12.11.2026)."""
+    wo = o.wo()
+    for w in works_of(o):
+        if w.status == "done" or not w.mechanic_id or w.mechanic_id == wo.mechanic_id:
+            continue
+        who = one(M.User, M.User.id == w.mechanic_id)
+        if not who or rnd.random() < 0.5:
+            continue
+        with at(day, hhmm):
+            r = post(who.login, f"{o.url}/works/{w.id}/state", {"action": "start"}, what=f"Пока ждём запчасти — начал: {w.name}")
+            post(who.login, f"{o.url}/works/{w.id}/state", {"action": "done"}, what=f"Пока ждём запчасти — выполнено: {w.name}")
+        R.check(one(M.WoWork, M.WoWork.id == w.id).status == "done", "второй мастер сделал работу, пока ждём запчасти", w.name)
+        R.check(o.wo().status == wo.status, "работа второго мастера не меняет этап наряда", f"{wo.status} → {o.wo().status}")
+
+
 def step_cancel(o, day, hhmm):
+    from app.services import money as msvc
+    with SessionLocal() as db:
+        total = msvc.totals(db, db.get(M.WorkOrder, o.id)).total
+    pre = str(min(Decimal(1000), (total / 2).quantize(Decimal("1"))))
     with at(day, hhmm):
-        if rnd.random() < 0.5:
-            post(o.mgr, f"{o.url}/payments", {"amount": "1000", "method": "cash", "purpose": "prepay", "token": f"t{rnd.random()}"},
+        if rnd.random() < 0.5 and Decimal(pre) > 0:
+            post(o.mgr, f"{o.url}/payments", {"amount": pre, "method": "cash", "purpose": "prepay", "token": f"t{rnd.random()}"},
                  what="Предоплата")
-            post(o.mgr, f"{o.url}/refund", {"amount": "1000", "method": "cash", "reason": "Клиент передумал ремонтировать"},
+            post(o.mgr, f"{o.url}/refund", {"amount": pre, "method": "cash", "reason": "Клиент передумал ремонтировать"},
                  what="Возврат денег клиенту")
         post(o.mgr, f"{o.url}/cancel", {"reason": "Клиент забрал машину без ремонта", "keep_money": ""}, what="Отменить наряд")
     st = o.wo().status
@@ -978,6 +1001,29 @@ def schedule_tomorrow(day):
 ROMAN_GONE = [False]
 
 
+def dismiss_roman(day):
+    """Конец дня: директор увольняет Романа — его открытые наряды передаёт Андрею (без передачи CRM не даст)."""
+    rid = uid("roman")
+    with at(day, "18:30"):
+        post("director", f"/settings/users/{rid}/dismiss", {"reason": "проверка: без передачи нарядов"}, what="Уволить без передачи (должно не дать)")
+        R.check(one(M.User, M.User.id == rid).active or not q(M.WorkOrder, M.WorkOrder.mechanic_id == rid, M.WorkOrder.status.notin_(("closed", "cancel"))),
+                "без передачи нарядов уволить нельзя", "")
+        data = {"dismissed_on": str(day), "reason": "По собственному желанию"}
+        from app.services.staff import open_orders
+        with SessionLocal() as db:
+            for o, slots in open_orders(db, db.get(M.User, rid)):
+                for s in slots:
+                    data[f"wo_{o.id}_{s}"] = str(uid("andrey"))
+        post("director", f"/settings/users/{rid}/dismiss", data, what="Уволить Романа с передачей нарядов")
+    R.check(not one(M.User, M.User.id == rid).active, "Роман уволен", "")
+    R.check(not q(M.WorkOrder, M.WorkOrder.mechanic_id == rid, M.WorkOrder.status.notin_(("closed", "cancel"))),
+            "открытые наряды уволенного переданы", "")
+    for o in ACTIVE:
+        if o.lead == "roman":
+            o.lead = "andrey"
+    ROMAN_GONE[0] = True
+
+
 # ================================================================ главный цикл
 def run():
     t0 = _time.time()
@@ -1004,12 +1050,6 @@ def run():
             razbor_sale(day)
         if n == 25:
             tool_check(day)
-        if n == DAYS - 10 and not ROMAN_GONE[0]:
-            with at(day, "18:30"):
-                rid = uid("roman")
-                post("director", f"/settings/users/{rid}/dismiss", {"dismissed_on": str(day), "reason": "По собственному желанию"},
-                     what="Уволить Романа (директор)")
-            ROMAN_GONE[0] = True
         if n % 9 == 4:   # Марина просит доступ к клиенту Ирины
             other = [o for o in DONE if o.mgr == "irina"]
             if other:
@@ -1041,10 +1081,13 @@ def run():
         # Двигаем наряды по шагам
         for o in list(ACTIVE):
             hh = f"{rnd.randint(9, 16):02d}:{rnd.randint(0, 59):02d}"
+            if getattr(o, "last", None) and o.last[0] == day and o.last[1] >= hh:   # не раньше, чем машину приняли
+                hh = _later(o.last[1], 20)
             for _ in range(3):   # за день — до трёх шагов
                 before = o.step
                 try:
                     advance(o, day, hh)
+                    o.last = (day, hh)
                 except Exception as e:   # ошибка в самом скрипте — тоже в отчёт, идём дальше
                     R.fail("скрипт", f"шаг «{o.step}»", o.url, f"{type(e).__name__}: {e}"[:300])
                     o.step = "done"
@@ -1058,6 +1101,8 @@ def run():
                 if day == TODAY and rnd.random() < 0.5:
                     break   # сегодня — остаются наряды на всех этапах
         chem_desk(day)
+        if n == DAYS - 10 and not ROMAN_GONE[0]:
+            dismiss_roman(day)
         appts += schedule_tomorrow(day)
         if day == TODAY:
             break
@@ -1075,6 +1120,7 @@ def advance(o, day, hh):
     elif s == "pick":
         step_pick(o, day, hh)
     elif s == "wait_parts":
+        side_works(o, day, hh)
         st = o.wo().status
         if st == "instock":
             o.step = "issue"

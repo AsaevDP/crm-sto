@@ -324,6 +324,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
         can_work=(wo.status == "work" and (ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all"))
                   and ctx.can("orders.view_own", "orders.view_all")),
+        # 12.11.2026: второй мастер делает свою работу, не дожидаясь запчастей ведущего (мойка не ждёт колодки)
+        own_work_ok={w.id for w in works if w.mechanic_id == ctx.user.id and svc.can_start_work(db, wo, w)},
         is_admin=ctx.user.role.code == "admin", pauses=pauses,
         all_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters"),
         hour_rate=st_.get(db, ctx.branch.id, "pricing")["hour_rate"],

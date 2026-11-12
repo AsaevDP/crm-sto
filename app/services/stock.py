@@ -396,6 +396,9 @@ def finish_picking(db: Session, wo: WorkOrder) -> str:
         return "По каждой запчасти выберите: со склада или заказать"
     if not parts:
         osvc.set_status(db, wo, "work", "Запчасти не нужны")
+    elif all(p.status in ("issued", "installed") for p in parts):
+        # 12.11.2026 (живой прогон): новая работа во время ремонта без новых запчастей — всё уже выдано, сразу в работу
+        osvc.set_status(db, wo, "work", "Новых запчастей не нужно — всё уже выдано")
     elif all(p.status in ("reserved", "issued") for p in parts):
         osvc.set_status(db, wo, "instock", "Все запчасти в резерве на складе")
         from . import notify

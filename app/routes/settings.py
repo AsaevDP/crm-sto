@@ -351,6 +351,10 @@ async def dismiss_save(user_id: str, ctx: Ctx = Depends(get_ctx)):
     if held := holding(ctx.db, u.id):
         flash(ctx.request, f"За сотрудником числится инструмент ({len(held)} шт.) — сначала проведите проверку при увольнении", "error")
         return _back(f"/settings/users/{u.id}/dismiss")
+    if miss := ssvc.missing_transfers(ctx.db, u, dict(form)):
+        flash(ctx.request, "Сначала передайте открытые наряды — уволенный не сможет войти и их закончить: "
+              + ", ".join(miss[:6]) + (" …" if len(miss) > 6 else ""), "error")
+        return _back(f"/settings/users/{u.id}/dismiss")
     on = _date(str(form.get("dismissed_on", ""))) or date.today()
     moved = ssvc.dismiss(ctx.db, u, ctx.user, on, str(form.get("reason", "")), dict(form))
     ctx.db.commit()

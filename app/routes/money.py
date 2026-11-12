@@ -126,7 +126,7 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     w = ctx.db.get(WoWork, _uuid(work_id))
     # «Вернуть» (снять отметку «Готово») — менеджер, пока машину не выдали
     undo_ok = action == "undo" and ctx.can("orders.view_all") and wo.status in ("work", "ready")
-    if not w or w.work_order_id != wo.id or (wo.status != "work" and not undo_ok):
+    if not w or w.work_order_id != wo.id or (not osvc.can_start_work(ctx.db, wo, w) and not undo_ok):
         raise Forbidden()
     if not (ctx.user.id in (w.mechanic_id, wo.mechanic_id) or ctx.can("orders.view_all")):
         raise Forbidden()

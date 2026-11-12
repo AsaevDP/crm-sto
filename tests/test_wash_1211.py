@@ -147,3 +147,74 @@ def test_second_master_can_request_tool(client):
     client.post(f"/tool-requests/{r.id}/done", data={"result": "ok"})
     with SessionLocal() as db:
         assert db.get(Tool, tool.id).holder_id == _uid("elektro")
+
+
+def test_new_finding_refused_back_to_work(client):
+    """Новая находка во время ремонта, клиент отказался → снова «В работе», а не «Подбор» (живой прогон 12.11.2026)."""
+    from .test_step6 import _order_to_work
+    url = _order_to_work(client, "КТ 1212 КТ", "0501212000", "Колодки (находка)")
+    wo = _wo(url)
+    mech = {u: l for l, u in ((lg, _uid(lg)) for lg in ("andrey", "sergey", "viktor"))}.get(wo.mechanic_id, "admin")
+    _as(client, "admin")
+    client.post(f"{url}/findings", data={"text": "Течь сальника (во время работы)", "urgency": "soon"})
+    assert _wo(url).status == "approve"
+    from app.models import WoFinding
+    with SessionLocal() as db:
+        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == wo.id, WoFinding.approval == "pending"))
+    _as(client, "irina")
+    client.post(f"{url}/findings/{f.id}/approval", data={"value": "no"})
+    client.post(f"{url}/approval-done")
+    assert _wo(url).status == "work"
+    with SessionLocal() as db:
+        w = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status != "done"))
+    _as(client, "admin")
+    assert client.post(f"{url}/works/{w.id}/state", data={"action": "done"}).status_code in (200, 303)
+
+
+def test_second_master_works_while_parts_wait(client):
+    """Мойщик моет, пока ведущий ждёт запчасти; ведущий начать не может, пока запчасти не выданы."""
+    _as(client, "irina")
+    url = _create(client, scenario="A", photos=1, plate="КТ 1213 КТ", phone="0501213000", works="Замена амортизаторов").json()["url"]
+    _as(client, "oleg")
+    client.post(f"{url}/parts", data={"name": "Амортизатор (ждём)", "qty": "2", "cost": "2000", "action": "order"})
+    client.post(f"{url}/picking-done")
+    assert _wo(url).status == "waiting"
+    _as(client, "irina")
+    client.post(f"{url}/works", data={"name": "Мойка кузова", "pricing": "fixed", "rate": "350", "mechanic_id": str(_uid("moyka"))})
+    with SessionLocal() as db:
+        works = {w.name: w for w in db.scalars(select(WoWork).where(WoWork.work_order_id == _wo(url).id))}
+    client.post("/logout")
+    login(client, "moyka", "moyka123")
+    assert "Начал" in client.get(url).text
+    assert client.post(f"{url}/works/{works['Мойка кузова'].id}/state", data={"action": "start"}).status_code in (200, 303)
+    client.post(f"{url}/works/{works['Мойка кузова'].id}/state", data={"action": "done"})
+    assert _wo(url).status == "waiting"   # машина всё ещё ждёт запчасти ведущего
+    client.post("/logout")
+    lead = _wo(url).mechanic_id
+    lead_login = next(lg for lg in ("andrey", "sergey") if _uid(lg) == lead) if lead else None
+    if lead_login:
+        login(client, lead_login, lead_login + "123")
+        assert client.post(f"{url}/works/{works['Замена амортизаторов'].id}/state", data={"action": "start"}).status_code == 403
+
+
+def test_dismiss_requires_transfer(client):
+    from app.models import Role
+    _as(client, "admin")
+    with SessionLocal() as db:
+        rid = db.scalar(select(Role.id).where(Role.code == "mechanic"))
+    client.post("/settings/users", data={"full_name": "Тимур Временный", "login": "temp.mech", "role_id": str(rid),
+                                         "password": "temp123", "pin": ""})
+    tid = _uid("temp.mech")
+    _as(client, "irina")
+    url = _create(client, scenario="A", photos=1, plate="КТ 1214 КТ", phone="0501214000", works="ТО",
+                  mechanic_id=str(tid)).json()["url"]
+    wo = _wo(url)
+    _as(client, "director")
+    r = client.post(f"/settings/users/{tid}/dismiss", data={"reason": "тест"})
+    assert "Сначала передайте открытые наряды" in r.text
+    with SessionLocal() as db:
+        assert db.get(User, tid).active
+    client.post(f"/settings/users/{tid}/dismiss", data={"reason": "тест", f"wo_{wo.id}_mechanic_id": str(_uid("andrey"))})
+    with SessionLocal() as db:
+        assert not db.get(User, tid).active
+    assert _wo(url).mechanic_id == _uid("andrey")

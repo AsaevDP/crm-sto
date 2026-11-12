@@ -284,7 +284,8 @@ def test_old_debt_can_be_paid(client):
     client.post(f"{url}/payments", data={"amount": "300", "method": "cash", "purpose": "extra"})
     with SessionLocal() as db:   # как было раньше: админ закрыл с долгом
         wo = db.get(WorkOrder, _wo(url).id)
-        from app.db import now as _now
+        from app.db import current_branch_id, now as _now
+        current_branch_id.set(wo.branch_id)   # прямую запись в журнал — с филиалом (тест не зависит от соседних)
         wo.status, wo.closed_with_debt_comment, wo.closed_at = "closed", "доплатит", _now()
         db.commit()
     assert "Старые долги" in client.get("/money?p=month").text
