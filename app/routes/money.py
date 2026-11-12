@@ -229,7 +229,7 @@ def payment_refund(order_id: str, ctx: Ctx = Depends(get_ctx), amount: str = For
     """Возврат денег клиенту — оформляет менеджер (он принимает оплаты и говорит с клиентом)."""
     ctx.need("money.accept")
     wo = _order(ctx, order_id)
-    if method not in PAY_METHODS:
+    if method not in PAY_METHODS or osvc.history_only(ctx, wo):   # прошлый визит у другого менеджера — только смотреть
         raise Forbidden()
     err = msvc.refund(ctx.db, wo, _dec(amount), method, reason)
     if err:

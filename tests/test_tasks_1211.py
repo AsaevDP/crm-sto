@@ -141,3 +141,30 @@ def test_manager_sees_only_own_clients_and_access(client):
     # Директор видит всех клиентов всегда
     _as(client, "director")
     assert "Клиент Свойский" in client.get("/clients").text
+
+
+def test_returning_client_history_for_new_manager(client):
+    """Клиент вернулся через месяц к другому менеджеру — тот видит карточку и ВСЮ историю (прошлый наряд — только смотреть)."""
+    _second_manager()
+    _as(client, "irina")
+    old_url = _create(client, plate="КТ 1204 КТ", phone="0501204000", name="Клиент Вернулся").json()["url"]
+    old = _wo(old_url)
+    with SessionLocal() as db:
+        o = db.get(WorkOrder, old.id)
+        o.status, o.closed_at = "closed", now() - timedelta(days=30)
+        db.commit()
+    client.post("/logout")
+    client.post("/login", data={"login": "mgr2", "password": "mgr2pass"})
+    new_url = _create(client, plate="КТ 1204 КТ", phone="0501204000", name="Клиент Вернулся").json()["url"]
+    new = _wo(new_url)
+    assert new.client_id == old.client_id and new.manager_id == _uid("mgr2")
+    card = client.get(f"/clients/{new.client_id}").text
+    assert old.number in card and new.number in card                      # вся история в карточке
+    page = client.get(old_url)
+    assert page.status_code == 200 and "Прошлый визит клиента" in page.text
+    assert client.post(f"{old_url}/refund", data={"amount": "1", "method": "cash"}).status_code == 403
+    assert "Прошлый визит клиента" not in client.get(new_url).text
+    # чужие наряды других клиентов по-прежнему закрыты; прежний менеджер клиента больше не видит
+    client.post("/logout")
+    _as(client, "irina")
+    assert client.get(f"/clients/{new.client_id}").status_code == 403

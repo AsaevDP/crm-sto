@@ -309,7 +309,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id)),
         parts_total=sum((p.price * p.qty for p in counted), 0), n_counted=len(counted),
         t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, PAY_IN=PAY_IN,
-        pay_token=uuid.uuid4().hex, refund_max=money_svc.refund_limit(db, wo),
+        pay_token=uuid.uuid4().hex,
+        refund_max=0 if svc.history_only(ctx, wo) else money_svc.refund_limit(db, wo),
+        history_only=svc.history_only(ctx, wo),
         left_parts=money_svc.not_issued_parts(db, wo) if wo.status in ("ready", "paid") else [],
         reopen=_reopen_state(ctx, wo),
         order_msgs=_order_msgs(ctx, wo),
@@ -861,8 +863,8 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
         raise Forbidden()
     vehicles = ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
     # Наряды клиента + история его машин при прошлых владельцах (смена владельца, 11.11.2026)
-    orders = ctx.db.scalars(svc.visible_orders_query(ctx).where(or_(WorkOrder.client_id == c.id,
-                                                                    WorkOrder.vehicle_id.in_([v.id for v in vehicles])))
+    # 12.11.2026: менеджер видит и прошлые визиты клиента у других менеджеров (вся история)
+    orders = ctx.db.scalars(svc.client_orders_query(ctx, c.id, [v.id for v in vehicles])
                             .order_by(WorkOrder.created_at.desc())).all()
     events = ctx.db.scalars(select(ClientEvent).where(ClientEvent.client_id == c.id)
                             .order_by(ClientEvent.created_at.desc()).limit(300)).all()

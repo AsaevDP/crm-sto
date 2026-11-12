@@ -154,6 +154,35 @@ def visible_orders_query(ctx):
     return q
 
 
+def history_order(ctx, wo: WorkOrder) -> bool:
+    """История клиента (12.11.2026, решение брата): менеджер, который сейчас работает с клиентом, видит ВСЕ его прошлые
+    визиты — и у других менеджеров (выданные / отменённые наряды), и ремонты его машин при прошлых владельцах.
+    Чужие открытые наряды — нет (там работает другой менеджер)."""
+    if wo.status in WO_ACTIVE:
+        return False
+    ids = visible_client_ids(ctx)
+    if ids is None or wo.client_id in ids:
+        return True
+    v = ctx.db.get(Vehicle, wo.vehicle_id) if wo.vehicle_id else None
+    return bool(v and v.client_id in ids)
+
+
+def history_only(ctx, wo: WorkOrder) -> bool:
+    """Наряд открыт менеджером только как история клиента (чужой прошлый визит) — смотреть можно, деньги не трогаем."""
+    return (manager_limited(ctx) and wo.manager_id != ctx.user.id and ctx.user.id not in (wo.partsman_id, wo.mechanic_id)
+            and wo.client_id not in granted_client_ids(ctx))
+
+
+def client_orders_query(ctx, client_id, vehicle_ids):
+    """Наряды в карточке клиента: всё, что видно по обычным правилам, плюс вся история визитов (history_order)."""
+    own = or_(WorkOrder.client_id == client_id, WorkOrder.vehicle_id.in_(list(vehicle_ids)))
+    if not manager_limited(ctx) or not can_see_client(ctx, client_id):
+        return visible_orders_query(ctx).where(own)
+    seen = visible_orders_query(ctx).where(own).with_only_columns(WorkOrder.id)
+    return select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, own,
+                                   or_(WorkOrder.id.in_(seen), WorkOrder.status.not_in(WO_ACTIVE)))
+
+
 def can_view(ctx, wo: WorkOrder) -> bool:
     if wo.branch_id != ctx.branch.id:
         return False
@@ -164,7 +193,8 @@ def can_view(ctx, wo: WorkOrder) -> bool:
     if manager_limited(ctx):   # 12.11.2026: свой — пока у нас и 3 дня после выдачи; чужой — по доступу к клиенту
         if wo.manager_id == ctx.user.id and (wo.status in WO_ACTIVE or _recent(wo)):
             return True
-        return wo.client_id in granted_client_ids(ctx) or ctx.user.id in (wo.partsman_id, wo.mechanic_id)
+        return (wo.client_id in granted_client_ids(ctx) or ctx.user.id in (wo.partsman_id, wo.mechanic_id)
+                or history_order(ctx, wo))
     if ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id):
         return True
     return ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == ctx.user.id)
