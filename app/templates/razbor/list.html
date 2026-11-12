@@ -29,6 +29,9 @@
 
 {# 11.11.2026: «Доноры и окупаемость» — плитками во всю ширину. Одинаковые машины (марка + модель + год) — одна плитка
    «×2», внутри — каждая машина отдельно (код, статус, окупаемость). Новая машина сама появляется плиткой. #}
+{# 12.11.2026: доноры и деньги разборки — тем, кто ведёт разбор (контентщик, продавец, директор). Запчастисту и остальным,
+   кто только смотрит, — сразу поиск, марки и список деталей. #}
+{% if ctx.can("razbor.manage", "razbor.sell", "reports.finance") %}
 <section class="dt-sec">
   <div class="group-title">Доноры и окупаемость · {{ donors|length }} {{ "машина" if donors|length == 1 else ("машины" if donors|length in (2, 3, 4) else "машин") }}</div>
   <div class="dt-grid">
@@ -57,6 +60,7 @@
     {% if not donor_groups and not ctx.can("razbor.manage") %}<div class="card compact"><p class="footnote" style="margin:0">Доноров пока нет</p></div>{% endif %}
   </div>
 </section>
+{% endif %}
 
 <div class="rz-layout">
   <aside class="card compact rz-tree">

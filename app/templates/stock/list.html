@@ -61,7 +61,7 @@
     <div class="tablewrap">
       <table class="table st-table">
         <thead><tr><th style="width:30px"><input type="checkbox" id="selall" aria-label="Выбрать все"></th>
-          <th>Запчасть</th><th>Подходит для</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th></tr></thead>
+          <th>Запчасть</th><th>Подходит для</th><th>Ячейка</th><th class="num">На складе</th><th class="num">Резерв</th><th class="num">Свободно</th>{% if pick_orders %}<th class="to-wo-h">В наряд</th>{% endif %}</tr></thead>
         <tbody>
         {% for r in rows %}
         <tr data-href="/stock/items/{{ r.i.id }}">
@@ -72,8 +72,18 @@
           <td class="num">{{ r.on_hand|num }}</td>
           <td class="num">{{ r.reserved|num if r.reserved else "—" }}</td>
           <td class="num"><b>{{ r.free|num }}</b></td>
+          {# 12.11.2026: запчастист ставит позицию со склада в свой открытый наряд — сразу в резерв #}
+          {% if pick_orders %}<td class="to-wo-c" onclick="event.stopPropagation()">{% if r.free > 0 %}
+            <details class="to-wo"><summary class="btn btn-sm btn-tinted">+ В наряд</summary>
+              <form class="to-wo-form card compact" method="post" action="/stock/items/{{ r.i.id }}/to-order">
+                <input type="hidden" name="back" value="/stock?{{ args() }}">
+                <label class="caption">Наряд<select class="field" name="order_id" required><option value="">— выберите —</option>
+                  {% for o in pick_orders %}<option value="{{ o.id }}">{{ o.label }}</option>{% endfor %}</select></label>
+                <label class="caption">Сколько<input class="field" name="qty" value="1" inputmode="decimal"></label>
+                <button class="btn btn-sm">Добавить в наряд</button>
+              </form></details>{% else %}<span class="caption">нет свободных</span>{% endif %}</td>{% endif %}
         </tr>
-        {% else %}<tr><td colspan="7" class="footnote">{% if q or cat or make %}Ничего не нашлось — попробуйте другую категорию или сбросьте фильтр{% else %}В этом разделе пока пусто — запчасти появятся после прихода{% endif %}</td></tr>{% endfor %}
+        {% else %}<tr><td colspan="8" class="footnote">{% if q or cat or make %}Ничего не нашлось — попробуйте другую категорию или сбросьте фильтр{% else %}В этом разделе пока пусто — запчасти появятся после прихода{% endif %}</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>

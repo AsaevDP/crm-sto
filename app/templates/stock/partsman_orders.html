@@ -40,7 +40,8 @@
 {% if mode == "mine" or who %}
 {% set base = "/my-orders" if mode == "mine" else "/purchases/by-partsman?u=" ~ who.id %}
 {% set sep = "?" if mode == "mine" else "&" %}
-<div class="pult-tiles vs-tiles">
+{# 12.11.2026: этапы заказов — мельче и другой палитрой, чтобы не путать с плитками людей (у кладовщика они выше) #}
+<div class="pult-tiles st-mini">
   <a class="ptile {{ 'on' if not st }}" href="{{ base }}" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Ещё не пришло</span>
     <b>{{ counts.draft + counts.wait + counts.delivered + counts.partial }}</b><span class="ptile-s">черновики и в пути</span></a>
   {% for k, v in STATES.items() %}

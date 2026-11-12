@@ -218,3 +218,33 @@ def test_dismiss_requires_transfer(client):
     with SessionLocal() as db:
         assert not db.get(User, tid).active
     assert _wo(url).mechanic_id == _uid("andrey")
+
+
+def test_stock_to_order_by_partsman(client):
+    """12.11.2026: запчастист со склада ставит позицию в свой открытый наряд — сразу в резерв."""
+    from decimal import Decimal
+    from app.models import PartCatalog, StockItem, WoPart
+    from app.services import stock as ssvc
+    _as(client, "irina")
+    url = _create(client, scenario="A", photos=1, plate="КТ 1401 КТ", phone="0501401000", works="ТО").json()["url"]
+    wo = _wo(url)
+    with SessionLocal() as db:
+        from app.db import current_branch_id
+        current_branch_id.set(wo.branch_id)
+        c = ssvc.get_or_create_catalog(db, "Фильтр (в наряд со склада)", "TST-1", "MANN")
+        item = ssvc.get_or_create_item(db, c.id, None)
+        item.cost = Decimal("200")
+        ssvc.move(db, "in", item, 3, comment="тест")
+        db.commit()
+        item_id, cat_id = item.id, c.id
+    _as(client, "oleg")
+    page = client.get("/stock?sec=to").text
+    assert "+ В наряд" in page and wo.number[-6:] in page
+    client.post(f"/stock/items/{item_id}/to-order", data={"order_id": str(wo.id), "qty": "2", "back": "/stock"})
+    with SessionLocal() as db:
+        p = db.scalar(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.catalog_id == cat_id))
+        assert p and p.status == "reserved" and p.qty == 2 and p.price > p.cost
+    r = client.post(f"/stock/items/{item_id}/to-order", data={"order_id": str(wo.id), "qty": "5", "back": "/stock"})
+    assert "Свободно только 1" in r.text
+    _as(client, "andrey")   # не запчастист — нельзя
+    assert client.post(f"/stock/items/{item_id}/to-order", data={"order_id": str(wo.id), "qty": "1"}).status_code == 403

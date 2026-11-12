@@ -859,11 +859,62 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
              "reserved": sum(1 for v in other.values() for r in v if r["reserved"] > 0),
              "sum": sum((r["i"].cost * max(r["on_hand"], 0) for v in other.values() for r in v), Decimal(0))}
     return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests, tiles=tiles,
-                      SECTIONS=SECTIONS,
+                      SECTIONS=SECTIONS, pick_orders=_pick_orders(ctx),
                       to_receive=_receive_count(ctx) if ctx.can("stock.manage") else 0,
                       sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
                       counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,
                       args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))
+
+
+def _pick_orders(ctx: Ctx) -> list[dict]:
+    """Открытые наряды запчастиста, куда можно добавить со склада (12.11.2026): номер, машина, этап."""
+    if not ctx.can("parts.pick"):
+        return []
+    q = select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(PICK_STATUSES),
+                                WorkOrder.awaiting_prepay.is_not(True))
+    if not ctx.can("orders.view_all") or ctx.user.role.code == "partsman":
+        q = q.where(WorkOrder.partsman_id == ctx.user.id)
+    orders = ctx.db.scalars(q.order_by(WorkOrder.created_at.desc()).limit(40)).all()
+    vs = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
+    from ..models.orders import WO_STATUSES
+    return [{"id": o.id, "label": f"{o.number[-6:]} · {vs[o.vehicle_id].make} {vs[o.vehicle_id].model} {osvc.fmt_plate(vs[o.vehicle_id].plate)}"
+             f" · {WO_STATUSES.get(o.status, o.status).lower()}" if o.vehicle_id in vs else o.number} for o in orders]
+
+
+@router.post("/stock/items/{item_id}/to-order")
+def stock_to_order(item_id: str, ctx: Ctx = Depends(get_ctx), order_id: str = Form(""), qty: str = Form("1"),
+                   back: str = Form("")):
+    """Склад → «В наряд» (12.11.2026): запчастист выбрал позицию на складе и свой открытый наряд — сразу в резерв наряда."""
+    ctx.need("parts.pick")
+    i = ctx.db.get(StockItem, _uuid(item_id))
+    if not i or i.branch_id != ctx.branch.id:
+        raise Forbidden()
+    to = _safe_back(back, "/stock")
+    if not order_id:
+        flash(ctx.request, "Выберите наряд", "error")
+        return _to(to)
+    wo = _order(ctx, order_id)
+    if not _can_pick(ctx, wo):
+        raise Forbidden()
+    cat = ctx.db.get(PartCatalog, i.catalog_id)
+    n = max(_dec(qty, "1"), Decimal("0.01"))
+    free = svc.catalog_free(ctx.db, ctx.branch.id, [cat.id]).get(cat.id, Decimal(0))
+    if n > free:
+        flash(ctx.request, f"Свободно только {free.normalize():f} — столько в наряд не поставить", "error")
+        return _to(to)
+    m = _markup("", ctx)
+    part = WoPart(work_order_id=wo.id, catalog_id=cat.id, name=cat.name, qty=n, cost=svc.money(i.cost or 0), markup_pct=m,
+                  price=svc.sale_price(svc.money(i.cost or 0), m), picked_by=ctx.user.id)
+    ctx.db.add(part)
+    ctx.db.flush()
+    if not svc.reserve_from_stock(ctx.db, ctx.branch.id, part):
+        ctx.db.rollback()
+        flash(ctx.request, "Не получилось зарезервировать — остаток изменился, обновите страницу", "error")
+        return _to(to)
+    _after_part_added(ctx, wo, part)
+    ctx.db.commit()
+    flash(ctx.request, f"«{cat.name}» × {n.normalize():f} — в наряд {wo.number}, в резерве")
+    return _to(to)
 
 
 def _look(ctx: Ctx, q, sec, cat, sub, make, model, order, donor):
