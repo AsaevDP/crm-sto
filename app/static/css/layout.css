@@ -1666,6 +1666,10 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .parts-arch .kv form { flex: none; }
 .approve-box { margin-top: 12px; padding-top: 10px; border-top: 0.5px solid var(--separator); }
 .ok-hint { color: var(--green); }
+/* Цена из накладной при приёмке (13.11.2026): обязательна, пустая — красная рамка */
+.rc-price { width: 92px; text-align: right; }
+.rc-price.need { box-shadow: inset 0 0 0 1.5px var(--red); }
+.rc-price.need::placeholder { color: var(--red); }
 .po-todo { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); margin-bottom: 14px; }
 .po-todo-card.urgent { box-shadow: inset 3px 0 0 var(--red), var(--shadow-1, none); }
 .po-todo-lines { margin-top: 8px; }

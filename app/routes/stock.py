@@ -166,6 +166,12 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
     if _dec(cost) < 0 or _dec(price) < 0:   # отрицательные цены не принимаем (отчёт тестировщика)
         flash(ctx.request, "Цена не может быть меньше нуля", "error")
         return _to(f"/orders/{order_id}#parts")
+    if picker and _dec(cost) <= 0 and catalog_id:
+        # 13.11.2026 (брат): деталь из каталога без закупки — закупка со склада (как подставляет окно подбора)
+        si = ctx.db.scalars(select(StockItem).where(StockItem.catalog_id == cat.id, StockItem.cost > 0)
+                            .order_by(StockItem.updated_at.desc())).first()
+        if si:
+            cost = str(si.cost)
     if ctx.can("prices.view_purchase") and _dec(cost) > 0:
         c, m = svc.money(_dec(cost)), _markup(markup_pct, ctx)
         p = svc.sale_price(c, m)
@@ -798,9 +804,12 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
         form["all"] = str(p.id)   # без строки — принять всё по этой закупке (или сколько вписали в «Неполной поставке»)
     n, ready = _receive(ctx, form, [p])
     left = ctx.db.get(Purchase, p.id).status == "partial"
-    flash(ctx.request, (f"Принято строк: {n}" if n else "Ничего не принято — впишите, сколько привезли")
+    np_ = ctx.request.state.no_price
+    flash(ctx.request, (f"Принято строк: {n}" if n else "Ничего не принято — впишите, сколько привезли" if not np_ else "Ничего не принято")
           + (". Неполная поставка — остальное ждём" if n and left else "")
-          + (f". Все запчасти на складе: {', '.join(ready)}" if ready else ""), "ok" if n else "error")
+          + (f". Все запчасти на складе: {', '.join(ready)}" if ready else "")
+          + (f". Без цены не принято: {', '.join(np_[:5])} — впишите «₴ за шт» из накладной" if np_ else ""),
+          "ok" if n and not np_ else "error")
     return _to(_safe_back(str(form.get("back", "")), f"/purchases/{pid}#lines"))
 
 
@@ -829,6 +838,7 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
         lines = []
     done, ready, item_ids, touched = 0, [], [], set()
     got_parts, before = [], {}   # 12.11.2026: что пришло под наряды — одно сообщение на приёмку (svc.arrived_notify)
+    no_price = ctx.request.state.no_price = []   # 13.11.2026: без цены из накладной — не принято
     for l in lines:
         p = db.get(Purchase, l.purchase_id) if l else None
         if not l or l.received or not p or p.id not in ids or p.status not in svc.OPEN:
@@ -837,6 +847,18 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
         if wp and wp.work_order_id not in before:
             before[wp.work_order_id] = db.get(WorkOrder, wp.work_order_id).status
         was = wp.status if wp else None
+        # 13.11.2026 (брат): цена обязательна — кладовщик переписывает её из накладной («₴ за шт»). Без цены не принимаем.
+        pr = str(form.get(f"price_{l.id}", "")).strip()
+        if pr and _dec(pr) > 0:
+            l.price = svc.money(_dec(pr))
+            if wp and (wp.cost or 0) <= 0 and wp.status not in ("issued", "installed"):
+                wp.cost = l.price   # у позиции наряда не было закупки — берём из накладной, цена клиенту по наценке
+                if (wp.price or 0) <= 0:
+                    wp.price = svc.sale_price(wp.cost, wp.markup_pct or 0)
+        if (l.price or 0) <= 0:
+            cat = db.get(PartCatalog, l.catalog_id)
+            no_price.append(cat.name if cat else "позиция")
+            continue
         raw = str(form.get(f"loc_{l.id}", "") or form.get("location_id", ""))
         loc = db.get(Location, _uuid(raw)) if raw else None
         q = str(form.get(f"qty_{l.id}", "")).strip()
@@ -1784,7 +1806,10 @@ async def receive_do(ctx: Ctx = Depends(get_ctx)):
     purchases = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
                                                       Purchase.status.in_(svc.OPEN))).all()
     done, ready = _receive(ctx, form, purchases)
-    flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else ""))
+    np_ = ctx.request.state.no_price
+    flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else "")
+          + (f". Без цены не принято: {', '.join(np_[:5])} — впишите «₴ за шт» из накладной" if np_ else ""),
+          "error" if np_ else "ok")
     return _to("/stock/receive")
 
 

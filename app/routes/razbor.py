@@ -578,19 +578,25 @@ def parts_bulk(did: str, ctx: Ctx = Depends(get_ctx), lines: str = Form(""), cat
     ctx.need("razbor.manage")
     d = _donor(ctx, did)
     loc = ctx.db.get(Location, _uuid(location_id)) if location_id else None
-    n = 0
+    n, no_price = 0, []
     for raw in lines.splitlines():
         parts = [x.strip() for x in raw.replace("\t", ";").split(";")]
         if not parts or not parts[0]:
             continue
         price = _dec(parts[1]) if len(parts) > 1 and parts[1] else Decimal(0)
         qty = _dec(parts[2], "1") if len(parts) > 2 and parts[2] else Decimal(1)
+        if price <= 0:   # 13.11.2026 (брат): без цены на склад не заводим
+            no_price.append(parts[0])
+            continue
         svc.add_part(ctx.db, ctx.branch.id, d, parts[0], max(qty, Decimal(1)), price, condition,
                      loc.id if loc and loc.branch_id == ctx.branch.id else None, publish=True,
                      category=category, subcategory=subcategory)
         n += 1
     ctx.db.commit()
-    flash(ctx.request, f"Добавлено деталей: {n} — подпишите бирки и сфотографируйте" if n else "Список пуст", "ok" if n else "error")
+    msg = f"Добавлено деталей: {n} — подпишите бирки и сфотографируйте" if n else "Ничего не добавлено"
+    if no_price:
+        msg += f". Без цены не добавлено: {', '.join(no_price[:5])} — строка «Название; цена; кол-во»"
+    flash(ctx.request, msg, "ok" if n and not no_price else "error")
     return _to(_donor_back(d, category))
 
 
@@ -656,6 +662,9 @@ async def part_add(did: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     name = str(form.get("name", "")).strip()
     if not name:
         flash(request, "Название детали обязательно", "error")
+        return _to(f"/razbor/donors/{did}")
+    if _dec(form.get("price")) <= 0:   # 13.11.2026 (брат): без цены на склад не заводим
+        flash(request, "Укажите цену детали — без цены на склад не добавляется", "error")
         return _to(f"/razbor/donors/{did}")
     loc = ctx.db.get(Location, _uuid(str(form.get("location_id")))) if form.get("location_id") else None
     item = svc.add_part(ctx.db, ctx.branch.id, d, name, _dec(form.get("qty"), "1"), _dec(form.get("price")),

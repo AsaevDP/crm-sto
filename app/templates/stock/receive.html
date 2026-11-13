@@ -46,7 +46,7 @@
   </div>
   <div class="tablewrap">
   <table class="table rc-table">
-    <thead><tr><th>Запчасть</th><th class="num">Шт</th><th>Под наряд</th><th>Ячейка</th><th></th></tr></thead>
+    <thead><tr><th>Запчасть</th><th class="num">Шт</th><th class="num" title="Цена за штуку из накладной — обязательно">₴ за шт</th><th>Под наряд</th><th>Ячейка</th><th></th></tr></thead>
     <tbody>
     {% for r in g.rows %}
     <tr class="{{ 'urgent' if r.urgent }}">
@@ -54,6 +54,9 @@
         <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
       <td class="num nowrap"><input class="field rc-qty" name="qty_{{ r.l.id }}" value="{{ r.l.left|num }}" inputmode="decimal" aria-label="Сколько пришло">
         <div class="caption">{% if r.l.got > 0 %}пришло {{ r.l.got|num }} из {{ r.l.qty|num }}{% else %}ждём {{ r.l.left|num }}{% endif %}{% if r.part and r.l.qty > r.part.qty %} · на склад {{ (r.l.qty - r.part.qty)|num }}{% endif %}</div></td>
+      {# 13.11.2026 (брат): цена из накладной обязательна — без неё на склад не принимаем #}
+      <td class="num nowrap"><input class="field rc-price{{ ' need' if not r.l.price }}" name="price_{{ r.l.id }}" value="{{ '%.2f'|format(r.l.price) if r.l.price else '' }}"
+          inputmode="decimal" placeholder="из накладной" aria-label="Цена за штуку из накладной"></td>
       <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make }} {{ r.v.model }}</a> <span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>
         <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}</td>
       <td><select class="field rc-cell" name="loc_{{ r.l.id }}" aria-label="Ячейка">

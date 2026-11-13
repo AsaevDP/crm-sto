@@ -24,10 +24,11 @@ def test_donor_tiles(client):
         d1, d2 = db.scalars(select(Donor).where(Donor.make == "Mazda (тест плиток)").order_by(Donor.model)).all()
     # Списком в «Оптика»
     r = client.post(f"/razbor/donors/{d1.id}/parts/bulk", data={"category": "Оптика", "subcategory": "Фары",
-                                                                "lines": "Фара левая (плитки); 6500\nФара правая (плитки); 6400\nПТФ левая (плитки)"})
+                                                                "lines": "Фара левая (плитки); 6500\nФара правая (плитки); 6400\nПТФ левая (плитки); 1200\nПТФ правая (без цены)"})
     assert "cat=" in str(r.url)
     p = _parts(d1.id)
     assert {"Фара левая (плитки)", "Фара правая (плитки)", "ПТФ левая (плитки)"} <= set(p)
+    assert "ПТФ правая (без цены)" not in p   # 13.11.2026 (брат): без цены на склад не заводим
     assert p["Фара левая (плитки)"][1].category == "Оптика" and p["Фара левая (плитки)"][1].subcategory == "Фары"
     page = client.get(f"/razbor/donors/{d1.id}?cat={quote('Оптика')}").text
     assert "Фара правая (плитки)" in page and "Добавить несколько списком" in page

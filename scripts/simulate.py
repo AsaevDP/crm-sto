@@ -1440,6 +1440,13 @@ def final_checks():
             n = db.scalar(select(func.count()).select_from(M.PayrollAccrual).where(M.PayrollAccrual.wo_work_id == w.id)) \
                 if hasattr(M.PayrollAccrual, "wo_work_id") else 1
             R.check(n > 0, "у выполненной работы есть начисление исполнителю", f"{w.name} ({w.id})")
+        # 13.11.2026 (брат): без цены — ни в наряде, ни на складе
+        zero = db.scalars(select(M.WoPart).where(M.WoPart.status.notin_(("returned", "declined", "archived")),
+                                                 M.WoPart.price <= 0)).all()
+        R.check(not zero, "у каждой запчасти в наряде есть цена", ", ".join(p.name for p in zero[:5]))
+        zero_si = [i for i in db.scalars(select(M.StockItem))
+                   if (i.sale_price if i.donor_id else i.cost) is None or (i.sale_price if i.donor_id else i.cost) <= 0]
+        R.check(not zero_si, "у каждой позиции склада есть цена", str(len(zero_si)))
         chem_parts = db.scalar(select(func.count()).select_from(M.WoPart).join(M.PartCatalog, M.PartCatalog.id == M.WoPart.catalog_id)
                                .where(M.PartCatalog.section == "chem"))
         R.check(not chem_parts, "химия мойщика не попадает в счёт клиенту", f"строк химии в нарядах: {chem_parts}")

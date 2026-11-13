@@ -42,6 +42,9 @@
       <input type="hidden" name="all" value="{{ p.id }}">
       {% for l in lines if not l.received %}{% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}{% endfor %}
       <button class="btn">✓ Принять полностью · {{ lines|length - n_got }} поз.</button></form>
+    {% set no_pr = lines|rejectattr("received")|selectattr("price", "le", 0)|list %}
+    {% if no_pr %}<p class="hint warn" style="margin:0">Нет цены из накладной: {{ no_pr|length }} поз. — впишите «₴ за шт» в строке
+      или в «Неполной поставке», иначе эти позиции не примутся.</p>{% endif %}
     <button class="btn btn-gray" type="button" onclick="document.getElementById('short').hidden = false; document.getElementById('short').scrollIntoView({block: 'center'})">Неполная поставка</button>
     {% endif %}
   </div>
@@ -52,6 +55,8 @@
     {% for l in lines if not l.received %}{% set c = cats.get(l.catalog_id) %}
     <label class="rcv-row"><span><b>{{ c.name if c else "" }}</b> <span class="caption">{{ c.brand if c }} {{ c.article if c }} · ждём {{ l.left|num }}</span></span>
       <input class="field" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" aria-label="Сколько привезли">
+      <input class="field rc-price{{ ' need' if not l.price }}" name="price_{{ l.id }}" value="{{ '%.2f'|format(l.price) if l.price else '' }}"
+             inputmode="decimal" placeholder="₴ за шт" aria-label="Цена за штуку из накладной">
       {% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}</label>
     {% endfor %}
     <div class="form-row"><button class="btn">Принять привезённое</button>
@@ -127,6 +132,9 @@
         {% elif recv %}
           <div class="pu-recv">
             <input class="mini" form="rf-{{ l.id }}" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" size="3" aria-label="Сколько пришло">
+            {# 13.11.2026: цена из накладной обязательна #}
+            <input class="mini rc-price{{ ' need' if not l.price }}" form="rf-{{ l.id }}" name="price_{{ l.id }}" value="{{ '%.2f'|format(l.price) if l.price else '' }}"
+                   inputmode="decimal" size="6" placeholder="₴ за шт" aria-label="Цена за штуку из накладной">
             <select class="mini" form="rf-{{ l.id }}" name="loc_{{ l.id }}" aria-label="Ячейка"><option value="">без ячейки</option>
               {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == cells.get(l.id) %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select>
             <button class="btn btn-sm btn-tinted" form="rf-{{ l.id }}">Пришло</button>

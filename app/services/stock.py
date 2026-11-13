@@ -488,6 +488,10 @@ def refresh_order_status(db: Session, wo: WorkOrder):
 
 def finish_picking(db: Session, wo: WorkOrder) -> str:
     """Запчастист закончил подбор. Возвращает ошибку или ''."""
+    if wo.status == "picking":   # 13.11.2026: без цены — нельзя (на согласовании это проверяет mark_picked)
+        err = price_error(db, wo)
+        if err:
+            return err
     parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
     waiting_choice = db.scalar(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "option"))
     if waiting_choice:
@@ -508,10 +512,28 @@ def finish_picking(db: Session, wo: WorkOrder) -> str:
     return ""
 
 
+def no_price_parts(db: Session, wo: WorkOrder) -> list:
+    """13.11.2026 (брат): позиции без цены для клиента (и варианты на выбор) — с ними подбор не завершить."""
+    return [p for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id,
+                                                       WoPart.status.notin_(("returned", "declined", "archived"))))
+            if (p.price or 0) <= 0]
+
+
+def price_error(db: Session, wo: WorkOrder) -> str:
+    bad = no_price_parts(db, wo)
+    if not bad:
+        return ""
+    names = ", ".join(f"«{p.name}»" for p in bad[:3]) + ("…" if len(bad) > 3 else "")
+    return f"Укажите цену (закупка и наценка): {names} — без цены подбор не завершить"
+
+
 def mark_picked(db: Session, wo: WorkOrder, user) -> str:
     """13.11.2026 (брат): запчастист закончил подбор, пока менеджер согласует — «Подбор завершён» ничего не заказывает,
-    только отмечает и пишет менеджеру: можно звонить клиенту. Возвращает ошибку или ''."""
+    только отмечает и пишет менеджеру: можно звонить клиенту. Без цены у позиции — нельзя. Возвращает ошибку или ''."""
     from ..db import now
+    err = price_error(db, wo)
+    if err:
+        return err
     parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "need")).all()
     undecided = [p for p in parts if p.plan != "order" and not p.option_group]
     if undecided:
