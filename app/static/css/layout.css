@@ -1884,3 +1884,15 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 }
 .po-todo-act { display: grid; gap: 6px; margin-top: 10px; }
 .ow-ord .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* «Запросы на выдачу» (14.11.2026): вкладки «Запчасти / Инструмент / Химия» — цветные плитки справа в шапке */
+.iss-tiles { display: flex; gap: 10px; justify-content: flex-end; align-self: flex-end; flex: 0 1 auto; }
+.iss-tiles .ptile { width: 156px; }
+.iss-tiles .ptile { padding: 8px 14px 9px; }
+.iss-tiles .ptile b { font-size: 24px; }
+.iss-tiles .ptile.on { background: color-mix(in srgb, var(--tc) 22%, var(--surface)); }
+@media (max-width: 760px) {
+  .iss-tiles { width: 100%; justify-content: stretch; }
+  .iss-tiles .ptile { width: auto; flex: 1 1 0; min-width: 0; }
+  .iss-tiles .ptile-s { display: none; }
+}

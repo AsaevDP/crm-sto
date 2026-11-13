@@ -457,8 +457,15 @@ def receive(pid, partial=False, rack="A"):
     lines = q(M.PurchaseLine, M.PurchaseLine.purchase_id == uuid.UUID(str(pid)), M.PurchaseLine.received.is_(False))
     locs = q(M.Location, M.Location.rack == rack) or q(M.Location)
     data = {"all": pid}
+    # 14.11.2026 (брат): неполная поставка бывает двух видов — одной детали меньше штук или одну деталь НЕ привезли
+    # совсем (0). Раньше прогон делал только первый, и ошибка «0 → накладная пропадает» не ловилась.
     short = next((l for l in lines if Decimal(l.qty) - (l.received_qty or 0) >= 2), None)
-    partial = partial and short is not None
+    missing = lines[-1] if len(lines) >= 2 and (short is None or rnd.random() < 0.5) else None
+    if missing is not None:
+        short = None
+    partial = partial and (short is not None or missing is not None)
+    if partial:
+        data["short"] = "1"   # форма «Неполная поставка → Принять привезённое»
     for i, l in enumerate(lines):
         if l.location_id is None:
             from app.services import stock as ssvc
@@ -467,8 +474,16 @@ def receive(pid, partial=False, rack="A"):
             data[f"loc_{l.id}"] = str(dflt or locs[i % len(locs)].id)
         if partial:
             left = Decimal(l.qty) - (l.received_qty or 0)
-            data[f"qty_{l.id}"] = str(left - 1 if l is short else left)
-    post("pavel", f"/purchases/{pid}/receive", data, what="Неполная поставка" if partial else "✓ Принять полностью")
+            data[f"qty_{l.id}"] = str(0 if l is missing else (left - 1 if l is short else left))
+    what = ("Неполная поставка (одну деталь не привезли)" if missing is not None else "Неполная поставка (меньше штук)") \
+        if partial else "✓ Принять полностью"
+    post("pavel", f"/purchases/{pid}/receive", data, what=what)
+    if partial:   # накладная должна стать «неполная поставка» и быть видна и там, и в «Принятых»
+        p = one(M.Purchase, M.Purchase.id == uuid.UUID(str(pid)))
+        R.check(p.status == "partial", "неполная поставка → накладная «неполная поставка»", f"{pid}: {p.status}")
+        for tab in ("partial", "arrived"):
+            r = get("pavel", f"/purchases?tab={tab}", what=f"Закупки → {tab}")
+            R.check(r is not None and f"/purchases/{pid}" in r.text, f"неполная поставка видна во вкладке «{tab}»", str(pid))
 
 
 # ================================================================ наряд — путь машины по кнопкам
@@ -736,7 +751,7 @@ def deliveries(day):
         due = p.expected_on or day
         if due <= day:
             with at(day, f"{rnd.randint(10, 15)}:{rnd.randint(0, 59):02d}"):
-                receive(str(p.id), partial=p.status == "ordered" and rnd.random() < 0.12)
+                receive(str(p.id), partial=p.status == "ordered" and rnd.random() < 0.3)
 
 
 def step_issue(o, day, hhmm):

@@ -4,10 +4,16 @@
 <header class="page-head">
   <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Запросы на выдачу</h1></div>
   {% if can_tools or can_chem %}
-  <nav class="segmented iss-tabs" aria-label="Что выдаём">
-    <a href="/stock/issues?tab=parts" aria-pressed="{{ (tab == 'parts')|lower }}">Запчасти{% if n_parts %} · {{ n_parts }}{% endif %}</a>
-    {% if can_tools %}<a href="/stock/issues?tab=tools" aria-pressed="{{ (tab == 'tools')|lower }}">Инструмент{% if n_tools %} · {{ n_tools }}{% endif %}</a>{% endif %}
-    {% if can_chem %}<a href="/stock/issues?tab=chem" aria-pressed="{{ (tab == 'chem')|lower }}">Химия{% if n_chem %} · {{ n_chem }}{% endif %}</a>{% endif %}
+  {# 14.11.2026 (брат): вкладки — цветные плитки, как на складе и в наряде, чтобы бросались в глаза #}
+  <nav class="pult-tiles iss-tiles" aria-label="Что выдаём">
+    {% macro itile(key, title, n, color, sub) %}
+    <a class="ptile {{ 'on' if tab == key }} {{ 'zero' if not n and tab != key }}" href="/stock/issues?tab={{ key }}"
+       aria-current="{{ 'page' if tab == key else 'false' }}" style="--tc:{{ color_css(color) }}">
+      <span class="ptile-t">{{ title }}</span><b>{{ n or 0 }}</b><span class="ptile-s">{{ sub }}</span></a>
+    {% endmacro %}
+    {{ itile("parts", "Запчасти", n_parts, "blue", "ждут выдачи") }}
+    {% if can_tools %}{{ itile("tools", "Инструмент", n_tools, "orange", "просят и сдают") }}{% endif %}
+    {% if can_chem %}{{ itile("chem", "Химия", n_chem, "teal", "для мойки") }}{% endif %}
   </nav>
   {% endif %}
 </header>

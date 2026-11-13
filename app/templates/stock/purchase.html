@@ -50,7 +50,7 @@
   </div>
   {% if p.status in ("delivered", "partial") %}
   <form id="short" class="rcv-short" method="post" action="/purchases/{{ p.id }}/receive" {% if not short %}hidden{% endif %}>
-    <input type="hidden" name="all" value="{{ p.id }}">
+    <input type="hidden" name="all" value="{{ p.id }}"><input type="hidden" name="short" value="1">
     <p class="footnote" style="margin:0">Привезли не всё — впишите, сколько привезли по каждой позиции (0 — не привезли). Остальное будем ждать.</p>
     {% for l in lines if not l.received %}{% set c = cats.get(l.catalog_id) %}
     <label class="rcv-row"><span><b>{{ c.name if c else "" }}</b> <span class="caption">{{ c.brand if c }} {{ c.article if c }} · ждём {{ l.left|num }}</span></span>

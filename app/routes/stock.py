@@ -936,8 +936,23 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
     if not form.get("line_id"):
         form["all"] = str(p.id)   # без строки — принять всё по этой закупке (или сколько вписали в «Неполной поставке»)
     n, ready = _receive(ctx, form, [p])
-    left = ctx.db.get(Purchase, p.id).status == "partial"
     np_ = ctx.request.state.no_price
+    if form.get("short") and not np_:
+        # 14.11.2026 (брат): «Неполная поставка → Принять привезённое» — приёмка этой поставки закончена.
+        # Чего не привезли (вписали 0 или меньше) — ждём дальше: накладная «неполная поставка» (если что-то принято)
+        # или снова «заказано» (не привезли ничего). Раньше при 0 оставалась «привезли — ждёт приёмки» и пропадала.
+        p = ctx.db.get(Purchase, p.id)
+        if p.status == "delivered":
+            got = any(l.got > 0 for l in ctx.db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)))
+            p.status = "partial" if got else "ordered"
+            ctx.db.commit()
+        if p.status in ("partial", "ordered"):
+            wait = [ctx.db.get(PartCatalog, l.catalog_id).name for l in ctx.db.scalars(
+                select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False)))]
+            flash(ctx.request, (f"Принято: {n}. " if n else "Ничего не принято. ") + "Неполная поставка — ждём: " + ", ".join(wait[:5])
+                  + (f". Все запчасти на складе: {', '.join(ready)}" if ready else ""))
+            return _to(_safe_back(str(form.get("back", "")), f"/purchases/{pid}#lines"))
+    left = ctx.db.get(Purchase, p.id).status == "partial"
     flash(ctx.request, (f"Принято строк: {n}" if n else "Ничего не принято — впишите, сколько привезли" if not np_ else "Ничего не принято")
           + (". Неполная поставка — остальное ждём" if n and left else "")
           + (f". Все запчасти на складе: {', '.join(ready)}" if ready else "")

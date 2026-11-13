@@ -3,7 +3,7 @@
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Purchase, PurchaseLine, Supplier, WoPart
+from app.models import PartCatalog, Purchase, PurchaseLine, Supplier, WoPart
 
 from .conftest import agree
 from .test_step3 import _create
@@ -24,6 +24,47 @@ def _p(line):
 def _sup(name):
     with SessionLocal() as db:
         return db.scalar(select(Supplier.id).where(Supplier.name == name))
+
+
+def test_short_delivery_one_part_missing(client):
+    """14.11.2026 (брат): прокладку привезли, болты нет (вписали 0) → «Неполная поставка» и прокладка в «Принятых».
+    Раньше при 0 накладная оставалась «привезли — ждёт приёмки» и не была видна ни там, ни там."""
+    import uuid
+    _as(client, "oleg")
+    r = client.post("/purchases/new", data={"supplier_new": "Недовоз ЗН"})
+    pid = uuid.UUID(r.url.path.rsplit("/", 1)[1])
+    client.post(f"/purchases/{pid}/lines", data={"name": "Прокладка ЗН", "qty": "1", "price": "1850"})
+    client.post(f"/purchases/{pid}/lines", data={"name": "Болты ЗН", "qty": "1", "price": "980"})
+    client.post(f"/purchases/{pid}/ordered", data={})
+    with SessionLocal() as db:
+        ls = {db.get(PartCatalog, l.catalog_id).name: l.id
+              for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == pid))}
+    _as(client, "pavel")
+    for attempt in range(2):   # второй раз — после «Довезли остальное», а болтов снова нет
+        client.post(f"/purchases/{pid}/delivered", data={})
+        r = client.post(f"/purchases/{pid}/receive", data={"all": str(pid), "short": "1",
+                                                             f"qty_{ls['Прокладка ЗН']}": "1", f"qty_{ls['Болты ЗН']}": "0"})
+        assert "Неполная поставка — ждём: Болты ЗН" in r.text
+        with SessionLocal() as db:
+            assert db.get(Purchase, pid).status == "partial"
+        for tab in ("partial", "arrived"):
+            page = client.get(f"/purchases?tab={tab}").text
+            assert f"/purchases/{pid}" in page, (attempt, tab)
+        assert "✓ принято:</span> Прокладка ЗН" in client.get("/purchases?tab=arrived").text
+        if attempt == 0:
+            assert "Довезли остальное" in client.get("/purchases?tab=partial").text
+    # Ничего не привезли вовсе — накладная снова «Ждём»
+    _as(client, "oleg")
+    pid2 = uuid.UUID(client.post("/purchases/new", data={"supplier_new": "Недовоз ЗН"}).url.path.rsplit("/", 1)[1])
+    client.post(f"/purchases/{pid2}/lines", data={"name": "Сальник ЗН", "qty": "1", "price": "100"})
+    client.post(f"/purchases/{pid2}/ordered", data={})
+    with SessionLocal() as db:
+        l2 = db.scalar(select(PurchaseLine.id).where(PurchaseLine.purchase_id == pid2))
+    _as(client, "pavel")
+    client.post(f"/purchases/{pid2}/delivered", data={})
+    client.post(f"/purchases/{pid2}/receive", data={"all": str(pid2), "short": "1", f"qty_{l2}": "0"})
+    with SessionLocal() as db:
+        assert db.get(Purchase, pid2).status == "ordered"
 
 
 def test_order_by_wo(client):
