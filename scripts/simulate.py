@@ -1132,32 +1132,92 @@ def leave_for_today(day):
         step_price(o, day, "16:00")
         step_pick(o, day, "16:10")
         step_approve(o, day, "16:15")
-    # 13.11.2026: менеджеру — подбор готов, пора звонить клиенту (варианты фирм на выбор)
-    o = next((o for o in ACTIVE if o.born == day and o.step in ("price", "pick") and o.kind == "mechanic"), None)
-    if o:
-        if o.step == "price":
-            step_price(o, day, "16:20")
-        with at(day, "16:25"):
+    # 13.11.2026: новый порядок «подбор ↔ согласование» — отдельные машины, чтобы каждая кнопка была на сегодня.
+    def fresh_mech(hh):
+        o_ = new_order(day, "irina", hh, kind="mechanic", scen="B")
+        if o_:
+            o_.fail_plan = None   # обычная машина: без «отказался от всего» и отмены
+            step_diag(o_, day, _later(hh, 5))
+            step_price(o_, day, _later(hh, 60))
+        return o_
+
+    def option_pair(o_, hh, name, pair):
+        with at(day, hh):
             g = ""
-            for brand, cost in (("Bosch", "880"), ("TRW", "1120")):
-                post("oleg", f"{o.url}/parts", {"name": "Диск тормозной передний", "brand": brand, "qty": "2", "cost": cost,
-                                                "markup_pct": "35", "action": "option", "option_group": g}, what="Вариант на выбор клиенту")
-                g = g or (one(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group or ""
-        step_pick(o, day, "16:30")
-    # Запчастисту: менеджер согласовал с клиентом — заказ по наряду ждёт «Заказал»
-    o = next((o for o in ACTIVE if o.step in ("price", "pick") and o.kind in ("mechanic", "electrician", "motorist")
-              and o.wo() and o.wo().status == "approve"), None)
+            for brand, cost in pair:
+                post("oleg", f"{o_.url}/parts", {"name": name, "brand": brand, "qty": "2", "cost": cost, "markup_pct": "35",
+                                                 "action": "option", "option_group": g}, what="Вариант на выбор клиенту")
+                g = g or (one(M.WoPart, M.WoPart.work_order_id == o_.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group or ""
+
+    # 1) Запчастисту: подбор ещё идёт — одна деталь добавлена, «Подбор завершён» не нажат (менеджер ждёт)
+    o = fresh_mech("13:10")
     if o:
-        if o.step == "price":
-            step_price(o, day, "16:30")
-        with at(day, "16:35"):
-            post("oleg", f"{o.url}/parts", {"name": "Колодки тормозные задние (оригинал)", "article": "04466-42060",
-                                            "brand": "Toyota", "qty": "1", "cost": "2350", "markup_pct": "30", "action": "order"},
-                 what="Заказать: колодки задние (оригинал)")
-        step_pick(o, day, "16:40")
+        with at(day, "14:30"):
+            post("oleg", f"{o.url}/parts", {"name": "Сайлентблок заднего рычага", "brand": "Febi", "article": "27484",
+                                            "qty": "2", "cost": "420", "markup_pct": "35", "action": "order"}, what="Заказать (подбор идёт)")
+        o.step = "pick_wait"
+    # 2) Менеджеру: подбор готов — варианты фирм на выбор, одна позиция уже в архиве (клиент сразу отказался)
+    o = fresh_mech("13:40")
+    if o:
+        option_pair(o, "15:00", "Диск тормозной передний", (("Bosch", "880"), ("TRW", "1120")))
+        with at(day, "15:05"):
+            post("oleg", f"{o.url}/parts", {"name": "Датчик износа колодок", "brand": "Bosch", "article": "1 987 473 562",
+                                            "qty": "1", "cost": "260", "markup_pct": "40", "action": "order"}, what="Заказать: датчик")
+            post("oleg", f"{o.url}/parts", {"name": "Комплект направляющих суппорта", "brand": "Febi", "article": "38722",
+                                            "qty": "1", "cost": "390", "markup_pct": "40", "action": "order"}, what="Заказать: направляющие")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+        with at(day, "15:20"):
+            pn = next((p for p in parts_of(o) if p.name == "Комплект направляющих суппорта"), None)
+            if pn:
+                post("irina", f"{o.url}/parts/{pn.id}/delete", what="Клиент отказался — в архив")
+        o.step = "approve_wait"
+    # 3) Запчастисту: менеджер согласовал — заказ по наряду (3 строки) ждёт «Заказал» весь или по строке
+    o = fresh_mech("14:10")
+    if o:
+        with at(day, "15:30"):
+            for name, art, brand, cost in (("Колодки тормозные задние (оригинал)", "04466-42060", "Toyota", "2350"),
+                                           ("Диск тормозной задний", "DF4294", "TRW", "1380"),
+                                           ("Тормозной шланг задний", "PHB572", "TRW", "540")):
+                post("oleg", f"{o.url}/parts", {"name": name, "article": art, "brand": brand, "qty": "1", "cost": cost,
+                                                "markup_pct": "30", "action": "order"}, what=f"Заказать: {name}")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
         step_approve(o, day, "16:45", send=False)
         if o.step == "wait_parts":
             o.step = "draft"
+    # 4) Слесарю: новая машина — диагностика («новые — посмотреть»)
+    o = new_order(day, "irina", "16:05", kind="mechanic", scen="B")
+    if o:
+        o.fail_plan, o.step = None, "diag_wait"
+    # 5) Слесарю: машина «В работе» — работы ещё не отмечены (Начал / Пауза / Выполнено), запчасти выданы
+    o = fresh_mech("11:20")
+    if o:
+        with at(day, "12:30"):
+            post("oleg", f"{o.url}/parts", {"catalog_id": str(cat_id("Масло моторное 5W-30, 4 л") or ""), "name": "Масло моторное 5W-30, 4 л",
+                                            "qty": "1", "cost": "", "markup_pct": "40", "action": "auto"}, what="Со склада")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+        step_approve(o, day, "12:45")
+        if o.step == "issue":
+            step_issue(o, day, "13:00")
+        o.step = "work_wait"
+    # 6) Всем по наряду: пришла часть заказа («Пришли запчасти», зелёная цифра) — остальное ещё едет
+    o = fresh_mech("10:40")
+    if o:
+        with at(day, "11:50"):
+            for name, art, brand, cost in (("Рычаг передний левый", "TC1310", "Lemförder", "2650"),
+                                           ("Шаровая опора", "JBJ689", "TRW", "780")):
+                post("oleg", f"{o.url}/parts", {"name": name, "article": art, "brand": brand, "qty": "1", "cost": cost,
+                                                "markup_pct": "35", "action": "order"}, what=f"Заказать: {name}")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+        step_approve(o, day, "12:10", send=True)
+        lines = [l for p in q(M.Purchase, M.Purchase.work_order_id == o.id) for l in q(M.PurchaseLine, M.PurchaseLine.purchase_id == p.id)]
+        if lines:
+            with at(day, "17:00"):
+                pid = str(lines[0].purchase_id)
+                post("pavel", f"/purchases/{pid}/delivered", {"invoice": "ТТН-55120"}, what="🚚 Привезли (часть)")
+                loc = (q(M.Location, M.Location.rack == "B") or q(M.Location))[0]
+                post("pavel", "/stock/receive", {"line_id": str(lines[0].id), f"loc_{lines[0].id}": str(loc.id)},
+                     what="Принять одну строку — пришла часть")
+        o.step = "wait_parts_today"
     # Кладовщик: привезли — ждёт приёмки
     p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
     if p is None:
@@ -1261,7 +1321,7 @@ def run():
                 post(a["mgr"], f"/schedule/{a['id']}/status", {"status": "arrived", "view": "day"}, what="Приехал по записи")
             new_order(day, a["mgr"], f"{a['hh']:02d}:05", from_appt=a)
         # Машин больше среднего: 5–7 в будни, 3 в субботу
-        for _ in range(rnd.choice((5, 6, 6, 7)) if day.weekday() < 5 else 3):
+        for _ in range(rnd.choice((4, 4, 5)) if day.weekday() < 5 else 2):   # 13.11.2026: чуть меньше машин
             new_order(day, rnd.choice(MANAGERS), f"{rnd.randint(8, 14):02d}:{rnd.randint(0, 59):02d}")
         # Двигаем наряды по шагам
         approve_left = [0]
