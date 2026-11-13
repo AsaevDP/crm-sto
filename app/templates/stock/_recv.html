@@ -1,19 +1,13 @@
-{# Кнопки приёмки закупки (12.11.2026) — только кладовщик (stock.manage).
-   Заказана / неполная поставка → «🚚 Привезли»; привезли / неполная поставка → «✓ Принять полностью» и «Неполная поставка»
-   (откроется закупка с полями «сколько привезли»). Используется в Закупках, «Заказах запчастистов» и в самой закупке. #}
+{# Кнопки приёмки закупки — только кладовщик (stock.manage). 14.11.2026 (брат): шага «Привезли» больше нет —
+   у ЛЮБОЙ заказанной накладной (под наряд, на склад, химия) одни и те же две кнопки: «✓ Принять полностью» и
+   «Неполная поставка» (откроется накладная с полями «сколько привезли»). Используется в Закупках и «Заказах запчастистов». #}
 {% macro recv_btns(p, big=False) %}
 <span class="rcv-btns {{ 'big' if big }}" onclick="event.stopPropagation()">
-  {% if p.status in ("ordered", "partial") %}
-  <form method="post" action="/purchases/{{ p.id }}/delivered"><input type="hidden" name="back" value="{{ ctx.request.url.path }}?{{ ctx.request.url.query }}">
-    {# 14.11.2026: после неполной поставки — «Довезли остальное», чтобы не путать с подтверждением приёмки #}
-    {% if p.status == "partial" %}<button class="btn btn-sm {{ 'btn-gray' if not big }}" title="Поставщик довёз то, чего не было — пересчитаю и приму">🚚 Довезли остальное</button>
-    {% else %}<button class="btn btn-sm {{ 'btn-gray' if not big }}" title="Товар привезли на СТО — пересчитаю и приму">🚚 Привезли</button>{% endif %}</form>
-  {% endif %}
-  {% if p.status in ("delivered", "partial") %}
-  <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять всю накладную на склад?')">
+  {% if p.status in ("ordered", "delivered", "partial") %}
+  <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять {{ 'всё остальное' if p.status == 'partial' else 'всю накладную' }} на склад?')">
     <input type="hidden" name="all" value="{{ p.id }}"><input type="hidden" name="back" value="{{ ctx.request.url.path }}?{{ ctx.request.url.query }}">
-    <button class="btn btn-sm">✓ Принять полностью</button></form>
-  <a class="btn btn-sm btn-gray" href="/purchases/{{ p.id }}?short=1#lines">Неполная поставка</a>
+    <button class="btn btn-sm">✓ Принять {{ "остальное" if p.status == "partial" else "полностью" }}</button></form>
+  <a class="btn btn-sm btn-gray" href="/purchases/{{ p.id }}?short=1#short">Неполная поставка</a>
   {% endif %}
 </span>
 {% endmacro %}

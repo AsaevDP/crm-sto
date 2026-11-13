@@ -288,8 +288,7 @@ def populate():
         p = ssvc.draft_purchase(db, branch.id, None, wo.id)   # закупка Олега под этот наряд
         p.supplier_id, p.status, p.supplier_invoice = sup2.id, "ordered", "ЭУ-78111"
         p.ordered_on, p.expected_on = _date.today() - _td(days=3), _date.today() - _td(days=1)
-        as_user("pavel")   # 12.11.2026: привезли — кладовщик ещё не принял («Привезли — ждут приёмки»)
-        ssvc.mark_delivered(db, p, users["pavel"])
+        # 14.11.2026: шага «Привезли» нет — накладная в «Ждём», срок вчера (опаздывает), кладовщик примет руками
 
         # 6) Запчасти на складе, слесарь просит выдать → у кладовщика окошко (пост 5)
         wo = intake(3, "A", 5, works="Замена передних тормозных колодок\nЗамена передних тормозных дисков",

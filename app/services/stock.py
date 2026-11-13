@@ -408,7 +408,7 @@ def set_line_supplier(db: Session, line: PurchaseLine, supplier_id) -> Purchase 
 
 def order_line(db: Session, line: PurchaseLine, user_id, expected_on=None) -> Purchase | None:
     """«Заказал» по детали: строка — в заказанную накладную этого наряда у этого поставщика (пока кладовщик не отметил
-    «Привезли» — в ту же, иначе новая) и сразу видна кладовщику в «Приходе». Без поставщика — нельзя (None)."""
+    ничего не принял — в ту же, иначе новая) и сразу видна кладовщику в «Приходе». Без поставщика — нельзя (None)."""
     from datetime import date as _d
     from ..db import now
     src = db.get(Purchase, line.purchase_id)
@@ -454,7 +454,7 @@ def set_draft_supplier(db: Session, p: Purchase, supplier_id) -> Purchase:
 
 def order_draft(db: Session, p: Purchase, user_id, expected_on=None) -> Purchase | None:
     """Весь черновик заказан («✓ Заказал всё»): он и становится накладной; если у этого поставщика по наряду
-    накладная уже едет (кладовщик ещё не отметил «Привезли») — строки туда. Без поставщика — None."""
+    накладная уже едет (кладовщик по ней ещё ничего не принял) — строки туда. Без поставщика — None."""
     from datetime import date as _d
     from ..db import now
     if p.status != "draft":
@@ -773,8 +773,10 @@ def arrived_notify(db: Session, parts: list, before: dict):
         notify.parts_arrived(db, wo, lst)
 
 
-# Закупка ждёт приёмки: заказана / привезли (кладовщик отметил, ещё не принял) / неполная поставка (ждём остальное)
-OPEN = ("ordered", "delivered", "partial")
+# Закупка ждёт приёмки: заказана («Ждём») / неполная поставка (часть принята, ждём остальное).
+# 14.11.2026 (брат): шага «Привезли — ждут приёмки» больше нет — CRM узнаёт о поставке только когда кладовщик
+# принимает: «✓ Принять полностью» или «Неполная поставка». Одинаково для всех закупок (под наряд, на склад, химия).
+OPEN = ("ordered", "partial")
 
 
 def refresh_purchase_status(db: Session, p: Purchase):
@@ -785,19 +787,23 @@ def refresh_purchase_status(db: Session, p: Purchase):
         p.status = "arrived"
     elif any(l.got > 0 for l in lines):
         p.status = "partial"
-    elif p.status != "delivered":
+    else:
         p.status = "ordered"
 
 
+def fix_delivered(db: Session):
+    """Старые накладные «Привезли — ждут приёмки» → «Ждём» (или «Неполная поставка», если часть уже принята)."""
+    for p in db.scalars(select(Purchase).where(Purchase.status == "delivered")).all():
+        p.status = "ordered"
+        refresh_purchase_status(db, p)
+
+
 def mark_delivered(db: Session, p: Purchase, user, invoice: str = "") -> bool:
-    """Кладовщик: «Привезли» — товар на СТО, ждёт приёмки. Запчастист видит это в «Моих заказах»."""
-    from ..db import now
-    if p.status not in ("ordered", "partial"):
-        return False
-    p.status, p.delivered_at, p.delivered_by = "delivered", now(), user.id
-    if invoice.strip():
+    """Шага «Привезли» больше нет (14.11.2026). Осталось только записать № накладной, если его прислали."""
+    if p.status in OPEN and invoice.strip():
         p.supplier_invoice = invoice.strip()[:80]
-    return True
+        return True
+    return False
 
 
 def move_rest(db: Session, branch_id, line: PurchaseLine, target: Purchase | None) -> PurchaseLine | None:
@@ -966,7 +972,6 @@ def backfill_categories(db: Session):
 # ======================= Заказы запчастистов (12.11.2026) =======================
 # Кто заказал = created_by закупки (или строки, если добавил в чужую). Пришло — по приходу на склад (received_qty).
 ORDER_STATES = {"draft": ("Черновики", "gray", "ещё не отправлено"), "wait": ("Заказано", "orange", "ждём от поставщика"),
-                "delivered": ("Привезли — ждут приёмки", "teal", "кладовщик проверяет"),
                 "partial": ("Неполная поставка", "purple", "ждём остальное"), "late": ("Опаздывают", "red", "срок прошёл"),
                 "arrived": ("Приняты на склад", "green", "за 60 дней")}
 
@@ -991,8 +996,6 @@ def partsman_lines(db: Session, branch_id, uid=None, days: int = 60) -> list[dic
             when = l.updated_at or p.updated_at
             if when and when.replace(tzinfo=when.tzinfo or timezone.utc) < since:
                 continue
-        elif p.status == "delivered":
-            st = "delivered"          # привезли — кладовщик пересчитывает и принимает
         elif l.got > 0:
             st = "partial"
         else:

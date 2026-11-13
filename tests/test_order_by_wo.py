@@ -40,8 +40,7 @@ def test_short_delivery_one_part_missing(client):
         ls = {db.get(PartCatalog, l.catalog_id).name: l.id
               for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == pid))}
     _as(client, "pavel")
-    for attempt in range(2):   # второй раз — после «Довезли остальное», а болтов снова нет
-        client.post(f"/purchases/{pid}/delivered", data={})
+    for attempt in range(2):   # второй раз — опять привезли без болтов
         r = client.post(f"/purchases/{pid}/receive", data={"all": str(pid), "short": "1",
                                                              f"qty_{ls['Прокладка ЗН']}": "1", f"qty_{ls['Болты ЗН']}": "0"})
         assert "Неполная поставка — ждём: Болты ЗН" in r.text
@@ -51,8 +50,8 @@ def test_short_delivery_one_part_missing(client):
             page = client.get(f"/purchases?tab={tab}").text
             assert f"/purchases/{pid}" in page, (attempt, tab)
         assert "✓ принято:</span> Прокладка ЗН" in client.get("/purchases?tab=arrived").text
-        if attempt == 0:
-            assert "Довезли остальное" in client.get("/purchases?tab=partial").text
+        page = client.get("/purchases?tab=partial").text
+        assert "Принять остальное" in page and "Довезли остальное" not in page and "🚚 Привезли" not in page
     # Ничего не привезли вовсе — накладная снова «Ждём»
     _as(client, "oleg")
     pid2 = uuid.UUID(client.post("/purchases/new", data={"supplier_new": "Недовоз ЗН"}).url.path.rsplit("/", 1)[1])
@@ -61,7 +60,6 @@ def test_short_delivery_one_part_missing(client):
     with SessionLocal() as db:
         l2 = db.scalar(select(PurchaseLine.id).where(PurchaseLine.purchase_id == pid2))
     _as(client, "pavel")
-    client.post(f"/purchases/{pid2}/delivered", data={})
     client.post(f"/purchases/{pid2}/receive", data={"all": str(pid2), "short": "1", f"qty_{l2}": "0"})
     with SessionLocal() as db:
         assert db.get(Purchase, pid2).status == "ordered"
@@ -135,17 +133,12 @@ def test_order_by_wo(client):
         assert db.get(WoPart, _line("Стойка ЗН").wo_part_id).status == "reserved"
 
     # 14.11.2026 (брат): неполная поставка — принятая деталь сразу в «Принятых», не ждёт остальных.
-    # Даже если потом нажали «Довезли остальное» (накладная снова «привезли — ждёт приёмки»).
     po = _p(_line("Шланг ЗН"))
     _as(client, "oleg")
     client.post(f"/purchases/{po.id}/lines", data={"name": "Хомут ЗН", "qty": "1", "price": "50"})
     _as(client, "pavel")
-    client.post(f"/purchases/{po.id}/delivered", data={})
     client.post("/stock/receive", data={"line_id": str(_line("Шланг ЗН").id)})
     assert _p(_line("Шланг ЗН")).status == "partial"
     page = client.get("/purchases?tab=arrived").text
     assert f"/purchases/{po.id}" in page and "✓ принято:" in page and "ждём: Хомут ЗН" in page
-    assert "Довезли остальное" in page
-    client.post(f"/purchases/{po.id}/delivered", data={})          # «Довезли остальное»
-    page = client.get("/purchases?tab=arrived").text
-    assert f"/purchases/{po.id}" in page and "довезли, ждёт приёмки: Хомут ЗН" in page
+    assert f"/purchases/{po.id}" in client.get("/purchases?tab=wait").text   # хомут ещё ждём

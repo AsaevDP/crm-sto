@@ -11,7 +11,7 @@
 {% set n_orders = lines|selectattr("wo_part_id")|list|length %}
 <header class="ov-head">
   {% if p.kind == "chem" and ctx.can("wash.view") %}<a class="back" href="/wash?tab=buy">{{ icon("back") }}Мойка · закупка химии</a>
-  {% else %}<a class="back" href="/purchases?tab={{ {'draft': 'draft', 'ordered': 'wait', 'delivered': 'delivered', 'partial': 'partial', 'arrived': 'arrived'}[p.status] }}">{{ icon("back") }}Закупки</a>{% endif %}
+  {% else %}<a class="back" href="/purchases?tab={{ {'draft': 'draft', 'ordered': 'wait', 'delivered': 'wait', 'partial': 'partial', 'arrived': 'arrived'}[p.status] }}">{{ icon("back") }}Закупки</a>{% endif %}
   <div class="ov-title">
     <div><h1 class="title-1">{% if p.kind == "chem" %}🧴 {% endif %}{{ supplier.name if supplier else "Закупка без поставщика" }}</h1>
       <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div>
@@ -21,37 +21,31 @@
   </div>
 </header>
 
-{# Приёмка (12.11.2026): только кладовщик. «Привезли» → «Принять полностью» или «Неполная поставка» (вписать, сколько привезли).
-   Запчастист и остальные только видят этап. #}
+{# Приёмка — только кладовщик. 14.11.2026 (брат): шага «Привезли» нет. Заказано → приёмка на склад:
+   «✓ Принять полностью» или «Неполная поставка» (вписать, сколько привезли; 0 — не привезли, будем ждать).
+   Одинаково для любой накладной: под наряд, на склад, химия. Остальные видят этап. #}
 {% if p.status in ("ordered", "delivered", "partial") %}
-<section class="card compact rcv-card {{ 'now' if p.status == 'delivered' }}">
+<section class="card compact rcv-card now">
   <div class="rcv-steps">
-    <span class="{{ 'done' }}">1. Заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}</span>
-    <span class="{{ 'done' if p.status in ('delivered', 'partial') }} {{ 'now' if p.status == 'ordered' }}">2. Привезли{% if p.delivered_at %} {{ p.delivered_at.astimezone().strftime("%d.%m %H:%M") }}{% if p.delivered_by in people %} · {{ people[p.delivered_by].short_name }}{% endif %}{% endif %}</span>
-    <span class="{{ 'now' if p.status in ('delivered', 'partial') }}">3. Приёмка на склад{% if p.status == "partial" %} · неполная поставка: принято {{ n_got }} из {{ lines|length }}{% endif %}</span>
+    <span class="done">1. Заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}</span>
+    <span class="now">2. Приёмка на склад{% if p.status == "partial" %} · неполная поставка: принято {{ n_got }} из {{ lines|length }}, остальное ждём{% else %} · ждём{% endif %}</span>
   </div>
   {% if recv %}
   <div class="rcv-acts">
-    {% if p.status in ("ordered", "partial") %}
-    <form method="post" action="/purchases/{{ p.id }}/delivered" class="form-row">
-      <input class="field" name="invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной (необязательно)" aria-label="Номер накладной">
-      <button class="btn">🚚 Привезли</button></form>
-    {% endif %}
-    {% if p.status in ("delivered", "partial") %}
-    <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять всю накладную на склад?')">
+    <form method="post" action="/purchases/{{ p.id }}/receive" class="form-row" onsubmit="return confirm('Принять {{ 'всё остальное' if p.status == 'partial' else 'всю накладную' }} на склад?')">
       <input type="hidden" name="all" value="{{ p.id }}">
+      <input class="field" name="invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной" title="Номер накладной поставщика — необязательно" aria-label="Номер накладной" style="min-width:150px">
       {% for l in lines if not l.received %}{% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}{% endfor %}
-      <button class="btn">✓ Принять полностью · {{ lines|length - n_got }} поз.</button></form>
+      <button class="btn">✓ Принять {{ "остальное" if p.status == "partial" else "полностью" }} · {{ lines|length - n_got }} поз.</button></form>
+    <button class="btn btn-gray" type="button" onclick="document.getElementById('short').hidden = false; document.getElementById('short').scrollIntoView({block: 'center'})">Неполная поставка</button>
     {% set no_pr = lines|rejectattr("received")|selectattr("price", "le", 0)|list %}
     {% if no_pr %}<p class="hint warn" style="margin:0">Нет цены из накладной: {{ no_pr|length }} поз. — впишите «₴ за шт» в строке
       или в «Неполной поставке», иначе эти позиции не примутся.</p>{% endif %}
-    <button class="btn btn-gray" type="button" onclick="document.getElementById('short').hidden = false; document.getElementById('short').scrollIntoView({block: 'center'})">Неполная поставка</button>
-    {% endif %}
   </div>
-  {% if p.status in ("delivered", "partial") %}
   <form id="short" class="rcv-short" method="post" action="/purchases/{{ p.id }}/receive" {% if not short %}hidden{% endif %}>
     <input type="hidden" name="all" value="{{ p.id }}"><input type="hidden" name="short" value="1">
     <p class="footnote" style="margin:0">Привезли не всё — впишите, сколько привезли по каждой позиции (0 — не привезли). Остальное будем ждать.</p>
+    <input class="field" name="invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной" title="Номер накладной поставщика — необязательно" aria-label="Номер накладной" style="min-width:150px">
     {% for l in lines if not l.received %}{% set c = cats.get(l.catalog_id) %}
     <label class="rcv-row"><span><b>{{ c.name if c else "" }}</b> <span class="caption">{{ c.brand if c }} {{ c.article if c }} · ждём {{ l.left|num }}</span></span>
       <input class="field" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" aria-label="Сколько привезли">
@@ -62,8 +56,7 @@
     <div class="form-row"><button class="btn">Принять привезённое</button>
       <button class="btn btn-plain" type="button" onclick="this.closest('form').hidden = true">Отмена</button></div>
   </form>
-  {% endif %}
-  {% elif p.status == "delivered" %}<p class="footnote" style="margin:0">Привезли — кладовщик пересчитывает и принимает на склад.</p>
+  {% else %}<p class="footnote" style="margin:0">Ждём от поставщика. Когда привезут, кладовщик примет на склад.</p>
   {% endif %}
 </section>
 {% endif %}

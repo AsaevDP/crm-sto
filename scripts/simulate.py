@@ -450,13 +450,13 @@ def first_stock():
 
 
 def receive(pid, partial=False, rack="A"):
-    """Кладовщик: «Привезли» → «Принять полностью» (или «Неполная поставка» — вписал, сколько привезли)."""
+    """Кладовщик: «✓ Принять полностью» или «Неполная поставка» (вписал, сколько привезли)."""
     if not pid:
         return
-    post("pavel", f"/purchases/{pid}/delivered", {"invoice": f"ТТН-{rnd.randint(10000, 99999)}"}, what="🚚 Привезли")
+    # 14.11.2026 (брат): шага «Привезли» нет — кладовщик сразу принимает и вписывает № накладной
     lines = q(M.PurchaseLine, M.PurchaseLine.purchase_id == uuid.UUID(str(pid)), M.PurchaseLine.received.is_(False))
     locs = q(M.Location, M.Location.rack == rack) or q(M.Location)
-    data = {"all": pid}
+    data = {"all": pid, "invoice": f"ТТН-{rnd.randint(10000, 99999)}"}
     # 14.11.2026 (брат): неполная поставка бывает двух видов — одной детали меньше штук или одну деталь НЕ привезли
     # совсем (0). Раньше прогон делал только первый, и ошибка «0 → накладная пропадает» не ловилась.
     short = next((l for l in lines if Decimal(l.qty) - (l.received_qty or 0) >= 2), None)
@@ -1235,7 +1235,6 @@ def leave_for_today(day):
         if lines:
             with at(day, "17:00"):
                 pid = str(lines[0].purchase_id)
-                post("pavel", f"/purchases/{pid}/delivered", {"invoice": "ТТН-55120"}, what="🚚 Привезли (часть)")
                 loc = (q(M.Location, M.Location.rack == "B") or q(M.Location))[0]
                 post("pavel", "/stock/receive", {"line_id": str(lines[0].id), f"loc_{lines[0].id}": str(loc.id)},
                      what="Принять одну строку — пришла часть")
@@ -1275,14 +1274,12 @@ def leave_for_today(day):
         with at(day, "17:35"):
             post("irina", f"{o.url}/masters", {"user_id": str(uid("moyka")), "work": "Мойка кузова после ремонта"},
                  what="Добавить мастера: мойщик")
-    # Кладовщик: привезли — ждёт приёмки
+    # Кладовщик: накладная ждёт — принять на склад руками
     p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
     if p is None:
         restock(day)
         p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
-    if p:
-        with at(day, "17:05"):
-            post("pavel", f"/purchases/{p.id}/delivered", {"invoice": f"ТТН-{rnd.randint(10000, 99999)}"}, what="🚚 Привезли (принять — руками)")
+    # 14.11.2026: шага «Привезли» нет — накладная просто ждёт в «Ждём», принять — руками
     # Мастер просит выдать, кладовщик ещё не выдал; второй наряд — «Готово к выдаче», менеджер не забрал
     issue = [o for o in ACTIVE if o.wo() and o.wo().status == "instock"]
     for i, o in enumerate(issue[:2]):

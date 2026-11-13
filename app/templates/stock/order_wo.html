@@ -75,7 +75,7 @@
   {% for r in g.rows %}
   <div class="kv"><span><b style="color:var(--text)">{{ r.c.name if r.c else "" }}</b> <span class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</span></span>
     <b class="nowrap">{{ r.l.got|num }} из {{ r.l.qty|num }} ·
-      {% if r.l.received %}<span class="ok-hint">✓ на складе</span>{% elif r.p.status == "delivered" %}привезли, кладовщик принимает{% elif r.l.got > 0 %}пришла часть{% else %}едет{% endif %}</b></div>
+      {% if r.l.received %}<span class="ok-hint">✓ на складе</span>{% elif r.l.got > 0 %}пришла часть{% else %}едет{% endif %}</b></div>
   {% endfor %}
   <div class="caption" style="margin-top:6px">{% for p in g.ps %}<a href="/purchases/{{ p.id }}">накладная от {{ (p.ordered_on or p.created_at).strftime("%d.%m") }}</a>{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</div>
 </div>

@@ -1896,3 +1896,14 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
   .iss-tiles .ptile { width: auto; flex: 1 1 0; min-width: 0; }
   .iss-tiles .ptile-s { display: none; }
 }
+
+/* «Моя зарплата» (14.11.2026): итоги работ строкой + выплаты рядом, таблица на всю ширину */
+.pay-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 12px; margin-bottom: 12px; align-items: stretch; }
+.pay-top > .card { margin: 0; }
+.pay-kpis { display: flex; flex-wrap: wrap; gap: 10px 32px; }
+.pay-kpis > div { display: grid; gap: 2px; }
+.pay-kpis b { font: 700 22px/1.15 var(--font-display, inherit); font-variant-numeric: tabular-nums; }
+.pay-grid-full .tablewrap { width: 100%; }
+.pay-grid-full .table td.num, .pay-grid-full .table th.num { white-space: nowrap; }
+@media (max-width: 760px) { .pay-top { grid-template-columns: minmax(0, 1fr); } .pay-kpis { gap: 8px 22px; } .pay-kpis b { font-size: 19px; } }
+.pay-top > .card { display: flex; flex-direction: column; justify-content: flex-start; }

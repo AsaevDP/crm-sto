@@ -186,10 +186,12 @@ def compute(ctx) -> dict:
     if ctx.can("stock.manage"):
         _add(out, "/stock", "yellow", db.scalar(
             select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
-            .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "delivered", "partial")),
+            .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")),
                    PurchaseLine.received.is_(False))) or 0, "ждём приход", "/stock/receive")
+        # 14.11.2026 (брат): шага «Привезли» больше нет — у «Закупок» цифра: сколько накладных ждём
         _add(out, "/purchases", "yellow", db.scalar(select(func.count()).select_from(Purchase).where(
-            Purchase.branch_id == bid, Purchase.status == "delivered")) or 0, "привезли — принять", "/purchases?tab=delivered")
+            Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")))) or 0, "ждём — принять, когда привезут",
+             "/purchases?tab=wait")
 
     # ---------- Мои заказы (запчастист) ----------
     if ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman"):
@@ -199,8 +201,6 @@ def compute(ctx) -> dict:
         # 12.11.2026: черновик под наряд не отправлен поставщику — в наряде это «в черновике», кладовщик ждёт
         _add(out, "/my-orders", "yellow", len(ssvc.draft_waits(db, bid, me.id)), "черновики под наряды — нажмите «✓ Заказал»",
              "/my-orders?st=draft")
-        _add(out, "/my-orders", "yellow", sum(1 for r in rows if r["st"] == "delivered"), "привезли — кладовщик принимает",
-             "/my-orders?st=delivered")
         _add(out, "/my-orders", "green", sum(1 for r in rows if r["st"] == "arrived"), "приняты на склад сегодня",
              "/my-orders?st=arrived")
 

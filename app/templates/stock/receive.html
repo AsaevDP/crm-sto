@@ -42,7 +42,7 @@
   <div class="card-h">
     <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.invoices %} <span class="caption">· счёт {{ g.invoices|join(", ") }}</span>{% endif %}
       {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
-      {% if g.delivered %}<span class="chip" data-s="diag">🚚 привезли</span>{% endif %}</span>
+      </span>
     <span class="ov-actions">{% if g.ps|length == 1 %}<a class="btn btn-plain btn-sm" href="/purchases/{{ g.ps[0].id }}">Накладная</a>{% else %}<span class="caption">накладных: {{ g.ps|length }}</span>{% endif %}
       <button class="btn btn-sm" name="sup" value="{{ g.key }}">Принять всё · {{ g.rows|length }}</button></span>
   </div>

@@ -33,6 +33,8 @@ async def lifespan(_app):
         backfill_barcodes(db)
         from .services.stock import fix_half_ordered
         fix_half_ordered(db)   # 13.11.2026: «Заказал» по строке — сразу в накладную у кладовщика
+        from .services.stock import fix_delivered
+        fix_delivered(db)      # 14.11.2026: шага «Привезли» нет — такие накладные снова «Ждём» / «Неполная поставка»
         from sqlalchemy import select
         from .models import Branch
         from .services import brands

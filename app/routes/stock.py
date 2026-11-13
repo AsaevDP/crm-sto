@@ -16,9 +16,9 @@ from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
 
 router = APIRouter()
-PURCHASE_STATUS = {"draft": "Черновик", "ordered": "Заказана", "delivered": "Привезли — ждёт приёмки",
+PURCHASE_STATUS = {"draft": "Черновик", "ordered": "Ждём", "delivered": "Ждём",   # «delivered» — старое, см. fix_delivered
                    "partial": "Неполная поставка", "arrived": "Принята на склад"}
-PURCHASE_CHIP = {"draft": "created", "ordered": "waiting", "delivered": "diag", "partial": "picking", "arrived": "ready"}
+PURCHASE_CHIP = {"draft": "created", "ordered": "waiting", "delivered": "waiting", "partial": "picking", "arrived": "ready"}
 
 
 def _safe_back(v: str, default: str) -> str:
@@ -388,13 +388,12 @@ def issue_request(order_id: str, ctx: Ctx = Depends(get_ctx), comment: str = For
 
 
 # ======================= Закупки =======================
-# 12.11.2026: «Привезли — ждут приёмки» и «Неполная поставка» — отдельно, кладовщику сразу видно, что принимать
+# 14.11.2026 (брат): шага «Привезли — ждут приёмки» нет. Всё заказанное — в «Ждём», пока кладовщик не примет:
+# «✓ Принять полностью» или «Неполная поставка». Неполная — и в «Ждём» (остальное едет), и в «Принятых» (часть на складе).
 PURCHASE_TABS = {"draft": ("Черновики", "gray", "собираем заказ"), "wait": ("Ждём", "orange", "заказано, едет"),
-                 "delivered": ("Привезли — ждут приёмки", "teal", "кладовщик пересчитывает"),
                  "partial": ("Неполная поставка", "purple", "часть принята, ждём остальное"),
                  "arrived": ("Приняты", "green", "на складе, и частично"), "all": ("Все", "blue", "за всё время")}
-_TAB_STATUS = {"draft": ("draft",), "wait": ("ordered",), "delivered": ("delivered",), "partial": ("partial",),
-               "arrived": ("arrived",)}
+_TAB_STATUS = {"draft": ("draft",), "wait": ("ordered", "partial"), "partial": ("partial",), "arrived": ("arrived",)}
 
 
 def _in_tab(p: Purchase, tab: str, got_any: set) -> bool:
@@ -420,8 +419,8 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     counts = {k: sum(_in_tab(p, k, got_any) for p in allp) for k in _TAB_STATUS}
     counts["all"] = len(allp)
     if tab not in PURCHASE_TABS:
-        # кладовщику первым делом — что привезли; остальным — черновики / что ждём
-        tab = next((k for k in (("delivered",) if ctx.can("stock.manage") else ()) + ("draft", "wait") if counts[k]), "all")
+        # кладовщику первым делом — что ждём (принять, когда привезут); остальным — черновики / что ждём
+        tab = next((k for k in (("wait",) if ctx.can("stock.manage") else ()) + ("draft", "wait") if counts[k]), "all")
     rows = [p for p in allp if _in_tab(p, tab, got_any)]
     if sup:
         rows = [p for p in rows if str(p.supplier_id) == sup]
@@ -516,7 +515,7 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
     for p in sorted((x for x in db.scalars(select(User).where(User.id.in_(list(ids))))), key=lambda x: x.full_name):
         mine = [r for r in all_rows if r["buyer"] and r["buyer"].id == p.id]
         c = svc.order_counts(mine)
-        tiles.append({"u": p, "wait": c["wait"] + c["partial"] + c["delivered"], "delivered": c["delivered"], "late": c["late"],
+        tiles.append({"u": p, "wait": c["wait"] + c["partial"], "late": c["late"],
                       "arrived": c["arrived"], "draft": c["draft"]})
     who = db.get(User, _uuid(u)) if u else None
     if who and who.branch_id != ctx.branch.id:
@@ -935,17 +934,17 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
     form = dict(await ctx.request.form())
     if not form.get("line_id"):
         form["all"] = str(p.id)   # без строки — принять всё по этой закупке (или сколько вписали в «Неполной поставке»)
+    if str(form.get("invoice", "")).strip():   # № накладной поставщика — вписывают при приёмке (необязательно)
+        p.supplier_invoice = str(form["invoice"]).strip()[:80]
     n, ready = _receive(ctx, form, [p])
     np_ = ctx.request.state.no_price
     if form.get("short") and not np_:
         # 14.11.2026 (брат): «Неполная поставка → Принять привезённое» — приёмка этой поставки закончена.
         # Чего не привезли (вписали 0 или меньше) — ждём дальше: накладная «неполная поставка» (если что-то принято)
-        # или снова «заказано» (не привезли ничего). Раньше при 0 оставалась «привезли — ждёт приёмки» и пропадала.
+        # или «Ждём» (не привезли ничего).
         p = ctx.db.get(Purchase, p.id)
-        if p.status == "delivered":
-            got = any(l.got > 0 for l in ctx.db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)))
-            p.status = "partial" if got else "ordered"
-            ctx.db.commit()
+        svc.refresh_purchase_status(ctx.db, p)
+        ctx.db.commit()
         if p.status in ("partial", "ordered"):
             wait = [ctx.db.get(PartCatalog, l.catalog_id).name for l in ctx.db.scalars(
                 select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False)))]
@@ -963,12 +962,11 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/purchases/{pid}/delivered")
 def purchase_delivered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form(""), invoice: str = Form("")):
-    """Кладовщик: «Привезли» — товар на СТО, пересчитает и примет. Запчастист отметить не может, только видит."""
+    """14.11.2026: шага «Привезли» больше нет — адрес оставлен для старых ссылок: записывает только № накладной."""
     ctx.need("stock.manage")
     p = _purchase(ctx, pid)
     if svc.mark_delivered(ctx.db, p, ctx.user, invoice):
         ctx.db.commit()
-        flash(ctx.request, "Отмечено: привезли — ждёт приёмки")
     return _to(_safe_back(back, f"/purchases/{pid}"))
 
 
@@ -1941,9 +1939,8 @@ def _receive_lines(ctx: Ctx, who: str = ""):
         g["rows"].sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["wo"].number if r["wo"] else "",
                                       r["c"].name if r["c"] else ""))
         g["urgent"] = any(r["urgent"] for r in g["rows"])
-        g["delivered"] = any(p.status == "delivered" for p in g["ps"])
         g["invoices"] = [p.supplier_invoice for p in g["ps"] if p.supplier_invoice]
-    groups.sort(key=lambda g: (not g["urgent"], not g["delivered"], g["sup"].name if g["sup"] else "я"))
+    groups.sort(key=lambda g: (not g["urgent"], g["sup"].name if g["sup"] else "я"))
     return groups
 
 

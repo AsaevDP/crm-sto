@@ -53,7 +53,7 @@
         {# 14.11.2026: неполная поставка — что уже принято на склад и чего ждём, по деталям #}
         {% if p.status != "arrived" and s.got_names %}
         <div class="caption"><span class="ok-hint">✓ принято:</span> {{ s.got_names|join(", ") }}</div>
-        {% if s.left_names %}<div class="caption">{{ "довезли, ждёт приёмки" if p.status == "delivered" else "ждём" }}: {{ s.left_names|join(", ") }}</div>{% endif %}
+        {% if s.left_names %}<div class="caption">ждём: {{ s.left_names|join(", ") }}</div>{% endif %}
         {% endif %}
         {% if recv_ok and p.status in ("ordered", "delivered", "partial") %}{{ recv_btns(p) }}{% endif %}</td>
       <td class="num nowrap">{% if p.status != "arrived" and s.got_names %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>

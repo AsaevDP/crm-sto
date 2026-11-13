@@ -84,35 +84,28 @@ def test_partsman_orders(client):
     assert client.post(f"/purchases/{pb.id}/ordered", data={}).status_code == 403
     _as(client, "oleg")
 
-    # Отправили поставщику. «Привезли» и приёмку отмечает только кладовщик — запчастисту нельзя
+    # Отправили поставщику. Приёмку отмечает только кладовщик — запчастисту нельзя.
+    # 14.11.2026 (брат): шага «Привезли» нет — у любой заказанной накладной сразу «Принять полностью» / «Неполная поставка»
     client.post(f"/purchases/{pb.id}", data={"action": "ordered", "supplier_new": "ПО-поставщик 2"})
-    assert client.post(f"/purchases/{pa.id}/delivered", data={}).status_code == 403
     assert client.post(f"/purchases/{pa.id}/receive", data={}).status_code == 403
-    assert "🚚 Привезли" not in client.get(f"/purchases/{pa.id}").text
+    assert "Принять полностью" not in client.get(f"/purchases/{pa.id}").text
     _as(client, "pavel")
     page = client.get(f"/purchases/{pa.id}").text
-    assert "🚚 Привезли" in page and "Принять полностью" not in page
-    client.post(f"/purchases/{pa.id}/delivered", data={"invoice": "НК-777"})
-    with SessionLocal() as db:
-        p_ = db.get(Purchase, pa.id)
-        assert p_.status == "delivered" and p_.supplier_invoice == "НК-777" and p_.delivered_by == _uid("pavel")
-    page = client.get("/purchases?tab=delivered").text
-    assert "Привезли — ждут приёмки" in page and f"/purchases/{pa.id}" in page and "Принять полностью" in page
-    _as(client, "oleg")
-    assert "привезли, кладовщик принимает" in client.get("/my-orders").text
-    _as(client, "pavel")
-    # Неполная поставка по второму наряду: привезли 0 из 1 → ничего не принято; в первом — потом полностью
-    client.post(f"/purchases/{pb.id}/delivered", data={})
+    assert "Принять полностью" in page and "Неполная поставка" in page and "🚚 Привезли" not in page
+    page = client.get("/purchases?tab=wait").text
+    assert "Привезли — ждут приёмки" not in page and f"/purchases/{pa.id}" in page and "Принять полностью" in page
+    # Неполная поставка по второму наряду: привезли 0 из 1 → ничего не принято, ждём дальше
     lb = _purchase_line("Фильтр ПО-тест")
-    client.post(f"/purchases/{pb.id}/receive", data={"all": str(pb.id), f"qty_{lb}": "0"})
+    client.post(f"/purchases/{pb.id}/receive", data={"all": str(pb.id), "short": "1", f"qty_{lb}": "0", "invoice": "НК-777"})
     with SessionLocal() as db:
-        assert db.get(Purchase, pb.id).status == "delivered"
+        assert db.get(Purchase, pb.id).status == "ordered" and db.get(Purchase, pb.id).supplier_invoice == "НК-777"
     la = _purchase_line("Колодки ПО-тест")
-    client.post(f"/purchases/{pa.id}/receive", data={"all": str(pa.id), f"qty_{la}": "1"})   # из 3 привезли 1
+    client.post(f"/purchases/{pa.id}/receive", data={"all": str(pa.id), "short": "1", f"qty_{la}": "1"})   # из 3 привезли 1
     with SessionLocal() as db:
         assert db.get(Purchase, pa.id).status == "partial"
     assert "Неполная поставка" in client.get(f"/purchases/{pa.id}").text
-    client.post(f"/purchases/{pa.id}/delivered", data={})   # довезли остальное
+    assert f"/purchases/{pa.id}" in client.get("/purchases?tab=wait").text   # остальное ещё ждём
+    assert "Принять остальное" in client.get(f"/purchases/by-partsman?u={oleg}").text
     assert "Принять полностью" in client.get(f"/purchases/by-partsman?u={oleg}").text
     menu = client.get("/stock").text
     assert 'href="/purchases/by-partsman"' in menu and 'href="/my-orders"' not in menu
