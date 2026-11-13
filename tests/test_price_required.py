@@ -44,6 +44,7 @@ def test_price_required_for_picking_and_receiving(client):
         db.commit()
         pid, lid = line.purchase_id, line.id
     _as(client, "oleg")
+    client.post(f"/purchases/{pid}", data={"action": "save", "supplier_new": "Цена-поставщик"})   # без поставщика не заказать
     client.post(f"/purchases/{pid}/ordered", data={})
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/delivered", data={})

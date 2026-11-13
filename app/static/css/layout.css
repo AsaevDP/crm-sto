@@ -1854,3 +1854,33 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 /* Выбранный запчастист — бордовая рамка и подложка, не цвет его плитки (12.11.2026) */
 .pm-people .ptile.on { outline: 3px solid var(--bordo); outline-offset: 1px; background: color-mix(in srgb, var(--bordo) 10%, var(--surface)); }
 .pm-people .ptile.on .ptile-t { color: var(--bordo); font-weight: 700; }
+
+/* «Заказ по наряду» (13.11.2026): у каждой детали свой поставщик и своя кнопка «Заказал» */
+.ow-all { margin-bottom: 10px; }
+.ow-all > summary { list-style: none; display: inline-flex; align-items: center; cursor: pointer; }
+.ow-all > summary::-webkit-details-marker { display: none; }
+.ow-all-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+.ow-all-form .field { flex: 1 1 200px; min-width: 0; }
+.ow-list { display: grid; }
+.ow-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 10px 14px; align-items: center;
+  padding: 10px 0; border-bottom: 0.5px solid var(--separator); }
+.ow-row:last-child { border-bottom: 0; }
+.ow-row.urgent { box-shadow: inset 3px 0 0 var(--red); padding-left: 10px; }
+.ow-name { min-width: 0; overflow-wrap: break-word; }
+.ow-sup .field { width: 100%; }
+.ow-sup .field.need { box-shadow: inset 0 0 0 1.5px var(--orange); }
+.ow-ord { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.ow-date { width: 150px; min-height: 34px; }
+.ow-total { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 10px;
+  padding-top: 10px; border-top: 0.5px solid var(--separator); }
+.ow-total .caption { display: inline-flex; gap: 8px; align-items: center; }
+.ow-card .kv { align-items: center; }
+.ow-card .kv b { white-space: normal; text-align: right; }
+.po-todo-card a.card-link { color: inherit; text-decoration: none; display: block; }
+@media (max-width: 760px) {
+  .ow-row { grid-template-columns: minmax(0, 1fr); }
+  .ow-ord { justify-content: space-between; }
+  .ow-ord .ow-date { flex: 1 1 auto; }
+}
+.po-todo-act { display: grid; gap: 6px; margin-top: 10px; }
+.ow-ord .btn:disabled { opacity: .4; cursor: not-allowed; }

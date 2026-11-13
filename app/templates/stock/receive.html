@@ -35,14 +35,16 @@
 </div>
 {% endif %}
 
+{# 13.11.2026 (брат): по поставщикам — от одного поставщика детали сразу для нескольких нарядов #}
 {% for g in groups %}
 <form class="card compact rc-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
+  {% if who_user %}<input type="hidden" name="who" value="{{ who_user.id }}">{% endif %}
   <div class="card-h">
-    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.p.supplier_invoice %} <span class="caption">· счёт {{ g.p.supplier_invoice }}</span>{% endif %}
-      {% if g.buyer %}<span class="caption">· заказал {{ g.buyer.short_name }}</span>{% endif %}
-      {% if g.p.status == "delivered" %}<span class="chip" data-s="diag">🚚 привезли</span>{% elif g.p.status == "partial" %}<span class="chip" data-s="picking">неполная поставка</span>{% endif %}</span>
-    <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/purchases/{{ g.p.id }}">Закупка</a>
-      <button class="btn btn-sm" name="all" value="{{ g.p.id }}">Принять всё · {{ g.rows|length }}</button></span>
+    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.invoices %} <span class="caption">· счёт {{ g.invoices|join(", ") }}</span>{% endif %}
+      {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
+      {% if g.delivered %}<span class="chip" data-s="diag">🚚 привезли</span>{% endif %}</span>
+    <span class="ov-actions">{% if g.ps|length == 1 %}<a class="btn btn-plain btn-sm" href="/purchases/{{ g.ps[0].id }}">Накладная</a>{% else %}<span class="caption">накладных: {{ g.ps|length }}</span>{% endif %}
+      <button class="btn btn-sm" name="sup" value="{{ g.key }}">Принять всё · {{ g.rows|length }}</button></span>
   </div>
   <div class="tablewrap">
   <table class="table rc-table">
@@ -58,7 +60,9 @@
       <td class="num nowrap"><input class="field rc-price{{ ' need' if not r.l.price }}" name="price_{{ r.l.id }}" value="{{ '%.2f'|format(r.l.price) if r.l.price else '' }}"
           inputmode="decimal" placeholder="из накладной" aria-label="Цена за штуку из накладной"></td>
       <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make }} {{ r.v.model }}</a> <span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>
-        <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}</td>
+        <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}
+        {% if r.p.status == "partial" %}<div class="caption">неполная поставка — ждём остальное</div>{% endif %}
+        {% if g.ps|length > 1 %}<div class="caption"><a href="/purchases/{{ r.p.id }}">накладная</a>{% if r.buyer and g.buyers|length > 1 %} · {{ r.buyer.short_name }}{% endif %}</div>{% endif %}</td>
       <td><select class="field rc-cell" name="loc_{{ r.l.id }}" aria-label="Ячейка">
           <option value="">— без ячейки —</option>
           {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == r.cell %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select></td>

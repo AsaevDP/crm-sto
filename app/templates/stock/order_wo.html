@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{# «Заказ по наряду» (13.11.2026, брат). Запчастист видит ОДИН список деталей по машине: у каждой свой поставщик
+   (в одном наряде их может быть сколько угодно) и своя кнопка «Заказал». «Один поставщик на весь наряд» — подставить
+   сразу во все. Заказанная деталь сразу у кладовщика в «Приходе»; ниже — что уже заказано, по поставщикам. #}
+{% block content %}
+{% set back = "/my-orders" if ctx.can("purchases.mine") else "/purchases/by-partsman" %}
+{% set sup_ids = suppliers|map(attribute="id")|list %}
+<header class="page-head">
+  <div><a class="back" href="{{ back }}">{{ icon("back") }}{{ "Мои заказы" if ctx.can("purchases.mine") else "Заказы запчастистов" }}</a>
+    <h1 class="large-title">Заказ по наряду</h1>
+    <div class="subhead">{% if v %}{{ v.make }} {{ v.model }} · {{ fmt_plate(v.plate) }} · {% endif %}<a href="/orders/{{ wo.id }}#parts">наряд {{ wo.number }}</a></div></div>
+</header>
+
+{% if todo %}
+<div class="group-title">Заказать · {{ todo|length }}</div>
+<div class="card compact ow-card">
+  {% if can_order %}
+  {# Кнопка раскрывает выбор: поставщик подставится во все ещё не заказанные детали #}
+  <details class="ow-all">
+    <summary class="btn btn-sm btn-tinted">Один поставщик на весь наряд</summary>
+    <form method="post" action="/my-orders/wo/{{ wo.id }}/supplier" class="ow-all-form">
+      <select class="field" name="supplier_id" aria-label="Поставщик">
+        <option value="">— выбрать —</option>
+        {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select>
+      <input class="field" name="supplier_new" placeholder="или новый поставщик" aria-label="Новый поставщик">
+      <button class="btn btn-sm">Подставить всем</button>
+    </form>
+    <p class="caption" style="margin:6px 0 0">Подставится во все детали ниже, которые ещё не заказаны. Потом у любой можно поменять.</p>
+  </details>
+  {% endif %}
+
+  <div class="ow-list">
+    {% for r in todo %}
+    <div class="ow-row{{ ' urgent' if r.part and r.part.urgent }}">
+      <div class="ow-name">{% if r.part and r.part.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
+        <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div>
+        <div class="caption">{{ r.l.qty|num }} шт{% if r.part and r.l.qty > r.part.qty %} (в наряд {{ r.part.qty|num }}, на склад {{ (r.l.qty - r.part.qty)|num }}){% endif %}{% if cost_ok %} · <span class="nowrap">{{ r.l.price|money }}</span> за шт{% endif %}</div></div>
+      {% if can_order %}
+      <form method="post" action="/purchase-lines/{{ r.l.id }}/supplier" class="ow-sup">
+        <input type="hidden" name="back" value="/my-orders/wo/{{ wo.id }}"><input type="hidden" name="supplier_new" value="">
+        <select class="field{{ ' need' if not r.sup }}" name="supplier_id" aria-label="Поставщик" data-sup-pick>
+          {% if not r.sup %}<option value="">— поставщик —</option>
+          {% elif r.sup.id not in sup_ids %}<option value="{{ r.sup.id }}" selected>{{ r.sup.name }}</option>{% endif %}
+          {% for s in suppliers %}<option value="{{ s.id }}" {% if r.sup and s.id == r.sup.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+          <option value="__new">＋ Новый поставщик…</option></select>
+      </form>
+      <form method="post" action="/purchase-lines/{{ r.l.id }}/ordered" class="ow-ord">
+        <input type="hidden" name="back" value="/my-orders/wo/{{ wo.id }}">
+        <input class="field ow-date" type="date" name="expected_on" min="{{ today.isoformat() }}" title="Когда привезут (необязательно)" aria-label="Когда привезут">
+        <button class="btn btn-sm" {% if not r.sup %}disabled title="Сначала выберите поставщика"{% endif %}>Заказал</button>
+      </form>
+      {% else %}
+      <div class="ow-sup caption">{{ r.sup.name if r.sup else "поставщик не выбран" }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if can_order and todo|length > 1 %}
+  <form method="post" action="/my-orders/wo/{{ wo.id }}/ordered" class="ow-total">
+    <input type="hidden" name="back" value="/my-orders/wo/{{ wo.id }}">
+    <span class="caption">Привезут <input class="field ow-date" type="date" name="expected_on" min="{{ today.isoformat() }}" aria-label="Когда привезут"></span>
+    <button class="btn">✓ Заказал всё · {{ todo|length }}</button>
+  </form>
+  {% endif %}
+  <p class="footnote" style="margin:8px 0 0">«Заказал» — деталь сразу у кладовщика в «Приходе». Дата «привезут» — одна на всех деталей этого поставщика в наряде.</p>
+</div>
+{% endif %}
+
+<div class="group-title">Заказано · {{ done|sum(attribute="rows", start=[])|length }}</div>
+{% for g in done %}
+<div class="card compact ow-card">
+  <div class="card-h"><span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}</span>
+    <span class="caption">{% for p in g.ps %}{% if p.expected_on %}привезут {{ p.expected_on.strftime("%d.%m") }}{% if p.status in ("ordered", "partial") and p.expected_on < today %} — опаздывает{% endif %}{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}</span></div>
+  {% for r in g.rows %}
+  <div class="kv"><span><b style="color:var(--text)">{{ r.c.name if r.c else "" }}</b> <span class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</span></span>
+    <b class="nowrap">{{ r.l.got|num }} из {{ r.l.qty|num }} ·
+      {% if r.l.received %}<span class="ok-hint">✓ на складе</span>{% elif r.p.status == "delivered" %}привезли, кладовщик принимает{% elif r.l.got > 0 %}пришла часть{% else %}едет{% endif %}</b></div>
+  {% endfor %}
+  <div class="caption" style="margin-top:6px">{% for p in g.ps %}<a href="/purchases/{{ p.id }}">накладная от {{ (p.ordered_on or p.created_at).strftime("%d.%m") }}</a>{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</div>
+</div>
+{% else %}
+<div class="card compact"><p class="footnote" style="margin:0">Пока ничего не заказано.</p></div>
+{% endfor %}
+
+<script>
+// Поставщик у детали: выбрали — сохраняется сразу; «Новый…» — спросим название
+document.querySelectorAll("[data-sup-pick]").forEach(function (s) {
+  var was = s.value;
+  s.addEventListener("change", function () {
+    if (s.value === "__new") {
+      var name = (prompt("Название нового поставщика") || "").trim();
+      if (!name) { s.value = was; return; }
+      s.form.supplier_new.value = name;
+      s.value = was;
+    }
+    s.form.submit();
+  });
+});
+</script>
+{% endblock %}

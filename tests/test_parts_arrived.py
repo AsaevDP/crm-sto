@@ -62,7 +62,7 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
         db.commit()
     assert _wo(url).status == "waiting"
     login(client, "oleg", "oleg123")
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
 
     # Кладовщик принял одну деталь из двух → всем четверым «Пришли запчасти: 1 шт.», на складе 1 из 2

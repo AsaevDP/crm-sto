@@ -32,7 +32,7 @@ def test_issue_requests_menu(client):
     with SessionLocal() as db:
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/receive", data={})
     _as(client, "irina")
@@ -62,7 +62,7 @@ def _reserved_order(client, plate, phone, name):
     with SessionLocal() as db:
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/receive", data={})
     _as(client, "irina")

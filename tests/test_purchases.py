@@ -106,7 +106,7 @@ def test_order_part_partial_arrival_reserves_when_all_came(client):
     # Меньше, чем нужно наряду, поставить нельзя
     client.post(f"/purchases/{line.purchase_id}/lines/{line.id}", data={"action": "save", "qty": "2", "price": "100"})
     assert _p(line.purchase_id)[1][-1].qty >= 4
-    client.post(f"/purchases/{line.purchase_id}", data={"action": "ordered"})
+    client.post(f"/purchases/{line.purchase_id}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
     login(client, "pavel", "pavel123")
     client.post("/stock/receive", data={"line_id": str(line.id), f"qty_{line.id}": "3"})

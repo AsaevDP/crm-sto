@@ -87,7 +87,7 @@ def test_draft_purchase_is_not_ordered_and_storekeeper_sees_it(client):
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
     _as(client, "oleg")
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     assert "в черновике закупки" not in client.get(url).text
     _as(client, "pavel")
     rec = client.get("/stock/receive").text

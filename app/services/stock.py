@@ -325,21 +325,27 @@ def draft_waits(db: Session, branch_id, who=None) -> list[dict]:
     q = select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft")
     if who:
         q = q.where(Purchase.created_by == who)
-    out = []
+    # 13.11.2026: по НАРЯДАМ, а не по черновикам — в одном наряде черновиков столько, сколько поставщиков
+    from ..models import Supplier
+    by_wo: dict = {}
     for p in db.scalars(q.order_by(Purchase.created_at)):
-        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.wo_part_id.is_not(None))).all()
-        if not lines:
-            continue
-        rows = []
+        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.wo_part_id.is_not(None))
+                           .order_by(PurchaseLine.created_at)).all()
+        sup = db.get(Supplier, p.supplier_id) if p.supplier_id else None
         for l in lines:
             part = db.get(WoPart, l.wo_part_id)
             wo = db.get(WorkOrder, part.work_order_id) if part else None
             if not part or not wo or wo.status in ("closed", "cancel"):
                 continue
-            rows.append({"l": l, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo})
-        if rows:
-            out.append({"p": p, "who": db.get(User, p.created_by) if p.created_by else None, "rows": rows,
-                        "wo": rows[0]["wo"], "urgent": any(r["part"].urgent for r in rows)})
+            d = by_wo.setdefault(wo.id, {"p": p, "who": db.get(User, p.created_by) if p.created_by else None,
+                                         "rows": [], "wo": wo, "urgent": False, "sups": []})
+            d["rows"].append({"l": l, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo, "p": p, "sup": sup})
+            d["urgent"] |= bool(part.urgent)
+            if sup and sup.name not in d["sups"]:
+                d["sups"].append(sup.name)
+    out = list(by_wo.values())
+    for d in out:
+        d["nosup"] = sum(1 for r in d["rows"] if not r["sup"])
     return out
 
 
@@ -354,6 +360,143 @@ def unlink_line(db: Session, line: PurchaseLine):
     if part and part.status == "ordered" and not others:
         unreserve(db, part, "Строку убрали из закупки")
         part.status = "need"
+
+
+# ---------- Заказ по наряду: поставщик у каждой детали (13.11.2026, брат) ----------
+# В одном наряде может быть сколько угодно поставщиков. Запчастист видит ОДИН список деталей по машине и у каждой
+# выбирает поставщика (или «Один поставщик на весь наряд»). Внутри: закупка = наряд + поставщик + запчастист —
+# это накладная, по ней кладовщик и принимает. «Заказал» по детали — она СРАЗУ уходит кладовщику в «Приход»
+# (раньше ждала, пока заказаны все строки черновика, и кладовщик её не видел).
+def _sibling(db: Session, src: Purchase, supplier_id, status: str) -> Purchase | None:
+    """Закупка того же запчастиста, под тот же наряд, у этого поставщика, в нужном статусе."""
+    q = select(Purchase).where(Purchase.branch_id == src.branch_id, Purchase.status == status,
+                               Purchase.created_by == src.created_by, Purchase.kind == (src.kind or ""),
+                               Purchase.id != src.id)
+    q = q.where(Purchase.work_order_id == src.work_order_id) if src.work_order_id else q.where(Purchase.work_order_id.is_(None))
+    q = q.where(Purchase.supplier_id == supplier_id) if supplier_id else q.where(Purchase.supplier_id.is_(None))
+    return db.scalar(q.order_by(Purchase.created_at))
+
+
+def _drop_if_empty(db: Session, p: Purchase):
+    db.flush()
+    if p.status == "draft" and not db.scalar(select(func.count()).select_from(PurchaseLine)
+                                             .where(PurchaseLine.purchase_id == p.id)):
+        db.delete(p)
+        db.flush()
+
+
+def set_line_supplier(db: Session, line: PurchaseLine, supplier_id) -> Purchase | None:
+    """Поставщик у детали черновика: строка переходит в черновик этого наряда у выбранного поставщика.
+    Строка одна в черновике и такого черновика ещё нет — просто меняем поставщика у черновика."""
+    src = db.get(Purchase, line.purchase_id)
+    if not src or src.status != "draft" or src.supplier_id == supplier_id:
+        return src
+    target = _sibling(db, src, supplier_id, "draft")
+    if target is None:
+        alone = db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == src.id)) == 1
+        if alone:
+            src.supplier_id = supplier_id
+            return src
+        target = Purchase(branch_id=src.branch_id, status="draft", supplier_id=supplier_id, kind=src.kind or "",
+                          work_order_id=src.work_order_id, created_by=src.created_by, expected_on=src.expected_on)
+        db.add(target)
+        db.flush()
+    line.purchase_id = target.id
+    _drop_if_empty(db, src)
+    return target
+
+
+def order_line(db: Session, line: PurchaseLine, user_id, expected_on=None) -> Purchase | None:
+    """«Заказал» по детали: строка — в заказанную накладную этого наряда у этого поставщика (пока кладовщик не отметил
+    «Привезли» — в ту же, иначе новая) и сразу видна кладовщику в «Приходе». Без поставщика — нельзя (None)."""
+    from datetime import date as _d
+    from ..db import now
+    src = db.get(Purchase, line.purchase_id)
+    if not src or src.status != "draft":
+        return src
+    if not src.supplier_id:
+        return None
+    target = _sibling(db, src, src.supplier_id, "ordered")
+    if target is None:
+        rest = db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == src.id,
+                                                                             PurchaseLine.id != line.id))
+        if not rest:   # последняя строка черновика — сам черновик становится накладной
+            src.status, src.ordered_on = "ordered", _d.today()
+            target = src
+        else:
+            target = Purchase(branch_id=src.branch_id, status="ordered", ordered_on=_d.today(), supplier_id=src.supplier_id,
+                              kind=src.kind or "", work_order_id=src.work_order_id, created_by=src.created_by,
+                              expected_on=src.expected_on, note=src.note)
+            db.add(target)
+            db.flush()
+    line.purchase_id = target.id
+    line.ordered_at, line.ordered_by = line.ordered_at or now(), user_id
+    if expected_on:
+        target.expected_on = expected_on
+    if src is not target:
+        _drop_if_empty(db, src)
+    return target
+
+
+def set_draft_supplier(db: Session, p: Purchase, supplier_id) -> Purchase:
+    """Весь черновик — к этому поставщику («Один поставщик на весь наряд»). Уже есть черновик наряда у него — строки туда."""
+    if p.status != "draft" or p.supplier_id == supplier_id:
+        return p
+    target = _sibling(db, p, supplier_id, "draft")
+    if target is None:
+        p.supplier_id = supplier_id
+        return p
+    for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)).all():
+        l.purchase_id = target.id
+    _drop_if_empty(db, p)
+    return target
+
+
+def order_draft(db: Session, p: Purchase, user_id, expected_on=None) -> Purchase | None:
+    """Весь черновик заказан («✓ Заказал всё»): он и становится накладной; если у этого поставщика по наряду
+    накладная уже едет (кладовщик ещё не отметил «Привезли») — строки туда. Без поставщика — None."""
+    from datetime import date as _d
+    from ..db import now
+    if p.status != "draft":
+        return p
+    if not p.supplier_id:
+        return None
+    target = _sibling(db, p, p.supplier_id, "ordered") or p
+    for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id)).all():
+        l.purchase_id = target.id
+        l.ordered_at, l.ordered_by = l.ordered_at or now(), user_id
+    if target is p:
+        p.status, p.ordered_on = "ordered", _d.today()
+    if expected_on:
+        target.expected_on = expected_on
+    if target is not p:
+        _drop_if_empty(db, p)
+    return target
+
+
+def wo_drafts(db: Session, branch_id, wo_id) -> list[Purchase]:
+    return db.scalars(select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft",
+                                             Purchase.work_order_id == wo_id).order_by(Purchase.created_at)).all()
+
+
+def order_drafts_of(db: Session, branch_id, wo_id, owner=None) -> list[PurchaseLine]:
+    """Строки черновиков под этот наряд (ещё не заказанные), по порядку добавления."""
+    q = select(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id).where(
+        Purchase.branch_id == branch_id, Purchase.status == "draft", Purchase.work_order_id == wo_id)
+    if owner:
+        q = q.where(Purchase.created_by == owner)
+    return db.scalars(q.order_by(PurchaseLine.created_at)).all()
+
+
+def fix_half_ordered(db: Session):
+    """Старые данные: «Заказал» по строке оставлял её в черновике — кладовщик её не видел. Переносим в накладную."""
+    rows = db.execute(select(PurchaseLine, Purchase).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+                      .where(Purchase.status == "draft", PurchaseLine.ordered_at.is_not(None))).all()
+    for line, p in rows:
+        if p.supplier_id:
+            order_line(db, line, line.ordered_by)
+        else:
+            line.ordered_at = None   # без поставщика — снова ждёт «Заказал» (с выбором поставщика)
 
 
 PLAN_STATUSES = ("created", "diag", "approve")   # до согласования с клиентом — ничего не заказываем

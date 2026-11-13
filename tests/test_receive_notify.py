@@ -40,7 +40,7 @@ def test_receive_all_parts_notifies_team_once(client):
         parts = db.scalars(select(WoPart).where(WoPart.work_order_id == _wo(url).id)).all()
         belt = next(p for p in parts if p.name.startswith("Ремень"))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == belt.id))
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
 
     # Слесарь: ремень нужен срочно → запчастисту и менеджеру сообщение, всем видна пометка

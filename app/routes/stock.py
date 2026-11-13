@@ -510,15 +510,7 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
 def purchase_new(ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form("")):
     """Новая закупка у поставщика. Черновиков может быть сколько угодно — по одному на заказ."""
     ctx.need("purchases.manage")
-    sid = None
-    if supplier_new.strip():
-        s = Supplier(name=supplier_new.strip()[:160])
-        ctx.db.add(s)
-        ctx.db.flush()
-        sid = s.id
-    elif supplier_id:
-        s = ctx.db.get(Supplier, _uuid(supplier_id))
-        sid = s.id if s and s.branch_id == ctx.branch.id else None
+    sid = _supplier_id(ctx, supplier_id, supplier_new)   # то же название — тот же поставщик (13.11.2026)
     p = Purchase(status="draft", supplier_id=sid)
     ctx.db.add(p)
     ctx.db.commit()
@@ -584,42 +576,159 @@ def purchase_ordered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")
     if not db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id)):
         flash(ctx.request, "В закупке нет строк", "error")
         return _to(to)
+    if not p.supplier_id:   # 13.11.2026 (брат): без поставщика кладовщик не поймёт, от кого накладная
+        flash(ctx.request, "Выберите, у кого заказали — без поставщика «Заказал» нельзя", "error")
+        return _to(to)
     from datetime import date as _d
     from ..db import now
     p.status, p.ordered_on = "ordered", _d.today()
     for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.ordered_at.is_(None))):
         l.ordered_at, l.ordered_by = now(), ctx.user.id
     db.commit()
-    flash(ctx.request, "Заказано — накладная ушла кладовщику в «Приход»"
-          + ("" if p.supplier_id else ". Поставщик не указан — откройте закупку и впишите, у кого брали"))
+    flash(ctx.request, "Заказано — накладная ушла кладовщику в «Приход»")
     return _to(to)
 
 
-@router.post("/purchase-lines/{lid}/ordered")
-def purchase_line_ordered(lid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
-    """«Заказал» по одной строке (13.11.2026, брат). Все строки заказаны — закупка сама «заказано» и уходит в «Приход»."""
-    db = ctx.db
-    line = db.get(PurchaseLine, _uuid(lid))
+def _supplier_id(ctx: Ctx, supplier_id: str, supplier_new: str):
+    """Поставщик из формы: выбранный из списка или новый (вписали название). None — не выбрали."""
+    if supplier_new.strip():
+        name = supplier_new.strip()[:160]
+        s = ctx.db.scalar(select(Supplier).where(Supplier.branch_id == ctx.branch.id, func.lower(Supplier.name) == name.lower()))
+        if not s:
+            s = Supplier(name=name)
+            ctx.db.add(s)
+            ctx.db.flush()
+        return s.id
+    s = ctx.db.get(Supplier, _uuid(supplier_id)) if supplier_id else None
+    return s.id if s and s.branch_id == ctx.branch.id else None
+
+
+def _line(ctx: Ctx, lid: str) -> tuple[PurchaseLine, Purchase]:
+    line = ctx.db.get(PurchaseLine, _uuid(lid))
     if not line:
         raise Forbidden()
     p = _purchase(ctx, str(line.purchase_id))
     _need_manage(ctx, p)
-    to = back if back.startswith("/my-orders") else f"/purchases/{p.id}"
-    if p.status != "draft" or line.ordered_at:
+    return line, p
+
+
+@router.post("/purchase-lines/{lid}/ordered")
+def purchase_line_ordered(lid: str, ctx: Ctx = Depends(get_ctx), back: str = Form(""), expected_on: str = Form("")):
+    """«Заказал» по одной детали (13.11.2026, брат): она сразу — в накладную у кладовщика в «Приходе».
+    Без поставщика — нельзя. Дата «привезут» — одна на всех деталей этого поставщика в наряде."""
+    db = ctx.db
+    line, p = _line(ctx, lid)
+    # черновик после переноса последней строки удаляется — возвращаемся в «Заказ по наряду» или в накладную
+    to = back if back.startswith("/my-orders") else (f"/my-orders/wo/{p.work_order_id}" if p.work_order_id else f"/purchases/{p.id}")
+    if p.status != "draft":
         return _to(to)
-    from ..db import now
-    line.ordered_at, line.ordered_by = now(), ctx.user.id
-    db.flush()
-    left = db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id,
-                                                                         PurchaseLine.ordered_at.is_(None)))
     cat = db.get(PartCatalog, line.catalog_id)
-    if not left:
-        from datetime import date as _d
-        p.status, p.ordered_on = "ordered", _d.today()
-        flash(ctx.request, "Заказано всё по накладной — она ушла кладовщику в «Приход»")
-    else:
-        flash(ctx.request, f"«{cat.name if cat else 'Строка'}» — заказано. Осталось заказать: {left}")
+    target = svc.order_line(db, line, ctx.user.id, _date(expected_on))
+    if target is None:
+        flash(ctx.request, f"«{cat.name if cat else 'Деталь'}»: выберите, у кого заказали — без поставщика «Заказал» нельзя", "error")
+        return _to(to)
     db.commit()
+    if not p.work_order_id and not back.startswith("/my-orders"):
+        to = f"/purchases/{target.id}"
+    sup = db.get(Supplier, target.supplier_id)
+    flash(ctx.request, f"«{cat.name if cat else 'Деталь'}» — заказано у {sup.name if sup else 'поставщика'}, кладовщик видит в «Приходе»")
+    return _to(to)
+
+
+@router.post("/purchase-lines/{lid}/supplier")
+def purchase_line_supplier(lid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form(""),
+                           back: str = Form("")):
+    """Поставщик у одной детали черновика (13.11.2026, брат)."""
+    db = ctx.db
+    line, p = _line(ctx, lid)
+    to = back if back.startswith("/my-orders") else (f"/my-orders/wo/{p.work_order_id}" if p.work_order_id else None)
+    sid = _supplier_id(ctx, supplier_id, supplier_new)
+    target = p
+    if p.status == "draft" and sid:
+        target = svc.set_line_supplier(db, line, sid)
+        db.commit()
+    return _to(to or f"/purchases/{target.id}")
+
+
+def _wo_for_order(ctx: Ctx, wo_id: str) -> WorkOrder:
+    wo = ctx.db.get(WorkOrder, _uuid(wo_id))
+    if not wo or wo.branch_id != ctx.branch.id:
+        raise Forbidden()
+    return wo
+
+
+@router.get("/my-orders/wo/{wo_id}")
+def order_by_wo(wo_id: str, ctx: Ctx = Depends(get_ctx)):
+    """«Заказ по наряду» (13.11.2026, брат): все детали машины — у каждой свой поставщик и своя кнопка «Заказал».
+    Сверху — «Один поставщик на весь наряд». Ниже — что уже заказано, по поставщикам, и пришло ли."""
+    if not (ctx.can("purchases.mine") or ctx.can("purchases.view")):
+        raise Forbidden()
+    db = ctx.db
+    wo = _wo_for_order(ctx, wo_id)
+    all_sups = db.scalars(select(Supplier).where(Supplier.branch_id == ctx.branch.id).order_by(Supplier.name, Supplier.created_at)).all()
+    sup_by = {s.id: s for s in all_sups}
+    sups = list({s.name.strip().lower(): s for s in reversed(all_sups)}.values())[::-1]   # в списке каждое имя — один раз
+    sups.sort(key=lambda s: s.name.lower())
+    todo = []
+    for l in svc.order_drafts_of(db, ctx.branch.id, wo.id):
+        p = db.get(Purchase, l.purchase_id)
+        part = db.get(WoPart, l.wo_part_id) if l.wo_part_id else None
+        todo.append({"l": l, "p": p, "c": db.get(PartCatalog, l.catalog_id), "part": part, "sup": sup_by.get(p.supplier_id)})
+    done = {}
+    for l, p in db.execute(select(PurchaseLine, Purchase).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+                           .where(Purchase.branch_id == ctx.branch.id, Purchase.work_order_id == wo.id, Purchase.status != "draft")
+                           .order_by(Purchase.created_at, PurchaseLine.created_at)):
+        g = done.setdefault(p.supplier_id, {"sup": sup_by.get(p.supplier_id), "rows": [], "ps": []})
+        if p not in g["ps"]:
+            g["ps"].append(p)
+        g["rows"].append({"l": l, "p": p, "c": db.get(PartCatalog, l.catalog_id),
+                          "part": db.get(WoPart, l.wo_part_id) if l.wo_part_id else None})
+    from datetime import date as _d
+    return ctx.render("stock/order_wo.html", title=f"Заказ · {wo.number}", wo=wo, v=db.get(Vehicle, wo.vehicle_id),
+                      todo=todo, done=list(done.values()), suppliers=sups, fmt_plate=osvc.fmt_plate,
+                      can_order=ctx.can("purchases.manage"), cost_ok=ctx.can("prices.view_purchase"),
+                      PURCHASE_STATUS=PURCHASE_STATUS, today=_d.today())
+
+
+@router.post("/my-orders/wo/{wo_id}/supplier")
+def order_by_wo_supplier(wo_id: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form("")):
+    """«Один поставщик на весь наряд»: подставляется во все ещё не заказанные детали (и меняет выбранных ранее)."""
+    ctx.need("purchases.manage")
+    db = ctx.db
+    wo = _wo_for_order(ctx, wo_id)
+    sid = _supplier_id(ctx, supplier_id, supplier_new)
+    if not sid:
+        flash(ctx.request, "Выберите поставщика из списка или впишите нового", "error")
+        return _to(f"/my-orders/wo/{wo.id}")
+    lines = svc.order_drafts_of(db, ctx.branch.id, wo.id)
+    for p in svc.wo_drafts(db, ctx.branch.id, wo.id):
+        svc.set_draft_supplier(db, p, sid)
+    db.commit()
+    flash(ctx.request, f"Поставщик «{db.get(Supplier, sid).name}» — у всех деталей: {len(lines)}")
+    return _to(f"/my-orders/wo/{wo.id}")
+
+
+@router.post("/my-orders/wo/{wo_id}/ordered")
+def order_by_wo_all(wo_id: str, ctx: Ctx = Depends(get_ctx), expected_on: str = Form(""), back: str = Form("")):
+    """«✓ Заказал всё» по наряду: каждая деталь — в накладную своего поставщика. Если у какой-то нет поставщика —
+    ничего не заказываем и говорим, у какой."""
+    ctx.need("purchases.manage")
+    db = ctx.db
+    wo = _wo_for_order(ctx, wo_id)
+    to = back if back.startswith("/my-orders") else f"/my-orders/wo/{wo.id}"
+    lines = svc.order_drafts_of(db, ctx.branch.id, wo.id)
+    nosup = [l for l in lines if not db.get(Purchase, l.purchase_id).supplier_id]
+    if nosup:
+        names = ", ".join((db.get(PartCatalog, l.catalog_id).name for l in nosup[:3]))
+        flash(ctx.request, f"Не выбран поставщик: {names}{'…' if len(nosup) > 3 else ''} — выберите, у кого заказали", "error")
+        return _to(f"/my-orders/wo/{wo.id}")
+    sups = set()
+    for p in svc.wo_drafts(db, ctx.branch.id, wo.id):
+        t = svc.order_draft(db, p, ctx.user.id, _date(expected_on))
+        sups.add(t.supplier_id)
+    db.commit()
+    flash(ctx.request, f"Заказано: {len(lines)} поз. у поставщиков: {len(sups)} — кладовщик видит в «Приходе»" if lines
+          else "Заказывать нечего — всё уже заказано")
     return _to(to)
 
 
@@ -651,11 +760,11 @@ def purchase_save(pid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form
             flash(ctx.request, "Закупка снова черновик — можно править")
         db.commit()
         return _to(f"/purchases/{pid}")
-    if supplier_new.strip():
-        s = Supplier(name=supplier_new.strip()[:160], phone=supplier_phone.strip()[:40])
-        db.add(s)
-        db.flush()
-        p.supplier_id = s.id
+    if supplier_new.strip():   # то же название — тот же поставщик, дубли не плодим (13.11.2026)
+        p.supplier_id = _supplier_id(ctx, "", supplier_new)
+        s = db.get(Supplier, p.supplier_id)
+        if supplier_phone.strip():
+            s.phone = supplier_phone.strip()[:40]
     elif supplier_id:
         s = db.get(Supplier, _uuid(supplier_id))
         p.supplier_id = s.id if s and s.branch_id == ctx.branch.id else None
@@ -668,10 +777,13 @@ def purchase_save(pid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form
         if not has_lines:
             flash(ctx.request, "В закупке нет строк", "error")
             return _to(f"/purchases/{pid}")
+        if not p.supplier_id:
+            db.commit()
+            flash(ctx.request, "Выберите, у кого заказали — без поставщика «Заказан» нельзя", "error")
+            return _to(f"/purchases/{pid}")
         from datetime import date as _d
         p.status, p.ordered_on = "ordered", _d.today()
-        flash(ctx.request, "Заказ отправлен поставщику — строки появились у кладовщика в «Приходе»"
-              + ("" if p.supplier_id else ". Поставщик не указан — впишите, чтобы потом знать, у кого брали"))
+        flash(ctx.request, "Заказ отправлен поставщику — строки появились у кладовщика в «Приходе»")
     else:
         flash(ctx.request, "Сохранено")
     db.commit()
@@ -831,6 +943,12 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
     ids = {p.id for p in purchases}
     if form.get("line_id"):
         lines = [db.get(PurchaseLine, _uuid(str(form["line_id"])))]
+    elif form.get("sup"):   # 13.11.2026: «Принять всё» у поставщика — все его накладные (who — только этого запчастиста)
+        key, who = str(form["sup"]), str(form.get("who", ""))
+        ps = [p for p in purchases if _sup_key(db.get(Supplier, p.supplier_id) if p.supplier_id else None) == key
+              and (not who or str(p.created_by) == who)]
+        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_([p.id for p in ps] or [uuid.uuid4()]),
+                                                      PurchaseLine.received.is_(False))).all()
     elif form.get("all"):
         lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == _uuid(str(form["all"])),
                                                       PurchaseLine.received.is_(False))).all()
@@ -1751,6 +1869,11 @@ def part_urgent(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
 
 
 # ======================= Приход у кладовщика (11.11.2026) =======================
+def _sup_key(sup) -> str:
+    """Группа «Прихода» — по названию поставщика (одинаковые названия — один поставщик, даже если заведён дважды)."""
+    return sup.name.strip().lower() if sup else "none"
+
+
 def _receive_lines(ctx: Ctx, who: str = ""):
     """Что ждём от поставщиков: непринятые строки заказанных закупок, по закупкам; срочное — сверху.
     who — только закупки этого запчастиста (12.11.2026)."""
@@ -1759,22 +1882,32 @@ def _receive_lines(ctx: Ctx, who: str = ""):
                                                   Purchase.status.in_(svc.OPEN)).order_by(Purchase.created_at)).all()
     if who:
         purchases = [p for p in purchases if str(p.created_by) == who]
-    groups = []
+    # 13.11.2026 (брат): по ПОСТАВЩИКАМ — приехал поставщик, кладовщик видит всё, что ждём от него, по всем нарядам
+    by_sup: dict = {}
     for p in purchases:
-        rows = []
+        buyer = db.get(User, p.created_by) if p.created_by else None
+        sup = db.get(Supplier, p.supplier_id) if p.supplier_id else None
+        key = _sup_key(sup)
         for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))):
             part = db.get(WoPart, l.wo_part_id) if l.wo_part_id else None
             wo = db.get(WorkOrder, part.work_order_id) if part else None
-            rows.append({"l": l, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo,
-                         "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
-                         "mech": db.get(User, wo.mechanic_id) if wo and wo.mechanic_id else None,
-                         "urgent": bool(part and part.urgent), "cell": svc.default_location(db, l.catalog_id)})
-        if rows:
-            rows.sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["c"].name if r["c"] else ""))
-            groups.append({"p": p, "sup": db.get(Supplier, p.supplier_id) if p.supplier_id else None, "rows": rows,
-                           "urgent": any(r["urgent"] for r in rows),
-                           "buyer": db.get(User, p.created_by) if p.created_by else None})
-    groups.sort(key=lambda g: not g["urgent"])
+            g = by_sup.setdefault(key, {"sup": sup, "key": key, "rows": [], "ps": [], "buyers": []})
+            if p not in g["ps"]:
+                g["ps"].append(p)
+            if buyer and buyer.short_name not in g["buyers"]:
+                g["buyers"].append(buyer.short_name)
+            g["rows"].append({"l": l, "p": p, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo, "buyer": buyer,
+                              "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
+                              "mech": db.get(User, wo.mechanic_id) if wo and wo.mechanic_id else None,
+                              "urgent": bool(part and part.urgent), "cell": svc.default_location(db, l.catalog_id)})
+    groups = list(by_sup.values())
+    for g in groups:
+        g["rows"].sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["wo"].number if r["wo"] else "",
+                                      r["c"].name if r["c"] else ""))
+        g["urgent"] = any(r["urgent"] for r in g["rows"])
+        g["delivered"] = any(p.status == "delivered" for p in g["ps"])
+        g["invoices"] = [p.supplier_invoice for p in g["ps"] if p.supplier_invoice]
+    groups.sort(key=lambda g: (not g["urgent"], not g["delivered"], g["sup"].name if g["sup"] else "я"))
     return groups
 
 
@@ -1810,7 +1943,8 @@ async def receive_do(ctx: Ctx = Depends(get_ctx)):
     flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else "")
           + (f". Без цены не принято: {', '.join(np_[:5])} — впишите «₴ за шт» из накладной" if np_ else ""),
           "error" if np_ else "ok")
-    return _to("/stock/receive")
+    who = str(form.get("who", ""))
+    return _to("/stock/receive" + (f"?who={who}" if who else ""))
 
 
 # ======================= Настройки цен =======================

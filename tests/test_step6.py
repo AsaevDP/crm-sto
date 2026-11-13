@@ -37,7 +37,7 @@ def _order_to_work(c, plate, phone, part_name):
     with SessionLocal() as db:
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
-    c.post(f"/purchases/{pid}", data={"action": "ordered"})
+    c.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(c, "pavel")
     c.post(f"/purchases/{pid}/receive", data={})
     _as(c, "andrey")

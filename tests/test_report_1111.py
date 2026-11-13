@@ -164,7 +164,7 @@ def test_cancel_releases_reserve_and_ordered_part_goes_free(client):
     agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     with SessionLocal() as db:
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == _parts(url)[0].id))
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "irina")
     client.post(f"{url}/cancel", data={"reason": "Не дождался"})
     assert _wo(url).status == "cancel"
@@ -213,7 +213,7 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     agree(client, url2)
     with SessionLocal() as db:
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == _parts(url2)[0].id))
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/receive", data={})
     assert _parts(url2)[0].status == "reserved"

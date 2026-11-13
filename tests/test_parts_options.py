@@ -125,12 +125,21 @@ def test_manager_problems_options_choice_and_acts(client):
     login(client, "oleg", "oleg123")
     mine = client.get("/my-orders").text
     assert "Заказать по нарядам" in mine and _wo(url).number in mine
+    # 13.11.2026: без поставщика «Заказал» нельзя; заказанная деталь сразу в накладной у кладовщика
     client.post(f"/purchase-lines/{lines[0].id}/ordered", data={"back": "/my-orders"})
     with SessionLocal() as db:
-        assert db.get(PurchaseLine, lines[0].id).ordered_at and db.get(Purchase, lines[0].purchase_id).status == "draft"
+        assert not db.get(PurchaseLine, lines[0].id).ordered_at
+    client.post(f"/purchase-lines/{lines[0].id}/supplier", data={"supplier_new": "Опции-поставщик"})
+    client.post(f"/purchase-lines/{lines[0].id}/ordered", data={"back": "/my-orders"})
+    with SessionLocal() as db:
+        l0 = db.get(PurchaseLine, lines[0].id)
+        assert l0.ordered_at and db.get(Purchase, l0.purchase_id).status == "ordered"
+        assert db.get(Purchase, db.get(PurchaseLine, lines[1].id).purchase_id).status == "draft"
+    client.post(f"/purchase-lines/{lines[1].id}/supplier", data={"supplier_new": "Опции-поставщик"})
     client.post(f"/purchase-lines/{lines[1].id}/ordered", data={"back": "/my-orders"})
     with SessionLocal() as db:
-        assert db.get(Purchase, lines[1].purchase_id).status == "ordered"
+        l1 = db.get(PurchaseLine, lines[1].id)
+        assert l1.purchase_id == db.get(PurchaseLine, lines[0].id).purchase_id   # тот же поставщик — та же накладная
     client.post("/logout")
 
     # 12.11.2026: документов три — запчасти (только выбранное, с брендом, без цен) и работы теперь в Акте выдачи;

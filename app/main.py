@@ -31,6 +31,8 @@ async def lifespan(_app):
     with SessionLocal() as db:
         backfill_categories(db)
         backfill_barcodes(db)
+        from .services.stock import fix_half_ordered
+        fix_half_ordered(db)   # 13.11.2026: «Заказал» по строке — сразу в накладную у кладовщика
         from sqlalchemy import select
         from .models import Branch
         from .services import brands

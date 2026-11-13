@@ -703,18 +703,25 @@ def step_approve(o, day, hhmm, send=True):
 
 
 def order_drafts(o, pm, day, hhmm):
-    """Запчастист в «Моих заказах»: поставщик и дата, «✓ Заказал весь наряд» или «Заказал» по каждой строке."""
+    """Запчастист в «Заказ по наряду» (13.11.2026): один поставщик на весь наряд или у каждой детали свой;
+    «Заказал» по детали (с датой «привезут») или «✓ Заказал всё»."""
+    sups = ("Элит-Украина", "Автотехнікс", "ОмегаАвто")
     with at(day, hhmm):
-        for p in q(M.Purchase, M.Purchase.work_order_id == o.id, M.Purchase.status == "draft"):
-            post(pm, f"/purchases/{p.id}", {"action": "save", "supplier_new": rnd.choice(("Элит-Украина", "Автотехнікс", "ОмегаАвто")),
-                                            "expected_on": str(day + timedelta(days=rnd.choice((1, 2, 2, 3))))},
-                 what="Поставщик и дата")
-            if rnd.random() < 0.3:
-                for l in q(M.PurchaseLine, M.PurchaseLine.purchase_id == p.id):
-                    post(pm, f"/purchase-lines/{l.id}/ordered", {"back": "/my-orders"}, what="Заказал (строка)")
-            else:
-                post(pm, f"/purchases/{p.id}/ordered", {"back": "/my-orders"}, what="✓ Заказал весь наряд")
-            R.check(one(M.Purchase, M.Purchase.id == p.id).status == "ordered", "после «Заказал» закупка заказана", str(p.id))
+        def draft_lines():
+            ps = [p.id for p in q(M.Purchase, M.Purchase.work_order_id == o.id, M.Purchase.status == "draft")]
+            return q(M.PurchaseLine, M.PurchaseLine.purchase_id.in_(ps)) if ps else []
+        exp = str(day + timedelta(days=rnd.choice((1, 2, 2, 3))))
+        if rnd.random() < 0.6:
+            post(pm, f"/my-orders/wo/{o.id}/supplier", {"supplier_new": rnd.choice(sups)}, what="Один поставщик на весь наряд")
+        else:
+            for l in draft_lines():
+                post(pm, f"/purchase-lines/{l.id}/supplier", {"supplier_new": rnd.choice(sups)}, what="Поставщик у детали")
+        if rnd.random() < 0.3:
+            for l in draft_lines():
+                post(pm, f"/purchase-lines/{l.id}/ordered", {"expected_on": exp}, what="Заказал (деталь)")
+        else:
+            post(pm, f"/my-orders/wo/{o.id}/ordered", {"expected_on": exp}, what="✓ Заказал всё")
+        R.check(not draft_lines(), "после «Заказал» по наряду не осталось черновиков", str(o.id))
         if rnd.random() < 0.3:
             urg = [p for p in parts_of(o) if p.status == "ordered"]
             if urg:

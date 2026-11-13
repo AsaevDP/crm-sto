@@ -56,7 +56,7 @@ def test_buy5_one_to_order_four_to_stock_next_order_from_stock(client):
         line = db.scalar(select(PurchaseLine).where(PurchaseLine.wo_part_id == part1.id))
         assert line.qty == 5 and db.get(Purchase, line.purchase_id).created_by == _uid_oleg()
         pid = line.purchase_id
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
 
     # Кладовщик: стеллаж, приход в ячейку → 1 сразу в резерв под наряд
@@ -123,7 +123,7 @@ def test_inventory_adjust_requires_reason(client):
     with SessionLocal() as db:
         pid = db.scalar(select(PurchaseLine.purchase_id).join(WoPart, WoPart.id == PurchaseLine.wo_part_id)
                         .where(WoPart.name == "Фильтр масляный (инв)"))
-    client.post(f"/purchases/{pid}", data={"action": "ordered"})
+    client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
     login(client, "pavel", "pavel123")
     client.post(f"/purchases/{pid}/receive", data={})
