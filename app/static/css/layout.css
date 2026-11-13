@@ -1666,6 +1666,16 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .parts-arch .kv form { flex: none; }
 .approve-box { margin-top: 12px; padding-top: 10px; border-top: 0.5px solid var(--separator); }
 .ok-hint { color: var(--green); }
+/* Несколько мастеров (13.11.2026): у каждого свой раздел проблем; «Добавить мастера» */
+.diag-sec { border-top: 0.5px solid var(--separator); padding-top: 8px; margin-top: 8px; }
+.diag-sec:first-of-type { border-top: 0; margin-top: 0; }
+.diag-sec-h { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 4px; }
+.diag-sec-h .chip { margin-left: auto; }
+.masters-box { margin-top: 10px; border-top: 0.5px solid var(--separator); padding-top: 6px; }
+.masters-box .add-master > summary { list-style: none; }
+.masters-box .add-master form { margin-top: 8px; }
+.extra-row { margin-top: 8px; align-items: center; }
+.extra-row .btn { flex: none; }
 /* Цена из накладной при приёмке (13.11.2026): обязательна, пустая — красная рамка */
 .rc-price { width: 92px; text-align: right; }
 .rc-price.need { box-shadow: inset 0 0 0 1.5px var(--red); }

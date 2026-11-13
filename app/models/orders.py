@@ -100,6 +100,8 @@ class WorkOrder(Entity):
     # менеджер после этого согласует с клиентом всё разом
     picked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     picked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 13.11.2026: ведущий мастер нажал «Диагностика готова» (если мастеров несколько — ждём остальных)
+    lead_diag_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # Метка формы приёмки: повторная отправка той же формы не создаёт второй наряд
     intake_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
@@ -274,6 +276,30 @@ class OrderMessage(Entity):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     answer: Mapped[str] = mapped_column(String(300), default="")    # причина отказа / комментарий менеджера
     wo_part_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class OrderMaster(Entity):
+    """Ещё один мастер на машине (13.11.2026, брат): электрик, моторист, мойщик… рядом с ведущим. У каждого своя
+    диагностика — «Диагностика готова» жмёт сам (diag_done_at); наряд идёт на согласование, когда готовы все."""
+    __tablename__ = "order_masters"
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    diag_done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+HANDOVER_KIND = {"manager": "менеджер", "mechanic": "ведущий мастер", "partsman": "запчастист", "master": "мастер"}
+
+
+class OrderHandover(Entity):
+    """Передача наряда (13.11.2026, брат): менеджеру, ведущему мастеру (= посту), запчастисту или ещё одному мастеру.
+    Новому — окошко и красная цифра «Мне передали», пока не нажал «✓ Принял» (accepted_at). Подтверждения директора нет."""
+    __tablename__ = "order_handovers"
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10), default="manager")
+    from_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    to_id: Mapped[uuid.UUID] = mapped_column(Uuid, index=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 REOPEN_STATUS ={"pending": "Ждёт решения", "approved": "Открыт заново", "declined": "Отказано"}

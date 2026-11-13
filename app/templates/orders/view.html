@@ -1,14 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% set n_find = findings|length %}
-{% set problems_card %}
-<div class="card compact step-card {{ 'now' if flow.cur in (1, 2) }}" id="problems" style="--sc:var(--{{ 'yellow' if wo.status == 'approve' else 'purple' }})">
-  <div class="card-h">
-    <span class="headline"><span class="stepno">{{ 3 if wo.status == "approve" else 2 }}</span>{{ "Согласование" if wo.status == "approve" else "Проблемы" }} · {{ n_find }}</span>
-    {% if wo.status == "approve" %}<span class="chip" data-s="approve">ждёт клиента</span>{% endif %}
-  </div>
-
-  {% for f in findings %}
+{% macro finding_row(f) %}
   <div class="finding" data-u="{{ f.urgency }}">
     <div class="finding-top">
       <span class="urg" data-u="{{ f.urgency }}">{{ URGENCY.get(f.urgency) }}</span>
@@ -24,15 +17,38 @@
         <button type="button" data-v="yes" aria-pressed="{{ (f.approval == 'yes')|lower }}">✓ Да</button>
         <button type="button" data-v="no" aria-pressed="{{ (f.approval == 'no')|lower }}">✕ Нет</button>
       </div>
-      {% elif can_diag and f.approval == "pending" and wo.status in ("created", "diag", "approve") %}
+      {% elif can_diag and f.approval == "pending" and wo.status in ("created", "diag", "approve") and (f.created_by == ctx.user.id or ctx.can("orders.view_all")) %}
       <form method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Удалить</button></form>
       {% endif %}
     </div>
   </div>
+{% endmacro %}
+{% set problems_card %}
+<div class="card compact step-card {{ 'now' if flow.cur in (1, 2) }}" id="problems" style="--sc:var(--{{ 'yellow' if wo.status == 'approve' else 'purple' }})">
+  <div class="card-h">
+    <span class="headline"><span class="stepno">{{ 3 if wo.status == "approve" else 2 }}</span>{{ "Согласование" if wo.status == "approve" else "Проблемы" }} · {{ n_find }}</span>
+    {% if wo.status == "approve" %}<span class="chip" data-s="approve">ждёт клиента</span>{% endif %}
+  </div>
+
+  {# 13.11.2026 (брат): мастеров несколько — у каждого свой раздел проблем и своя отметка «Диагностика готова» #}
+  {% if diag_state|length > 1 %}
+  {% set ns = namespace(shown=[]) %}
+  {% for s in diag_state %}{% if s.user %}{% set mine = findings|selectattr("created_by", "equalto", s.user.id)|list %}{% set ns.shown = ns.shown + [s.user.id] %}
+  <div class="diag-sec">
+    <div class="diag-sec-h"><b>{{ s.user.full_name }}</b> <span class="caption">{{ MASTERS.get(s.user.role.code, "") }}{% if s.lead %} · ведущий{% endif %}</span>
+      {% if wo.status == "diag" %}<span class="chip" data-s="{{ 'ready' if s.done else 'diag' }}">{{ "✓ диагностика готова" if s.done else "идёт диагностика" }}</span>{% endif %}</div>
+    {% for f in mine %}{{ finding_row(f) }}{% else %}<p class="footnote" style="margin:4px 0">{{ "Проблем не нашёл" if s.done else "Пока проблем не записал" }}</p>{% endfor %}
+  </div>
+  {% endif %}{% endfor %}
+  {% set rest = findings|rejectattr("created_by", "in", ns.shown)|list %}
+  {% if rest %}<div class="diag-sec"><div class="diag-sec-h"><b>Со слов клиента и другие</b></div>{% for f in rest %}{{ finding_row(f) }}{% endfor %}</div>{% endif %}
+  {% else %}
+  {% for f in findings %}{{ finding_row(f) }}
   {% else %}
   <p class="footnote">{% if wo.status == "created" and can_route %}Запишите, что говорит клиент — каждую проблему отдельно. Или отправьте машину на диагностику (вверху).
     {% elif wo.scenario == "A" %}Без диагностики — работы известны заранее.{% elif wo.status == "diag" %}Слесарь ещё не внёс проблемы.{% else %}Проблем нет.{% endif %}</p>
   {% endfor %}
+  {% endif %}
 
   {% if can_diag %}
   <details class="add-finding" {% if (wo.status == "diag" or can_route) and not findings %}open{% endif %}>
@@ -57,7 +73,7 @@
 
   {% if can_finish_diag %}
   <form method="post" action="/orders/{{ wo.id }}/diag-done" onsubmit="return {{ 'true' if findings else 'confirm(\'Проблем не найдено — отправить менеджеру?\')' }}">
-    <button class="btn btn-block">{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}</button>
+    <button class="btn btn-block">{% if diag_state|length > 1 %}Моя диагностика готова{% else %}{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}{% endif %}</button>
   </form>
   {% endif %}
   {% if can_route and findings %}
@@ -122,6 +138,15 @@
   {% endif %}
 </div>
 {% endif %}
+{% if readonly %}
+{# 13.11.2026: переданный наряд у прежнего менеджера — смотреть можно, менять нельзя (кнопки и поля скрыты) #}
+<style>.ov-grid form, .ov-grid button, .ov-grid summary.btn, .ov-grid .segmented, .ov-grid input, .ov-grid select,
+  .ov-grid details.add-finding, .ov-head details, .ov-head form, .wo-now-acts { display: none !important; }</style>
+<div class="wo-now" style="--sc:var(--gray)">
+  <div class="grow"><b>Вы передали этот наряд — только просмотр</b><span class="wo-now-t">{% set hm = team[0][1] %}Сейчас его ведёт {{ hm.full_name if hm else "другой менеджер" }}.
+    Виден у вас 3 дня в «Переданных». Вернуть может только он.</span></div>
+</div>
+{% endif %}
 {% if history_only %}
 <div class="wo-now" style="--sc:var(--gray)">
   <div class="grow"><b>Прошлый визит клиента</b><span class="wo-now-t">{% set hm = team[0][1] %}Наряд вёл(а) {{ hm.full_name if hm else "другой менеджер" }} — открыт для просмотра истории.</span></div>
@@ -129,7 +154,7 @@
 {% endif %}
 {% if handed %}
 <div class="wo-now" style="--sc:var(--red)">
-  <div class="grow"><b>Вам передали этот наряд</b><span class="wo-now-t">{% if handed.from %}Передал(а) {{ handed.from.full_name }}{% endif %}{% if handed.at %} · {{ handed.at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Посмотрите и нажмите «Принял».</span></div>
+  <div class="grow"><b>Вам передали этот наряд{% if handed.role %} — вы {{ handed.role }}{% endif %}</b><span class="wo-now-t">{% if handed.from %}Передал(а) {{ handed.from.full_name }}{% endif %}{% if handed.at %} · {{ handed.at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Посмотрите и нажмите «Принял».</span></div>
   <form class="wo-now-acts one-shot" method="post" action="/orders/{{ wo.id }}/handover-ack"><button class="btn btn-sm">✓ Принял</button></form>
 </div>
 {% endif %}
@@ -244,29 +269,46 @@
     <div class="card compact">
       <div class="card-h"><span class="headline">Кто и где</span></div>
       {% if can_assign %}
-      <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign">
+      {# 13.11.2026 (брат): «Передать» — менеджеру, мастеру (пост = мастер) или запчастисту; новому — «Мне передали» / «✓ Принял» #}
+      <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign" id="assign-f">
         <label>Менеджер — ведёт клиента<select class="field" name="manager_id">
           {% for u in managers %}<option value="{{ u.id }}" {% if u.id == wo.manager_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-        <label>Подъёмник<select class="field" name="lift_id"><option value="">Без поста</option>
-          {% for l, busy in lifts %}<option value="{{ l.id }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
-        <label>Ведущий мастер<select class="field" name="mechanic_id"><option value="">Не выбран</option>
+        <label>Пост (подъёмник)<select class="field" name="lift_id" id="as-lift"><option value="">Без поста (очередь)</option>
+          {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
+        <label>Ведущий мастер<select class="field" name="mechanic_id" id="as-mech"><option value="">Не выбран</option>
           {% for code, label in MASTERS.items() %}{% set grp = mechanics|selectattr("role.code", "equalto", code)|list %}{% if grp %}<optgroup label="{{ label }}">
           {% for u in grp %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}</select></label>
         <label>Запчастист<select class="field" name="partsman_id"><option value="">Не выбран</option>
           {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-        <button class="btn btn-sm">Сохранить</button>
+        <button class="btn btn-sm" onclick="return confirm('Передать наряд? Новому придёт сообщение, у прежнего наряд пропадёт.')">Передать</button>
+        <p class="hint" style="margin:0">За каждым постом — свой мастер: другой пост = другой мастер. Несделанные работы перейдут новому.</p>
       </form>
+      {# Ещё мастера на машине — это не передача: ведущий остаётся #}
+      <div class="masters-box">
+        {% for m in extra %}<div class="kv"><span>{{ MASTERS.get(m.user.role.code, "мастер") }}</span><b>{{ m.user.full_name }}</b></div>{% endfor %}
+        <details class="add-master">
+          <summary class="btn btn-plain btn-sm">{{ icon("plus") }}Добавить мастера</summary>
+          <form class="form dense" method="post" action="/orders/{{ wo.id }}/masters">
+            <select class="field" name="user_id" required aria-label="Мастер"><option value="">Кто ещё работает с машиной…</option>
+              {% for code, label in MASTERS.items() %}{% set grp = mechanics|selectattr("role.code", "equalto", code)|rejectattr("id", "equalto", wo.mechanic_id)|list %}{% if grp %}<optgroup label="{{ label }}">
+              {% for u in grp %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}</select>
+            <input class="field" name="work" placeholder="Что делает (необязательно): «Диагностика электрики»">
+            <button class="btn btn-sm btn-tinted">Добавить</button>
+          </form>
+        </details>
+      </div>
       {% else %}
       {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
       <div class="kv"><span>Подъёмник</span><b>{{ lift.number ~ " · " ~ lift.name if lift else "—" }}</b></div>
       <div class="kv"><span>Ведущий мастер</span><b>{{ mc.full_name if mc else "—" }}</b></div>
       <div class="kv"><span>Запчастист</span><b>{{ pm.full_name if pm else "—" }}</b></div>
       <div class="kv"><span>Менеджер</span><b>{{ mg.full_name if mg else "—" }}</b></div>
+      {% for m in extra %}<div class="kv"><span>{{ MASTERS.get(m.user.role.code, "мастер") }}</span><b>{{ m.user.full_name }}</b></div>{% endfor %}
       {% endif %}
     </div>
 
     {# Кто работает с машиной (12.11.2026): исполнители работ — слесарь, автоэлектрик, моторист, мойщик, детейлер #}
-    {% set crew = works|map(attribute="mechanic_id")|select|unique|list %}
+    {% set crew = ((works|map(attribute="mechanic_id")|select|list) + (extra|map(attribute="user.id")|list))|unique|list %}
     {% if crew %}<div class="card compact">
       <div class="card-h"><span class="headline">Работают с машиной · {{ crew|length }}</span></div>
       {% for uid in crew %}{% set u = people.get(uid) %}{% if u %}{% set mine = works|selectattr("mechanic_id", "equalto", uid)|list %}
@@ -398,6 +440,16 @@
     seg.closest('.finding').dataset.a = b.dataset.v;
     (window.crmReload || (() => location.reload()))();   // 13.11.2026: «Да» — работа появилась в блоке «Работы»
   }));
+
+  // «Кто и где» (13.11.2026): пост = мастер — выбрали пост, подставился его мастер; выбрали мастера — его пост
+  const asLift = document.getElementById('as-lift'), asMech = document.getElementById('as-mech');
+  if (asLift && asMech) {
+    asLift.addEventListener('change', () => { const m = asLift.selectedOptions[0]?.dataset.mech; if (m) asMech.value = m; });
+    asMech.addEventListener('change', () => {
+      const o = [...asLift.options].find(x => x.dataset.mech === asMech.value && !x.textContent.includes('занят'));
+      asLift.value = o ? o.value : '';
+    });
+  }
 
   // «Архив · N» в шапке блока «Запчасти» — раскрыть архив наряда (13.11.2026)
   document.querySelectorAll('[data-open-arch]').forEach(a => a.addEventListener('click', () => {

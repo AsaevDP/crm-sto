@@ -25,6 +25,11 @@ def _order(ctx: Ctx, order_id: str) -> WorkOrder:
     wo = ctx.db.get(WorkOrder, _uuid(order_id))
     if not wo or not svc.can_view(ctx, wo):
         raise Forbidden()
+    # 13.11.2026 (брат): прежний менеджер после передачи — 3 дня только посмотреть, ничего не менять
+    if ctx.request.method != "GET":
+        from ..services import handover as hsvc
+        if hsvc.read_only(ctx, wo):
+            raise Forbidden()
     return wo
 
 
@@ -100,15 +105,22 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         by_status[st_] = by_status.get(st_, 0) + 1
     stage_counts = {k: sum(by_status.get(s, 0) for s in v[2]) for k, v in ORDER_STAGES.items()}
     stage_counts["all"] = sum(by_status.values())
-    # 12.11.2026: «Мне передали» — наряды, которые передали мне и я ещё не нажал «Принял»
-    handed_cond = (WorkOrder.manager_id == ctx.user.id, WorkOrder.handover_pending.is_(True), WorkOrder.status.in_(WO_ACTIVE))
-    show_handed = ctx.can("orders.approve")
-    stage_counts["handed"] = ctx.db.scalar(select(func.count()).select_from(WorkOrder).where(*handed_cond)) or 0 if show_handed else 0
+    # «Мне передали» — наряды, которые передали мне и я ещё не нажал «Принял» (13.11.2026: у всех — менеджер, мастер,
+    # запчастист). «Переданные» — менеджер передал другому: 3 дня только посмотреть.
+    from ..services import handover as hsvc
+    handed_ids = hsvc.pending_orders(ctx.db, ctx.branch.id, ctx.user.id)
+    handed_cond = (WorkOrder.id.in_(handed_ids or [uuid.uuid4()]),)
+    show_handed = ctx.can("orders.approve") or bool(handed_ids)
+    stage_counts["handed"] = len(handed_ids)
+    out_ids = hsvc.handed_out(ctx.db, ctx.branch.id, ctx.user.id) if ctx.user.role.code == "manager" else []
+    stage_counts["handed_out"] = len(out_ids)
+    if tab == "handed_out":
+        query = select(WorkOrder).where(WorkOrder.id.in_(out_ids or [uuid.uuid4()]))
     # 12.11.2026: «Пришли запчасти» — мои наряды, где запчасти пришли по закупке и ещё не выданы (зелёная цифра в меню)
     from ..services.notify import arrived_waiting
     arrived = arrived_waiting(ctx.db, ctx.branch.id, ctx.user.id)
     stage_counts["arrived"] = len(arrived)
-    if tab == "handed" and show_handed:
+    if tab == "handed":
         query = query.where(*handed_cond)
     elif tab == "arrived":
         query = query.where(WorkOrder.id.in_(list(arrived) or [uuid.uuid4()]))
@@ -181,7 +193,7 @@ def order_new(ctx: Ctx = Depends(get_ctx), appt: str = ""):
     partsmen = svc.staff_by_role(ctx.db, bid, "partsman")
     return ctx.render("orders/new.html", title="Приёмка",
                       partsmen=partsmen, my_partsman=svc.paired_partsman(ctx.db, ctx.user.id, partsmen),
-                      mechanics=svc.staff_by_role(ctx.db, bid, "masters"),
+                      mechanics=svc.staff_by_role(ctx.db, bid, "masters"), MASTERS=MASTERS,
                       lifts=svc.lifts_with_load(ctx.db, bid), makes=svc.known_makes(ctx.db, bid),
                       INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS, MAX_PHOTOS=svc.MAX_PHOTOS,
                       fmt_plate=svc.fmt_plate, prefill=prefill, intake_token=uuid.uuid4().hex)
@@ -216,6 +228,13 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
     if not saved:
         ctx.db.rollback()
         return JSONResponse({"ok": False, "errors": ["Фото не распознаны (нужны JPG/PNG)"]}, status_code=400)
+    # 13.11.2026 (брат): ещё мастера на машину сразу при приёмке (электрик, моторист…) — у каждого своя диагностика
+    from ..services import handover as hsvc
+    works_x = [str(x) for x in form.getlist("extra_work")]
+    for i, mid in enumerate(form.getlist("extra_master_id")):
+        u = ctx.db.get(User, svc._uuid(str(mid))) if svc._uuid(str(mid)) else None
+        if u and u.branch_id == ctx.branch.id and u.role.code in MASTERS and u.active and u.id != wo.mechanic_id:
+            hsvc.add_master(ctx.db, wo, u, works_x[i] if i < len(works_x) else "", ctx.user.id, tell=False)
     svc.route_after_intake(ctx.db, wo)
     if form.get("appt_id"):
         from .schedule import link_order
@@ -271,6 +290,12 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
     archived = [p for p in parts if p.status == "archived"]
     parts = [p for p in parts if p.status != "archived"]
+    # 13.11.2026: ещё мастера на машине (электрик, моторист…) — в «Кто и где», «Работают с машиной», у проблем
+    from ..services import handover as hsvc
+    extra_rows = hsvc.extra_masters(db, wo)
+    people.update(_people(ctx, *[m.user_id for m in extra_rows]))
+    extra = [{"m": m, "user": people[m.user_id]} for m in extra_rows if m.user_id in people and m.user_id != wo.mechanic_id]
+    me_extra = next((m for m in extra_rows if m.user_id == ctx.user.id and m.user_id != wo.mechanic_id), None)
     people.update(_people(ctx, *[p.archived_by for p in archived], wo.partsman_id))
     # Деньги и работы
     from ..models import Payment, WoWorkSession
@@ -313,8 +338,13 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_diag=ctx.can("orders.diagnose") and ((is_mech and (wo.status in ("diag", "approve", "work")
                                                                or (wo.status == "created" and is_manager)))
                                                  # 12.11.2026: второй мастер (электрик, моторист…) нашёл новое во время ремонта
-                                                 or (wo.status == "work" and any(w.mechanic_id == ctx.user.id for w in works))),
-        can_finish_diag=ctx.can("orders.diagnose") and is_mech and wo.status == "diag",
+                                                 or (wo.status == "work" and any(w.mechanic_id == ctx.user.id for w in works))
+                                                 # 13.11.2026: добавленный мастер — свои проблемы и на диагностике
+                                                 or (wo.status in ("diag", "approve", "work") and me_extra is not None)),
+        # «Диагностика готова» — каждый мастер свою (ведущий, добавленные); менеджер за мастеров не жмёт (13.11.2026)
+        can_finish_diag=ctx.can("orders.diagnose") and wo.status == "diag" and (
+            (me_extra is not None and not me_extra.diag_done_at)
+            or (ctx.user.id == wo.mechanic_id and not wo.lead_diag_at)),
         can_approve=ctx.can("orders.approve") and wo.status == "approve",
         can_route=is_manager and wo.status == "created" and wo.scenario == "B",
         parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
@@ -344,8 +374,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         reopen=_reopen_state(ctx, wo),
         order_msgs=_order_msgs(ctx, wo),
         draft_parts=stock_svc.draft_part_ids(db, [p.id for p in parts if p.status == "ordered"]),
-        handed=({"from": db.get(User, wo.handover_from) if wo.handover_from else None, "at": wo.handover_at}
-                if wo.handover_pending and wo.manager_id == ctx.user.id and wo.status in WO_ACTIVE else None),
+        handed=_handed(ctx, wo),
+        extra=extra, diag_state=hsvc.diag_state(db, wo) if wo.status == "diag" or extra else [],
+        readonly=hsvc.read_only(ctx, wo),
         can_money=ctx.can("money.accept") and (wo.status not in ("closed", "cancel")
                                                or (wo.status == "closed" and money_svc.totals(db, wo).due > 0)),
         can_edit_works=ctx.can("orders.approve") and wo.status in ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready"),
@@ -445,15 +476,38 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
 
     if wo.status not in WO_ACTIVE:
         raise Forbidden()
-    old_mech = wo.mechanic_id
+    from ..services import handover as hsvc
+    old_mech, old_pm, old_lift = wo.mechanic_id, wo.partsman_id, wo.lift_id
     lift_uuid = svc._uuid(lift_id)
     lift = ctx.db.get(Lift, lift_uuid) if lift_uuid else None
-    busy = svc.lift_busy(ctx.db, lift, wo) if lift and lift.branch_id == bid else None
+    if lift and lift.branch_id != bid:
+        lift = None
+    new_mech = pick(mechanic_id, "masters")
+    # 13.11.2026 (брат): пост = мастер. Переставили на другой пост — машина переходит его мастеру;
+    # выбрали другого мастера — встаёт на его пост (если свободен, иначе в очередь)
+    if lift and lift.id != old_lift and lift.mechanic_id:
+        new_mech = lift.mechanic_id
+    elif new_mech != old_mech and (lift is None or lift.id == old_lift) and new_mech:
+        own = ctx.db.scalar(select(Lift).where(Lift.branch_id == bid, Lift.mechanic_id == new_mech, Lift.active.is_(True)))
+        lift = own if own and not svc.lift_busy(ctx.db, own, wo) else None
+    busy = svc.lift_busy(ctx.db, lift, wo) if lift else None
     if busy:
         flash(ctx.request, f"На подъёмнике {lift.number} уже стоит машина (наряд {busy.number}) — сначала освободите его", "error")
         return RedirectResponse(f"/orders/{order_id}", status_code=303)
-    wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), pick(mechanic_id, "masters")
-    # Передать наряд другому менеджеру (11.11.2026) — новому приходит сообщение. Передаёт только менеджер (и админ).
+    wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), new_mech
+    done = []
+    if wo.partsman_id and wo.partsman_id != old_pm:
+        hsvc.record(ctx.db, wo, "partsman", old_pm, wo.partsman_id, ctx.user.id)
+        done.append("запчастист")
+    if wo.mechanic_id and wo.mechanic_id != old_mech:
+        hsvc.record(ctx.db, wo, "mechanic", old_mech, wo.mechanic_id, ctx.user.id)
+        ex = hsvc.is_extra(ctx.db, wo, wo.mechanic_id)
+        if ex:                       # был вторым мастером — теперь ведущий
+            ex.active = False
+        if wo.status == "diag":      # новый ведущий диагностирует сам
+            wo.lead_diag_at = ex.diag_done_at if ex else None
+        done.append("мастер" + (f" (пост {lift.number})" if lift else ""))
+    # Передать наряд другому менеджеру (11.11.2026). Передаёт только менеджер (и админ), без подтверждения директора.
     new_uuid = svc._uuid(manager_id)
     new_mg = ctx.db.get(User, new_uuid) if new_uuid else None
     if new_mg and new_mg.id != wo.manager_id and ctx.user.role.code not in ("manager", "admin"):
@@ -461,13 +515,11 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
         new_mg = None
     if new_mg and new_mg.branch_id == bid and new_mg.active and new_mg.id != wo.manager_id:
         from ..db import now as _now
+        hsvc.record(ctx.db, wo, "manager", wo.manager_id, new_mg.id, ctx.user.id)
         wo.handover_from, wo.handover_at, wo.handover_pending = wo.manager_id, _now(), True
         wo.manager_id = new_mg.id
-        from ..services import notify as nsvc
-        nsvc.send(ctx.db, [new_mg.id], "handover", "Вам передан наряд",
-                  f"{nsvc.car(ctx.db, wo)} · наряд {wo.number} · передал {ctx.user.short_name}", f"/orders/{wo.id}", wo,
-                  skip=ctx.user.id)
-    wo.lift_id = lift.id if lift and lift.branch_id == bid else None
+        done.append("менеджер")
+    wo.lift_id = lift.id if lift else None
     # Несделанные работы прежнего слесаря переходят новому — зарплата тому, кто делает (отчёт тестировщика 11.11.2026)
     for w in ctx.db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status != "done")):
         if w.mechanic_id is None or (old_mech and w.mechanic_id == old_mech and wo.mechanic_id != old_mech):
@@ -475,22 +527,64 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
     if wo.status == "created":   # назначили недостающее — наряд едет дальше сам
         svc.route_after_intake(ctx.db, wo)
     ctx.db.commit()
-    if not svc.can_view(ctx, wo):   # передал наряд другому менеджеру — у себя он больше не виден (12.11.2026)
-        flash(ctx.request, f"Наряд {wo.number} передан: {new_mg.full_name if new_mg else ''}")
-        return RedirectResponse("/orders", status_code=303)
-    flash(ctx.request, "Назначения сохранены")
+    if new_mg and wo.manager_id == new_mg.id and new_mg.id != ctx.user.id and ctx.user.role.code == "manager":
+        # передал другому менеджеру — у себя 3 дня в «Переданных», только посмотреть (13.11.2026)
+        flash(ctx.request, f"Наряд {wo.number} передан: {new_mg.full_name}. У вас он 3 дня в «Переданных» — только посмотреть")
+        return RedirectResponse("/orders?tab=handed_out", status_code=303)
+    flash(ctx.request, ("Передано: " + ", ".join(done) + " — новому пришло сообщение, ждём «✓ Принял»") if done
+          else "Без изменений")
+    return RedirectResponse(f"/orders/{order_id}", status_code=303)
+
+
+def _handed(ctx: Ctx, wo: WorkOrder):
+    """Плашка «Вам передали этот наряд» — пока не нажал «✓ Принял» (13.11.2026: менеджер, мастер, запчастист)."""
+    from ..models.orders import HANDOVER_KIND
+    from ..services import handover as hsvc
+    if wo.status not in WO_ACTIVE:
+        return None
+    rows = hsvc.pending(ctx.db, wo, ctx.user.id)
+    if rows:
+        h = rows[-1]
+        return {"from": ctx.db.get(User, h.from_id) if h.from_id else None, "at": h.created_at,
+                "role": HANDOVER_KIND.get(h.kind, "")}
+    if wo.handover_pending and wo.manager_id == ctx.user.id:   # старые передачи (до 13.11.2026)
+        return {"from": ctx.db.get(User, wo.handover_from) if wo.handover_from else None, "at": wo.handover_at,
+                "role": "менеджер"}
+    return None
+
+
+@router.post("/orders/{order_id}/masters")
+def order_add_master(order_id: str, ctx: Ctx = Depends(get_ctx), user_id: str = Form(""), work: str = Form("")):
+    """«+ Добавить мастера» (13.11.2026, брат): ещё мастер на машину — это не передача, ведущий остаётся.
+    Новому — «Вам передан наряд» / «✓ Принял»; на диагностике у него свой блок проблем."""
+    ctx.need("orders.assign")
+    wo = _order(ctx, order_id)
+    if wo.status not in WO_ACTIVE:
+        raise Forbidden()
+    u = ctx.db.get(User, svc._uuid(user_id)) if svc._uuid(user_id) else None
+    if not u or u.branch_id != ctx.branch.id or u.role.code not in MASTERS or not u.active:
+        flash(ctx.request, "Выберите мастера", "error")
+        return RedirectResponse(f"/orders/{order_id}", status_code=303)
+    from ..services import handover as hsvc
+    err = hsvc.add_master(ctx.db, wo, u, work, ctx.user.id)
+    if err:
+        flash(ctx.request, err, "error")
+        return RedirectResponse(f"/orders/{order_id}", status_code=303)
+    ctx.db.commit()
+    flash(ctx.request, f"Добавлен мастер: {u.full_name} ({MASTERS.get(u.role.code, '')}) — ему пришло сообщение")
     return RedirectResponse(f"/orders/{order_id}", status_code=303)
 
 
 @router.post("/orders/{order_id}/handover-ack")
 def order_handover_ack(order_id: str, ctx: Ctx = Depends(get_ctx)):
-    """Менеджер принял переданный ему наряд (12.11.2026): плитка «Мне передали» и цифра в меню гаснут."""
+    """«✓ Принял» (13.11.2026 — у всех: менеджер, мастер, запчастист): плитка «Мне передали» и цифра в меню гаснут."""
     from ..db import now
     from ..models import Notification
+    from ..services import handover as hsvc
     wo = _order(ctx, order_id)
-    if wo.manager_id != ctx.user.id:
+    if not hsvc.accept(ctx.db, wo, ctx.user.id) and wo.manager_id != ctx.user.id:
         raise Forbidden()
-    wo.handover_pending = False
+    wo.handover_pending = wo.handover_pending and wo.manager_id != ctx.user.id
     for n in ctx.db.scalars(select(Notification).where(Notification.user_id == ctx.user.id, Notification.work_order_id == wo.id,
                                                        Notification.kind == "handover", Notification.read_at.is_(None))):
         n.read_at = now()

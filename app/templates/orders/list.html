@@ -46,6 +46,9 @@
 {# 12.11.2026: переданные мне наряды — первой плиткой, пока не нажал «Принял» #}
 {% if show_handed %}{% set _ = items.append({"t": "Мне передали", "n": stage_counts.handed, "c": "red" if stage_counts.handed else "gray",
     "href": "?tab=handed" ~ qq, "on": tab == "handed", "s": "нажмите «Принял»" if stage_counts.handed else "новых нет", "zero": not stage_counts.handed}) %}{% endif %}
+{# 13.11.2026: «Переданные» — менеджер передал наряд другому: 3 дня только посмотреть #}
+{% if stage_counts.handed_out or tab == "handed_out" %}{% set _ = items.append({"t": "Переданные", "n": stage_counts.handed_out, "c": "gray",
+    "href": "?tab=handed_out" ~ qq, "on": tab == "handed_out", "s": "3 дня, только посмотреть"}) %}{% endif %}
 {# 12.11.2026: пришли запчасти по закупке, ждут выдачи — плитка видна, пока есть такие наряды (или открыт этот фильтр) #}
 {% if stage_counts.arrived or tab == "arrived" %}{% set _ = items.append({"t": "Пришли запчасти", "n": stage_counts.arrived, "c": "green",
     "href": "?tab=arrived" ~ qq, "on": tab == "arrived", "s": "ждут выдачи со склада" if stage_counts.arrived else "всё выдано"}) %}{% endif %}

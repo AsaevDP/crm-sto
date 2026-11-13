@@ -94,9 +94,9 @@
           <select class="field" name="partsman_id"><option value="">Не выбран</option>
             {% for u in partsmen %}<option value="{{ u.id }}" {% if my_partsman and u.id == my_partsman.id %}selected{% endif %}>{{ u.full_name }}{% if u.works_with_id == user.id %} · ваш{% endif %}</option>{% endfor %}</select>
         </label>
-        <label>Слесарь
+        <label>Ведущий мастер
           <select class="field" name="mechanic_id"><option value="">Не выбран</option>
-            {% for u in mechanics %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select>
+            {% for u in mechanics %}<option value="{{ u.id }}">{{ u.full_name }} · {{ MASTERS.get(u.role.code, "") }}</option>{% endfor %}</select>
         </label>
         <label>Подъёмник
           <select class="field" name="lift_id" id="lift"><option value="">В очередь (без поста)</option>
@@ -104,6 +104,17 @@
         </label>
       </div>
       <p class="hint warn" id="liftwarn" hidden></p>
+      {# 13.11.2026 (брат): с машиной работает не один мастер — электрик, моторист, мойщик… (у каждого своя диагностика) #}
+      <div id="extra-masters"></div>
+      <template id="extra-tpl">
+        <div class="form-row extra-row">
+          <select class="field" name="extra_master_id" aria-label="Ещё мастер"><option value="">Кто ещё…</option>
+            {% for u in mechanics %}<option value="{{ u.id }}">{{ u.full_name }} · {{ MASTERS.get(u.role.code, "") }}</option>{% endfor %}</select>
+          <input class="field" name="extra_work" placeholder="Что делает (необязательно)">
+          <button type="button" class="btn btn-plain btn-sm" onclick="this.closest('.extra-row').remove()" aria-label="Убрать">✕</button>
+        </div>
+      </template>
+      <button type="button" class="btn btn-plain btn-sm" id="add-extra">{{ icon("plus") }}Добавить мастера</button>
     </div>
   </section>
 
@@ -140,6 +151,10 @@
 (function () {
   const form = document.getElementById('intake');
   const $ = n => form.elements[n];
+  // 13.11.2026: «+ Добавить мастера» — ещё строка «кто ещё · что делает»
+  document.getElementById('add-extra').addEventListener('click', () => {
+    document.getElementById('extra-masters').appendChild(document.getElementById('extra-tpl').content.cloneNode(true));
+  });
   // Приёмка из записи: заполняем то, что уже известно
   const PREFILL = {{ prefill|tojson }};
   Object.entries(PREFILL).forEach(([k, v]) => { const el = form.elements[k]; if (el && 'value' in el) el.value = v; });

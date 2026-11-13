@@ -148,9 +148,12 @@ def visible_orders_query(ctx):
         return q.where(or_(*conds))
     if not sees_all_orders(ctx):
         me = ctx.user.id
-        # слесарь видит и наряды, где ему дали отдельную работу (второй слесарь)
+        # слесарь видит и наряды, где ему дали отдельную работу (второй слесарь) или добавили мастером (13.11.2026)
+        from ..models import OrderMaster
         q = q.where(or_(WorkOrder.partsman_id == me, WorkOrder.mechanic_id == me, WorkOrder.manager_id == me,
-                        WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me))))
+                        WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me)),
+                        WorkOrder.id.in_(select(OrderMaster.work_order_id).where(OrderMaster.user_id == me,
+                                                                                OrderMaster.active.is_(True)))))
     return q
 
 
@@ -211,9 +214,14 @@ def can_view(ctx, wo: WorkOrder) -> bool:
     if manager_limited(ctx):   # 12.11.2026: свой — пока у нас и 3 дня после выдачи; чужой — по доступу к клиенту
         if wo.manager_id == ctx.user.id and (wo.status in WO_ACTIVE or _recent(wo)):
             return True
+        from . import handover as hsvc   # 13.11.2026: передал другому менеджеру — 3 дня только посмотреть
         return (wo.client_id in granted_client_ids(ctx) or ctx.user.id in (wo.partsman_id, wo.mechanic_id)
-                or history_order(ctx, wo))
+                or history_order(ctx, wo) or wo.id in set(hsvc.handed_out(ctx.db, ctx.branch.id, ctx.user.id)))
     if ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id):
+        return True
+    from ..models import OrderMaster   # 13.11.2026: ещё мастер на машине (электрик, моторист…)
+    if ctx.db.scalar(select(OrderMaster.id).where(OrderMaster.work_order_id == wo.id, OrderMaster.user_id == ctx.user.id,
+                                                  OrderMaster.active.is_(True)).limit(1)):
         return True
     return ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == ctx.user.id)
                          .limit(1)) is not None

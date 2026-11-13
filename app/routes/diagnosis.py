@@ -32,6 +32,9 @@ async def finding_add(order_id: str, request: Request, ctx: Ctx = Depends(get_ct
     from ..models import WoWork
     second = wo.status == "work" and ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id,
                                                                             WoWork.mechanic_id == ctx.user.id).limit(1))
+    # 13.11.2026: добавленный мастер — свои проблемы на диагностике (и на согласовании, и в ремонте)
+    from ..services import handover as hsvc
+    second = second or (wo.status in ("diag", "approve", "work") and hsvc.is_extra(ctx.db, wo, ctx.user.id))
     if not second and ((wo.status not in ("diag", "approve", "work") and not manager_writes) or not _is_mech(ctx, wo)):
         raise Forbidden()
     form = await request.form(max_files=2 * svc.MAX_PHOTOS + 2)
@@ -69,13 +72,22 @@ def finding_delete(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/orders/{order_id}/diag-done")
 def diag_done(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """«Диагностика готова» (13.11.2026, брат): мастеров несколько — каждый отмечает свою; на согласование наряд уходит,
+    когда закончили все."""
     ctx.need("orders.diagnose")
     wo = _order(ctx, order_id)
-    if wo.status == "diag" and _is_mech(ctx, wo):
-        n = len(ctx.db.scalars(select(WoFinding.id).where(WoFinding.work_order_id == wo.id)).all())
-        svc.finish_diagnosis(ctx.db, wo, n)
+    from ..services import handover as hsvc
+    extra = hsvc.is_extra(ctx.db, wo, ctx.user.id)
+    if wo.status == "diag" and (extra or ctx.user.id == wo.mechanic_id):   # только сам мастер — свою диагностику
+        all_done = hsvc.mark_diag_done(ctx.db, wo, ctx.user.id)
+        if all_done:
+            n = len(ctx.db.scalars(select(WoFinding.id).where(WoFinding.work_order_id == wo.id)).all())
+            svc.finish_diagnosis(ctx.db, wo, n)
+            flash(ctx.request, "Диагностика отправлена менеджеру на согласование")
+        else:
+            left = [s["user"].short_name for s in hsvc.diag_state(ctx.db, wo) if not s["done"] and s["user"]]
+            flash(ctx.request, "Ваша диагностика готова. Ждём остальных мастеров: " + ", ".join(left))
         ctx.db.commit()
-        flash(ctx.request, "Диагностика отправлена менеджеру на согласование")
     return _back(order_id)
 
 

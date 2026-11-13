@@ -1218,6 +1218,41 @@ def leave_for_today(day):
                 post("pavel", "/stock/receive", {"line_id": str(lines[0].id), f"loc_{lines[0].id}": str(loc.id)},
                      what="Принять одну строку — пришла часть")
         o.step = "wait_parts_today"
+    # 7) 13.11.2026: машина на диагностике у двух мастеров — слесарь закончил, электрик ещё нет
+    c = rnd.choice(CLIENTS)
+    with at(day, "13:30"):
+        r = post("irina", "/orders/new", {"phone": c["phone"], "name": c["name"], "plate": c["plate"], "make": c["make"],
+                                          "model": c["model"], "year": str(c["year"]), "mileage": str(c["km"] + 3000),
+                                          "vin": c["vin"], "scenario": "B", "complaint": "Не заводится с утра, стук спереди",
+                                          "partsman_id": str(uid("oleg")), "mechanic_id": str(uid("andrey")), "lift_id": "",
+                                          "fuel_level": "50", "intake_items": ["docs"], "intake_token": f"sim-{rnd.random()}",
+                                          "extra_master_id": str(uid("elektro")), "extra_work": "Диагностика электрики"},
+                 files=photo(1), what="Приёмка: слесарь + электрик", fetch=True)
+    if r is not None and r.status_code == 200:
+        url = r.json()["url"]
+        with at(day, "14:20"):
+            post("andrey", f"{url}/findings", {"text": "Стук правой стойки стабилизатора", "urgency": "soon"},
+                 files=photo(1), what="Находка слесаря", fetch=True)
+            post("andrey", f"{url}/diag-done", what="Моя диагностика готова (слесарь)")
+        R.check(one(M.WorkOrder, M.WorkOrder.id == uuid.UUID(url.rsplit("/", 1)[1])).status == "diag",
+                "два мастера: пока электрик не закончил — наряд на диагностике", url)
+    # 8) Передача: машину переставили на пост электрика — ему «Мне передали», ждёт «✓ Принял»
+    o = next((o for o in ACTIVE if o.wo() and o.wo().status in ("instock", "waiting", "approve")
+              and o.wo().mechanic_id == uid("andrey") and o.kind == "mechanic"), None)
+    if o:
+        wo = o.wo()
+        with at(day, "16:50"):   # другой мастер; его пост занят — машина встаёт к нему в очередь
+            post("irina", f"{o.url}/assign", {"partsman_id": str(wo.partsman_id or ""), "mechanic_id": str(uid("motor")),
+                                              "lift_id": str(wo.lift_id or ""), "manager_id": str(wo.manager_id)},
+                 what="Передать: другому мастеру")
+        R.check(o.wo().mechanic_id == uid("motor"), "передача мастеру: машина у нового мастера", o.wo().number)
+        o.step, o.lead = "handed_wait", "motor"
+    # 9) Ещё мастер в наряде «В работе» — мойщик (ему «Мне передали»)
+    o = next((o for o in ACTIVE if o.wo() and o.wo().status == "work"), None)
+    if o:
+        with at(day, "17:35"):
+            post("irina", f"{o.url}/masters", {"user_id": str(uid("moyka")), "work": "Мойка кузова после ремонта"},
+                 what="Добавить мастера: мойщик")
     # Кладовщик: привезли — ждёт приёмки
     p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
     if p is None:

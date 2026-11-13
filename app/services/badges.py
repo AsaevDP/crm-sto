@@ -64,12 +64,19 @@ def compute(ctx) -> dict:
                 uq = uq.where(mine)
             _add(out, "/orders", "red", db.scalar(uq) or 0, "срочные запчасти", "/orders?tab=parts")
         if role in MASTERS:
-            _add(out, "/orders", "red", n_status("created", "diag", field=WorkOrder.mechanic_id), "новые — посмотреть",
-                 "/orders?tab=intake")
-        if ctx.can("orders.approve"):   # 12.11.2026: мне передали наряд — горит, пока не нажал «Принял»
-            _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(WorkOrder).where(
-                WorkOrder.branch_id == bid, WorkOrder.manager_id == me.id, WorkOrder.handover_pending.is_(True),
-                WorkOrder.status.not_in(("closed", "cancel")))) or 0, "вам передали наряд — нажмите «Принял»", "/orders?tab=handed")
+            from ..models import OrderMaster   # 13.11.2026: + добавленный мастер, пока не закончил свою диагностику
+            n_extra = db.scalar(select(func.count()).select_from(OrderMaster).join(WorkOrder, WorkOrder.id == OrderMaster.work_order_id)
+                                .where(WorkOrder.branch_id == bid, WorkOrder.status == "diag", OrderMaster.user_id == me.id,
+                                       OrderMaster.active.is_(True), OrderMaster.diag_done_at.is_(None),
+                                       WorkOrder.mechanic_id != me.id)) or 0
+            n_lead = db.scalar(select(func.count()).select_from(WorkOrder).where(
+                WorkOrder.branch_id == bid, WorkOrder.mechanic_id == me.id,
+                or_(WorkOrder.status == "created", (WorkOrder.status == "diag") & WorkOrder.lead_diag_at.is_(None)))) or 0
+            _add(out, "/orders", "red", n_lead + n_extra, "новые — посмотреть", "/orders?tab=intake")
+        # 🔴 13.11.2026: мне передали наряд (менеджеру, мастеру, запчастисту) — горит, пока не нажал «✓ Принял»
+        from .handover import pending_orders
+        _add(out, "/orders", "red", len(pending_orders(db, bid, me.id)), "вам передали наряд — нажмите «Принял»",
+             "/orders?tab=handed")
         if ctx.can("orders.approve"):
             _add(out, "/orders", "yellow", n_status("approve", field=None if see_all else WorkOrder.manager_id),
                  "согласовать с клиентом", "/orders?tab=approve")

@@ -42,9 +42,11 @@ def team(wo: WorkOrder) -> list:
 
 def masters(db: Session, wo: WorkOrder) -> list:
     """Все мастера наряда: ведущий и каждый, у кого в наряде своя работа (электрик, моторист, второй слесарь…)."""
-    from ..models import WoWork
+    from ..models import OrderMaster, WoWork
     ids = [wo.mechanic_id, *db.scalars(select(WoWork.mechanic_id).where(WoWork.work_order_id == wo.id,
-                                                                         WoWork.mechanic_id.is_not(None)))]
+                                                                         WoWork.mechanic_id.is_not(None))),
+           *db.scalars(select(OrderMaster.user_id).where(OrderMaster.work_order_id == wo.id,   # добавленные мастера (13.11)
+                                                         OrderMaster.active.is_(True)))]
     return list(dict.fromkeys(i for i in ids if i))
 
 
