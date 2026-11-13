@@ -5,7 +5,9 @@
 <span class="rcv-btns {{ 'big' if big }}" onclick="event.stopPropagation()">
   {% if p.status in ("ordered", "partial") %}
   <form method="post" action="/purchases/{{ p.id }}/delivered"><input type="hidden" name="back" value="{{ ctx.request.url.path }}?{{ ctx.request.url.query }}">
-    <button class="btn btn-sm {{ 'btn-gray' if not big }}" title="Товар привезли на СТО — пересчитаю и приму">🚚 Привезли</button></form>
+    {# 14.11.2026: после неполной поставки — «Довезли остальное», чтобы не путать с подтверждением приёмки #}
+    {% if p.status == "partial" %}<button class="btn btn-sm {{ 'btn-gray' if not big }}" title="Поставщик довёз то, чего не было — пересчитаю и приму">🚚 Довезли остальное</button>
+    {% else %}<button class="btn btn-sm {{ 'btn-gray' if not big }}" title="Товар привезли на СТО — пересчитаю и приму">🚚 Привезли</button>{% endif %}</form>
   {% endif %}
   {% if p.status in ("delivered", "partial") %}
   <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять всю накладную на склад?')">

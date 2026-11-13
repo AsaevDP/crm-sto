@@ -50,8 +50,13 @@
         {% elif s.orders %}<div class="caption">под наряды: {{ s.orders }}</div>{% else %}<div class="caption">на склад</div>{% endif %}</td>
       <td><span class="chip" data-s="{{ CHIP[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
         {% if s.urgent %}<span class="urg-tag">🔥 {{ s.urgent }}</span>{% endif %}
+        {# 14.11.2026: неполная поставка — что уже принято на склад и чего ждём, по деталям #}
+        {% if p.status != "arrived" and s.got_names %}
+        <div class="caption"><span class="ok-hint">✓ принято:</span> {{ s.got_names|join(", ") }}</div>
+        {% if s.left_names %}<div class="caption">{{ "довезли, ждёт приёмки" if p.status == "delivered" else "ждём" }}: {{ s.left_names|join(", ") }}</div>{% endif %}
+        {% endif %}
         {% if recv_ok and p.status in ("ordered", "delivered", "partial") %}{{ recv_btns(p) }}{% endif %}</td>
-      <td class="num nowrap">{% if p.status in ("partial",) %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>
+      <td class="num nowrap">{% if p.status != "arrived" and s.got_names %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>
       <td class="num">{{ s.orders or "—" }}</td>
       {% if cost_ok %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
       <td class="nowrap">{% if p.expected_on %}<span class="{{ 'late' if p.status in ('ordered','partial') and p.expected_on < today }}">{{ p.expected_on.strftime("%d.%m") }}</span>{% elif p.status in ("ordered","partial") %}<span class="caption">не указано</span>{% else %}—{% endif %}</td>

@@ -92,3 +92,19 @@ def test_order_by_wo(client):
     assert not _line("Шланг ЗН").received
     with SessionLocal() as db:
         assert db.get(WoPart, _line("Стойка ЗН").wo_part_id).status == "reserved"
+
+    # 14.11.2026 (брат): неполная поставка — принятая деталь сразу в «Принятых», не ждёт остальных.
+    # Даже если потом нажали «Довезли остальное» (накладная снова «привезли — ждёт приёмки»).
+    po = _p(_line("Шланг ЗН"))
+    _as(client, "oleg")
+    client.post(f"/purchases/{po.id}/lines", data={"name": "Хомут ЗН", "qty": "1", "price": "50"})
+    _as(client, "pavel")
+    client.post(f"/purchases/{po.id}/delivered", data={})
+    client.post("/stock/receive", data={"line_id": str(_line("Шланг ЗН").id)})
+    assert _p(_line("Шланг ЗН")).status == "partial"
+    page = client.get("/purchases?tab=arrived").text
+    assert f"/purchases/{po.id}" in page and "✓ принято:" in page and "ждём: Хомут ЗН" in page
+    assert "Довезли остальное" in page
+    client.post(f"/purchases/{po.id}/delivered", data={})          # «Довезли остальное»
+    page = client.get("/purchases?tab=arrived").text
+    assert f"/purchases/{po.id}" in page and "довезли, ждёт приёмки: Хомут ЗН" in page

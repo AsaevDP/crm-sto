@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from ..models import (IssueRequest, IssueRequestLine, Location, PartCatalog, Purchase, PurchaseLine, StockItem,
                       StockMovement, Supplier, User, Vehicle, WoPart, WorkOrder, WoWork)
@@ -392,9 +392,17 @@ def issue_request(order_id: str, ctx: Ctx = Depends(get_ctx), comment: str = For
 PURCHASE_TABS = {"draft": ("Черновики", "gray", "собираем заказ"), "wait": ("Ждём", "orange", "заказано, едет"),
                  "delivered": ("Привезли — ждут приёмки", "teal", "кладовщик пересчитывает"),
                  "partial": ("Неполная поставка", "purple", "часть принята, ждём остальное"),
-                 "arrived": ("Приняты", "green", "всё на складе"), "all": ("Все", "blue", "за всё время")}
+                 "arrived": ("Приняты", "green", "на складе, и частично"), "all": ("Все", "blue", "за всё время")}
 _TAB_STATUS = {"draft": ("draft",), "wait": ("ordered",), "delivered": ("delivered",), "partial": ("partial",),
                "arrived": ("arrived",)}
+
+
+def _in_tab(p: Purchase, tab: str, got_any: set) -> bool:
+    """14.11.2026 (брат): в «Принятых» — и накладная, где принята только часть (что бы с ней ни было дальше:
+    ждём остальное или «довезли остальное»). Принятые детали видны сразу, не ждут остальных."""
+    if tab == "all":
+        return True
+    return p.status in _TAB_STATUS[tab] or (tab == "arrived" and p.id in got_any)
 
 
 @router.get("/purchases")
@@ -407,24 +415,37 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     buyers = sorted({p.created_by for p in allp if p.created_by in people}, key=lambda i: people[i].full_name)
     if who:   # 12.11.2026: закупки одного запчастиста
         allp = [p for p in allp if str(p.created_by) == who]
-    counts = {k: sum(p.status in st_ for p in allp) for k, st_ in _TAB_STATUS.items()}
+    got_any = set(db.scalars(select(PurchaseLine.purchase_id).join(Purchase, Purchase.id == PurchaseLine.purchase_id).where(
+        Purchase.branch_id == ctx.branch.id, or_(PurchaseLine.received_qty > 0, PurchaseLine.received.is_(True)))))
+    counts = {k: sum(_in_tab(p, k, got_any) for p in allp) for k in _TAB_STATUS}
     counts["all"] = len(allp)
     if tab not in PURCHASE_TABS:
         # кладовщику первым делом — что привезли; остальным — черновики / что ждём
         tab = next((k for k in (("delivered",) if ctx.can("stock.manage") else ()) + ("draft", "wait") if counts[k]), "all")
-    rows = [p for p in allp if tab == "all" or p.status in _TAB_STATUS[tab]]
+    rows = [p for p in allp if _in_tab(p, tab, got_any)]
     if sup:
         rows = [p for p in rows if str(p.supplier_id) == sup]
     rows = rows[:200]
     ids = [p.id for p in rows]
     stats = {}
     if ids:
-        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_(ids))):
-            s = stats.setdefault(l.purchase_id, {"n": 0, "total": Decimal(0), "orders": 0, "urgent": 0, "got": 0})
+        cat_names = {}
+        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_(ids)).order_by(PurchaseLine.created_at)):
+            s = stats.setdefault(l.purchase_id, {"n": 0, "total": Decimal(0), "orders": 0, "urgent": 0, "got": 0,
+                                                 "got_names": [], "left_names": []})
             s["n"] += 1
             s["total"] += l.qty * l.price
             s["orders"] += 1 if l.wo_part_id else 0
             s["got"] += 1 if l.received else 0
+            if l.catalog_id not in cat_names:
+                c = db.get(PartCatalog, l.catalog_id)
+                cat_names[l.catalog_id] = c.name if c else "позиция"
+            nm = cat_names[l.catalog_id]
+            # 14.11.2026: что принято и чего ждём — по каждой детали (для неполной поставки)
+            if l.got > 0:
+                s["got_names"].append(nm if l.received else f"{nm} ({l.got.normalize():f} из {l.qty.normalize():f})")
+            if not l.received:
+                s["left_names"].append(nm)
         urgent_parts = {x.id for x in db.scalars(select(WoPart).where(WoPart.urgent.is_(True)))}
         for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_(ids), PurchaseLine.received.is_(False),
                                                        PurchaseLine.wo_part_id.in_(urgent_parts or [uuid.uuid4()]))):
