@@ -205,6 +205,9 @@ class PurchaseLine(Entity):
     location_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("locations.id"), nullable=True)
     # Сколько уже пришло (11.11.2026, приход частями). Старые строки: пусто → «всё» или «ничего» по received
     received_qty: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=0, nullable=True)
+    # 13.11.2026 (брат): «Заказал» по каждой строке; все строки заказаны — закупка сама становится «заказано»
+    ordered_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    ordered_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
     @property
     def got(self) -> Decimal:

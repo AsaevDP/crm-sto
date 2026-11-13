@@ -403,6 +403,8 @@ def _hour_rate(db: Session, branch_id):
 def set_status(db: Session, wo: WorkOrder, new: str, comment: str = ""):
     db.add(WoStatusHistory(work_order_id=wo.id, from_status=wo.status if wo.status != new else "", to_status=new,
                            comment=comment))
+    if new == "approve" and wo.status != "approve":
+        wo.picked_at, wo.picked_by = None, None   # 13.11.2026: снова на согласование — подбор заново
     wo.status = new
 
 
@@ -508,9 +510,10 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
 
 
 def route_after_intake(db: Session, wo: WorkOrder):
-    """Сразу после приёмки: А → подбор запчастей, Б → диагностика (если назначен слесарь)."""
+    """Сразу после приёмки: А → согласование (запчастист подбирает, менеджер ставит цены работ, потом звонит клиенту),
+    Б → диагностика (если назначен слесарь)."""
     if wo.scenario == "A" and wo.partsman_id:
-        set_status(db, wo, "picking", "Сценарий А: без диагностики")
+        set_status(db, wo, "approve", "Сценарий А: без диагностики — подбор и согласование")
     elif wo.scenario == "B" and wo.mechanic_id:
         set_status(db, wo, "diag", "Сценарий Б: на диагностику")
 
@@ -537,7 +540,7 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
          options_open: int = 0) -> dict:
     """Полоса шагов наверху наряда и подсказка: что сейчас сделать и кому."""
     cur = STEP_OF.get(wo.status, -1)
-    skip = {1, 2} if wo.scenario == "A" and not n_find else set()
+    skip = {1} if wo.scenario == "A" and not n_find else set()   # 13.11.2026: согласование есть и в сценарии А
     steps = [{"n": i + 1, "label": label, "color": color,
               "state": "skip" if i in skip else ("done" if i < cur else ("now" if i == cur else "todo"))}
              for i, (label, color) in enumerate(STEPS)]
@@ -553,9 +556,14 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
     elif s == "diag":
         title, text, color = (f"Диагностика · {mech}", "Слесарь записывает проблемы с фото. Закончит — «Диагностика готова», "
                               "и наряд придёт менеджеру на согласование.", "purple")
+    elif s == "approve" and not wo.picked_at and wo.partsman_id:
+        title, text, color = (f"Подбор · {partsman} и работы · менеджер",
+                              f"{partsman.capitalize()} подбирает запчасти (со склада, заказать, варианты фирм), менеджер "
+                              "составляет работы и цены. Закончит подбор — «Подбор завершён», и можно звонить клиенту.", "yellow")
     elif s == "approve":
-        title, text, color = ("Согласуйте с клиентом", "Позвоните клиенту: по каждой проблеме — ✓ Да или ✕ Нет. Тут же добавьте "
-                              "запчасти и варианты разных фирм на выбор.", "yellow")
+        title, text, color = ("Согласуйте с клиентом", "Подбор готов. Позвоните клиенту: проблемы — ✓ Да / ✕ Нет, варианты "
+                              "фирм — «Выбрать», лишнее — в архив. Затем «Согласовал с клиентом» — запчасти уйдут в заказ.",
+                              "yellow")
     elif s == "picking" and options_open:
         title, text, color = ("Клиент выбирает запчасти", f"Ждут выбора: {options_open}. Отметьте вариант клиента кнопкой «Выбрать».",
                               "orange")
@@ -639,45 +647,73 @@ def finish_diagnosis(db: Session, wo: WorkOrder, n_findings: int):
     event(db, wo, "status", f"Диагностика завершена. {note}")
 
 
-def finish_approval(db: Session, wo: WorkOrder) -> str:
-    """Менеджер закончил согласование. Возвращает текст ошибки или ''.
-    Согласованное → запчастисту в подбор, отказы → рекомендации в карту клиента."""
-    from ..models import WoFinding
-    from ..models.orders import URGENCY
+def work_for_finding(db: Session, wo: WorkOrder, f, yes: bool):
+    """13.11.2026 (брат): «✓ Да» по проблеме — сразу работа в наряде (менеджер ставит цену и мастера, пока запчастист
+    подбирает); «✕ Нет» — работа убирается, если её ещё не начинали."""
+    w = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.finding_id == f.id))
+    if yes and w is None:
+        db.add(WoWork(work_order_id=wo.id, finding_id=f.id, name=f.text[:200], mechanic_id=wo.mechanic_id,
+                      pricing="hours", rate=_hour_rate(db, wo.branch_id)))
+    elif not yes and w is not None and w.status == "todo" and not w.done_by:
+        from ..models import WoPart
+        for p in db.scalars(select(WoPart).where(WoPart.wo_work_id == w.id)):
+            p.wo_work_id = None
+        db.delete(w)
+    db.flush()
+
+
+def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False) -> str:
+    """«Согласовал с клиентом» (13.11.2026, брат): проблемы, работы и запчасти — разом, после того как запчастист
+    закончил подбор. Только теперь запчасти заказываются. Возвращает текст ошибки или ''.
+    Отказы → рекомендации в карту клиента. no_parts — менеджер подтвердил «запчасти не нужны» без подбора."""
+    from ..models import WoFinding, WoPart
+    from ..models.orders import PART_OFF
     findings = db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id)).all()
     if any(f.approval == "pending" for f in findings):
         return "Отметьте по каждой проблеме: согласовано или отказ"
     yes = [f for f in findings if f.approval == "yes"]
-    if yes and not wo.partsman_id:
-        return "Назначьте запчастиста — согласованное уйдёт ему в подбор"
     for f in findings:
-        if f.approval == "no":
-            event(db, wo, "recommendation", f.text, finding=f, urgency=f.urgency)
-    # Согласованные проблемы становятся работами наряда (цены — на шаге 6)
-    have = {w.finding_id for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))}
-    rate = _hour_rate(db, wo.branch_id)
-    for f in yes:
-        if f.id not in have:
-            db.add(WoWork(work_order_id=wo.id, finding_id=f.id, name=f.text[:200], mechanic_id=wo.mechanic_id,
-                          pricing="hours", rate=rate))
+        work_for_finding(db, wo, f, f.approval == "yes")
+    works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all()
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id,
+                                            WoPart.status.notin_(("returned", "declined", "archived")))).all()
     summary = f"Согласовано: {len(yes)}, отказ: {len(findings) - len(yes)}"
-    event(db, wo, "approval", summary)
-    # 12.11.2026 (живой прогон): новая находка во время ремонта, клиент от неё отказался — машина возвращается туда,
-    # где была (обычно «В работе»), а не в подбор запчастей: иначе мастер не может закончить работы.
-    new_yes = [f for f in yes if f.id not in have]
-    prev = db.scalar(select(WoStatusHistory.from_status).where(WoStatusHistory.work_order_id == wo.id,
-                                                                WoStatusHistory.to_status == "approve")
+    # Когда наряд пришёл на согласование (этот круг): новое — то, что решено и подобрано после этого
+    last = db.scalar(select(WoStatusHistory).where(WoStatusHistory.work_order_id == wo.id, WoStatusHistory.to_status == "approve")
                      .order_by(WoStatusHistory.created_at.desc()).limit(1))
-    if have and not new_yes and prev in ("work", "instock", "waiting", "picking"):
-        works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all()
+    prev, entered = (last.from_status, last.created_at) if last else (None, None)
+    again = prev in ("work", "instock", "waiting", "picking", "ready")   # во время ремонта нашли новое
+    fresh = [p for p in parts if p.status in ("need", "option") or (entered and p.created_at >= entered)]
+    # 12.11.2026 (живой прогон): новая находка во время ремонта, клиент от неё отказался — машина возвращается туда,
+    # где была (обычно «В работе»), а не в подбор: иначе мастер не может закончить работы.
+    new_yes = [f for f in yes if again and f.approved_at and entered and f.approved_at >= entered]
+    if again and not new_yes and not fresh:
+        for f in findings:
+            if f.approval == "no":
+                event(db, wo, "recommendation", f.text, finding=f, urgency=f.urgency)
+        event(db, wo, "approval", summary)
         back = "ready" if prev == "work" and works and all(w.status == "done" for w in works) else prev
         set_status(db, wo, back, summary + ". Новое не согласовано — продолжаем, где остановились")
         return ""
-    if yes:
-        set_status(db, wo, "picking", summary)
-    else:
+    if works or parts:
+        if not wo.partsman_id and parts:
+            return "Назначьте запчастиста — согласованное уйдёт ему в заказ"
+        if wo.partsman_id and not wo.picked_at and not (no_parts and not fresh):
+            return ("Запчастист ещё не закончил подбор — дождитесь «Подбор завершён»"
+                    + ("" if fresh else ". Если запчасти не нужны — «Согласовал — запчасти не нужны»"))
+    for f in findings:
+        if f.approval == "no":
+            event(db, wo, "recommendation", f.text, finding=f, urgency=f.urgency)
+    event(db, wo, "approval", summary)
+    if not works:
+        from . import stock as ssvc
+        for p in parts:   # клиент отказался от всего — подобранное в архив (резерв снимается)
+            ssvc.archive_part(db, p, None)
         set_status(db, wo, "ready", summary + ". Ремонт не нужен или клиент отказался")
-    return ""
+        return ""
+    from . import stock as ssvc
+    set_status(db, wo, "picking", summary + ". Согласовано с клиентом — запчасти в заказ")
+    return ssvc.after_approval(db, wo)
 
 
 # ---------- Выполнение работ (полоска на карточке машины) ----------

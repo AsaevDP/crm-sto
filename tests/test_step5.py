@@ -9,10 +9,16 @@ from app.models import Location, PartCatalog, Purchase, PurchaseLine, StockItem,
 from app.services import settings as st
 from app.services.stock import balances
 
-from .conftest import login
+from .conftest import agree, login
 from .test_step3 import _create
 
 FETCH = {"x-requested-with": "fetch"}
+
+
+def _uid_oleg():
+    from app.models import User
+    with SessionLocal() as db:
+        return db.scalar(select(User.id).where(User.login == "oleg"))
 
 
 def _wo(url):
@@ -34,7 +40,7 @@ def test_buy5_one_to_order_four_to_stock_next_order_from_stock(client):
     login(client, "irina", "irina123")
     url1 = _create(client, scenario="A", photos=1, plate="ВВ 5001 ВВ", phone="0505001000").json()["url"]
     client.post("/logout")
-    assert _wo(url1).status == "picking"
+    assert _wo(url1).status == "approve"   # 13.11.2026: подбор и согласование одновременно
 
     # Запчастист: новая позиция, закупка 100, наценка 100 % → цена 200; заказываем 5 шт (1 в наряд, 4 на склад)
     login(client, "oleg", "oleg123")
@@ -42,12 +48,14 @@ def test_buy5_one_to_order_four_to_stock_next_order_from_stock(client):
                                        "markup_pct": "100", "action": "order", "order_qty": "5"})
     with SessionLocal() as db:
         part1 = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url1).id))
-        assert (part1.price, part1.status) == (Decimal("200.00"), "ordered")
-        line = db.scalar(select(PurchaseLine).where(PurchaseLine.wo_part_id == part1.id))
-        assert line.qty == 5
-        pid = line.purchase_id
-    client.post(f"{url1}/picking-done")
+        assert (part1.price, part1.status, part1.plan) == (Decimal("200.00"), "need", "order")   # до согласования не заказана
+        assert db.scalar(select(PurchaseLine).where(PurchaseLine.wo_part_id == part1.id)) is None
+    agree(client, url1)
     assert _wo(url1).status == "waiting"
+    with SessionLocal() as db:
+        line = db.scalar(select(PurchaseLine).where(PurchaseLine.wo_part_id == part1.id))
+        assert line.qty == 5 and db.get(Purchase, line.purchase_id).created_by == _uid_oleg()
+        pid = line.purchase_id
     client.post(f"/purchases/{pid}", data={"action": "ordered"})
     client.post("/logout")
 
@@ -91,7 +99,8 @@ def test_buy5_one_to_order_four_to_stock_next_order_from_stock(client):
     found = client.get("/api/catalog/search?q=GDB1234", headers=FETCH).json()["items"]
     assert found[0]["free"] == 4
     client.post(f"{url2}/parts", data={"catalog_id": str(cat.id), "qty": "1", "cost": "100", "markup_pct": "50"})
-    client.post(f"{url2}/picking-done")
+    assert _bal(name) == (4, 1, 3)   # со склада — в резерв сразу, ещё на согласовании
+    agree(client, url2)
     assert _wo(url2).status == "instock"
     assert _bal(name) == (4, 1, 3)
     with SessionLocal() as db:
@@ -110,6 +119,7 @@ def test_inventory_adjust_requires_reason(client):
     client.post("/logout")
     login(client, "oleg", "oleg123")
     client.post(f"{url}/parts", data={"name": "Фильтр масляный (инв)", "qty": "1", "cost": "50", "action": "order", "order_qty": "3"})
+    agree(client, url)
     with SessionLocal() as db:
         pid = db.scalar(select(PurchaseLine.purchase_id).join(WoPart, WoPart.id == PurchaseLine.wo_part_id)
                         .where(WoPart.name == "Фильтр масляный (инв)"))

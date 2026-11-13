@@ -9,7 +9,7 @@ from app.db import SessionLocal
 from app.models import ChemRequest, PartCatalog, Purchase, PurchaseLine, StockItem, User, WoWork
 from app.services import stock as ssvc
 
-from .conftest import login
+from .conftest import agree, login
 from .test_step3 import _create
 from .test_step6 import _as, _wo
 
@@ -182,7 +182,7 @@ def test_second_master_works_while_parts_wait(client):
     url = _create(client, scenario="A", photos=1, plate="КТ 1213 КТ", phone="0501213000", works="Замена амортизаторов").json()["url"]
     _as(client, "oleg")
     client.post(f"{url}/parts", data={"name": "Амортизатор (ждём)", "qty": "2", "cost": "2000", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     assert _wo(url).status == "waiting"
     _as(client, "irina")
     client.post(f"{url}/works", data={"name": "Мойка кузова", "pricing": "fixed", "rate": "350", "mechanic_id": str(_uid("moyka"))})

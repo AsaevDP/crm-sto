@@ -72,6 +72,9 @@ def test_draft_purchase_is_not_ordered_and_storekeeper_sees_it(client):
     url = _create(client, scenario="A", photos=1, plate="КТ 1202 КТ", phone="0501202000", works="ТО").json()["url"]
     _as(client, "oleg")
     client.post(f"{url}/parts", data={"name": "Ремкомплект (черновик)", "qty": "1", "cost": "100", "action": "order"})
+    assert "заказать после согласования" in client.get(url).text   # 13.11.2026: до согласования не заказываем
+    from .conftest import agree
+    agree(client, url)
     page = client.get(url).text
     assert "в черновике закупки" in page
     badges = client.get("/api/notify", headers={"x-requested-with": "fetch"}).json()["badges"]

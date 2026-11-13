@@ -20,7 +20,7 @@ D0 = Decimal("0")
 ON_HAND_SIGN = {"in": 1, "return": 1, "issue": -1, "writeoff": -1, "sale": -1, "adjust": 1}
 PART_STATUS_LABEL = {"need": "нужна", "ordered": "заказана", "arrived": "пришла", "reserved": "в резерве",
                      "issued": "выдана", "installed": "установлена", "returned": "возврат",
-                     "option": "вариант", "declined": "не выбран"}
+                     "option": "вариант", "declined": "не выбран", "archived": "в архиве"}
 
 
 def money(x) -> Decimal:
@@ -171,10 +171,20 @@ def unreserve(db: Session, part: WoPart, comment="Снятие резерва"):
         move(db, "unreserve", db.get(StockItem, sid), qty, part, comment=comment)
 
 
-def _find_draft(db: Session, branch_id, supplier_id, work_order_id) -> Purchase | None:
-    """Черновик текущего пользователя у этого поставщика (None — без поставщика) под этот наряд (None — на склад)."""
+def draft_owner(db: Session, work_order_id=None):
+    """Чей черновик (13.11.2026): под наряд — всегда запчастиста этого наряда, кто бы ни нажал кнопку
+    (менеджер выбрал вариант клиента — заказ всё равно у запчастиста в «Моих заказах»). На склад — того, кто заказывает."""
     from ..db import current_user_id
-    me = current_user_id.get()
+    if work_order_id:
+        wo = db.get(WorkOrder, work_order_id)
+        if wo and wo.partsman_id:
+            return wo.partsman_id
+    return current_user_id.get()
+
+
+def _find_draft(db: Session, branch_id, supplier_id, work_order_id) -> Purchase | None:
+    """Черновик владельца (см. draft_owner) у этого поставщика (None — без поставщика) под этот наряд (None — на склад)."""
+    me = draft_owner(db, work_order_id)
     q = select(Purchase).where(Purchase.branch_id == branch_id, Purchase.status == "draft")
     q = q.where(Purchase.supplier_id == supplier_id) if supplier_id else q.where(Purchase.supplier_id.is_(None))
     q = q.where(Purchase.work_order_id == work_order_id) if work_order_id else q.where(Purchase.work_order_id.is_(None))
@@ -189,7 +199,8 @@ def draft_purchase(db: Session, branch_id, supplier_id=None, work_order_id=None)
     supplier_id не задан — черновик без поставщика (запчастист впишет)."""
     p = _find_draft(db, branch_id, supplier_id, work_order_id)
     if p is None:
-        p = Purchase(status="draft", supplier_id=supplier_id, work_order_id=work_order_id)
+        p = Purchase(status="draft", supplier_id=supplier_id, work_order_id=work_order_id,
+                     created_by=draft_owner(db, work_order_id))
         db.add(p)
         db.flush()
     return p
@@ -224,9 +235,9 @@ def release_part(db: Session, part: WoPart, comment: str = "Позицию уб�
     if part.status in ("reserved", "ordered", "need"):   # «заказана» может быть частично в резерве (приход частями)
         unreserve(db, part, comment)
     for line in db.scalars(select(PurchaseLine).where(PurchaseLine.wo_part_id == part.id)):
-        if db.get(Purchase, line.purchase_id).status == "draft":
+        if db.get(Purchase, line.purchase_id).status == "draft" and not line.ordered_at:
             db.delete(line)
-        else:
+        else:   # уже заказано у поставщика (вся закупка или эта строка) — приедет на свободный склад
             line.wo_part_id = None
     db.flush()
 
@@ -302,9 +313,9 @@ def draft_part_ids(db: Session, part_ids) -> set:
     if not ids:
         return set()
     sent, draft = set(), set()
-    for pid, st in db.execute(select(PurchaseLine.wo_part_id, Purchase.status).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
-                              .where(PurchaseLine.wo_part_id.in_(ids))):
-        (draft if st == "draft" else sent).add(pid)
+    for pid, st, oat in db.execute(select(PurchaseLine.wo_part_id, Purchase.status, PurchaseLine.ordered_at)
+                                   .join(Purchase, Purchase.id == PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id.in_(ids))):
+        (draft if st == "draft" and not oat else sent).add(pid)   # 13.11.2026: «Заказал» по строке — уже заказана
     return draft - sent
 
 
@@ -345,6 +356,92 @@ def unlink_line(db: Session, line: PurchaseLine):
         part.status = "need"
 
 
+PLAN_STATUSES = ("created", "diag", "approve")   # до согласования с клиентом — ничего не заказываем
+
+
+def plan_part(db: Session, branch_id, part: WoPart, action: str = "auto", qty_total=None) -> str:
+    """13.11.2026 (брат): подбор до согласования. Есть на складе — сразу в резерв (чтобы не забрали; клиент откажется —
+    резерв снимется). Нет или «только заказать» — пометка «заказать после согласования», закупки ещё нет."""
+    if action in ("auto", "stock") and reserve_from_stock(db, branch_id, part):
+        part.plan = ""
+        return "взято со склада в резерв"
+    if action in ("auto", "order"):
+        part.status, part.plan = "need", "order"
+        part.plan_qty = Decimal(qty_total) if qty_total else None
+        return "заказать — после согласования с клиентом"
+    return "добавлено — выберите: со склада или заказать"
+
+
+def apply_plan(db: Session, branch_id, wo: WorkOrder) -> list:
+    """Менеджер согласовал с клиентом: помеченное «заказать» уходит запчастисту в черновик закупки (на его имя),
+    нерешённое — со склада или в заказ. Возвращает позиции, которые надо заказать."""
+    ordered = []
+    for part in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "need")).all():
+        if part.plan == "order":
+            order_part(db, branch_id, part, part.plan_qty)
+        else:
+            source_part(db, branch_id, part, "auto")
+        part.plan = ""
+        if part.status == "ordered":
+            ordered.append(part)
+    db.flush()
+    return ordered
+
+
+def sent_lines(db: Session, part: WoPart) -> list:
+    """Строки закупок, уже отправленные поставщику (не черновик), по этой позиции."""
+    return [l for l in db.scalars(select(PurchaseLine).where(PurchaseLine.wo_part_id == part.id))
+            if db.get(Purchase, l.purchase_id).status != "draft" or l.ordered_at]
+
+
+def archive_part(db: Session, part: WoPart, user_id) -> str:
+    """13.11.2026 (брат): «Убрать» → в архив наряда, а не насовсем. Резерв снимается, из черновика закупки строка уходит;
+    уже заказанное у поставщика — запчастисту сообщение «отмените заказ» (приедет — ляжет на свободный склад).
+    Возвращает ошибку или ''."""
+    if part.status in ("issued", "installed"):
+        return "Запчасть уже выдана мастеру — сначала «Вернуть на склад»"
+    if part.status == "archived":
+        return ""
+    sent = sent_lines(db, part)
+    release_part(db, part, "Убрали в архив наряда")
+    for line in db.scalars(select(IssueRequestLine).where(IssueRequestLine.wo_part_id == part.id)):
+        req = db.get(IssueRequest, line.request_id)
+        if req and req.status in ("new", "ready"):
+            db.delete(line)
+    part.prev_status, part.status, part.urgent = part.status, "archived", False
+    from ..db import now
+    part.archived_at, part.archived_by = now(), user_id
+    db.flush()
+    if sent:
+        from . import notify
+        wo = db.get(WorkOrder, part.work_order_id)
+        notify.send(db, [wo.partsman_id], "order_cancel", f"Отмените заказ: {part.name}",
+                    f"Менеджер убрал позицию из наряда · {notify.car(db, wo)} · наряд {wo.number}. "
+                    "Если всё же приедет — ляжет на свободный склад", f"/orders/{wo.id}#parts", wo, skip=user_id)
+    return ""
+
+
+def restore_part(db: Session, branch_id, wo: WorkOrder, part: WoPart) -> str:
+    """Вернуть позицию из архива. Вариант на выбор — снова вариант (если клиент ещё выбирает). Обычная — снова «нужна»:
+    до согласования с прежней пометкой, после — сразу со склада или в заказ запчастисту."""
+    if part.status != "archived":
+        return ""
+    group_open = part.option_group and db.scalar(select(WoPart.id).where(
+        WoPart.work_order_id == wo.id, WoPart.option_group == part.option_group, WoPart.status == "option").limit(1))
+    if part.prev_status in ("option", "declined") and part.option_group:
+        part.status = "option" if group_open else "declined"
+    else:
+        part.status = "need"
+        if wo.status not in PLAN_STATUSES:
+            source_part(db, branch_id, part, "order" if part.plan == "order" else "auto")
+            part.plan = ""
+        elif part.plan != "order":
+            plan_part(db, branch_id, part, "auto")   # снова со склада, если есть, иначе «заказать после согласования»
+    part.prev_status, part.archived_at, part.archived_by = "", None, None
+    db.flush()
+    return ""
+
+
 def source_part(db: Session, branch_id, part: WoPart, action: str = "auto") -> str:
     """Позиция «нужна» → со склада (если есть свободный остаток) или в закупку. Возвращает итог для сообщения."""
     if action in ("auto", "stock") and reserve_from_stock(db, branch_id, part):
@@ -367,8 +464,11 @@ def choose_option(db: Session, branch_id, wo: WorkOrder, part: WoPart) -> str:
         p.status, p.source = "declined", ""
     if part.status in ("option", "declined"):
         part.status = "need"
+        # 13.11.2026: до согласования — со склада в резерв или «заказать после согласования» (закупки ещё нет)
+        if wo.status in PLAN_STATUSES and part.catalog_id:
+            plan_part(db, branch_id, part, "auto")
         # Подбор уже идёт — сразу со склада или в закупку; до подбора позиция ждёт запчастиста
-        if wo.status in ("picking", "waiting", "instock", "work") and part.catalog_id:
+        elif wo.status in ("picking", "waiting", "instock", "work") and part.catalog_id:
             source_part(db, branch_id, part)
             if part.status == "ordered" and wo.status == "instock":
                 osvc.set_status(db, wo, "waiting", f"Выбран вариант «{part.name}» — ждём от поставщика")
@@ -405,6 +505,43 @@ def finish_picking(db: Session, wo: WorkOrder) -> str:
         notify.parts_ready(db, wo)
     else:
         osvc.set_status(db, wo, "waiting", "Ждём запчасти от поставщика")
+    return ""
+
+
+def mark_picked(db: Session, wo: WorkOrder, user) -> str:
+    """13.11.2026 (брат): запчастист закончил подбор, пока менеджер согласует — «Подбор завершён» ничего не заказывает,
+    только отмечает и пишет менеджеру: можно звонить клиенту. Возвращает ошибку или ''."""
+    from ..db import now
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "need")).all()
+    undecided = [p for p in parts if p.plan != "order" and not p.option_group]
+    if undecided:
+        return f"По каждой запчасти выберите: со склада или заказать («{undecided[0].name}»)"
+    wo.picked_at, wo.picked_by = now(), user.id
+    from . import notify
+    n = db.scalar(select(func.count()).select_from(WoPart).where(WoPart.work_order_id == wo.id,
+                                                                 WoPart.status.notin_(("returned", "declined", "archived"))))
+    notify.send(db, [wo.manager_id], "picked", f"Подбор готов — согласуйте с клиентом · {wo.number}",
+                f"{notify.car(db, wo)} · запчастей: {n or 0} · подобрал {user.short_name}", f"/orders/{wo.id}#parts", wo,
+                skip=user.id)
+    return ""
+
+
+def after_approval(db: Session, wo: WorkOrder) -> str:
+    """13.11.2026 (брат): менеджер согласовал с клиентом запчасти и работы — только теперь заказываем. Со склада —
+    в резерве; «заказать» — в черновик запчастиста (на его имя) + сообщение «Заказать запчасти». Дальше — как раньше:
+    всё есть → «Запчасти на складе», что-то едет → «Ждёт запчасти», запчастей нет → «В работе»."""
+    waiting_choice = db.scalar(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "option"))
+    if waiting_choice:
+        return f"Клиент ещё не выбрал вариант: «{waiting_choice.name}» — нажмите «Выбрать» у нужного или уберите в архив"
+    ordered = apply_plan(db, wo.branch_id, wo)
+    err = finish_picking(db, wo)
+    if err:
+        return err
+    if ordered:
+        from . import notify
+        names = ", ".join(p.name for p in ordered[:4]) + ("…" if len(ordered) > 4 else "")
+        notify.send(db, [wo.partsman_id], "to_order", f"Заказать запчасти: {len(ordered)} поз. · {wo.number}",
+                    f"{notify.car(db, wo)} · {names}", "/my-orders?st=draft", wo)
     return ""
 
 

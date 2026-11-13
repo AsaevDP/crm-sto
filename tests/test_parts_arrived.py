@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.db import SessionLocal, current_branch_id
 from app.models import IssueRequest, Location, Notification, PurchaseLine, User, WoPart, WorkOrder, WoWork
 
-from .conftest import login
+from .conftest import agree, login
 from .test_step3 import _create
 
 FETCH = {"x-requested-with": "fetch"}
@@ -47,7 +47,7 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
     login(client, "oleg", "oleg123")
     for name in ("Свеча (тест «пришли»)", "Датчик (тест «пришли»)"):
         client.post(f"{url}/parts", data={"name": name, "qty": "1", "cost": "100", "markup_pct": "30", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     client.post("/logout")
     with SessionLocal() as db:
         wo = db.get(WorkOrder, _wo(url).id)

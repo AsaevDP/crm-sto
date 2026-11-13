@@ -66,11 +66,10 @@
   </form>
   {% endif %}
   {% if can_approve %}
-  {% if can_offer %}<a class="btn btn-gray btn-block" href="#parts" data-goto="diag" data-open>{{ icon("plus") }}Добавить запчасти и варианты фирм</a>{% endif %}
-  <form method="post" action="/orders/{{ wo.id }}/approval-done">
-    <button class="btn btn-block">Согласование завершено</button>
-    <p class="hint" style="margin:6px 0 0">«Да» станут работами, «Нет» — рекомендациями в карте клиента. Запчасти можно добавить и до, и после.</p>
-  </form>
+  {# 13.11.2026 (брат): согласование — одной кнопкой в блоке «Запчасти», после «Подбор завершён» у запчастиста #}
+  <a class="btn btn-gray btn-block" href="#parts" data-goto="diag">{{ "Подбор готов → согласовать в «Запчастях»" if wo.picked_at or not wo.partsman_id else "Запчасти: ждём подбор" }}</a>
+  <p class="hint" style="margin:6px 0 0">«Да» — сразу работа (цена и мастер — в блоке «Работы»), «Нет» — рекомендация в карте клиента.
+    После звонка клиенту — «Согласовал с клиентом» в блоке «Запчасти».</p>
   {% endif %}
 </div>
 {% endset %}
@@ -397,6 +396,12 @@
     if (!r.ok) { alert('Не сохранилось'); return; }
     seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
     seg.closest('.finding').dataset.a = b.dataset.v;
+    (window.crmReload || (() => location.reload()))();   // 13.11.2026: «Да» — работа появилась в блоке «Работы»
+  }));
+
+  // «Архив · N» в шапке блока «Запчасти» — раскрыть архив наряда (13.11.2026)
+  document.querySelectorAll('[data-open-arch]').forEach(a => a.addEventListener('click', () => {
+    const d = document.getElementById('parts-arch'); if (d) d.open = true;
   }));
 
   // Цена работы: «По нормо-часам» или «Фикс. цена» — два отдельных способа
@@ -441,11 +446,11 @@
     const body = new URLSearchParams({ markup_pct: mk ? mk.value : '' });
     if (cost) body.set('cost', cost.value);
     const r = await fetch(inp.dataset.markupUrl, { method: 'POST', body, headers: { 'x-requested-with': 'fetch' } });
-    if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.error || 'Не сохранилось'); location.reload(); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); alert(e.error || 'Не сохранилось'); (window.crmReload || (() => location.reload()))(); return; }
     const j = await r.json(), fmt = v => (+v).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (mk && j.markup !== undefined) mk.value = j.markup;
     const pr = row.querySelector('.p-price'), sm = row.querySelector('.p-sum');
-    if (pr && sm) { pr.textContent = fmt(j.price); sm.textContent = fmt(j.sum); } else location.reload();
+    if (pr && sm) { pr.textContent = fmt(j.price); sm.textContent = fmt(j.sum); } else (window.crmReload || (() => location.reload()))();
   }));
   // «Добавить запчасти» из согласования — на iPhone переключить вкладку
   // Шаги наверху и ссылки «перейти к…»: на iPhone сначала нужная вкладка, потом прокрутка к блоку
@@ -476,6 +481,11 @@
       details.open = true; details.scrollIntoView({ block: 'start', behavior: 'smooth' }); f.brand.focus();
     }));
     details.addEventListener('toggle', () => { if (!details.open) { f.option_group.value = ''; optfor.hidden = true; } });
+    // 13.11.2026: выбрали «ещё вариант к: …» в списке — название подставляется, если пустое
+    f.option_group.addEventListener('change', () => {
+      const o = f.option_group.selectedOptions[0];
+      if (f.option_group.value && !f.name.value.trim()) f.name.value = o.textContent.replace(/^ещё вариант к:\s*/, '');
+    });
     let t, found = [];
     find.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
       if (find.value.trim().length < 2) { res.hidden = true; return; }
@@ -509,7 +519,7 @@
     for (const [i, f] of files.entries()) { try { const c = await compressPhoto(f); fd.append('photos', c.full, `p${i}.jpg`); fd.append('thumbs', c.thumb, `t${i}.jpg`); } catch (e) {} }
     const r = await fetch('/orders/{{ wo.id }}/photos', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
     if (!r.ok) alert('Не удалось загрузить фото');
-    location.reload();
+    (window.crmReload || (() => location.reload()))();
   });
   {% endif %}
 
@@ -527,7 +537,7 @@
     const btn = ff.querySelector('button:not([type=button])'); btn.disabled = true; btn.textContent = 'Сохраняю…';
     const fd = new FormData(ff); fpick.appendTo(fd);
     const r = await fetch('/orders/{{ wo.id }}/findings', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
-    if (r.ok) { try { sessionStorage.setItem(key, 'diag'); } catch (e) {} location.reload(); return; }
+    if (r.ok) { try { sessionStorage.setItem(key, 'diag'); } catch (e) {} (window.crmReload || (() => location.reload()))(); return; }
     const res = await r.json().catch(() => ({})); alert((res.errors || ['Не сохранилось']).join(', '));
     btn.disabled = false; btn.textContent = 'Сохранить проблему';
   });

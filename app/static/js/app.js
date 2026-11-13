@@ -24,6 +24,9 @@
   document.addEventListener('submit', e => {
     if (e.target instanceof HTMLFormElement && !e.defaultPrevented) remember(e.target);
   });
+  // 13.11.2026: действия, которые сохраняются в фоне и потом перезагружают страницу (проблема, фото, «Да / Нет»),
+  // тоже встают на прежнее место: вызывать crmReload() вместо location.reload()
+  window.crmReload = function () { remember({ method: 'post' }); location.reload(); };
   // form.submit() из скриптов (выбор в списке и т.п.) события submit не даёт — запоминаем и там
   const nativeSubmit = HTMLFormElement.prototype.submit;
   HTMLFormElement.prototype.submit = function () { remember(this); return nativeSubmit.call(this); };

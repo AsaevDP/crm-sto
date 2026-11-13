@@ -19,6 +19,8 @@
     {% else %}
       {# 12.11.2026: «заказана», а закупка ещё черновик — честно пишем «в черновике закупки» #}
       {% if p.id in draft_parts %}<span class="chip part-st" data-ps="need" title="Запчастист ещё не отправил заказ поставщику">{% if in_group %}✓ выбран · {% endif %}в черновике закупки</span>
+      {# 13.11.2026: до согласования ничего не заказано — «заказать после согласования» #}
+      {% elif p.status == "need" and p.plan == "order" %}<span class="chip part-st" data-ps="need" title="Закажется, когда менеджер согласует с клиентом">{% if in_group %}✓ выбран · {% endif %}заказать после согласования</span>
       {% else %}<span class="chip part-st" data-ps="{{ p.status }}">{% if in_group %}✓ выбран · {% endif %}{{ PART_STATUS.get(p.status, p.status) }}</span>{% endif %}
     {% endif %}
   </div>
@@ -31,7 +33,7 @@
     {% set au = people.get(p.created_by) %}{% if au %}<span class="caption who-at" title="Добавил(а) {{ au.full_name }}">{{ au.full_name }} · {{ p.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
     {% if show_price %}<span>{% if p.price %}× <b class="p-price">{{ p.price|money }}</b> ₴ = <b class="p-sum nowrap">{{ (p.price * p.qty)|money }}</b> ₴{% else %}<span class="caption">цену уточнит запчастист</span>{% endif %}</span>{% endif %}
   </div>
-  {% if show_cost or (can_offer and p.status in ("need", "option", "declined")) %}
+  {% if show_cost or (can_offer and p.status in ("need", "option", "declined")) or (can_archive and p.status not in ("issued", "installed", "returned")) %}
   <div class="part-cost">
     {% if show_cost and can_pick and p.status not in ("issued", "installed") %}
       <label class="caption pct">закупка <input class="mini p-cost" inputmode="decimal" value="{{ '%.2f'|format(p.cost) }}" data-markup-url="/orders/{{ wo.id }}/parts/{{ p.id }}/markup" aria-label="Закупка, ₴"> ₴</label>
@@ -43,8 +45,9 @@
         <button class="btn btn-sm" name="action" value="auto">Со склада / заказать</button>
         <button class="btn btn-sm btn-gray" name="action" value="order">Заказать</button></form>
     {% endif %}
-    {% if (can_pick and p.status not in ("issued", "installed", "returned")) or (can_offer and p.status in ("need", "option", "declined")) %}
-    <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать позицию из наряда?')">
+    {# 13.11.2026 (брат): «Убрать» — в архив наряда (вернуть можно до оплаты и закрытия) — менеджер и запчастист #}
+    {% if can_archive and p.status not in ("issued", "installed", "returned") %}
+    <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать «{{ p.name|replace("'", "")|replace('"', '') }}» в архив наряда? Вернуть можно в «Архив».')">
       <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
     {% endif %}
     {% if p.status in ("issued", "installed") and wo.status not in ("paid", "closed", "cancel")
@@ -60,7 +63,11 @@
 <div class="card compact step-card {{ 'now' if flow.cur == 3 }}" id="parts" style="--sc:var(--orange)">
   <div class="card-h">
     <span class="headline"><span class="stepno">4</span>Запчасти · {{ n_counted }}</span>
-    {% if show_price and n_counted %}<span class="footnote nowrap">итого <b>{{ parts_total|money }} ₴</b></span>{% endif %}
+    <span class="parts-h-r">
+      {% if show_price and n_counted %}<span class="footnote nowrap">итого <b>{{ parts_total|money }} ₴</b></span>{% endif %}
+      {# 13.11.2026 (брат): архив наряда — убранные позиции, можно вернуть до оплаты и закрытия #}
+      {% if archived and (can_archive or ctx.can("orders.approve") or can_pick) %}<a class="caption parts-arch-link" href="#parts-arch" data-open-arch>Архив · {{ archived|length }}</a>{% endif %}
+    </span>
   </div>
 
   {% for p in plain_parts %}{{ part_row(p) }}{% endfor %}
@@ -80,8 +87,10 @@
   {% endfor %}
 
   {% if not parts %}
-  <p class="footnote">{% if can_offer or can_pick %}Добавьте запчасти — сразу при согласовании. Если клиент выбирает между фирмами — «Варианты на выбор».
-    {% elif wo.status in ("created", "diag", "approve") %}Подбор начнётся после согласования{% else %}Запчасти не добавлены{% endif %}</p>
+  <p class="footnote">{% if can_offer or can_pick %}Подберите запчасти: со склада, заказать или варианты разных фирм на выбор клиенту.
+    Заказ поставщику уйдёт после согласования с клиентом.
+    {% elif wo.status in ("created", "diag") %}Подбор начнётся после диагностики
+    {% elif wo.status == "approve" %}Запчастист подбирает запчасти{% else %}Запчасти не добавлены{% endif %}</p>
   {% endif %}
 
   {% if can_pick or can_offer %}
@@ -93,7 +102,7 @@
         <input class="field search" id="pfind" placeholder="Найти в каталоге: название, артикул" autocomplete="off">
         <div class="results" id="presults" hidden></div>
       </div>
-      <input type="hidden" name="catalog_id"><input type="hidden" name="option_group"><input type="hidden" name="revision">
+      <input type="hidden" name="catalog_id"><input type="hidden" name="revision">
       <input class="field" name="name" placeholder="Название (видит клиент) *" required>
       <div class="form-row">
         {{ brand_select(BRANDS) }}
@@ -125,13 +134,54 @@
         {% endif %}
         <button class="btn btn-sm btn-tinted opt-btn" name="action" value="option">Вариант на выбор</button>
       </div>
-      <p class="hint" style="margin:0">«Вариант на выбор» — одна деталь разных фирм: добавьте 2–3 варианта, клиент выберет один, остальные не пойдут в счёт.</p>
+      {# 13.11.2026: куда добавить вариант — новая деталь или ещё вариант к уже начатой (иначе получались группы по одному) #}
+      <label class="caption opt-group-l">Вариант на выбор — к какой детали
+        <select class="field" name="option_group">
+          <option value="">новая деталь (первый вариант)</option>
+          {% for g, nm in open_groups.items() %}<option value="{{ g }}">ещё вариант к: {{ nm }}</option>{% endfor %}
+        </select></label>
+      <p class="hint" style="margin:0">«Вариант на выбор» — одна деталь разных фирм: добавьте 2–3 варианта в одну группу, клиент выберет один, остальные не пойдут в счёт.</p>
       {% if can_pick %}<label>Купить всего, шт — излишек на склад<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>{% endif %}
     </form>
   </details>
   {% endif %}
-  {% if can_pick and wo.status == "picking" %}
-  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button></form>
+  {% if can_pick and (wo.status == "picking" or (wo.status == "approve" and not wo.picked_at)) %}
+  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button>
+    {% if wo.status == "approve" %}<p class="hint" style="margin:6px 0 0">Менеджер получит сообщение и согласует с клиентом. Заказ поставщику — после согласования, он придёт в «Мои заказы».</p>{% endif %}</form>
+  {% endif %}
+  {% if wo.status == "approve" and wo.picked_at %}
+  <p class="hint ok-hint" style="margin:8px 0 0">✓ Подбор завершён{% if picked_who %} · {{ picked_who.short_name }}{% endif %} · {{ wo.picked_at.astimezone().strftime("%d.%m %H:%M") }}</p>
+  {% endif %}
+
+  {# 13.11.2026 (брат): менеджер запчасти не добавляет — выбирает варианты, лишнее убирает в архив и согласует с клиентом #}
+  {% if can_approve %}
+  <div class="approve-box">
+    {% if not wo.picked_at and wo.partsman_id %}
+    <p class="hint warn" style="margin:0 0 8px">⏳ Ждём подбор у {{ people.get(wo.partsman_id).short_name if people.get(wo.partsman_id) else "запчастиста" }}.
+      Пока составьте работы и цены.</p>
+    {% endif %}
+    <form method="post" action="/orders/{{ wo.id }}/approval-done">
+      <button class="btn btn-block">Согласовал с клиентом</button>
+      <p class="hint" style="margin:6px 0 0">Проблемы «Да» — работы, «Нет» — рекомендации в карте клиента. Запчасти со склада — в резерве,
+        остальные уйдут запчастисту в заказ.</p>
+    </form>
+    {% if not wo.picked_at and wo.partsman_id and not parts %}
+    <form method="post" action="/orders/{{ wo.id }}/approval-done" style="margin-top:8px"><input type="hidden" name="no_parts" value="1">
+      <button class="btn btn-gray btn-block">Согласовал — запчасти не нужны</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if archived %}
+  <details class="parts-arch" id="parts-arch">
+    <summary class="caption">Архив наряда · {{ archived|length }} — убранные позиции</summary>
+    {% for p in archived %}{% set cat = cats.get(p.catalog_id) %}
+    <div class="kv"><span>{{ p.name }}{% if cat and cat.brand %} <span class="tag">{{ cat.brand }}</span>{% endif %}
+      <span class="caption" style="display:block">{{ p.qty|num }} шт{% if show_price and p.price %} · {{ p.price|money }} ₴{% endif %}
+        {% set ab = people.get(p.archived_by) %}{% if p.archived_at %} · убрал{% if ab %} {{ ab.short_name }}{% endif %} {{ p.archived_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}</span></span>
+      {% if can_archive %}<form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/restore"><button class="btn btn-sm btn-tinted">Вернуть</button></form>{% endif %}</div>
+    {% endfor %}
+  </details>
   {% endif %}
 
   {% if open_issue and open_issue.status == "ready" %}

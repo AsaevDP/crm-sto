@@ -90,7 +90,8 @@ def is_master(user) -> bool:
     return bool(user and user.role and user.role.code in MASTERS)
 DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
-        "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve", "parts.offer",
+        # 13.11.2026 (брат): менеджер запчасти не добавляет (только выбирает варианты и убирает в архив) — без parts.offer
+        "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
         "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.buy", *_OWN]),
     "partsman": ("Запчастист", "indigo", [

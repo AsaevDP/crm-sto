@@ -124,22 +124,25 @@ def finding_approval(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx)
     if wo.status != "approve" or not f or f.work_order_id != wo.id or value not in ("yes", "no", "pending"):
         return JSONResponse({"ok": False}, status_code=400)
     f.approval, f.approved_by, f.approved_at = value, ctx.user.id, now()
+    svc.work_for_finding(ctx.db, wo, f, value == "yes")   # 13.11.2026: «Да» — сразу работа в наряде (цена, мастер)
     ctx.db.commit()
     return {"ok": True}
 
 
 @router.post("/orders/{order_id}/approval-done")
-def approval_done(order_id: str, ctx: Ctx = Depends(get_ctx)):
+def approval_done(order_id: str, ctx: Ctx = Depends(get_ctx), no_parts: str = Form("")):
+    """«Согласовал с клиентом» (13.11.2026): проблемы, работы и запчасти разом — после «Подбор завершён»."""
     ctx.need("orders.approve")
     wo = _order(ctx, order_id)
     if wo.status == "approve":
-        err = svc.finish_approval(ctx.db, wo)
+        err = svc.finish_approval(ctx.db, wo, no_parts=bool(no_parts))
         if err:
             ctx.db.rollback()
             flash(ctx.request, err, "error")
         else:
             ctx.db.commit()
-            flash(ctx.request, "Согласование завершено")
+            from ..models.orders import WO_STATUSES
+            flash(ctx.request, f"Согласовано с клиентом — {WO_STATUSES.get(wo.status, wo.status)}")
     return _back(order_id)
 
 

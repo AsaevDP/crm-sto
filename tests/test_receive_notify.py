@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import IssueRequest, Location, Notification, PurchaseLine, User, WoPart, WorkOrder
 
-from .conftest import login
+from .conftest import agree, login
 from .test_step3 import _create
 
 FETCH = {"x-requested-with": "fetch"}
@@ -34,7 +34,7 @@ def test_receive_all_parts_notifies_team_once(client):
     login(client, "oleg", "oleg123")
     for name in ("Фильтр (тест прихода)", "Ремень (тест прихода)"):
         client.post(f"{url}/parts", data={"name": name, "qty": "1", "cost": "100", "markup_pct": "30", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     assert _wo(url).status == "waiting"
     with SessionLocal() as db:
         parts = db.scalars(select(WoPart).where(WoPart.work_order_id == _wo(url).id)).all()

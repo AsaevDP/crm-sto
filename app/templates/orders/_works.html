@@ -63,7 +63,7 @@
     {% endif %}
   </div>
   {% else %}
-  <p class="footnote">{% if wo.status in ("created", "diag", "approve") %}Работы появятся после согласования{% else %}Работ нет{% endif %}</p>
+  <p class="footnote">{% if wo.status in ("created", "diag") %}Работы появятся после диагностики{% elif wo.status == "approve" %}Менеджер отмечает проблемы «✓ Да» — они сразу становятся работами{% else %}Работ нет{% endif %}</p>
   {% endfor %}
 
   {% if can_edit_works %}

@@ -46,7 +46,7 @@ PART_STATUSES = {
     "option": "вариант", "declined": "не выбран",
 }
 # Позиции, которые НЕ идут в счёт, подбор и отчёты: возврат, вариант на выбор (клиент ещё не решил), невыбранный вариант
-PART_OFF = ("returned", "option", "declined")
+PART_OFF = ("returned", "option", "declined", "archived")   # «archived» — менеджер убрал в архив (13.11.2026)
 
 
 class Client(Entity):
@@ -96,6 +96,10 @@ class WorkOrder(Entity):
     handover_from: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     handover_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     handover_pending: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True, index=True)
+    # 13.11.2026 (брат): запчастист подбирает одновременно с согласованием — «Подбор завершён» отмечается тут,
+    # менеджер после этого согласует с клиентом всё разом
+    picked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    picked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     # Метка формы приёмки: повторная отправка той же формы не создаёт второй наряд
     intake_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
@@ -186,6 +190,14 @@ class WoPart(Entity):
     option_group: Mapped[str | None] = mapped_column(String(36), default="", nullable=True, index=True)
     # «Срочно нужна» (11.11.2026): ставит слесарь; видят менеджер, запчастист, кладовщик — по всей цепочке
     urgent: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    # 13.11.2026 (брат): до согласования с клиентом ничего не заказываем — запчастист только помечает «заказать»
+    # (plan="order", plan_qty — купить всего), заказ поставщику появляется после «Согласовал с клиентом».
+    plan: Mapped[str | None] = mapped_column(String(10), default="", nullable=True)
+    plan_qty: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Архив (менеджер убрал позицию; можно вернуть, пока наряд не оплачен и не закрыт)
+    prev_status: Mapped[str | None] = mapped_column(String(10), default="", nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    archived_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class Notification(Entity):

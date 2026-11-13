@@ -9,6 +9,7 @@ from app.models import (Client, IssueRequest, Payment, PayrollAccrual, PurchaseL
                         WorkOrder, WoWork)
 from app.services import stock as ssvc
 
+from .conftest import agree
 from .test_step3 import _create
 from .test_step6 import _as, _order_to_work, _wo, _works
 
@@ -160,7 +161,7 @@ def test_cancel_releases_reserve_and_ordered_part_goes_free(client):
     url = _create(client, scenario="A", photos=1, plate="КЕ 1104 КЕ", phone="0501104000", works="ТО").json()["url"]
     _as(client, "oleg")
     client.post(f"{url}/parts", data={"name": "Фильтр (отмена заказа)", "qty": "2", "cost": "50", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     with SessionLocal() as db:
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == _parts(url)[0].id))
     client.post(f"/purchases/{pid}", data={"action": "ordered"})
@@ -179,13 +180,16 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     url = _order_to_work(client, "КЕ 1105 КЕ", "0501105000", "Масло (в работе)")
     # Склад: положим ещё масла, чтобы было что резервировать
     _as(client, "oleg")
-    # Менеджер добавил деталь во время ремонта — запчастист может её провести (раньше 403)
+    # 13.11.2026 (брат): менеджер запчасти не добавляет — только запчастист (во время ремонта — сразу в заказ)
     _as(client, "irina")
-    client.post(f"{url}/parts", data={"name": "Свеча (в работе)", "qty": "1", "price": "300", "action": "need"})
+    assert client.post(f"{url}/parts", data={"name": "Свеча (в работе)", "qty": "1", "price": "300",
+                                             "action": "need"}).status_code == 403
     _as(client, "oleg")
-    extra = [p for p in _parts(url) if p.name == "Свеча (в работе)"][0]
-    r = client.post(f"{url}/parts/{extra.id}/source", data={"action": "order"}, follow_redirects=False)
+    r = client.post(f"{url}/parts", data={"name": "Свеча (в работе)", "qty": "1", "cost": "150", "action": "order"},
+                    follow_redirects=False)
     assert r.status_code == 303
+    extra = [p for p in _parts(url) if p.name == "Свеча (в работе)"][0]
+    assert extra.status == "ordered"
     # Пока она не выдана — машину не выдать
     _as(client, "irina")
     w = _works(url)[0]
@@ -206,6 +210,7 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     url2 = _create(client, scenario="A", photos=1, plate="КЕ 1106 КЕ", phone="0501106000", works="ТО").json()["url"]
     _as(client, "oleg")
     client.post(f"{url2}/parts", data={"name": "Масло (в работе)", "qty": "1", "cost": "100", "action": "order"})
+    agree(client, url2)
     with SessionLocal() as db:
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == _parts(url2)[0].id))
     client.post(f"/purchases/{pid}", data={"action": "ordered"})
@@ -215,7 +220,7 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     _as(client, "oleg")
     r = client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", follow_redirects=False)
     assert r.status_code == 303
-    assert _parts(url2)[0].status == "returned"
+    assert _parts(url2)[0].status == "archived"   # 13.11.2026: «Убрать» — в архив наряда, можно вернуть
     with SessionLocal() as db:
         assert not ssvc.reserved_for_part(db, _parts(url2)[0].id)
 

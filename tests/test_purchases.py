@@ -9,7 +9,7 @@ from app.db import SessionLocal
 from app.models import Purchase, PurchaseLine, Supplier, WoPart, WorkOrder
 from app.services import stock as svc
 
-from .conftest import login
+from .conftest import agree, login
 from .test_step3 import _create
 
 
@@ -98,7 +98,7 @@ def test_order_part_partial_arrival_reserves_when_all_came(client):
     client.post("/logout")
     login(client, "oleg", "oleg123")
     client.post(f"{url}/parts", data={"name": "Сайлентблок (тест частями)", "qty": "4", "cost": "100", "markup_pct": "30", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     with SessionLocal() as db:
         wo = db.get(WorkOrder, uuid.UUID(url.rsplit("/", 1)[1]))
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == wo.id))

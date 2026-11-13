@@ -54,9 +54,20 @@ def test_full_diagnosis_and_approval(client):
     assert _wo(url).status == "approve"
     client.post(f"{url}/findings/{fs[1].id}/approval", data={"value": "yes"}, headers=FETCH)
     client.post(f"{url}/findings/{fs[2].id}/approval", data={"value": "no"}, headers=FETCH)
+    # 13.11.2026: «Да» — сразу работа; согласовать с клиентом нельзя, пока запчастист не закончил подбор
+    with SessionLocal() as db:
+        assert len(db.scalars(select(WoWork).where(WoWork.work_order_id == _wo(url).id)).all()) == 2
+    assert "не закончил подбор" in client.post(f"{url}/approval-done").text
+    assert _wo(url).status == "approve"
+    client.post("/logout")
+    login(client, "oleg", "oleg123")
+    client.post(f"{url}/picking-done")                     # подбор: запчасти не нужны
+    assert _wo(url).picked_at is not None and _wo(url).status == "approve"
+    client.post("/logout")
+    login(client, "irina", "irina123")
     client.post(f"{url}/approval-done")
     wo = _wo(url)
-    assert wo.status == "picking"
+    assert wo.status == "work"                             # запчастей нет — сразу в работу
     with SessionLocal() as db:
         works = [w.name for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))]
         recs = db.scalars(select(ClientEvent).where(ClientEvent.client_id == wo.client_id,

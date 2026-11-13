@@ -266,8 +266,12 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     # открытый запрос на выдачу: ждёт кладовщика или «Готово к выдаче» (12.11.2026) — сначала готовый
     open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status.in_(("new", "ready")))
                            .order_by(IssueRequest.status.desc()))
-    can_pick = (ctx.can("parts.pick") and wo.status in ("picking", "waiting") and not wo.awaiting_prepay
+    # 13.11.2026 (брат): подбор идёт уже на согласовании — одновременно с работами у менеджера
+    can_pick = (ctx.can("parts.pick") and wo.status in ("approve", "picking", "waiting") and not wo.awaiting_prepay
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
+    archived = [p for p in parts if p.status == "archived"]
+    parts = [p for p in parts if p.status != "archived"]
+    people.update(_people(ctx, *[p.archived_by for p in archived], wo.partsman_id))
     # Деньги и работы
     from ..models import Payment, WoWorkSession
     from ..models.money import PAY_IN, PAY_METHODS, PAY_PURPOSES
@@ -279,7 +283,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     # Запчасти (11.11.2026): варианты на выбор клиенту — группами; менеджер вносит запчасти сам
     from ..models.orders import PART_OFF
     from ..services import brands as brands_svc
-    from .stock import _can_choose, _can_offer
+    from .stock import _can_archive, _can_choose, _can_offer
     groups: dict[str, list] = {}
     for p in parts:
         if p.option_group:
@@ -314,6 +318,10 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         can_approve=ctx.can("orders.approve") and wo.status == "approve",
         can_route=is_manager and wo.status == "created" and wo.scenario == "B",
         parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
+        archived=archived, can_archive=_can_archive(ctx, wo),
+        open_groups={g: items[0].name for g, items in groups.items() if any(p.status == "option" for p in items)
+                     and not any(p.status not in ("option", "declined") for p in items)},
+        picked_who=db.get(User, wo.picked_by) if wo.picked_by else None,
         can_offer=can_offer, can_choose=_can_choose(ctx, wo), flow=flow,
         feed=feed, last_change=feed[0] if feed else None, managers=managers,
         team=[("ведёт", mg), ("запчастист", pm), (MASTERS.get(mc.role.code, "мастер").lower() if mc else "мастер", mc)],
@@ -321,7 +329,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         BRANDS=brands_svc.names(db, ctx.branch.id) if (can_pick or can_offer) else [],
         diag_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters") if is_manager and wo.status == "created" else [],
         diag_lifts=svc.lifts_with_load(db, ctx.branch.id) if is_manager and wo.status == "created" else [],
-        cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,
+        cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,   # cats — и для архива (собраны до отбора)
         show_cost=ctx.can("prices.view_purchase"), show_price=ctx.can("prices.view_sale") or ctx.can("prices.view_purchase"),
         default_markup=st_.get(db, ctx.branch.id, "pricing")["default_markup"], open_issue=open_issue,
         can_request_issue=(ctx.can("stock.request_issue") and not open_issue and wo.status in ("instock", "work")

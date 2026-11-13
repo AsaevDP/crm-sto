@@ -556,6 +556,8 @@ def parts_of(o):
 
 
 def step_diag(o, day, hhmm, approve=True):
+    """Диагностика (или менеджер записал со слов клиента) → «Согласование». 13.11.2026: дальше одновременно —
+    запчастист подбирает, менеджер составляет работы; согласование с клиентом — отдельным шагом (step_approve)."""
     wo = o.wo()
     if wo.status == "diag" or (o.kind in ("mechanic", "electrician", "motorist") and rnd.random() < 0.8):
         if wo.status == "created":   # мастер не назначен при приёмке — отправляет менеджер
@@ -578,28 +580,7 @@ def step_diag(o, day, hhmm, approve=True):
                 post(o.mgr, f"{o.url}/findings", {"text": j[1], "urgency": "soon"}, what="Проблема со слов клиента", fetch=True)
             post(o.mgr, f"{o.url}/to-approve", what="Сразу к согласованию")
     R.check(o.wo().status == "approve", "после диагностики наряд «Согласование»", f"{wo.number}: {o.wo().status}")
-    if not approve:   # сегодня: клиенту ещё не звонили — согласует менеджер руками
-        o.step = "approve_wait"
-        return
-    # Согласование с клиентом
-    with at(day, _later(hhmm, 90)):
-        fs = q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at)
-        job_names = {j[1] for j in o.jobs}
-        for f in fs:
-            v = "yes" if f.text in job_names else rnd.choice(("no", "no", "yes"))
-            if o.fail_plan == "all_no":
-                v = "no"
-            elif o.fail_plan == "part_no" and f.text in job_names and len(fs) > 1 and f is fs[-1]:
-                v = "no"
-            post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": v}, what="Согласовано / отказ", fetch=True)
-        post(o.mgr, f"{o.url}/approval-done", what="Согласование завершено")
-    st = o.wo().status
-    if o.fail_plan == "all_no":
-        R.check(st == "ready", "клиент отказался от всего → «Готово» без работ", st)
-        o.step = "pay"
-    else:
-        R.check(st == "picking", "после согласования → подбор запчастей", f"{o.wo().number}: {st}")
-        o.step = "price"
+    o.step = "price"
 
 
 def _later(hhmm, minutes):
@@ -617,8 +598,13 @@ def job_by_name(name):
 
 
 def step_price(o, day, hhmm):
-    """Менеджер: цены работ и исполнители; вторые мастера — отдельной работой."""
+    """Менеджер, пока запчастист подбирает: по проблемам — что пойдёт в работу («Да» сразу даёт работу), цены работ
+    и исполнители; вторые мастера — отдельной работой."""
     with at(day, hhmm):
+        job_names = {j[1] for j in o.jobs}
+        for f in q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at):
+            v = "yes" if f.text in job_names else rnd.choice(("no", "no", "yes"))
+            post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": v}, what="Проблема: в работу / нет", fetch=True)
         for w in works_of(o):
             kind, j = job_by_name(w.name)
             if not j:
@@ -631,33 +617,15 @@ def step_price(o, day, hhmm):
             post(o.mgr, f"{o.url}/works", {"name": j[1], "pricing": "fixed" if j[2] is None else "hours", "hours": str(j[2] or 0),
                                            "rate": str(j[3]), "qty": "1", "mechanic_id": str(uid(rnd.choice(MASTERS_OF[kind])))},
                  what=f"Работа второму мастеру ({kind})")
-        # Варианты запчастей на выбор клиенту (менеджер) — иногда
-        if o.kind == "mechanic" and rnd.random() < 0.12:
-            g = None
-            for name, brand, price in (("Колодки тормозные передние (эконом)", "Jurid", "1450"),
-                                       ("Колодки тормозные передние (оригинал)", "Toyota", "3200")):
-                post(o.mgr, f"{o.url}/parts", {"name": name, "brand": brand, "qty": "1", "price": price, "action": "option",
-                                               "option_group": g or ""}, what="Вариант на выбор клиенту")
-                g = g or (one(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group
-            opts = q(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.status == "option")
-            if opts:
-                post(o.mgr, f"{o.url}/parts/{rnd.choice(opts).id}/choose", what="Клиент выбрал вариант")
-    st = o.wo().status
-    if o.scen == "A" or st == "picking":
-        o.step = "pick"
-    if st in ("ready",):
-        o.step = "work"
+    o.step = "pick"
 
 
 def step_pick(o, day, hhmm, send=True):
-    """send=False — запчастист подобрал, но заказ поставщику ещё в черновике (на сегодня: «✓ Заказал» ждёт его)."""
+    """Запчастист на согласовании: со склада (сразу резерв) или «заказать» (закупки ещё нет), иногда — варианты разных
+    фирм одной группой; «Подбор завершён» → менеджеру «Подбор готов»."""
     wo = o.wo()
     pm = one(M.User, M.User.id == wo.partsman_id).login if wo.partsman_id else rnd.choice(PARTSMEN[o.mgr])
     with at(day, hhmm):
-        # что менеджер внёс «нужна» — решить
-        for p in parts_of(o):
-            if p.status == "need":
-                post(pm, f"{o.url}/parts/{p.id}/source", {"action": "auto"}, what="Со склада / заказать")
         for w in works_of(o):
             kind, j = job_by_name(w.name)
             if not j:
@@ -672,22 +640,59 @@ def step_pick(o, day, hhmm, send=True):
             for name, art, brand, cost in j[5]:
                 post(pm, f"{o.url}/parts", {"name": name, "article": art, "brand": brand, "qty": "1", "cost": str(cost),
                                             "markup_pct": "30", "wo_work_id": str(w.id), "action": "order"}, what=f"Заказать: {name}")
+        # Варианты на выбор клиенту — одна деталь двух фирм, одной группой («ещё вариант к: …»)
+        if o.kind == "mechanic" and rnd.random() < 0.15:
+            g = ""
+            for brand, cost in (("Jurid", "1050"), ("Toyota", "2300")):
+                post(pm, f"{o.url}/parts", {"name": "Колодки тормозные передние", "brand": brand, "qty": "1", "cost": cost,
+                                            "markup_pct": "35", "action": "option", "option_group": g}, what="Вариант на выбор клиенту")
+                g = g or (one(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group or ""
         post(pm, f"{o.url}/picking-done", what="Подбор завершён")
+    R.check(o.wo().picked_at is not None or o.wo().status != "approve", "«Подбор завершён» отмечен", o.wo().number)
+    o.step = "approve"
+
+
+def step_approve(o, day, hhmm, send=True):
+    """Менеджер позвонил клиенту: варианты — «Выбрать», лишнее — в архив, «Согласовал с клиентом». Только теперь
+    запчасти уходят в заказ; запчастист — «Заказал» (весь наряд или по строке). send=False — заказ остаётся ему на сегодня."""
+    wo = o.wo()
+    pm = one(M.User, M.User.id == wo.partsman_id).login if wo.partsman_id else rnd.choice(PARTSMEN[o.mgr])
+    with at(day, hhmm):
+        groups = {}
+        for p in parts_of(o):
+            if p.status == "option":
+                groups.setdefault(p.option_group, []).append(p)
+        for g, items in groups.items():
+            post(o.mgr, f"{o.url}/parts/{rnd.choice(items).id}/choose", what="Клиент выбрал вариант")
+        if rnd.random() < 0.06:   # клиент передумал — в архив и обратно
+            ps = [p for p in parts_of(o) if p.status in ("need", "reserved")]
+            if ps:
+                post(o.mgr, f"{o.url}/parts/{ps[0].id}/delete", what="Убрать в архив")
+                post(o.mgr, f"{o.url}/parts/{ps[0].id}/restore", what="Вернуть из архива")
+        fs = q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at)
+        if o.fail_plan in ("all_no", "part_no") and not fs:
+            o.fail_plan = None   # без диагностики (сценарий А) отказываться не от чего — работы известны заранее
+        job_names = {j[1] for j in o.jobs}
+        for f in fs:
+            v = None
+            if o.fail_plan == "all_no":
+                v = "no"
+            elif o.fail_plan == "part_no" and f.text in job_names and len(fs) > 1 and f is fs[-1]:
+                v = "no"
+            if v and f.approval != v:
+                post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": v}, what="Клиент отказался", fetch=True)
+        post(o.mgr, f"{o.url}/approval-done", what="Согласовал с клиентом")
     st = o.wo().status
-    R.check(st in ("instock", "waiting", "work"), "после подбора: на складе / ждём / в работе", f"{wo.number}: {st}")
+    if o.fail_plan == "all_no":
+        R.check(st == "ready", "клиент отказался от всего → «Готово» без работ", st)
+        o.step = "pay"
+        return
+    R.check(st in ("instock", "waiting", "work"), "после согласования: на складе / ждём / в работе", f"{wo.number}: {st}")
     if st == "waiting":
-        # Запчастист оформляет заказ поставщику: дата «привезут», «✓ Заказал» — из «Моих заказов»
-        with at(day, _later(hhmm, 30)):
-            for p in q(M.Purchase, M.Purchase.work_order_id == o.id, M.Purchase.status == "draft"):
-                post(pm, f"/purchases/{p.id}", {"action": "save", "supplier_new": rnd.choice(("Элит-Украина", "Автотехнікс", "ОмегаАвто")),
-                                                "expected_on": str(day + timedelta(days=rnd.choice((1, 2, 2, 3))))},
-                     what="Поставщик и дата")
-                if send:
-                    post(pm, f"/purchases/{p.id}/ordered", {"back": "/my-orders"}, what="✓ Заказал")
-            if rnd.random() < 0.3:
-                urg = [p for p in parts_of(o) if p.status == "ordered"]
-                if urg:
-                    post(o.lead, f"{o.url}/parts/{urg[0].id}/urgent", what="🔥 Срочно", fetch=True)
+        R.check(all(p.created_by == uid(pm) for p in q(M.Purchase, M.Purchase.work_order_id == o.id)),
+                "заказ под наряд — на имя запчастиста наряда", wo.number)
+        if send:
+            order_drafts(o, pm, day, _later(hhmm, 30))
         o.step = "wait_parts"
     elif st == "instock":
         o.step = "issue"
@@ -695,6 +700,25 @@ def step_pick(o, day, hhmm, send=True):
         o.step = "work"
     if o.fail_plan == "cancel" and o.step in ("wait_parts", "issue"):
         o.step = "cancel"
+
+
+def order_drafts(o, pm, day, hhmm):
+    """Запчастист в «Моих заказах»: поставщик и дата, «✓ Заказал весь наряд» или «Заказал» по каждой строке."""
+    with at(day, hhmm):
+        for p in q(M.Purchase, M.Purchase.work_order_id == o.id, M.Purchase.status == "draft"):
+            post(pm, f"/purchases/{p.id}", {"action": "save", "supplier_new": rnd.choice(("Элит-Украина", "Автотехнікс", "ОмегаАвто")),
+                                            "expected_on": str(day + timedelta(days=rnd.choice((1, 2, 2, 3))))},
+                 what="Поставщик и дата")
+            if rnd.random() < 0.3:
+                for l in q(M.PurchaseLine, M.PurchaseLine.purchase_id == p.id):
+                    post(pm, f"/purchase-lines/{l.id}/ordered", {"back": "/my-orders"}, what="Заказал (строка)")
+            else:
+                post(pm, f"/purchases/{p.id}/ordered", {"back": "/my-orders"}, what="✓ Заказал весь наряд")
+            R.check(one(M.Purchase, M.Purchase.id == p.id).status == "ordered", "после «Заказал» закупка заказана", str(p.id))
+        if rnd.random() < 0.3:
+            urg = [p for p in parts_of(o) if p.status == "ordered"]
+            if urg:
+                post(o.lead, f"{o.url}/parts/{urg[0].id}/urgent", what="🔥 Срочно", fetch=True)
 
 
 def deliveries(day):
@@ -1107,9 +1131,22 @@ def leave_for_today(day):
     if o:
         step_price(o, day, "16:00")
         step_pick(o, day, "16:10")
-    # Запчастист: подобрал, но заказ поставщику ещё в черновике → «✓ Заказал»
-    o = next((o for o in ACTIVE if o.wo() and o.wo().status == "picking" and o.kind in ("mechanic", "electrician", "motorist")
-              and o.step in ("price", "pick")), None)
+        step_approve(o, day, "16:15")
+    # 13.11.2026: менеджеру — подбор готов, пора звонить клиенту (варианты фирм на выбор)
+    o = next((o for o in ACTIVE if o.born == day and o.step in ("price", "pick") and o.kind == "mechanic"), None)
+    if o:
+        if o.step == "price":
+            step_price(o, day, "16:20")
+        with at(day, "16:25"):
+            g = ""
+            for brand, cost in (("Bosch", "880"), ("TRW", "1120")):
+                post("oleg", f"{o.url}/parts", {"name": "Диск тормозной передний", "brand": brand, "qty": "2", "cost": cost,
+                                                "markup_pct": "35", "action": "option", "option_group": g}, what="Вариант на выбор клиенту")
+                g = g or (one(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group or ""
+        step_pick(o, day, "16:30")
+    # Запчастисту: менеджер согласовал с клиентом — заказ по наряду ждёт «Заказал»
+    o = next((o for o in ACTIVE if o.step in ("price", "pick") and o.kind in ("mechanic", "electrician", "motorist")
+              and o.wo() and o.wo().status == "approve"), None)
     if o:
         if o.step == "price":
             step_price(o, day, "16:30")
@@ -1117,7 +1154,8 @@ def leave_for_today(day):
             post("oleg", f"{o.url}/parts", {"name": "Колодки тормозные задние (оригинал)", "article": "04466-42060",
                                             "brand": "Toyota", "qty": "1", "cost": "2350", "markup_pct": "30", "action": "order"},
                  what="Заказать: колодки задние (оригинал)")
-        step_pick(o, day, "16:40", send=False)
+        step_pick(o, day, "16:40")
+        step_approve(o, day, "16:45", send=False)
         if o.step == "wait_parts":
             o.step = "draft"
     # Кладовщик: привезли — ждёт приёмки
@@ -1243,7 +1281,7 @@ def run():
                 continue
             for _ in range(3):   # за день — до трёх шагов
                 before = o.step
-                if day == TODAY and o.step in ("issue", "pick", "pay") and rnd.random() < (0.85 if o.step == "issue" else 0.6):
+                if day == TODAY and o.step in ("issue", "pick", "approve", "pay") and rnd.random() < (0.85 if o.step == "issue" else 0.6):
                     break   # сегодня часть нарядов ждёт выдачи / подбора / оплаты — их доделает человек
                 TMAX[0] = ""
                 try:
@@ -1282,6 +1320,8 @@ def advance(o, day, hh):
         step_price(o, day, hh)
     elif s == "pick":
         step_pick(o, day, hh)
+    elif s == "approve":
+        step_approve(o, day, hh)
     elif s == "wait_parts":
         side_works(o, day, hh)
         st = o.wo().status

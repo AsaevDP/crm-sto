@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import IssueRequest, PurchaseLine, WoPart
 
+from .conftest import agree
 from .test_step3 import _create
 from .test_step6 import _as, _wo
 
@@ -27,7 +28,7 @@ def test_issue_requests_menu(client):
     url = _create(client, scenario="A", photos=1, plate="KA2001AA", phone="0670002001", works="Колодки").json()["url"]
     _as(client, "oleg")
     client.post(f"{url}/parts", data={"name": "Колодки (запрос на выдачу)", "qty": "1", "cost": "100", "markup_pct": "50", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     with SessionLocal() as db:
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
@@ -57,7 +58,7 @@ def _reserved_order(client, plate, phone, name):
     url = _create(client, scenario="A", photos=1, plate=plate, phone=phone, works="Работа").json()["url"]
     _as(client, "oleg")
     client.post(f"{url}/parts", data={"name": name, "qty": "1", "cost": "100", "markup_pct": "50", "action": "order"})
-    client.post(f"{url}/picking-done")
+    agree(client, url)   # 13.11.2026: подбор завершён → менеджер согласовал → заказ
     with SessionLocal() as db:
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))

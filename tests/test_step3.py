@@ -58,7 +58,7 @@ def test_create_with_5_photos_partsman_sees(client):
     with SessionLocal() as db:
         wo = db.get(WorkOrder, __import__("uuid").UUID(url.rsplit("/", 1)[1]))
         assert re.fullmatch(r"СТО1-\d{4}-\d{6}", wo.number)
-        assert wo.status == "picking"  # сценарий А сразу в подбор
+        assert wo.status == "approve"  # 13.11.2026: сценарий А — подбор и согласование одновременно
         assert db.scalar(select(WoPhoto).where(WoPhoto.work_order_id == wo.id).limit(1)) is not None
         n = len(db.scalars(select(WoPhoto).where(WoPhoto.work_order_id == wo.id)).all())
         number = wo.number

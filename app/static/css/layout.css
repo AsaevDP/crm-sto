@@ -1657,6 +1657,22 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .set-ic svg { width: 18px; height: 18px; }
 .au-tiles { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .nt-row { border-left: 4px solid var(--separator); padding-left: 10px; }
+/* Запчасти в наряде (13.11.2026): архив, согласование одной кнопкой, к какой детали вариант */
+.parts-h-r { display: inline-flex; align-items: baseline; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.parts-arch-link { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.parts-arch { margin-top: 10px; border-top: 0.5px solid var(--separator); padding-top: 6px; }
+.parts-arch summary { cursor: pointer; color: var(--text-2); padding: 4px 0; }
+.parts-arch .kv { align-items: center; }
+.parts-arch .kv form { flex: none; }
+.approve-box { margin-top: 12px; padding-top: 10px; border-top: 0.5px solid var(--separator); }
+.ok-hint { color: var(--green); }
+.po-todo { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); margin-bottom: 14px; }
+.po-todo-card.urgent { box-shadow: inset 3px 0 0 var(--red), var(--shadow-1, none); }
+.po-todo-lines { margin-top: 8px; }
+.po-todo-lines summary { cursor: pointer; padding: 4px 0; }
+.po-todo-lines .kv { align-items: center; }
+.po-todo-lines .kv form { flex: none; }
+.opt-group-l { display: grid; gap: 4px; }
 /* VIN в наряде (12.11.2026): моноширинный, выделяется целиком, рядом «Копировать» */
 .kv-vin { align-items: center; }
 .kv-vin b { user-select: all; letter-spacing: .03em; max-width: none; }

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import Purchase, PurchaseLine, User, WoPart
 
+from .conftest import agree
 from .test_step3 import _create
 from .test_step6 import _as, _wo
 
@@ -38,18 +39,21 @@ def test_partsman_orders(client):
     client.post(f"{url_b}/parts", data={"name": "Фильтр ПО-тест", "qty": "1", "cost": "50", "markup_pct": "50", "action": "order"})
     _as(client, "admin")
     client.post(f"{url_a}/parts", data={"name": "Датчик ПО-тест", "qty": "1", "cost": "80", "markup_pct": "50", "action": "order"})
+    agree(client, url_a, then=None)   # 13.11.2026: заказ — только после «Согласовал с клиентом»
+    agree(client, url_b, then="admin")
 
     pa, pb, pc = _purchase_of("Колодки ПО-тест"), _purchase_of("Фильтр ПО-тест"), _purchase_of("Датчик ПО-тест")
-    oleg, admin = _uid("oleg"), _uid("admin")
-    assert len({pa.id, pb.id, pc.id}) == 3                     # одна накладная — один наряд, у каждого свои
-    assert pa.created_by == oleg and pb.created_by == oleg and pc.created_by == admin
+    oleg = _uid("oleg")
+    # одна накладная — один наряд; под наряд заказ всегда у запчастиста этого наряда, кто бы ни добавил (13.11.2026)
+    assert pa.id == pc.id and pa.id != pb.id
+    assert pa.created_by == oleg and pb.created_by == oleg
     assert pa.work_order_id == _wo(url_a).id and pb.work_order_id == _wo(url_b).id
 
     # Закупки: видно, кто заказал и под какой наряд; фильтр по запчастисту
     page = client.get("/purchases?tab=all").text
     assert "Заказал · наряд" in page and _wo(url_a).number in page
     page = client.get(f"/purchases?tab=all&who={oleg}").text
-    assert f"/purchases/{pa.id}" in page and f"/purchases/{pc.id}" not in page
+    assert f"/purchases/{pa.id}" in page and f"/purchases/{pb.id}" in page
     assert "Заказал: <b>Олег Запчастин" in client.get(f"/purchases/{pa.id}").text
 
     # Меню: «Мои заказы» — только у запчастиста; «Заказы запчастистов» — у кладовщика, директора, админа
@@ -58,7 +62,8 @@ def test_partsman_orders(client):
     menu = client.get("/purchases").text
     assert 'href="/my-orders"' in menu and 'href="/purchases/by-partsman"' not in menu
     mine = client.get("/my-orders").text
-    assert "Колодки ПО-тест" in mine and "Фильтр ПО-тест" in mine and "Датчик ПО-тест" not in mine
+    assert "Колодки ПО-тест" in mine and "Фильтр ПО-тест" in mine and "Датчик ПО-тест" in mine
+    assert "Заказать по нарядам" in mine and "✓ Заказал весь наряд" in mine
     assert "в наряд 1, на склад 2" in mine
     assert client.get("/purchases/by-partsman").status_code == 403
 

@@ -47,7 +47,7 @@ def _to(url):
 
 # Запчастист подбирает и во время ремонта: менеджер добавил деталь в «В работе» — её надо провести
 # (отчёт тестировщика 11.11.2026: раньше отказ 403, деталь в счёте, а склад не тронут)
-PICK_STATUSES = ("picking", "waiting", "instock", "work")
+PICK_STATUSES = ("approve", "picking", "waiting", "instock", "work")   # 13.11.2026: подбор идёт уже на согласовании
 
 
 def _can_pick(ctx: Ctx, wo: WorkOrder) -> bool:
@@ -186,6 +186,8 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
     elif action == "need":
         part.status = "need"
         msg = f"{label} — в наряде, запчастист подберёт" if not picker else f"{label} — добавлено, выберите: со склада или заказать"
+    elif wo.status in svc.PLAN_STATUSES:   # 13.11.2026: до согласования — резерв со склада или «заказать после согласования»
+        msg = f"{label} — " + svc.plan_part(ctx.db, ctx.branch.id, part, action, _dec(order_qty) if order_qty else None)
     else:   # Есть свободный остаток — резервируем, иначе заказываем (если не просили иначе)
         if action in ("auto", "stock") and svc.reserve_from_stock(ctx.db, ctx.branch.id, part):
             msg = f"{label} — взято со склада в резерв"
@@ -227,7 +229,9 @@ def part_source(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), action
     if not _can_pick(ctx, wo) or not part or part.work_order_id != wo.id or part.status != "need":
         raise Forbidden()
     part.picked_by = part.picked_by or ctx.user.id
-    msg = svc.source_part(ctx.db, ctx.branch.id, part, action if action in ("auto", "order") else "auto")
+    act = action if action in ("auto", "order") else "auto"
+    msg = (svc.plan_part(ctx.db, ctx.branch.id, part, act) if wo.status in svc.PLAN_STATUSES
+           else svc.source_part(ctx.db, ctx.branch.id, part, act))
     _after_part_added(ctx, wo, part)
     ctx.db.commit()
     flash(ctx.request, f"«{part.name}» — {msg}")
@@ -266,27 +270,53 @@ def part_markup(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), markup
     return {"ok": True, "price": str(part.price), "sum": str(svc.money(part.price * part.qty)), "markup": part.markup_pct}
 
 
+ARCHIVE_STATUSES = ("created", "diag", "approve", "picking", "waiting", "instock", "work", "ready")
+
+
+def _can_archive(ctx: Ctx, wo: WorkOrder) -> bool:
+    """13.11.2026 (брат): убрать позицию в архив и вернуть из архива — менеджер (любую: ошибся с «Выбрать», клиент
+    передумал, запчастист не дал выбора) и запчастист. Пока наряд не оплачен и не закрыт."""
+    return wo.status in ARCHIVE_STATUSES and (ctx.can("orders.approve") or _can_pick(ctx, wo))
+
+
 @router.post("/orders/{order_id}/parts/{part_id}/delete")
 def part_delete(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
-    ctx.need("parts.pick", "parts.offer")
+    """«Убрать» → в архив наряда (13.11.2026): резерв снимается, черновая строка закупки убирается, позицию можно вернуть."""
+    ctx.need("parts.pick", "orders.approve")
     wo = _order(ctx, order_id)
     part = ctx.db.get(WoPart, _uuid(part_id))
-    allowed = _can_pick(ctx, wo) or (_can_offer(ctx, wo) and part is not None and part.status in ("need", "option", "declined"))
-    if not allowed or not part or part.work_order_id != wo.id or part.status in ("issued", "installed", "returned"):
+    if not _can_archive(ctx, wo) or not part or part.work_order_id != wo.id or part.status in ("returned", "archived"):
         raise Forbidden()
-    # Деталь «в резерве» раньше давала ошибку сервера (на неё ссылается история склада) — теперь резерв снимается,
-    # а строка остаётся в истории как «возврат» и в счёт не идёт
-    svc.remove_part(ctx.db, part)
-    ctx.db.flush()
-    from ..services import money as msvc
-    err = msvc.guard_total(ctx.db, wo)
+    err = svc.archive_part(ctx.db, part, ctx.user.id)
+    if not err:
+        from ..services import money as msvc
+        err = msvc.guard_total(ctx.db, wo)
     if err:
         ctx.db.rollback()
         flash(ctx.request, err, "error")
         return _to(f"/orders/{order_id}#parts")
     svc.refresh_order_status(ctx.db, wo)   # убрали последнюю недостающую — «Запчасти на складе»
     ctx.db.commit()
-    flash(ctx.request, "Позиция убрана из наряда")
+    flash(ctx.request, f"«{part.name}» — в архиве наряда. Вернуть: «Архив» в блоке «Запчасти»")
+    return _to(f"/orders/{order_id}#parts")
+
+
+@router.post("/orders/{order_id}/parts/{part_id}/restore")
+def part_restore(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Вернуть позицию из архива наряда (13.11.2026)."""
+    ctx.need("parts.pick", "orders.approve")
+    wo = _order(ctx, order_id)
+    part = ctx.db.get(WoPart, _uuid(part_id))
+    if not _can_archive(ctx, wo) or not part or part.work_order_id != wo.id or part.status != "archived":
+        raise Forbidden()
+    svc.restore_part(ctx.db, ctx.branch.id, wo, part)
+    _after_part_added(ctx, wo, part)
+    if wo.status == "ready" and part.status in ("need", "ordered", "reserved"):
+        osvc.set_status(ctx.db, wo, "work", f"Вернули запчасть «{part.name}» — машина снова в ремонте")
+    from ..services import money as msvc
+    msvc.after_change(ctx.db, wo)
+    ctx.db.commit()
+    flash(ctx.request, f"«{part.name}» вернули в наряд")
     return _to(f"/orders/{order_id}#parts")
 
 
@@ -317,7 +347,16 @@ def part_return(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
 def picking_done(order_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("parts.pick")
     wo = _order(ctx, order_id)
-    if wo.status == "picking" and _can_pick(ctx, wo):
+    if wo.status == "approve" and _can_pick(ctx, wo):
+        # 13.11.2026 (брат): подбор на согласовании — ничего не заказываем, менеджеру «Подбор готов»
+        err = svc.mark_picked(ctx.db, wo, ctx.user)
+        if err:
+            ctx.db.rollback()
+            flash(ctx.request, err, "error")
+        else:
+            ctx.db.commit()
+            flash(ctx.request, "Подбор завершён — менеджер согласует с клиентом, после этого заказ придёт в «Мои заказы»")
+    elif wo.status == "picking" and _can_pick(ctx, wo):
         err = svc.finish_picking(ctx.db, wo)
         if err:
             ctx.db.rollback()
@@ -418,8 +457,16 @@ def _orders_board(ctx: Ctx, uid, st: str, mode: str, people_tiles=None):
     n_lines = {}
     for r in shown:
         n_lines[r["p"].id] = n_lines.get(r["p"].id, 0) + 1
+    # 13.11.2026 (брат): менеджер согласовал с клиентом — «на такую машину, такой наряд нужно заказать»: карточки сверху
+    to_order = []
+    if mode == "mine":
+        for d in svc.draft_waits(ctx.db, ctx.branch.id, who=uid):
+            wo = d["wo"]
+            to_order.append({**d, "v": ctx.db.get(Vehicle, wo.vehicle_id) if wo else None,
+                             "left": sum(1 for r in d["rows"] if not r["l"].ordered_at)})
     return dict(rows=shown[:300], counts=counts, st=st, mode=mode, people_tiles=people_tiles or [], n_lines=n_lines,
-                STATES=svc.ORDER_STATES, fmt_plate=osvc.fmt_plate, cost_ok=ctx.can("prices.view_purchase"))
+                STATES=svc.ORDER_STATES, fmt_plate=osvc.fmt_plate, cost_ok=ctx.can("prices.view_purchase"),
+                to_order=to_order)
 
 
 @router.get("/my-orders")
@@ -532,10 +579,41 @@ def purchase_ordered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")
         flash(ctx.request, "В закупке нет строк", "error")
         return _to(to)
     from datetime import date as _d
+    from ..db import now
     p.status, p.ordered_on = "ordered", _d.today()
+    for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.ordered_at.is_(None))):
+        l.ordered_at, l.ordered_by = now(), ctx.user.id
     db.commit()
     flash(ctx.request, "Заказано — накладная ушла кладовщику в «Приход»"
           + ("" if p.supplier_id else ". Поставщик не указан — откройте закупку и впишите, у кого брали"))
+    return _to(to)
+
+
+@router.post("/purchase-lines/{lid}/ordered")
+def purchase_line_ordered(lid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """«Заказал» по одной строке (13.11.2026, брат). Все строки заказаны — закупка сама «заказано» и уходит в «Приход»."""
+    db = ctx.db
+    line = db.get(PurchaseLine, _uuid(lid))
+    if not line:
+        raise Forbidden()
+    p = _purchase(ctx, str(line.purchase_id))
+    _need_manage(ctx, p)
+    to = back if back.startswith("/my-orders") else f"/purchases/{p.id}"
+    if p.status != "draft" or line.ordered_at:
+        return _to(to)
+    from ..db import now
+    line.ordered_at, line.ordered_by = now(), ctx.user.id
+    db.flush()
+    left = db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id,
+                                                                         PurchaseLine.ordered_at.is_(None)))
+    cat = db.get(PartCatalog, line.catalog_id)
+    if not left:
+        from datetime import date as _d
+        p.status, p.ordered_on = "ordered", _d.today()
+        flash(ctx.request, "Заказано всё по накладной — она ушла кладовщику в «Приход»")
+    else:
+        flash(ctx.request, f"«{cat.name if cat else 'Строка'}» — заказано. Осталось заказать: {left}")
+    db.commit()
     return _to(to)
 
 

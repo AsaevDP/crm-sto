@@ -50,6 +50,36 @@
   {% endfor %}
 </div>
 
+{# 13.11.2026 (брат): «Заказать по нарядам» — менеджер согласовал с клиентом, запчастисту приходит заказ на машину.
+   «✓ Заказал весь наряд» — одной кнопкой, или раскрыть и отмечать каждую позицию «Заказал». #}
+{% if mode == "mine" and to_order %}
+<div class="group-title">Заказать по нарядам · {{ to_order|length }}</div>
+<div class="po-todo">
+  {% for d in to_order %}
+  <div class="card compact po-todo-card{{ ' urgent' if d.urgent }}">
+    <div class="card-h"><span class="headline">{% if d.wo %}<a href="/orders/{{ d.wo.id }}#parts">{{ d.wo.number }}</a>{% endif %}</span>
+      <span class="chip" data-s="approve">заказать {{ d.left }} из {{ d.rows|length }}</span></div>
+    {% if d.v %}<div class="subhead">{{ d.v.make }} {{ d.v.model }} · {{ fmt_plate(d.v.plate) }}</div>{% endif %}
+    <div class="caption">{% if d.urgent %}<span class="urg-tag">🔥 есть срочное</span> · {% endif %}менеджер согласовал с клиентом
+      {{ d.p.created_at.astimezone().strftime("%d.%m %H:%M") }} · <a href="/purchases/{{ d.p.id }}">поставщик, счёт, дата</a></div>
+    <form method="post" action="/purchases/{{ d.p.id }}/ordered" style="margin-top:8px">
+      <input type="hidden" name="back" value="/my-orders">
+      <button class="btn btn-block">✓ Заказал весь наряд</button></form>
+    <details class="po-todo-lines">
+      <summary class="caption">Список · отмечать по каждой позиции</summary>
+      {% for r in d.rows %}
+      <div class="kv"><span>{% if r.part.urgent %}🔥 {% endif %}{{ r.c.name if r.c else r.part.name }}
+        <span class="caption mono" style="display:block">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }} · {{ r.l.qty|num }} шт</span></span>
+        {% if r.l.ordered_at %}<b class="ok-hint">✓ заказано</b>
+        {% else %}<form method="post" action="/purchase-lines/{{ r.l.id }}/ordered"><input type="hidden" name="back" value="/my-orders">
+          <button class="btn btn-sm btn-tinted">Заказал</button></form>{% endif %}</div>
+      {% endfor %}
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="card compact">
   <div class="tablewrap">
     <table class="table dense-table po-table">
@@ -69,7 +99,7 @@
         <td>{{ r.sup.name if r.sup else "поставщик не указан" }}
           <div class="caption"><a href="/purchases/{{ r.p.id }}">закупка {{ r.p.created_at.astimezone().strftime("%d.%m") }}</a>{% if r.p.supplier_invoice %} · счёт {{ r.p.supplier_invoice }}{% endif %}</div></td>
         <td class="num nowrap"><b>{{ r.l.got|num }}</b> из {{ r.l.qty|num }}</td>
-        <td>{% set sv = STATES[r.st] %}<span class="chip" data-s="{{ {'draft': 'created', 'wait': 'waiting', 'delivered': 'diag', 'partial': 'picking', 'arrived': 'ready'}[r.st] }}">{{ {'draft': 'черновик', 'wait': 'заказано', 'delivered': 'привезли, кладовщик принимает', 'partial': 'неполная поставка', 'arrived': '✓ принято на склад'}[r.st] }}</span>
+        <td>{% set sv = STATES[r.st] %}{% if r.st == "draft" and r.l.ordered_at %}<span class="chip" data-s="waiting">заказано · остальное ещё нет</span>{% else %}<span class="chip" data-s="{{ {'draft': 'created', 'wait': 'waiting', 'delivered': 'diag', 'partial': 'picking', 'arrived': 'ready'}[r.st] }}">{{ {'draft': 'черновик', 'wait': 'заказано', 'delivered': 'привезли, кладовщик принимает', 'partial': 'неполная поставка', 'arrived': '✓ принято на склад'}[r.st] }}</span>{% endif %}
           {% if r.st in ("wait", "partial") %}<div class="caption {{ 'late' if r.late }}">{% if r.p.expected_on %}привезут {{ r.p.expected_on.strftime("%d.%m") }}{% if r.late %} — опаздывает{% endif %}{% else %}срок не указан{% endif %}</div>{% endif %}
           {# Кладовщик принимает прямо отсюда — кнопки у первой строки каждой накладной #}
           {% if recv_ok and r.p.status in ("ordered", "delivered", "partial") and r.p.id not in ns.seen %}{% set ns.seen = ns.seen + [r.p.id] %}{{ recv_btns(r.p) }}{% endif %}

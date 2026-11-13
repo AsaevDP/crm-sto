@@ -30,6 +30,10 @@ def _order_to_work(c, plate, phone, part_name):
     _as(c, "oleg")
     c.post(f"{url}/parts", data={"name": part_name, "qty": "1", "cost": "100", "markup_pct": "100", "action": "order"})
     c.post(f"{url}/picking-done")
+    # 13.11.2026: подбор на согласовании — заказ уходит поставщику только после «Согласовал с клиентом»
+    _as(c, "irina")
+    c.post(f"{url}/approval-done")
+    _as(c, "oleg")
     with SessionLocal() as db:
         part = db.scalar(select(WoPart).where(WoPart.work_order_id == _wo(url).id))
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))

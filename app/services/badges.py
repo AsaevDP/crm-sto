@@ -74,8 +74,13 @@ def compute(ctx) -> dict:
             _add(out, "/orders", "yellow", n_status("approve", field=None if see_all else WorkOrder.manager_id),
                  "согласовать с клиентом", "/orders?tab=approve")
         if ctx.can("parts.pick") and not ctx.can("orders.approve"):
-            _add(out, "/orders", "yellow", n_status("picking", field=None if see_all else WorkOrder.partsman_id),
-                 "подобрать запчасти", "/orders?tab=parts")
+            # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»
+            qp = select(func.count()).select_from(WorkOrder).where(
+                WorkOrder.branch_id == bid, or_(WorkOrder.status == "picking",
+                                                (WorkOrder.status == "approve") & WorkOrder.picked_at.is_(None)))
+            if not see_all:
+                qp = qp.where(WorkOrder.partsman_id == me.id)
+            _add(out, "/orders", "yellow", db.scalar(qp) or 0, "подобрать запчасти", "/orders?tab=approve")
         if ctx.can("orders.approve"):
             _add(out, "/orders", "green", n_status("ready", field=None if see_all else WorkOrder.manager_id),
                  "готовы к выдаче клиенту", "/orders?tab=ready")

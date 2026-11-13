@@ -23,3 +23,18 @@ def login(c, login, password):
     r = c.post("/login", data={"login": login, "password": password}, follow_redirects=False)
     assert r.status_code == 303, r.text
     return r
+
+
+def agree(c, url, then="oleg", partsman="oleg"):
+    """13.11.2026 (брат): запчастист подбирает на согласовании, заказ уходит поставщику только после того, как
+    менеджер «Согласовал с клиентом». Запчастист — «Подбор завершён», менеджер — согласовал; дальше входим как then."""
+    c.post("/logout")
+    login(c, partsman, partsman + "123")
+    c.post(f"{url}/picking-done")
+    c.post("/logout")
+    login(c, "irina", "irina123")
+    r = c.post(f"{url}/approval-done")
+    c.post("/logout")
+    if then:
+        login(c, then, then + "123")
+    return r

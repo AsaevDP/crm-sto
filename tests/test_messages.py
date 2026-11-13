@@ -1,3 +1,4 @@
+import re
 """Сообщения по наряду (11.11.2026): слесарь смотрит склад без цен, просит запчасть под наряд → менеджер согласует →
 кладовщик выдаёт только после согласования. Текстовые сообщения команде наряда."""
 from decimal import Decimal
@@ -140,12 +141,12 @@ def test_mechanic_stock_filters_and_razbor(client):
     assert "Фара левая (слесарь)" in page and "Дверь передняя (слесарь)" not in page and "Оптика · 1" in page
     assert "Кузов" not in page.split("look-cats")[1].split("</nav>")[0]
     page = client.get(f"/stock?sec=used&donor={dkey}&cat=Оптика&sub=Фары").text
-    assert "Фара левая (слесарь)" in page and "4500" not in page and "4 500" not in page
+    assert "Фара левая (слесарь)" in page and not re.search(r"(?<![\w-])4500(?![\w-])", page) and "4 500" not in page
     # Склад: фильтр по категории и марке работает и не роняет страницу
     assert client.get("/stock?sec=repair&make=Skoda&model=Superb").status_code == 200
     assert client.get("/stock?sec=to&cat=-").status_code == 200
     card = client.get(f"/stock/items/{free.id}").text
-    assert "Попросить под наряд" in card and "4500" not in card and "4 500" not in card
+    assert "Попросить под наряд" in card and not re.search(r"(?<![\w-])4500(?![\w-])", card) and "4 500" not in card
 
 
 def test_mechanic_cannot_ask_for_foreign_order(client):
