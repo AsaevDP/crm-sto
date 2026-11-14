@@ -64,7 +64,7 @@ def test_buy5_one_to_order_four_to_stock_next_order_from_stock(client):
     client.post("/stock/locations", data={"rack": "B", "shelves": "1", "places": "2"})
     with SessionLocal() as db:
         loc = db.scalar(select(Location).where(Location.label == "B / 1 / 1"))
-    client.post(f"/purchases/{pid}/receive", data={"location_id": str(loc.id)})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1", "location_id": str(loc.id)})
     assert _bal(name) == (5, 1, 4)
     assert _wo(url1).status == "instock"
     with SessionLocal() as db:
@@ -126,7 +126,7 @@ def test_inventory_adjust_requires_reason(client):
     client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
     login(client, "pavel", "pavel123")
-    client.post(f"/purchases/{pid}/receive", data={})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     with SessionLocal() as db:
         cat = db.scalar(select(PartCatalog).where(PartCatalog.name == "Фильтр масляный (инв)"))
         item = db.scalar(select(StockItem).where(StockItem.catalog_id == cat.id))

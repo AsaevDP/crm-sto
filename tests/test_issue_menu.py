@@ -34,7 +34,7 @@ def test_issue_requests_menu(client):
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
     client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "pavel")
-    client.post(f"/purchases/{pid}/receive", data={})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     _as(client, "irina")
     client.post(f"{url}/issue-request", data={})
     _as(client, "pavel")
@@ -64,7 +64,7 @@ def _reserved_order(client, plate, phone, name):
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
     client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "pavel")
-    client.post(f"/purchases/{pid}/receive", data={})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     _as(client, "irina")
     client.post(f"{url}/issue-request", data={})
     with SessionLocal() as db:

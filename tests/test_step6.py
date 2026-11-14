@@ -39,7 +39,7 @@ def _order_to_work(c, plate, phone, part_name):
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == part.id))
     c.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(c, "pavel")
-    c.post(f"/purchases/{pid}/receive", data={})
+    c.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     _as(c, "andrey")
     c.post(f"{url}/issue-request", data={})
     _as(c, "pavel")

@@ -67,7 +67,7 @@ def test_purchase_flow_partial_receive(client):
     # Кладовщик: колодок пришло 1 из 4 → закупка «пришла частично», строка ещё ждёт
     login(client, "pavel", "pavel123")
     pads = next(l for l in lines if l.qty == 4)
-    client.post("/stock/receive", data={"line_id": str(pads.id), f"qty_{pads.id}": "1"})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(pads.id), f"qty_{pads.id}": "1"})
     p, lines = _p(pa)
     pads = next(l for l in lines if l.id == pads.id)
     assert p.status == "partial" and pads.got == 1 and not pads.received and pads.left == 3
@@ -87,7 +87,7 @@ def test_purchase_flow_partial_receive(client):
 
     # Принять всё остальное → закупка «пришла»
     login(client, "pavel", "pavel123")
-    client.post(f"/purchases/{pa}/receive", data={"all": str(pa)})
+    client.post(f"/purchases/{pa}/receive", data={"invoice": "ТН-1", "all": str(pa)})
     assert _p(pa)[0].status == "arrived"
     client.post("/logout")
 
@@ -109,12 +109,12 @@ def test_order_part_partial_arrival_reserves_when_all_came(client):
     client.post(f"/purchases/{line.purchase_id}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     client.post("/logout")
     login(client, "pavel", "pavel123")
-    client.post("/stock/receive", data={"line_id": str(line.id), f"qty_{line.id}": "3"})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(line.id), f"qty_{line.id}": "3"})
     with SessionLocal() as db:
         part = db.get(WoPart, part.id)
         assert part.status == "ordered" and sum(svc.reserved_for_part(db, part.id).values()) == 3
         assert db.get(WorkOrder, wo.id).status == "waiting"
-    client.post("/stock/receive", data={"line_id": str(line.id)})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(line.id)})
     with SessionLocal() as db:
         part = db.get(WoPart, part.id)
         assert part.status == "reserved" and sum(svc.reserved_for_part(db, part.id).values()) == 4

@@ -1,13 +1,9 @@
-{# Кнопки приёмки закупки — только кладовщик (stock.manage). 14.11.2026 (брат): шага «Привезли» больше нет —
-   у ЛЮБОЙ заказанной накладной (под наряд, на склад, химия) одни и те же две кнопки: «✓ Принять полностью» и
-   «Неполная поставка» (откроется накладная с полями «сколько привезли»). Используется в Закупках и «Заказах запчастистов». #}
+{# Кнопка к приёмке — только кладовщик (stock.manage). 14.11.2026 (брат): принимаем построчно и только с № накладной,
+   поэтому в списках («Закупки», «Заказы запчастистов») — одна кнопка «Открыть»: приёмка внутри накладной. #}
 {% macro recv_btns(p, big=False) %}
 <span class="rcv-btns {{ 'big' if big }}" onclick="event.stopPropagation()">
   {% if p.status in ("ordered", "delivered", "partial") %}
-  <form method="post" action="/purchases/{{ p.id }}/receive" onsubmit="return confirm('Принять {{ 'всё остальное' if p.status == 'partial' else 'всю накладную' }} на склад?')">
-    <input type="hidden" name="all" value="{{ p.id }}"><input type="hidden" name="back" value="{{ ctx.request.url.path }}?{{ ctx.request.url.query }}">
-    <button class="btn btn-sm">✓ Принять {{ "остальное" if p.status == "partial" else "полностью" }}</button></form>
-  <a class="btn btn-sm btn-gray" href="/purchases/{{ p.id }}?short=1#short">Неполная поставка</a>
+  <a class="btn btn-sm" href="/purchases/{{ p.id }}#lines" title="Открыть накладную — отметить, что пришло, и вписать № накладной">Открыть{{ " · принять остальное" if p.status == "partial" else " · принять" }}</a>
   {% endif %}
 </span>
 {% endmacro %}

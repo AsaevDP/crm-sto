@@ -60,14 +60,14 @@ def test_receive_all_parts_notifies_team_once(client):
     with SessionLocal() as db:
         loc = db.scalar(select(Location).where(Location.rack == "R"))
         belt_line = db.scalar(select(PurchaseLine).where(PurchaseLine.wo_part_id == belt.id))
-    client.post("/stock/receive", data={"line_id": str(belt_line.id), f"loc_{belt_line.id}": str(loc.id)})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(belt_line.id), f"loc_{belt_line.id}": str(loc.id)})
     assert _wo(url).status == "waiting"
     assert [k for k, _ in _notes("andrey", url)] == ["urgent_in"]
     assert any(k == "urgent_in" for k, _ in _notes("oleg", url))         # 12.11.2026: и запчастисту, и менеджеру
     assert not any(k == "parts_ready" for k, _ in _notes("irina", url))
 
     # Принять всё остальное → «Все запчасти на складе» менеджеру, слесарю, запчастисту — по одному разу
-    r = client.post("/stock/receive", data={"all": str(pid)})   # ответ — страница «Приход» после приёма
+    r = client.post("/stock/receive", data={"invoice": "ТН-1", "all": str(pid)})   # ответ — страница «Приход» после приёма
     assert _wo(url).status == "instock"
     assert "Напечатать наклейки" in r.text and "сообщение ушло менеджеру и слесарю" in r.text
     client.post("/logout")

@@ -41,7 +41,7 @@ def test_short_delivery_one_part_missing(client):
               for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == pid))}
     _as(client, "pavel")
     for attempt in range(2):   # второй раз — опять привезли без болтов
-        r = client.post(f"/purchases/{pid}/receive", data={"all": str(pid), "short": "1",
+        r = client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1", "all": str(pid), "short": "1",
                                                              f"qty_{ls['Прокладка ЗН']}": "1", f"qty_{ls['Болты ЗН']}": "0"})
         assert "Неполная поставка — ждём: Болты ЗН" in r.text
         with SessionLocal() as db:
@@ -51,7 +51,7 @@ def test_short_delivery_one_part_missing(client):
             assert f"/purchases/{pid}" in page, (attempt, tab)
         assert "✓ принято:</span> Прокладка ЗН" in client.get("/purchases?tab=arrived").text
         page = client.get("/purchases?tab=partial").text
-        assert "Принять остальное" in page and "Довезли остальное" not in page and "🚚 Привезли" not in page
+        assert "принять остальное" in page and "Довезли остальное" not in page and "🚚 Привезли" not in page
     # Ничего не привезли вовсе — накладная снова «Ждём»
     _as(client, "oleg")
     pid2 = uuid.UUID(client.post("/purchases/new", data={"supplier_new": "Недовоз ЗН"}).url.path.rsplit("/", 1)[1])
@@ -60,9 +60,52 @@ def test_short_delivery_one_part_missing(client):
     with SessionLocal() as db:
         l2 = db.scalar(select(PurchaseLine.id).where(PurchaseLine.purchase_id == pid2))
     _as(client, "pavel")
-    client.post(f"/purchases/{pid2}/receive", data={"all": str(pid2), "short": "1", f"qty_{l2}": "0"})
+    client.post(f"/purchases/{pid2}/receive", data={"invoice": "ТН-1", "all": str(pid2), "short": "1", f"qty_{l2}": "0"})
     with SessionLocal() as db:
         assert db.get(Purchase, pid2).status == "ordered"
+
+
+def test_receive_needs_invoice_per_line(client):
+    """14.11.2026 (брат): принимаем построчно, № накладной в строке обязателен; «Принять всё» — номер во все строки.
+    Принял одну и вышел — у запчастиста видно: одна пришла, другая ещё едет."""
+    import uuid
+    _as(client, "oleg")
+    pid = uuid.UUID(client.post("/purchases/new", data={"supplier_new": "Накл ЗН"}).url.path.rsplit("/", 1)[1])
+    for n, pr in (("Фильтр НК", "200"), ("Ремень НК", "900"), ("Ролик НК", "500")):
+        client.post(f"/purchases/{pid}/lines", data={"name": n, "qty": "1", "price": pr})
+    client.post(f"/purchases/{pid}/ordered", data={})
+    with SessionLocal() as db:
+        ls = {db.get(PartCatalog, l.catalog_id).name: l.id
+              for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == pid))}
+    _as(client, "pavel")
+    page = client.get(f"/purchases/{pid}").text
+    assert f'name="inv_{ls["Фильтр НК"]}"' in page and "Принять всё · 3" in page and "Неполная поставка</button>" not in page
+    # Без номера — не принимаем
+    r = client.post(f"/purchases/{pid}/receive", data={"line_id": str(ls["Фильтр НК"])})
+    assert "№ накладной" in r.text
+    with SessionLocal() as db:
+        assert not db.get(PurchaseLine, ls["Фильтр НК"]).received
+    # С номером в строке — принято, номер у строки; остальное ждём
+    client.post(f"/purchases/{pid}/receive", data={"line_id": str(ls["Фильтр НК"]), f"inv_{ls['Фильтр НК']}": "АТ-101"})
+    with SessionLocal() as db:
+        l = db.get(PurchaseLine, ls["Фильтр НК"])
+        assert l.received and l.invoice == "АТ-101" and db.get(Purchase, pid).status == "partial"
+        assert db.get(Purchase, pid).supplier_invoice == "АТ-101"
+    assert "накладная АТ-101" in client.get(f"/purchases/{pid}").text
+    _as(client, "oleg")
+    mine = client.get("/my-orders?st=arrived").text
+    assert "Фильтр НК" in mine and "Ремень НК" not in mine
+    assert "Ремень НК" in client.get("/my-orders").text
+    # «Склад → Приход»: без номера «Принять всё» ничего не берёт; с общим номером — всё остальное
+    _as(client, "pavel")
+    assert f'name="inv_{ls["Ремень НК"]}"' in client.get("/stock/receive").text
+    client.post("/stock/receive", data={"sup": "накл зн"})
+    with SessionLocal() as db:
+        assert not db.get(PurchaseLine, ls["Ремень НК"]).received
+    client.post("/stock/receive", data={"sup": "накл зн", "invoice": "АТ-202"})
+    with SessionLocal() as db:
+        assert db.get(PurchaseLine, ls["Ролик НК"]).invoice == "АТ-202" and db.get(Purchase, pid).status == "arrived"
+        assert db.get(Purchase, pid).supplier_invoice == "АТ-101, АТ-202"
 
 
 def test_order_by_wo(client):
@@ -126,7 +169,7 @@ def test_order_by_wo(client):
     _as(client, "pavel")
     rec = client.get("/stock/receive").text
     assert rec.count('name="sup" value="элит зн"') == 1 and wa.number in rec and wb.number in rec
-    client.post("/stock/receive", data={"sup": "элит зн"})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "sup": "элит зн"})
     assert _line("Колодки ЗН").received and _line("Диск ЗН").received and _line("Стойка ЗН").received
     assert not _line("Шланг ЗН").received
     with SessionLocal() as db:
@@ -137,7 +180,7 @@ def test_order_by_wo(client):
     _as(client, "oleg")
     client.post(f"/purchases/{po.id}/lines", data={"name": "Хомут ЗН", "qty": "1", "price": "50"})
     _as(client, "pavel")
-    client.post("/stock/receive", data={"line_id": str(_line("Шланг ЗН").id)})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(_line("Шланг ЗН").id)})
     assert _p(_line("Шланг ЗН")).status == "partial"
     page = client.get("/purchases?tab=arrived").text
     assert f"/purchases/{po.id}" in page and "✓ принято:" in page and "ждём: Хомут ЗН" in page

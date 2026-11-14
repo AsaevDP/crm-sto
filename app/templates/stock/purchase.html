@@ -21,43 +21,26 @@
   </div>
 </header>
 
-{# Приёмка — только кладовщик. 14.11.2026 (брат): шага «Привезли» нет. Заказано → приёмка на склад:
-   «✓ Принять полностью» или «Неполная поставка» (вписать, сколько привезли; 0 — не привезли, будем ждать).
-   Одинаково для любой накладной: под наряд, на склад, химия. Остальные видят этап. #}
+{# Приёмка — только кладовщик. 14.11.2026 (брат): принимаем ПОСТРОЧНО — в строке сколько привезли, справа № накладной
+   и «Пришло». Без номера накладной не принимается. Сверху одна кнопка «✓ Принять» (одна деталь) / «✓ Принять всё»
+   с полем № накладной — номер впишется во все строки. Принял не всё и вышел — остальное ждёт («неполная поставка»).
+   Одинаково для любой накладной: под наряд, на склад, химия. #}
 {% if p.status in ("ordered", "delivered", "partial") %}
-<section class="card compact rcv-card now">
-  <div class="rcv-steps">
-    <span class="done">1. Заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}</span>
-    <span class="now">2. Приёмка на склад{% if p.status == "partial" %} · неполная поставка: принято {{ n_got }} из {{ lines|length }}, остальное ждём{% else %} · ждём{% endif %}</span>
-  </div>
+{% set n_left = lines|length - n_got %}
+<section class="card compact rcv-bar">
+  <span class="rcv-bar-t"><b>{{ "Неполная поставка" if p.status == "partial" else "Ждём" }}</b>
+    <span class="caption">{% if p.status == "partial" %}принято {{ n_got }} из {{ lines|length }}, остальное ждём{% else %}заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% endif %}</span></span>
   {% if recv %}
-  <div class="rcv-acts">
-    <form method="post" action="/purchases/{{ p.id }}/receive" class="form-row" onsubmit="return confirm('Принять {{ 'всё остальное' if p.status == 'partial' else 'всю накладную' }} на склад?')">
-      <input type="hidden" name="all" value="{{ p.id }}">
-      <input class="field" name="invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной" title="Номер накладной поставщика — необязательно" aria-label="Номер накладной" style="min-width:150px">
-      {% for l in lines if not l.received %}{% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}{% endfor %}
-      <button class="btn">✓ Принять {{ "остальное" if p.status == "partial" else "полностью" }} · {{ lines|length - n_got }} поз.</button></form>
-    <button class="btn btn-gray" type="button" onclick="document.getElementById('short').hidden = false; document.getElementById('short').scrollIntoView({block: 'center'})">Неполная поставка</button>
-    {% set no_pr = lines|rejectattr("received")|selectattr("price", "le", 0)|list %}
-    {% if no_pr %}<p class="hint warn" style="margin:0">Нет цены из накладной: {{ no_pr|length }} поз. — впишите «₴ за шт» в строке
-      или в «Неполной поставке», иначе эти позиции не примутся.</p>{% endif %}
-  </div>
-  <form id="short" class="rcv-short" method="post" action="/purchases/{{ p.id }}/receive" {% if not short %}hidden{% endif %}>
-    <input type="hidden" name="all" value="{{ p.id }}"><input type="hidden" name="short" value="1">
-    <p class="footnote" style="margin:0">Привезли не всё — впишите, сколько привезли по каждой позиции (0 — не привезли). Остальное будем ждать.</p>
-    <input class="field" name="invoice" value="{{ p.supplier_invoice }}" placeholder="№ накладной" title="Номер накладной поставщика — необязательно" aria-label="Номер накладной" style="min-width:150px">
-    {% for l in lines if not l.received %}{% set c = cats.get(l.catalog_id) %}
-    <label class="rcv-row"><span><b>{{ c.name if c else "" }}</b> <span class="caption">{{ c.brand if c }} {{ c.article if c }} · ждём {{ l.left|num }}</span></span>
-      <input class="field" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" aria-label="Сколько привезли">
-      <input class="field rc-price{{ ' need' if not l.price }}" name="price_{{ l.id }}" value="{{ '%.2f'|format(l.price) if l.price else '' }}"
-             inputmode="decimal" placeholder="₴ за шт" aria-label="Цена за штуку из накладной">
-      {% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}</label>
-    {% endfor %}
-    <div class="form-row"><button class="btn">Принять привезённое</button>
-      <button class="btn btn-plain" type="button" onclick="this.closest('form').hidden = true">Отмена</button></div>
+  <form method="post" action="/purchases/{{ p.id }}/receive" class="rcv-bar-f"
+        onsubmit="return confirm('Принять {{ 'на склад' if n_left == 1 else 'все ' ~ n_left ~ ' поз. на склад' }}?')">
+    <input type="hidden" name="all" value="{{ p.id }}">
+    {% for l in lines if not l.received %}{% if cells.get(l.id) %}<input type="hidden" name="loc_{{ l.id }}" value="{{ cells[l.id] }}">{% endif %}{% endfor %}
+    <input class="field" name="invoice" required placeholder="№ накладной" title="Номер накладной поставщика — обязательно" aria-label="Номер накладной">
+    <button class="btn">✓ {{ "Принять" if n_left == 1 else "Принять всё · " ~ n_left }}</button>
   </form>
-  {% else %}<p class="footnote" style="margin:0">Ждём от поставщика. Когда привезут, кладовщик примет на склад.</p>
-  {% endif %}
+  {% set no_pr = lines|rejectattr("received")|selectattr("price", "le", 0)|list %}
+  {% if no_pr %}<p class="hint warn" style="margin:0;flex-basis:100%">Нет цены из накладной: {{ no_pr|length }} поз. — впишите «₴ за шт» в строке, иначе не примется.</p>{% endif %}
+  {% else %}<span class="caption">Когда привезут, кладовщик примет на склад.</span>{% endif %}
 </section>
 {% endif %}
 
@@ -122,6 +105,7 @@
       {% if cost_ok %}<td class="num nowrap" data-l="сумма"><b>{{ (l.qty * l.price)|money }}</b></td>{% endif %}
       <td class="pu-got">
         {% if l.received %}<span class="chip" data-s="ready">✓ {{ l.got|num }}</span>{% if l.location_id %}<div class="caption">{{ loc_label(locations|selectattr("id", "equalto", l.location_id)|first) }}</div>{% endif %}
+          {% if l.invoice %}<div class="caption">накладная {{ l.invoice }}</div>{% endif %}
         {% elif recv %}
           <div class="pu-recv">
             <input class="mini" form="rf-{{ l.id }}" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" size="3" aria-label="Сколько пришло">
@@ -130,9 +114,12 @@
                    inputmode="decimal" size="6" placeholder="₴ за шт" aria-label="Цена за штуку из накладной">
             <select class="mini" form="rf-{{ l.id }}" name="loc_{{ l.id }}" aria-label="Ячейка"><option value="">без ячейки</option>
               {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == cells.get(l.id) %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select>
+            {# 14.11.2026 (брат): № накладной — в строке, справа; без него «Пришло» не примет #}
+            <input class="mini pu-inv" form="rf-{{ l.id }}" name="inv_{{ l.id }}" required size="10" placeholder="№ накладной"
+                   title="Номер накладной поставщика — обязательно" aria-label="Номер накладной">
             <button class="btn btn-sm btn-tinted" form="rf-{{ l.id }}">Пришло</button>
           </div>
-          {% if l.got > 0 %}<div class="caption">пришло {{ l.got|num }} из {{ l.qty|num }}</div>{% endif %}
+          {% if l.got > 0 %}<div class="caption">пришло {{ l.got|num }} из {{ l.qty|num }}{% if l.invoice %} · накладная {{ l.invoice }}{% endif %}</div>{% endif %}
         {% elif l.got > 0 %}<span class="caption">{{ l.got|num }} из {{ l.qty|num }}</span>
         {% else %}<span class="caption">{{ "ещё не заказано" if p.status == "draft" else "ждём" }}</span>{% endif %}
       </td>

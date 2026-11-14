@@ -87,7 +87,7 @@ def test_chem_purchase_ask_issue(client):
     # Кладовщик принимает
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/delivered", data={})
-    client.post(f"/purchases/{pid}/receive", data={"all": str(pid)})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1", "all": str(pid)})
     with SessionLocal() as db:
         items = db.scalars(select(StockItem).where(StockItem.catalog_id == cat.id)).all()
         free = sum(b["free"] for b in ssvc.balances(db, items[0].branch_id, [i.id for i in items]).values())

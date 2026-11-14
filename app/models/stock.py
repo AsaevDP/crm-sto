@@ -208,6 +208,9 @@ class PurchaseLine(Entity):
     # 13.11.2026 (брат): «Заказал» по каждой строке; все строки заказаны — закупка сама становится «заказано»
     ordered_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     ordered_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 14.11.2026 (брат): № накладной поставщика — у каждой строки (одну закупку могут привезти по разным бумагам).
+    # Без номера кладовщик не примет. Пришла частями по разным накладным — номера через запятую.
+    invoice: Mapped[str] = mapped_column(String(160), default="", server_default="")
 
     @property
     def got(self) -> Decimal:

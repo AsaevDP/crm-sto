@@ -70,7 +70,7 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
     client.post("/stock/locations", data={"rack": "P", "shelves": "1", "places": "1"})
     with SessionLocal() as db:
         loc = db.scalar(select(Location).where(Location.rack == "P"))
-    client.post("/stock/receive", data={"line_id": str(line_id), f"loc_{line_id}": str(loc.id)})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(line_id), f"loc_{line_id}": str(loc.id)})
     client.post("/logout")
     assert _wo(url).status == "waiting"
     for who, _ in TEAM:
@@ -88,7 +88,7 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
 
     # Пришло остальное → «Все запчасти на складе» всем четверым (и электрику), отдельного «Пришли» нет
     login(client, "pavel", "pavel123")
-    client.post("/stock/receive", data={"all": str(pid)})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "all": str(pid)})
     client.post("/logout")
     assert _wo(url).status == "instock"
     for who, pwd in TEAM:

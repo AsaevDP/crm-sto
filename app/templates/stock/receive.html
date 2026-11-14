@@ -8,7 +8,7 @@
     <h1 class="large-title">Приход{% if who_user %} · {{ who_user.short_name }}{% endif %}</h1></div>
   <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/purchases">Все закупки</a><a class="btn btn-sm btn-gray" href="/stock/issues">Выдача</a></div>
 </header>
-<p class="footnote rc-hint">Что ждём от поставщиков. Пришло — нажмите «Пришло» у строки или «Принять всё» у поставщика.
+<p class="footnote rc-hint">Что ждём от поставщиков. Пришло — впишите № накладной и нажмите «Пришло» у строки или «Принять всё» у поставщика (номер впишется во все строки).
   Привезли не всё — исправьте число в колонке «Шт», остальное будем ждать дальше.
   Ячейка подставлена сама — там, где эта запчасть уже лежит; можно поменять. 🔥 — слесарь просит срочно.</p>
 
@@ -44,11 +44,12 @@
       {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
       </span>
     <span class="ov-actions">{% if g.ps|length == 1 %}<a class="btn btn-plain btn-sm" href="/purchases/{{ g.ps[0].id }}">Накладная</a>{% else %}<span class="caption">накладных: {{ g.ps|length }}</span>{% endif %}
+      <input class="field rc-inv-all" name="invoice" placeholder="№ накладной" aria-label="Номер накладной для всех строк" title="Номер накладной — впишется во все строки этого поставщика">
       <button class="btn btn-sm" name="sup" value="{{ g.key }}">Принять всё · {{ g.rows|length }}</button></span>
   </div>
   <div class="tablewrap">
   <table class="table rc-table">
-    <thead><tr><th>Запчасть</th><th class="num">Шт</th><th class="num" title="Цена за штуку из накладной — обязательно">₴ за шт</th><th>Под наряд</th><th>Ячейка</th><th></th></tr></thead>
+    <thead><tr><th>Запчасть</th><th class="num">Шт</th><th class="num" title="Цена за штуку из накладной — обязательно">₴ за шт</th><th>Под наряд</th><th>Ячейка</th><th>№ накладной</th><th></th></tr></thead>
     <tbody>
     {% for r in g.rows %}
     <tr class="{{ 'urgent' if r.urgent }}">
@@ -66,6 +67,8 @@
       <td><select class="field rc-cell" name="loc_{{ r.l.id }}" aria-label="Ячейка">
           <option value="">— без ячейки —</option>
           {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == r.cell %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select></td>
+      {# 14.11.2026 (брат): № накладной обязателен — в строке или общий у «Принять всё» #}
+      <td><input class="field rc-inv" name="inv_{{ r.l.id }}" placeholder="№ накладной" aria-label="Номер накладной"></td>
       <td><button class="btn btn-sm btn-tinted nowrap" name="line_id" value="{{ r.l.id }}">Пришло</button></td>
     </tr>
     {% endfor %}

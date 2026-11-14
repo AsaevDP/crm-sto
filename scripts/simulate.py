@@ -1236,7 +1236,7 @@ def leave_for_today(day):
             with at(day, "17:00"):
                 pid = str(lines[0].purchase_id)
                 loc = (q(M.Location, M.Location.rack == "B") or q(M.Location))[0]
-                post("pavel", "/stock/receive", {"line_id": str(lines[0].id), f"loc_{lines[0].id}": str(loc.id)},
+                post("pavel", "/stock/receive", {"line_id": str(lines[0].id), f"loc_{lines[0].id}": str(loc.id), f"inv_{lines[0].id}": "ТТН-55120"},
                      what="Принять одну строку — пришла часть")
         o.step = "wait_parts_today"
     # 7) 13.11.2026: машина на диагностике у двух мастеров — слесарь закончил, электрик ещё нет

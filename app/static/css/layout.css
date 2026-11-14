@@ -1907,3 +1907,13 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .pay-grid-full .table td.num, .pay-grid-full .table th.num { white-space: nowrap; }
 @media (max-width: 760px) { .pay-top { grid-template-columns: minmax(0, 1fr); } .pay-kpis { gap: 8px 22px; } .pay-kpis b { font-size: 19px; } }
 .pay-top > .card { display: flex; flex-direction: column; justify-content: flex-start; }
+
+/* Приёмка накладной (14.11.2026): одна строка — статус слева, «№ накладной» + «Принять / Принять всё» справа */
+.card.rcv-bar, .rcv-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; border-left: 4px solid var(--orange); }
+.rcv-bar-t { display: grid; gap: 2px; flex: 1 1 220px; min-width: 0; }
+.rcv-bar-f { display: flex; gap: 8px; align-items: center; margin: 0; flex: 0 1 auto; flex-wrap: wrap; }
+.rcv-bar-f .field { width: 180px; }
+.rcv-bar-f .btn { white-space: nowrap; }
+.pu-recv .pu-inv { width: 120px; }
+@media (max-width: 600px) { .rcv-bar-f { width: 100%; } .rcv-bar-f .field { flex: 1 1 140px; width: auto; } }
+.rc-inv { width: 120px; } .rc-inv-all { width: 150px; min-height: 34px; }

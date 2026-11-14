@@ -169,7 +169,7 @@ def test_cancel_releases_reserve_and_ordered_part_goes_free(client):
     client.post(f"{url}/cancel", data={"reason": "Не дождался"})
     assert _wo(url).status == "cancel"
     _as(client, "pavel")
-    client.post(f"/purchases/{pid}/receive", data={})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     # Пришло после отмены — на свободный склад, а не в резерв отменённого наряда
     hand, res = _on_hand("Фильтр (отмена заказа)")
     assert hand == 2 and res == 0
@@ -215,7 +215,7 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
         pid = db.scalar(select(PurchaseLine.purchase_id).where(PurchaseLine.wo_part_id == _parts(url2)[0].id))
     client.post(f"/purchases/{pid}", data={"action": "ordered", "supplier_new": "Тест-поставщик"})
     _as(client, "pavel")
-    client.post(f"/purchases/{pid}/receive", data={})
+    client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     assert _parts(url2)[0].status == "reserved"
     _as(client, "oleg")
     r = client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", follow_redirects=False)

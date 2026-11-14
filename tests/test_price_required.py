@@ -48,13 +48,13 @@ def test_price_required_for_picking_and_receiving(client):
     client.post(f"/purchases/{pid}/ordered", data={})
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/delivered", data={})
-    r = client.post(f"/purchases/{pid}/receive", data={})
+    r = client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     assert "Без цены не принято" in r.text
     with SessionLocal() as db:
         assert not db.get(PurchaseLine, lid).received
     page = client.get("/stock/receive").text
     assert f'name="price_{lid}"' in page                              # поле «₴ за шт» у кладовщика
-    client.post("/stock/receive", data={"line_id": str(lid), f"price_{lid}": "980"})
+    client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(lid), f"price_{lid}": "980"})
     with SessionLocal() as db:
         l = db.get(PurchaseLine, lid)
         assert l.received and l.price == Decimal("980.00")
