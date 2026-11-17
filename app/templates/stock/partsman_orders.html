@@ -5,7 +5,7 @@
    Пришло — по приходу на склад («Склад → Приход»). Под наряд с запасом — видно, сколько в наряд и сколько на склад. #}
 {% from "stock/_recv.html" import recv_btns with context %}
 {% block content %}
-{% set recv_ok = mode == "all" and ctx.can("stock.manage") %}
+{% set recv_ok = mode == "all" and ctx.can("stock.receive") %}
 {% set order_ok = mode == "mine" and ctx.can("purchases.manage") %}
 {% set ns = namespace(seen=[], drafts=[]) %}
 {# «✓ Заказал» (12.11.2026): запчастист подтверждает заказ прямо отсюда — у первой строки каждого черновика

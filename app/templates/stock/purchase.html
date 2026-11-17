@@ -6,7 +6,7 @@
 {% set cost_ok = ctx.can("prices.view_purchase") %}
 {% set manage = can_manage %}
 {% set edit = manage and p.status in ("draft", "ordered", "delivered", "partial") %}
-{% set recv = ctx.can("stock.manage") and p.status in ("ordered", "delivered", "partial") %}
+{% set recv = ctx.can("stock.receive") and p.status in ("ordered", "delivered", "partial") %}
 {% set n_got = lines|selectattr("received")|list|length %}
 {% set n_orders = lines|selectattr("wo_part_id")|list|length %}
 <header class="ov-head">
@@ -17,7 +17,9 @@
       <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div>
       <div class="subhead">Заказал: <b>{{ buyer.full_name if buyer else "—" }}</b>
         {%- set po = orders.get(p.work_order_id) %}{% if po %}{% set pv = vehicles.get(po.vehicle_id) %} · под наряд <a href="/orders/{{ po.id }}">{{ po.number }}</a>{% if pv %} ({{ pv.make }} {{ pv.model }} {{ fmt_plate(pv.plate) }}){% endif %}{% elif not p.work_order_id %} · на склад и под разные наряды{% endif %}</div></div>
-    <span class="chip chip-lg" data-s="{{ CHIP[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
+    <span class="pu-head-r"><span class="chip chip-lg" data-s="{{ CHIP[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
+      {# 17.11.2026 (брат): внутренний документ СТО — что заказали и что получили #}
+      <a class="btn btn-sm btn-gray" href="/purchases/{{ p.id }}/print" target="_blank">🖨 {{ "Заказ на склад" if not p.work_order_id else "Заказ под наряд" }}</a></span>
   </div>
 </header>
 

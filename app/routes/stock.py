@@ -7,11 +7,12 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import func, or_, select
 
 from ..models import (IssueRequest, IssueRequestLine, Location, PartCatalog, Purchase, PurchaseLine, StockItem,
-                      StockMovement, Supplier, User, Vehicle, WoPart, WorkOrder, WoWork)
+                      StockMovement, StockKeep, Supplier, User, Vehicle, WoPart, WorkOrder, WoWork)
 from ..models.stock import CATEGORIES, MOVEMENT_TYPES, SECTIONS
 from ..services import orders as osvc
 from ..services import settings as st
 from ..services import stock as svc
+from ..services import keep as ksvc   # «Всегда в наличии» (17.11.2026)
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
 
@@ -411,8 +412,14 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     allp = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id)
                       .order_by(Purchase.created_at.desc())).all()
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    buyers = sorted({p.created_by for p in allp if p.created_by in people}, key=lambda i: people[i].full_name)
-    if who:   # 12.11.2026: закупки одного запчастиста
+    # 17.11.2026 (брат): у каждого в «Закупках» только свои (запчастист — свои, кладовщик — свои). Все — у директора,
+    # зама и админа (purchases.all), с фильтром по человеку (кладовщик в фильтре тоже есть).
+    see_all = ctx.can("purchases.all")
+    if not see_all:
+        allp = [p for p in allp if p.created_by == ctx.user.id]
+        who = ""
+    buyers = sorted({p.created_by for p in allp if p.created_by in people}, key=lambda i: people[i].full_name) if see_all else []
+    if who:   # 12.11.2026: закупки одного человека
         allp = [p for p in allp if str(p.created_by) == who]
     got_any = set(db.scalars(select(PurchaseLine.purchase_id).join(Purchase, Purchase.id == PurchaseLine.purchase_id).where(
         Purchase.branch_id == ctx.branch.id, or_(PurchaseLine.received_qty > 0, PurchaseLine.received.is_(True)))))
@@ -420,7 +427,7 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     counts["all"] = len(allp)
     if tab not in PURCHASE_TABS:
         # кладовщику первым делом — что ждём (принять, когда привезут); остальным — черновики / что ждём
-        tab = next((k for k in (("wait",) if ctx.can("stock.manage") else ()) + ("draft", "wait") if counts[k]), "all")
+        tab = next((k for k in (("wait",) if ctx.can("stock.receive") else ()) + ("draft", "wait") if counts[k]), "all")
     rows = [p for p in allp if _in_tab(p, tab, got_any)]
     if sup:
         rows = [p for p in rows if str(p.supplier_id) == sup]
@@ -505,31 +512,88 @@ def my_orders(ctx: Ctx = Depends(get_ctx), st: str = ""):
 
 @router.get("/purchases/by-partsman")
 def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
-    """Заказы запчастистов (кладовщик, директор, админ): плитки по каждому, внутри — его заказы."""
+    """Заказы запчастистов (кладовщик, директор, админ). 17.11.2026 (брат): как «Приход», но ГРУППЫ ПО ЗАКАЗ-НАРЯДУ —
+    машина, менеджер, кто заказывал, пришло X из Y; внутри детали от любых поставщиков, та же строка с приёмкой
+    (№ накладной обязателен). «На склад» — отдельной группой. Сверху плитки людей (по умолчанию «Все») и «Мои заказы»
+    (заказы самого кладовщика), ниже — этапы. Принимает тот, у кого «Принимать на склад» (stock.receive)."""
+    from datetime import date as _d, datetime, timedelta, timezone
     ctx.need("purchases.by_partsman")
-    db = ctx.db
-    all_rows = svc.partsman_lines(db, ctx.branch.id)
+    db, cache, today = ctx.db, {}, _d.today()
+    st = st if st in BP_TABS else "wait"
+    allp = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id, Purchase.status != "draft",
+                                             Purchase.kind != "chem").order_by(Purchase.created_at)).all()
+    # плитки людей: все запчастисты + все, кто заказывал (в т.ч. кладовщик на склад)
     staff = db.scalars(select(User).where(User.branch_id == ctx.branch.id, User.active.is_(True))).all()
-    ids = {u_.id for u_ in staff if u_.role.code == "partsman"} | {r["buyer"].id for r in all_rows if r["buyer"]}
-    tiles = []
-    for p in sorted((x for x in db.scalars(select(User).where(User.id.in_(list(ids))))), key=lambda x: x.full_name):
-        mine = [r for r in all_rows if r["buyer"] and r["buyer"].id == p.id]
-        c = svc.order_counts(mine)
-        tiles.append({"u": p, "wait": c["wait"] + c["partial"], "late": c["late"],
-                      "arrived": c["arrived"], "draft": c["draft"]})
-    who = db.get(User, _uuid(u)) if u else None
+    ids = {x.id for x in staff if x.role.code == "partsman"} | {p.created_by for p in allp if p.created_by}
+    open_n = {}
+    for p in allp:
+        if p.status in svc.OPEN:
+            open_n[p.created_by] = open_n.get(p.created_by, 0) + (db.scalar(select(func.count()).select_from(PurchaseLine).where(
+                PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))) or 0)
+    people = sorted((x for x in db.scalars(select(User).where(User.id.in_(list(ids) or [uuid.uuid4()])))
+                     if x.id != ctx.user.id), key=lambda x: x.full_name)
+    tiles = [{"u": x, "n": open_n.get(x.id, 0)} for x in people]
+    me_tile = ({"n": open_n.get(ctx.user.id, 0)} if ctx.can("purchases.stock") or ctx.user.id in ids else None)
+    who = ctx.user if u == "me" else (db.get(User, _uuid(u)) if u else None)
     if who and who.branch_id != ctx.branch.id:
         raise Forbidden()
-    board = _orders_board(ctx, who.id, st, "all", tiles) if who else dict(
-        rows=[], counts={}, st="", mode="all", people_tiles=tiles, STATES=svc.ORDER_STATES, fmt_plate=osvc.fmt_plate,
-        cost_ok=ctx.can("prices.view_purchase"))
-    return ctx.render("stock/partsman_orders.html", title="Заказы запчастистов", who=who, **board)
+    ps = [p for p in allp if not who or p.created_by == who.id]
+    since = datetime.now(timezone.utc) - timedelta(days=60)
+    counts = {k: 0 for k in BP_TABS}
+    groups: dict = {}
+    for p in ps:
+        lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id).order_by(PurchaseLine.created_at)).all()
+        left = [l for l in lines if not l.received]
+        if p.status in svc.OPEN:
+            counts["wait"] += len(left)
+            counts["partial"] += len(left) if p.status == "partial" else 0
+            counts["late"] += len(left) if p.expected_on and p.expected_on < today else 0
+        got = [l for l in lines if l.received and (l.updated_at or p.updated_at).replace(tzinfo=timezone.utc) >= since]
+        counts["arrived"] += len(got)
+        if st == "arrived":
+            show = got
+        elif p.status not in svc.OPEN or (st == "partial" and p.status != "partial") \
+                or (st == "late" and not (p.expected_on and p.expected_on < today)):
+            continue
+        else:
+            show = lines   # в работе — вся закупка: что пришло (✓) и что ждём
+        for l in show:
+            r = _line_row(db, l, p, cache)
+            key = f"wo:{r['wo'].id}" if r["wo"] else "stock"
+            if key not in groups:
+                mgr = db.get(User, r["wo"].manager_id) if r["wo"] and r["wo"].manager_id else None
+                groups[key] = {"key": key, "wo": r["wo"], "v": r["v"], "rows": [], "buyers": [], "urgent": False,
+                               "manager": mgr, "late": False}
+            g = groups[key]
+            g["rows"].append(r)
+            g["urgent"] |= r["urgent"] and not l.received
+            g["late"] |= bool(not l.received and p.expected_on and p.expected_on < today)
+            if r["buyer"] and r["buyer"].short_name not in g["buyers"]:
+                g["buyers"].append(r["buyer"].short_name)
+    out = list(groups.values())
+    for g in out:
+        g["n"], g["got"] = len(g["rows"]), sum(1 for r in g["rows"] if r["l"].received)
+        g["left"] = g["n"] - g["got"]
+        g["rows"].sort(key=lambda r: (r["l"].received, not r["urgent"], r["c"].name if r["c"] else ""))
+    out.sort(key=lambda g: (g["key"] == "stock", not g["urgent"], not g["late"], g["wo"].number if g["wo"] else ""))
+    locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
+                           .order_by(Location.rack, Location.shelf, Location.place)).all()
+    back = str(ctx.request.url.path) + (f"?{ctx.request.url.query}" if ctx.request.url.query else "")
+    return ctx.render("stock/by_partsman.html", title="Заказы запчастистов", who=who, u=u, st=st, TABS=BP_TABS,
+                      counts=counts, groups=out, tiles=tiles, me_tile=me_tile, locations=locations, back=back,
+                      can_recv=ctx.can("stock.receive"), loc_label=svc.location_label, fmt_plate=osvc.fmt_plate)
+
+
+# 17.11.2026 (брат): этапы «Заказов запчастистов»
+BP_TABS = {"wait": ("Ждём", "orange", "заказано, едет"), "partial": ("Неполная поставка", "purple", "ждём остальное"),
+           "late": ("Опаздывают", "red", "срок прошёл"), "arrived": ("Приняты", "green", "за 60 дней")}
 
 
 @router.post("/purchases/new")
 def purchase_new(ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form("")):
-    """Новая закупка у поставщика. Черновиков может быть сколько угодно — по одному на заказ."""
-    ctx.need("purchases.manage")
+    """Новая закупка у поставщика. Черновиков может быть сколько угодно — по одному на заказ.
+    17.11.2026: кладовщик (purchases.stock) тоже заводит — свои закупки на склад."""
+    ctx.need("purchases.manage", "purchases.stock")
     sid = _supplier_id(ctx, supplier_id, supplier_new)   # то же название — тот же поставщик (13.11.2026)
     p = Purchase(status="draft", supplier_id=sid)
     ctx.db.add(p)
@@ -538,8 +602,10 @@ def purchase_new(ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), suppl
 
 
 def can_manage(ctx: Ctx, p: Purchase) -> bool:
-    """Править закупку: запчастист (purchases.manage) — любую; менеджер / директор / зам — только закупку химии для мойки."""
-    return ctx.can("purchases.manage") or (p.kind == "chem" and ctx.can("wash.buy"))
+    """Править закупку: запчастист (purchases.manage) — любую; менеджер / директор / зам — только закупку химии для мойки;
+    кладовщик (purchases.stock, 17.11.2026) — только свою закупку на склад (без наряда)."""
+    return (ctx.can("purchases.manage") or (p.kind == "chem" and ctx.can("wash.buy"))
+            or (ctx.can("purchases.stock") and p.created_by == ctx.user.id and not p.work_order_id))
 
 
 def _need_manage(ctx: Ctx, p: Purchase):
@@ -580,6 +646,30 @@ def purchase_view(pid: str, ctx: Ctx = Depends(get_ctx), short: str = ""):
                       locations=locations, loc_label=svc.location_label, PURCHASE_STATUS=PURCHASE_STATUS, CHIP=PURCHASE_CHIP,
                       cells={l.id: svc.default_location(db, l.catalog_id) for l in lines if not l.received},
                       fmt_plate=osvc.fmt_plate, total=sum((l.qty * l.price for l in lines), Decimal(0)),
+                      total_got=sum((l.got * l.price for l in lines), Decimal(0)))
+
+
+@router.get("/purchases/{pid}/print")
+def purchase_print(pid: str, ctx: Ctx = Depends(get_ctx)):
+    """«Заказ на склад» (17.11.2026, брат) — внутренний документ СТО для печати: что заказали и что получили."""
+    ctx.need("purchases.view")
+    p = _purchase(ctx, pid)
+    if not (ctx.can("purchases.all") or p.created_by == ctx.user.id or can_manage(ctx, p) or ctx.can("stock.receive")):
+        raise Forbidden()
+    db = ctx.db
+    lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id).order_by(PurchaseLine.created_at)).all()
+    cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([l.catalog_id for l in lines])))}
+    wo = db.get(WorkOrder, p.work_order_id) if p.work_order_id else None
+    n_got = sum(1 for l in lines if l.received)
+    state = {"draft": "черновик — ещё не заказано", "ordered": "заказано, ждём", "partial": "неполная поставка — часть принята",
+             "arrived": "принято на склад полностью"}.get(p.status, PURCHASE_STATUS.get(p.status, p.status))
+    num = (p.created_at.astimezone().strftime("%y%m%d") + "-" + str(p.id)[:4]).upper()
+    return ctx.render("stock/purchase_print.html", title=f"Заказ на склад № {num}", p=p, lines=lines, cats=cats, wo=wo,
+                      v=db.get(Vehicle, wo.vehicle_id) if wo else None, num=num, state=state, n_got=n_got,
+                      buyer=db.get(User, p.created_by) if p.created_by else None,
+                      supplier=db.get(Supplier, p.supplier_id) if p.supplier_id else None,
+                      cost_ok=ctx.can("prices.view_purchase"), fmt_plate=osvc.fmt_plate,
+                      total=sum((l.qty * l.price for l in lines), Decimal(0)),
                       total_got=sum((l.got * l.price for l in lines), Decimal(0)))
 
 
@@ -927,7 +1017,7 @@ def purchase_line_edit(pid: str, lid: str, ctx: Ctx = Depends(get_ctx), qty: str
 @router.post("/purchases/{pid}/receive")
 async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
     """Приход из карточки закупки: строка (сколько пришло, в какую ячейку) или «Принять всё»."""
-    ctx.need("stock.manage")
+    ctx.need("stock.receive")
     p = _purchase(ctx, pid)
     if p.status not in svc.OPEN:
         raise Forbidden()
@@ -966,7 +1056,7 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
 @router.post("/purchases/{pid}/delivered")
 def purchase_delivered(pid: str, ctx: Ctx = Depends(get_ctx), back: str = Form(""), invoice: str = Form("")):
     """14.11.2026: шага «Привезли» больше нет — адрес оставлен для старых ссылок: записывает только № накладной."""
-    ctx.need("stock.manage")
+    ctx.need("stock.receive")
     p = _purchase(ctx, pid)
     if svc.mark_delivered(ctx.db, p, ctx.user, invoice):
         ctx.db.commit()
@@ -986,6 +1076,17 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
               and (not who or str(p.created_by) == who)]
         lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_([p.id for p in ps] or [uuid.uuid4()]),
                                                       PurchaseLine.received.is_(False))).all()
+    elif form.get("grp"):   # 17.11.2026: «Принять всё» у наряда в «Заказах запчастистов» (wo:<id> или stock — на склад)
+        key, who = str(form["grp"]), str(form.get("who", ""))
+        ps = [p for p in purchases if not who or str(p.created_by) == who]
+        lines = []
+        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_([p.id for p in ps] or [uuid.uuid4()]),
+                                                       PurchaseLine.received.is_(False))):
+            part = db.get(WoPart, l.wo_part_id) if l.wo_part_id else None
+            pp = next(p for p in ps if p.id == l.purchase_id)
+            wid = part.work_order_id if part else pp.work_order_id
+            if (key == "stock" and not wid) or (wid and key == f"wo:{wid}"):
+                lines.append(l)
     elif form.get("all"):
         lines = db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == _uuid(str(form["all"])),
                                                       PurchaseLine.received.is_(False))).all()
@@ -1025,7 +1126,7 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
         loc = db.get(Location, _uuid(raw)) if raw else None
         q = str(form.get(f"qty_{l.id}", "")).strip()
         took = svc.receive_line(db, ctx.branch.id, l, loc.id if loc and loc.branch_id == ctx.branch.id else None,
-                                _dec(q) if q else None)
+                                _dec(q) if q else None, invoice=inv)
         if took <= 0:
             continue
         have = [x.strip() for x in (l.invoice or "").split(",") if x.strip()]
@@ -1140,7 +1241,8 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
              "sum": sum((r["i"].cost * max(r["on_hand"], 0) for v in other.values() for r in v), Decimal(0))}
     return ctx.render("stock/list.html", title="Склад", rows=rows, q=q, only=only, new_requests=new_requests, tiles=tiles,
                       SECTIONS=SECTIONS, pick_orders=_pick_orders(ctx),
-                      to_receive=_receive_count(ctx) if ctx.can("stock.manage") else 0,
+                      to_receive=_receive_count(ctx) if ctx.can("stock.receive") else 0,
+                      keep_below=ksvc.below_count(ctx.db, ctx.branch.id),
                       sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
                       counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,
                       args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))
@@ -1306,6 +1408,84 @@ def stock_xlsx(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
                     headers={"Content-Disposition": f'attachment; filename="sklad_{sec}.xlsx"'})
 
 
+# ======================= Всегда в наличии (17.11.2026, брат) =======================
+def _keep_data(ctx: Ctx):
+    from ..services import keep as ksvc
+    rows = ksvc.rows(ctx.db, ctx.branch.id)
+    return rows, {"red": sum(r["st"] == "red" for r in rows), "yellow": sum(r["st"] == "yellow" for r in rows),
+                  "ok": sum(r["st"] == "ok" for r in rows), "below": sum(r["below"] for r in rows)}
+
+
+@router.get("/stock/always")
+def keep_page(ctx: Ctx = Depends(get_ctx), q: str = ""):
+    """«Всегда в наличии»: что должно быть на складе всегда и в достаточном объёме. Ниже нормы — красная строка,
+    едет или почти на норме — жёлтая. Сверху «Заказать недостающее» → черновик закупки на кладовщика."""
+    ctx.need("stock.view", "stock.keep")
+    rows, cnt = _keep_data(ctx)
+    found = svc.search_catalog(ctx.db, ctx.branch.id, q) if q and ctx.can("stock.keep") else []
+    kept = {r["c"].id for r in rows if r["c"]}
+    return ctx.render("stock/keep.html", title="Всегда в наличии", rows=rows, cnt=cnt, q=q,
+                      found=[f for f in found if not f["used"] and _uuid(str(f["id"])) not in kept],
+                      can_edit=ctx.can("stock.keep"), can_order=ctx.can("purchases.stock", "purchases.manage"))
+
+
+@router.post("/stock/always")
+def keep_add(ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(...), min_qty: str = Form("1"), back: str = Form("")):
+    ctx.need("stock.keep")
+    from ..models import StockKeep
+    c = ctx.db.get(PartCatalog, _uuid(catalog_id))
+    if not c:
+        raise Forbidden()
+    k = ctx.db.scalar(select(StockKeep).where(StockKeep.branch_id == ctx.branch.id, StockKeep.catalog_id == c.id))
+    mn = max(_dec(min_qty, "1"), Decimal(1))
+    if k:
+        k.min_qty = mn
+    else:
+        ctx.db.add(StockKeep(catalog_id=c.id, min_qty=mn))
+    ctx.db.commit()
+    flash(ctx.request, f"«{c.name}» — всегда в наличии, не меньше {mn.normalize():f} шт")
+    return _to(back if back.startswith("/stock") else "/stock/always")
+
+
+@router.post("/stock/always/{kid}")
+def keep_edit(kid: str, ctx: Ctx = Depends(get_ctx), min_qty: str = Form(""), delete: str = Form("")):
+    ctx.need("stock.keep")
+    from ..models import StockKeep
+    k = ctx.db.get(StockKeep, _uuid(kid))
+    if not k or k.branch_id != ctx.branch.id:
+        raise Forbidden()
+    c = ctx.db.get(PartCatalog, k.catalog_id)
+    if delete:
+        ctx.db.delete(k)
+        flash(ctx.request, f"«{c.name if c else 'Позиция'}» убрана из «Всегда в наличии»")
+    else:
+        k.min_qty = max(_dec(min_qty, str(k.min_qty)), Decimal(1))
+        flash(ctx.request, f"Норма «{c.name if c else ''}»: не меньше {k.min_qty.normalize():f} шт")
+    ctx.db.commit()
+    return _to("/stock/always")
+
+
+@router.post("/stock/always/order/missing")
+def keep_order(ctx: Ctx = Depends(get_ctx)):
+    """«Заказать недостающее» → черновик закупки на того, кто нажал (на склад), и сразу его страница."""
+    ctx.need("purchases.stock", "purchases.manage")
+    from ..services import keep as ksvc
+    p = ksvc.order_missing(ctx.db, ctx.branch.id, ctx.user.id)
+    if not p:
+        flash(ctx.request, "Заказывать нечего — всего хватает (с учётом того, что уже едет)")
+        return _to("/stock/always")
+    ctx.db.commit()
+    flash(ctx.request, "Черновик заказа на склад готов — выберите поставщика, проверьте количество и нажмите «Заказан»")
+    return _to(f"/purchases/{p.id}")
+
+
+@router.get("/stock/always/print")
+def keep_print(ctx: Ctx = Depends(get_ctx)):
+    ctx.need("stock.view", "stock.keep")
+    rows, cnt = _keep_data(ctx)
+    return ctx.render("stock/keep_print.html", title="Всегда в наличии", rows=rows, cnt=cnt)
+
+
 @router.get("/stock/items/{item_id}")
 def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx), order: str = ""):
     ctx.need("stock.view", "stock.look")
@@ -1331,6 +1511,8 @@ def stock_item(item_id: str, ctx: Ctx = Depends(get_ctx), order: str = ""):
                       loc=svc.location_label(ctx.db.get(Location, i.location_id) if i.location_id else None),
                       moves=moves, orders=orders, people=people, MOVEMENT_TYPES=MOVEMENT_TYPES,
                       look=look, ask_orders=ask_orders, ask_vehicles=ask_vehicles, sel_order=order,
+                      keep=ctx.db.scalar(select(StockKeep).where(StockKeep.branch_id == ctx.branch.id,
+                                                                 StockKeep.catalog_id == c.id)),
                       free_all=svc.catalog_free(ctx.db, ctx.branch.id, [i.catalog_id])[i.catalog_id],
                       fmt_plate=osvc.fmt_plate,
                       tree_json={s: [{"name": x["c"].name, "subs": [y.name for y in x["subs"]]}
@@ -1754,7 +1936,7 @@ def notify(ctx: Ctx = Depends(get_ctx)):
                       "text": names, "order": x["wo"].number, "plate": osvc.fmt_plate(x["v"].plate)})
     return {"issues": len(_requests(ctx, "new")) + len(tools_items), "items": items, "tools": tools_items,
             "notes": notes, "unread": unread_n, "razbor": razbor_n, "badges": bsvc.compute(ctx),
-            "receive": _receive_count(ctx) if ctx.can("stock.manage") else 0}
+            "receive": _receive_count(ctx) if ctx.can("stock.receive") else 0}
 
 
 @router.post("/api/notify/{nid}/read")
@@ -1928,40 +2110,96 @@ def _sup_key(sup) -> str:
     return sup.name.strip().lower() if sup else "none"
 
 
-def _receive_lines(ctx: Ctx, who: str = ""):
-    """Что ждём от поставщиков: непринятые строки заказанных закупок, по закупкам; срочное — сверху.
-    who — только закупки этого запчастиста (12.11.2026)."""
-    db = ctx.db
-    purchases = db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
-                                                  Purchase.status.in_(svc.OPEN)).order_by(Purchase.created_at)).all()
-    if who:
-        purchases = [p for p in purchases if str(p.created_by) == who]
-    # 13.11.2026 (брат): по ПОСТАВЩИКАМ — приехал поставщик, кладовщик видит всё, что ждём от него, по всем нарядам
+def _line_row(db, l: PurchaseLine, p: Purchase, cache: dict) -> dict:
+    """Строка приёмки (17.11.2026) — одна для «Прихода» и «Заказов запчастистов» (шаблон stock/_rcv_row.html)."""
+    def get(model, i):
+        if not i:
+            return None
+        k = (model, i)
+        if k not in cache:
+            cache[k] = db.get(model, i)
+        return cache[k]
+    part = get(WoPart, l.wo_part_id)
+    wo = get(WorkOrder, part.work_order_id) if part else (get(WorkOrder, p.work_order_id) if p.work_order_id else None)
+    return {"l": l, "p": p, "c": get(PartCatalog, l.catalog_id), "part": part, "wo": wo,
+            "buyer": get(User, p.created_by), "sup": get(Supplier, p.supplier_id),
+            "v": get(Vehicle, wo.vehicle_id) if wo else None, "mech": get(User, wo.mechanic_id) if wo and wo.mechanic_id else None,
+            "urgent": bool(part and part.urgent), "cell": None if l.received else svc.default_location(db, l.catalog_id)}
+
+
+# 17.11.2026 (брат): этапы «Прихода» — как плитки в «Закупках»
+RECV_TABS = {"wait": ("Ждём", "orange", "заказано, едет"), "partial": ("Неполная поставка", "purple", "часть принята, ждём остальное"),
+             "late": ("Опаздывают", "red", "срок прошёл"), "got": ("Приняты", "green", "по накладным, 30 дней")}
+
+
+def _open_purchases(ctx: Ctx, who: str = "") -> list:
+    ps = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id, Purchase.status.in_(svc.OPEN))
+                        .order_by(Purchase.created_at)).all()
+    return [p for p in ps if str(p.created_by) == who] if who else list(ps)
+
+
+def _recv_pick(p: Purchase, tab: str, today) -> bool:
+    if tab == "partial":
+        return p.status == "partial"
+    if tab == "late":
+        return bool(p.expected_on and p.expected_on < today)
+    return True
+
+
+def _receive_lines(ctx: Ctx, who: str = "", tab: str = "wait"):
+    """Что ждём от поставщиков: непринятые строки заказанных закупок, ПО ПОСТАВЩИКАМ (13.11.2026) — приехал поставщик,
+    кладовщик видит всё, что ждём от него, по всем нарядам; срочное — сверху. who — только закупки этого человека."""
+    from datetime import date as _d
+    db, cache, today = ctx.db, {}, _d.today()
     by_sup: dict = {}
-    for p in purchases:
-        buyer = db.get(User, p.created_by) if p.created_by else None
-        sup = db.get(Supplier, p.supplier_id) if p.supplier_id else None
-        key = _sup_key(sup)
-        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))):
-            part = db.get(WoPart, l.wo_part_id) if l.wo_part_id else None
-            wo = db.get(WorkOrder, part.work_order_id) if part else None
-            g = by_sup.setdefault(key, {"sup": sup, "key": key, "rows": [], "ps": [], "buyers": []})
+    for p in _open_purchases(ctx, who):
+        if not _recv_pick(p, tab, today):
+            continue
+        for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))
+                            .order_by(PurchaseLine.created_at)):
+            r = _line_row(db, l, p, cache)
+            key = _sup_key(r["sup"])
+            g = by_sup.setdefault(key, {"sup": r["sup"], "key": key, "rows": [], "ps": [], "buyers": []})
             if p not in g["ps"]:
                 g["ps"].append(p)
-            if buyer and buyer.short_name not in g["buyers"]:
-                g["buyers"].append(buyer.short_name)
-            g["rows"].append({"l": l, "p": p, "c": db.get(PartCatalog, l.catalog_id), "part": part, "wo": wo, "buyer": buyer,
-                              "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
-                              "mech": db.get(User, wo.mechanic_id) if wo and wo.mechanic_id else None,
-                              "urgent": bool(part and part.urgent), "cell": svc.default_location(db, l.catalog_id)})
+            if r["buyer"] and r["buyer"].short_name not in g["buyers"]:
+                g["buyers"].append(r["buyer"].short_name)
+            g["rows"].append(r)
     groups = list(by_sup.values())
     for g in groups:
         g["rows"].sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["wo"].number if r["wo"] else "",
                                       r["c"].name if r["c"] else ""))
         g["urgent"] = any(r["urgent"] for r in g["rows"])
-        g["invoices"] = [p.supplier_invoice for p in g["ps"] if p.supplier_invoice]
+        g["late"] = any(p.expected_on and p.expected_on < today for p in g["ps"])
     groups.sort(key=lambda g: (not g["urgent"], g["sup"].name if g["sup"] else "я"))
     return groups
+
+
+def _received_invoices(ctx: Ctx, who: str = "", days: int = 30) -> list:
+    """«Приняты» (17.11.2026, брат) — по накладным: что пришло по каждому № накладной (может быть на несколько нарядов
+    и закупок). Берём приходы склада (движение «in») с № накладной за последние `days` дней."""
+    from datetime import datetime, timedelta, timezone
+    db, cache = ctx.db, {}
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    q = (select(StockMovement).where(StockMovement.branch_id == ctx.branch.id, StockMovement.type == "in",
+                                     StockMovement.purchase_line_id.is_not(None), StockMovement.created_at >= since)
+         .order_by(StockMovement.created_at.desc()))
+    groups: dict = {}
+    for m in db.scalars(q):
+        l = db.get(PurchaseLine, m.purchase_line_id)
+        p = db.get(Purchase, l.purchase_id) if l else None
+        if not l or not p or (who and str(p.created_by) != who):
+            continue
+        r = _line_row(db, l, p, cache)
+        item = db.get(StockItem, m.stock_item_id)
+        r.update({"qty": m.qty, "loc": db.get(Location, item.location_id) if item and item.location_id else None,
+                  "when": m.created_at, "by": db.get(User, m.created_by) if m.created_by else None})
+        inv = m.invoice or "без номера"
+        g = groups.setdefault((inv, _sup_key(r["sup"])), {"inv": inv, "sup": r["sup"], "rows": [], "when": m.created_at,
+                                                         "by": r["by"], "total": Decimal(0)})
+        g["rows"].append(r)
+        g["total"] += Decimal(m.qty) * (l.price or 0)
+    return sorted(groups.values(), key=lambda g: g["when"], reverse=True)
 
 
 def _receive_count(ctx: Ctx) -> int:
@@ -1970,24 +2208,41 @@ def _receive_count(ctx: Ctx) -> int:
                                 PurchaseLine.received.is_(False))) or 0
 
 
+def _recv_counts(ctx: Ctx, who: str = "") -> dict:
+    from datetime import date as _d
+    today, c = _d.today(), {k: 0 for k in RECV_TABS}
+    for p in _open_purchases(ctx, who):
+        n = ctx.db.scalar(select(func.count()).select_from(PurchaseLine).where(
+            PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))) or 0
+        c["wait"] += n
+        c["partial"] += n if p.status == "partial" else 0
+        c["late"] += n if p.expected_on and p.expected_on < today else 0
+    c["got"] = len(_received_invoices(ctx, who))
+    return c
+
+
 @router.get("/stock/receive")
-def receive_page(ctx: Ctx = Depends(get_ctx), who: str = ""):
-    ctx.need("stock.manage")
+def receive_page(ctx: Ctx = Depends(get_ctx), who: str = "", tab: str = "wait"):
+    ctx.need("stock.receive")
     db = ctx.db
+    tab = tab if tab in RECV_TABS else "wait"
     locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
                            .order_by(Location.rack, Location.shelf, Location.place)).all()
     last = ctx.request.session.pop("last_received", None)
     wu = db.get(User, _uuid(who)) if who else None
-    drafts = svc.draft_waits(db, ctx.branch.id, wu.id if wu else None)
-    return ctx.render("stock/receive.html", title="Приход", groups=_receive_lines(ctx, who), locations=locations, who_user=wu,
-                      last=last, loc_label=svc.location_label, fmt_plate=osvc.fmt_plate, drafts=drafts,
-                      dveh={d["wo"].id: db.get(Vehicle, d["wo"].vehicle_id) for d in drafts})
+    drafts = svc.draft_waits(db, ctx.branch.id, wu.id if wu else None) if tab == "wait" else []
+    return ctx.render("stock/receive.html", title="Приход", tab=tab, TABS=RECV_TABS, counts=_recv_counts(ctx, who),
+                      groups=_receive_lines(ctx, who, tab) if tab != "got" else [],
+                      invoices=_received_invoices(ctx, who) if tab == "got" else [],
+                      locations=locations, who_user=wu, last=last, loc_label=svc.location_label, fmt_plate=osvc.fmt_plate,
+                      drafts=drafts, dveh={d["wo"].id: db.get(Vehicle, d["wo"].vehicle_id) for d in drafts})
 
 
 @router.post("/stock/receive")
 async def receive_do(ctx: Ctx = Depends(get_ctx)):
-    """«Пришло» по строке или «Принять всё» по закупке. Ячейка — выбранная или та, где запчасть уже лежит."""
-    ctx.need("stock.manage")
+    """«Пришло» по строке или «Принять всё» (у поставщика — sup, у наряда — grp). Ячейка — выбранная или та, где запчасть
+    уже лежит. Без № накладной не принимается. back — вернуться туда, откуда принимали («Заказы запчастистов»)."""
+    ctx.need("stock.receive")
     form = await ctx.request.form()
     purchases = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
                                                       Purchase.status.in_(svc.OPEN))).all()
@@ -1997,8 +2252,12 @@ async def receive_do(ctx: Ctx = Depends(get_ctx)):
           + (f". Без цены не принято: {', '.join(np_[:5])} — впишите «₴ за шт» из накладной" if np_ else "")
           + (f". Без № накладной не принято: {', '.join(ni_[:5])} — впишите номер" if ni_ else ""),
           "error" if np_ or ni_ else "ok")
-    who = str(form.get("who", ""))
-    return _to("/stock/receive" + (f"?who={who}" if who else ""))
+    back = str(form.get("back", ""))
+    if back.startswith("/purchases/by-partsman"):
+        return _to(back)
+    who, tab = str(form.get("who", "")), str(form.get("tab", ""))
+    q = "&".join(x for x in (f"who={who}" if who else "", f"tab={tab}" if tab in RECV_TABS else "") if x)
+    return _to("/stock/receive" + (f"?{q}" if q else ""))
 
 
 # ======================= Настройки цен =======================

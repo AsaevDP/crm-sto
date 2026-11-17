@@ -49,6 +49,17 @@
       {% endif %}
     </div>
     {% endif %}
+    {# 17.11.2026 (брат): «Всегда в наличии» — держать на складе не меньше N #}
+    {% if ctx.can("stock.keep") and c.kind != "used" %}
+    <form class="card compact kp-item" method="post" action="/stock/always">
+      <input type="hidden" name="catalog_id" value="{{ c.id }}"><input type="hidden" name="back" value="/stock/items/{{ i.id }}">
+      <span class="headline">⭐ Всегда в наличии</span>
+      <span class="caption">{% if keep %}сейчас: не меньше {{ keep.min_qty|num }} шт{% else %}держать на складе не меньше{% endif %}</span>
+      <input class="field kp-min" name="min_qty" value="{{ keep.min_qty|num if keep else 5 }}" inputmode="decimal" aria-label="Норма, шт"> <span class="caption">шт</span>
+      <button class="btn btn-sm {{ 'btn-gray' if keep }}">{{ "Изменить норму" if keep else "⭐ Добавить" }}</button>
+      <a class="btn btn-sm btn-plain" href="/stock/always">Список</a>
+    </form>
+    {% endif %}
     {% if ctx.can("stock.manage", "parts.pick") %}
     <form class="card compact form dense" method="post" action="/stock/items/{{ i.id }}/category">
       <div class="card-h"><span class="headline">Раздел и категория</span></div>

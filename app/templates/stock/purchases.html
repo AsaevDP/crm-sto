@@ -4,12 +4,12 @@
 {% from "stock/_recv.html" import recv_btns with context %}
 {% block content %}
 {% set cost_ok = ctx.can("prices.view_purchase") %}
-{% set recv_ok = ctx.can("stock.manage") %}
+{# 17.11.2026: приёмки в «Закупках» нет — принимают в «Приходе» и «Заказах запчастистов» #}
 <header class="page-head">
   <div><h1 class="large-title">Закупки</h1></div>
   <div class="ov-actions">
-    {% if ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход</a>{% endif %}
-    {% if ctx.can("purchases.manage") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('pnew').showModal()">{{ icon("plus") }}Новая закупка</button>{% endif %}
+    {% if ctx.can("stock.receive") %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход</a>{% endif %}
+    {% if ctx.can("purchases.manage", "purchases.stock") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('pnew').showModal()">{{ icon("plus") }}Новая закупка</button>{% endif %}
   </div>
 </header>
 
@@ -26,11 +26,12 @@
       <option value="">Все поставщики</option>
       {% for s in supplier_list %}<option value="{{ s.id }}" {% if sup == s.id|string %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
     </select>
-    <select class="field" name="who" onchange="this.form.submit()" aria-label="Кто заказал">
-      <option value="">Все запчастисты</option>
-      {% for b in buyers %}<option value="{{ b.id }}" {% if who == b.id|string %}selected{% endif %}>{{ b.full_name }}{{ " (я)" if b.id == ctx.user.id }}</option>{% endfor %}
-    </select></form>
-  <p class="footnote" style="margin:0">У каждого запчастиста свои закупки. «Заказать» в наряде кладёт деталь в закупку этого наряда (одна накладная — один наряд), поставщик подставляется тот, у кого брали в прошлый раз.</p>
+    {% if buyers %}<select class="field" name="who" onchange="this.form.submit()" aria-label="Кто заказал">
+      <option value="">Все сотрудники</option>
+      {% for b in buyers %}<option value="{{ b.id }}" {% if who == b.id|string %}selected{% endif %}>{{ b.full_name }} · {{ b.role.name|lower }}{{ " (я)" if b.id == ctx.user.id }}</option>{% endfor %}
+    </select>{% endif %}</form>
+  <p class="footnote" style="margin:0">{% if buyers %}Закупки всех сотрудников — выберите, чьи показать.{% else %}Здесь только ваши закупки.{% endif %}
+    Принимают на склад в «Приходе» (с № накладной).</p>
 </div>
 
 <div class="tablewrap">
@@ -55,7 +56,7 @@
         <div class="caption"><span class="ok-hint">✓ принято:</span> {{ s.got_names|join(", ") }}</div>
         {% if s.left_names %}<div class="caption">ждём: {{ s.left_names|join(", ") }}</div>{% endif %}
         {% endif %}
-        {% if recv_ok and p.status in ("ordered", "delivered", "partial") %}{{ recv_btns(p) }}{% endif %}</td>
+        </td>
       <td class="num nowrap">{% if p.status != "arrived" and s.got_names %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>
       <td class="num">{{ s.orders or "—" }}</td>
       {% if cost_ok %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
@@ -66,7 +67,7 @@
   </table>
 </div>
 
-{% if ctx.can("purchases.manage") %}
+{% if ctx.can("purchases.manage", "purchases.stock") %}
 <dialog id="pnew" class="sheet">
   <form method="post" action="/purchases/new" class="form">
     <h2 class="title-2">Новая закупка</h2>

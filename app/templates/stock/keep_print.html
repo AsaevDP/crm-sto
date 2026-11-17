@@ -1,0 +1,21 @@
+{% extends "_print_doc.html" %}
+{# «Всегда в наличии» — бумажная копия для стола кладовщика (17.11.2026, брат) #}
+{% block back %}/stock/always{% endblock %}
+{% block doc_title %}Всегда в наличии{% endblock %}
+{% block subtitle %}что должно быть на складе всегда · позиций {{ rows|length }} · ниже нормы {{ cnt.below }}{% endblock %}
+{% block body %}
+<table>
+  <thead><tr><th class="num">№</th><th>Наименование</th><th>Артикул · бренд</th><th class="num">Норма, не меньше</th>
+    <th class="num">Свободно</th><th class="num">Едет</th><th class="num">Не хватает</th><th style="width:22%">Отметка</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr><td class="num">{{ loop.index }}</td><td>{{ r.c.name if r.c else "" }}</td>
+    <td>{{ r.c.article if r.c and r.c.article }}{% if r.c and r.c.brand %} · {{ r.c.brand }}{% endif %}</td>
+    <td class="num">{{ r.min|num }}</td><td class="num">{{ r.free|num }}</td>
+    <td class="num">{{ (r.transit + r.draft)|num if (r.transit + r.draft) else "—" }}</td>
+    <td class="num">{% if r.missing > 0 %}<b>{{ r.missing|num }}</b>{% else %}—{% endif %}</td><td></td></tr>
+  {% else %}<tr><td colspan="8">Список пуст</td></tr>{% endfor %}
+  </tbody>
+</table>
+<div class="sign"><div>Проверил (кладовщик)<br><span class="muted">подпись, дата</span></div><div></div></div>
+{% endblock %}

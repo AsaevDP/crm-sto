@@ -1917,3 +1917,32 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .pu-recv .pu-inv { width: 120px; }
 @media (max-width: 600px) { .rcv-bar-f { width: 100%; } .rcv-bar-f .field { flex: 1 1 140px; width: auto; } }
 .rc-inv { width: 120px; } .rc-inv-all { width: 150px; min-height: 34px; }
+
+/* Приёмка без кладовщика (17.11.2026) */
+.rb-list { display: grid; }
+.rb-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid var(--separator); margin: 0; flex-wrap: wrap; }
+.rb-row:last-child { border-bottom: 0; }
+.rb-n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--fill); font-weight: 600; flex: none; }
+.rb-who { display: grid; gap: 2px; flex: 1 1 180px; min-width: 0; }
+.rb-row .btn { white-space: nowrap; }
+.nbadge.nb-purple { background: var(--purple); color: #fff; }   /* «Всегда в наличии» — ниже нормы (17.11.2026) */
+.pu-head-r { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* «Приход» / «Заказы запчастистов» (17.11.2026): плитки этапов, принятые строки, группы по накладным и нарядам */
+.rc-tiles { margin-bottom: 12px; }
+.rc-done-row td { background: color-mix(in srgb, var(--green) 6%, transparent); }
+.rc-inv-group .card-h .headline { font-variant-numeric: tabular-nums; }
+
+/* «Всегда в наличии» (17.11.2026) */
+.kp-tiles { margin-bottom: 12px; }
+.kp-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.kp-add .field { flex: 1 1 240px; min-width: 0; }
+.kp-found { display: grid; }
+.kp-frow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 0; border-bottom: 0.5px solid var(--separator); margin: 0; }
+.kp-frow:last-child { border-bottom: 0; }
+.kp-frow .grow { flex: 1 1 220px; min-width: 0; }
+.kp-min { width: 72px; text-align: right; display: inline-block; }
+.kp-table tr.kp-red td { background: color-mix(in srgb, var(--red) 8%, transparent); }
+.kp-table tr.kp-yellow td { background: color-mix(in srgb, var(--orange) 8%, transparent); }
+.kp-miss { color: var(--red); }
+.kp-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

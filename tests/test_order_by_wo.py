@@ -46,12 +46,19 @@ def test_short_delivery_one_part_missing(client):
         assert "Неполная поставка — ждём: Болты ЗН" in r.text
         with SessionLocal() as db:
             assert db.get(Purchase, pid).status == "partial"
-        for tab in ("partial", "arrived"):
-            page = client.get(f"/purchases?tab={tab}").text
-            assert f"/purchases/{pid}" in page, (attempt, tab)
-        assert "✓ принято:</span> Прокладка ЗН" in client.get("/purchases?tab=arrived").text
-        page = client.get("/purchases?tab=partial").text
-        assert "принять остальное" in page and "Довезли остальное" not in page and "🚚 Привезли" not in page
+        # 17.11.2026: кладовщик видит это в «Приходе» (вкладки «Неполная поставка» и «Приняты» — по накладным);
+        # в «Закупках» у кладовщика только свои — накладную Олега там видит Олег и директор
+        page = client.get("/stock/receive?tab=partial").text
+        assert f'name="inv_{ls["Болты ЗН"]}"' in page and "🚚 Привезли" not in page, attempt
+        got = client.get("/stock/receive?tab=got").text
+        assert "№ ТН-1" in got and "Прокладка ЗН" in got, attempt
+        assert f"/purchases/{pid}" not in client.get("/purchases?tab=all").text   # чужая закупка
+    _as(client, "director")
+    for tab in ("partial", "arrived"):
+        assert f"/purchases/{pid}" in client.get(f"/purchases?tab={tab}").text, tab
+    assert "✓ принято:</span> Прокладка ЗН" in client.get("/purchases?tab=arrived").text
+    _as(client, "oleg")
+    assert f"/purchases/{pid}" in client.get("/purchases?tab=partial").text
     # Ничего не привезли вовсе — накладная снова «Ждём»
     _as(client, "oleg")
     pid2 = uuid.UUID(client.post("/purchases/new", data={"supplier_new": "Недовоз ЗН"}).url.path.rsplit("/", 1)[1])
@@ -182,6 +189,9 @@ def test_order_by_wo(client):
     _as(client, "pavel")
     client.post("/stock/receive", data={"invoice": "ТН-1", "line_id": str(_line("Шланг ЗН").id)})
     assert _p(_line("Шланг ЗН")).status == "partial"
+    assert "Шланг ЗН" in client.get("/stock/receive?tab=got").text            # 17.11: «Приняты» — по накладным
+    assert "Хомут ЗН" in client.get("/stock/receive?tab=partial").text        # хомут ещё ждём
+    _as(client, "oleg")
     page = client.get("/purchases?tab=arrived").text
     assert f"/purchases/{po.id}" in page and "✓ принято:" in page and "ждём: Хомут ЗН" in page
-    assert f"/purchases/{po.id}" in client.get("/purchases?tab=wait").text   # хомут ещё ждём
+    assert f"/purchases/{po.id}" in client.get("/purchases?tab=wait").text

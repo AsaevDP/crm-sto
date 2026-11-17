@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{# Заказы запчастистов (17.11.2026, брат): как «Приход», но группы — по ЗАКАЗ-НАРЯДУ: машина, менеджер, кто заказывал,
+   пришло X из Y. Внутри — детали от любых поставщиков, та же строка с приёмкой (stock/_rcv_row.html): ячейка,
+   № накладной (обязателен), «Пришло», «Принять всё» у наряда. «На склад» — отдельной группой внизу.
+   Плитки людей: «Все» (по умолчанию), каждый запчастист и «Мои заказы» — заказы самого кладовщика. #}
+{% from "stock/_rcv_row.html" import rcv_head, rcv_row %}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Заказы запчастистов</h1></div>
+  <div class="ov-actions">
+    {% if can_recv %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход · по поставщикам</a>{% endif %}
+  </div>
+</header>
+
+{% set qs = "&st=" ~ st if st != "wait" else "" %}
+<div class="pult-tiles vs-tiles pm-people">
+  <a class="ptile {{ 'on' if not u }}" href="/purchases/by-partsman{{ '?st=' ~ st if st != 'wait' }}" style="--tc:{{ color_css('blue') }}">
+    <span class="ptile-t">Все</span><b>{{ tiles|sum(attribute="n") + (me_tile.n if me_tile else 0) }}</b><span class="ptile-s">ждём деталей</span></a>
+  {% if me_tile %}
+  <a class="ptile {{ 'on' if u == 'me' }} {{ 'zero' if not me_tile.n }}" href="/purchases/by-partsman?u=me{{ qs }}" style="--tc:{{ color_css('orange') }}">
+    <span class="ptile-t">Мои заказы</span><b>{{ me_tile.n }}</b><span class="ptile-s">я заказал на склад</span></a>
+  {% endif %}
+  {% for t in tiles %}
+  <a class="ptile {{ 'on' if who and u != 'me' and t.u.id == who.id }} {{ 'zero' if not t.n }}" href="/purchases/by-partsman?u={{ t.u.id }}{{ qs }}" style="--tc:{{ color_css('indigo') }}">
+    <span class="ptile-t">{{ t.u.full_name }}</span><b>{{ t.n }}</b><span class="ptile-s">{{ t.u.role.name|lower }} · ждём</span></a>
+  {% endfor %}
+</div>
+
+<div class="pult-tiles st-mini">
+  {% for k, (title, color, sub) in TABS.items() %}
+  <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="/purchases/by-partsman?st={{ k }}{{ '&u=' ~ u if u }}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+
+{% for g in groups %}
+{% set can = can_recv and g.left > 0 and st != "arrived" %}
+<form class="card compact rc-group bp-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
+  <input type="hidden" name="back" value="{{ back }}">{% if who %}<input type="hidden" name="who" value="{{ who.id }}">{% endif %}
+  <div class="card-h">
+    <span class="headline">{% if g.wo %}<a href="/orders/{{ g.wo.id }}">{{ g.v.make if g.v }} {{ g.v.model if g.v }}</a>
+        {% if g.v %}<span class="ov-plate">{{ fmt_plate(g.v.plate) }}</span>{% endif %}
+        <span class="caption">· наряд {{ g.wo.number }}{% if g.manager %} · менеджер {{ g.manager.short_name }}{% endif %}</span>
+      {% else %}На склад <span class="caption">· без наряда</span>{% endif %}
+      {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
+      {% if g.late %}<span class="chip" data-s="cancel">опаздывает</span>{% endif %}</span>
+    <span class="ov-actions">
+      <span class="chip" data-s="{{ 'ready' if not g.left else ('picking' if g.got else 'waiting') }}">пришло {{ g.got }} из {{ g.n }}</span>
+      {% if can %}
+      <input class="field rc-inv-all" name="invoice" placeholder="№ накладной" aria-label="Номер накладной для всех строк наряда" title="Номер накладной — впишется во все строки">
+      <button class="btn btn-sm" name="grp" value="{{ g.key }}">{{ "✓ Принять" if g.left == 1 else "✓ Принять всё · " ~ g.left }}</button>
+      {% endif %}</span>
+  </div>
+  <div class="tablewrap">
+  <table class="table rc-table">
+    {{ rcv_head("sup", can) }}
+    <tbody>{% for r in g.rows %}{{ rcv_row(r, "sup", can, locations, loc_label, fmt_plate) }}{% endfor %}</tbody>
+  </table>
+  </div>
+</form>
+{% else %}
+<div class="card compact"><p class="footnote" style="margin:0">{{ {"wait": "Ничего не ждём — всё заказанное принято.", "partial": "Неполных поставок нет.", "late": "Опаздывающих нет.", "arrived": "За 60 дней ничего не принято."}[st] }}</p></div>
+{% endfor %}
+{% endblock %}

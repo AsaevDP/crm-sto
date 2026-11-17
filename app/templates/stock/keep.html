@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{# «Всегда в наличии» (17.11.2026, брат): что всегда должно лежать на складе в достаточном объёме (часто идёт в ремонт).
+   Норма — «не меньше N». Красная строка — ниже нормы и не заказано; жёлтая — ниже нормы, но уже едет / в черновике,
+   или почти на норме. Сверху — «Заказать недостающее»: черновик закупки на кладовщика, дальше обычный путь.
+   Список ведут кладовщик, директор, зам (stock.keep). Бумажная копия — «🖨 Печать». #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Всегда в наличии</h1></div>
+  <div class="ov-actions">
+    <a class="btn btn-sm btn-gray" href="/stock/always/print" target="_blank">🖨 Печать</a>
+    {% if can_order %}<form method="post" action="/stock/always/order/missing" style="margin:0"
+        onsubmit="return confirm('Собрать черновик заказа на склад: всё, чего не хватает до нормы?')">
+      <button class="btn btn-sm" {% if not rows|selectattr("missing")|list %}disabled title="Всего хватает"{% endif %}>🛒 Заказать недостающее</button></form>{% endif %}
+  </div>
+</header>
+
+<div class="pult-tiles pu-tiles kp-tiles">
+  <span class="ptile {{ 'zero' if not cnt.red }}" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Не хватает</span><b>{{ cnt.red }}</b><span class="ptile-s">ниже нормы, не заказано</span></span>
+  <span class="ptile {{ 'zero' if not cnt.yellow }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Едет или на грани</span><b>{{ cnt.yellow }}</b><span class="ptile-s">заказано или почти норма</span></span>
+  <span class="ptile {{ 'zero' if not cnt.ok }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">В порядке</span><b>{{ cnt.ok }}</b><span class="ptile-s">не меньше нормы</span></span>
+  <span class="ptile" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Всего в списке</span><b>{{ rows|length }}</b><span class="ptile-s">ниже нормы: {{ cnt.below }}</span></span>
+</div>
+
+{% if can_edit %}
+<form class="card compact kp-add" method="get" action="/stock/always">
+  <span class="headline">Добавить в список</span>
+  <input class="field search" name="q" value="{{ q }}" placeholder="Название, артикул или бренд" autocomplete="off">
+  <button class="btn btn-sm btn-gray">Найти</button>
+</form>
+{% if q %}
+<div class="card compact kp-found">
+  {% for f in found %}
+  <form class="kp-frow" method="post" action="/stock/always">
+    <input type="hidden" name="catalog_id" value="{{ f.id }}">
+    <span class="grow"><b>{{ f.name }}</b> <span class="caption mono">{{ f.brand }} {{ f.article }}</span>
+      <span class="caption">· свободно {{ f.free|num }}</span></span>
+    <label class="caption nowrap">не меньше <input class="field kp-min" name="min_qty" value="5" inputmode="decimal" aria-label="Норма, шт"> шт</label>
+    <button class="btn btn-sm">⭐ Добавить</button>
+  </form>
+  {% else %}<p class="footnote" style="margin:0">Ничего не нашлось (или уже в списке). Позиция должна быть заведена на складе.</p>{% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+<div class="card compact">
+  <div class="tablewrap">
+  <table class="table kp-table">
+    <thead><tr><th>Запчасть / товар</th><th class="num">Свободно</th><th class="num">Норма</th><th class="num">Едет</th>
+      <th class="num">Не хватает</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr class="kp-{{ r.st }}">
+      <td><b>{{ r.c.name if r.c else "" }}</b><div class="caption mono">{{ r.c.brand if r.c }} {{ r.c.article if r.c }}</div>
+        {% if r.on_hand != r.free %}<div class="caption">на складе {{ r.on_hand|num }}, в резерве под наряды {{ (r.on_hand - r.free)|num }}</div>{% endif %}</td>
+      <td class="num nowrap"><b>{{ r.free|num }}</b></td>
+      <td class="num nowrap">{% if can_edit %}<input class="field kp-min" form="kf-{{ r.k.id }}" name="min_qty" value="{{ r.min|num }}" inputmode="decimal" aria-label="Норма, шт">{% else %}{{ r.min|num }}{% endif %}</td>
+      <td class="num nowrap">{% if r.transit %}{{ r.transit|num }}{% endif %}{% if r.draft %}<div class="caption">в черновике {{ r.draft|num }}</div>{% endif %}{% if not r.transit and not r.draft %}—{% endif %}</td>
+      <td class="num nowrap">{% if r.missing > 0 %}<b class="kp-miss">{{ r.missing|num }}</b>{% elif r.below %}<span class="caption">заказано</span>{% else %}<span class="ok-hint">✓</span>{% endif %}</td>
+      {% if can_edit %}<td class="nowrap"><form id="kf-{{ r.k.id }}" method="post" action="/stock/always/{{ r.k.id }}" style="margin:0;display:inline-flex;gap:4px">
+          <button class="btn btn-sm btn-plain">OK</button>
+          <button class="btn btn-sm btn-plain danger" name="delete" value="1" onclick="return confirm('Убрать из «Всегда в наличии»?')" title="Убрать из списка">×</button></form></td>{% endif %}
+    </tr>
+    {% else %}<tr><td colspan="6" class="footnote">Список пуст. {% if can_edit %}Найдите позицию выше и нажмите «⭐ Добавить» — или в карточке позиции склада «⭐ Всегда в наличии».{% endif %}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="footnote" style="margin:6px 0 0">«Свободно» — без того, что в резерве под наряды. «Едет» — уже заказано у поставщика. «Не хватает» — сколько дозаказать до нормы с учётом того, что едет.</p>
+</div>
+{% endblock %}

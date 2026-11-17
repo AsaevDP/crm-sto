@@ -180,6 +180,51 @@ def role_perm(role_id: str, ctx: Ctx = Depends(get_ctx), perm: str = Form(...), 
     return {"ok": True}
 
 
+# ---------- Приёмка без кладовщика (17.11.2026, брат) ----------
+# Резерв на случай, если кладовщиков нет (заболели, уволились): по старшинству — зам, директор, менеджер.
+# Переключатель даёт роли право «Принимать на склад» (stock.receive). Логика та же: без № накладной не принять.
+RESERVE_ROLES = [("deputy", "Заместитель директора", "первым — если кладовщика нет"),
+                 ("director", "Директор", "если нет и зама"),
+                 ("manager", "Менеджер", "крайний случай")]
+
+
+def _can_reserve(ctx: Ctx) -> bool:
+    return ctx.can("users.manage") or ctx.user.role.code in ("director", ADMIN_ROLE)
+
+
+def _reserve_state(ctx: Ctx) -> list[dict]:
+    out = []
+    for code, name, sub in RESERVE_ROLES:
+        roles = ctx.db.scalars(select(Role).where(Role.code == code)).all()
+        on = any(ctx.db.scalar(select(RolePermission).where(RolePermission.role_id == r.id,
+                                                           RolePermission.permission == "stock.receive")) for r in roles)
+        out.append({"code": code, "name": name, "sub": sub, "on": on, "exists": bool(roles)})
+    return out
+
+
+@router.get("/receive-backup")
+def receive_backup(ctx: Ctx = Depends(get_ctx)):
+    if not _can_reserve(ctx):
+        raise Forbidden()
+    return ctx.render("settings/receive_backup.html", title="Приёмка без кладовщика", rows=_reserve_state(ctx))
+
+
+@router.post("/receive-backup")
+def receive_backup_set(ctx: Ctx = Depends(get_ctx), code: str = Form(...), on: str = Form("")):
+    if not _can_reserve(ctx) or code not in {c for c, *_ in RESERVE_ROLES}:
+        raise Forbidden()
+    name = next(n for c, n, _ in RESERVE_ROLES if c == code)
+    for r in ctx.db.scalars(select(Role).where(Role.code == code)).all():
+        row = ctx.db.scalar(select(RolePermission).where(RolePermission.role_id == r.id, RolePermission.permission == "stock.receive"))
+        if on and not row:
+            ctx.db.add(RolePermission(role_id=r.id, permission="stock.receive", branch_id=r.branch_id))
+        elif not on and row:
+            ctx.db.delete(row)
+    ctx.db.commit()
+    flash(ctx.request, f"{name}: {'может принимать запчасти на склад' if on else 'приёмка выключена'}")
+    return _back("/settings/receive-backup")
+
+
 # ---------- Сотрудники ----------
 @router.get("/users")
 def users(ctx: Ctx = Depends(get_ctx), tab: str = ""):

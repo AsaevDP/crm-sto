@@ -1,0 +1,42 @@
+{% extends "_print_doc.html" %}
+{# «Заказ на склад» (17.11.2026, брат): внутренний документ СТО — у кладовщика своя бумага, как у менеджера акт приёма
+   и заказ-наряд. Что заказали и что получили: колонки «Пришло» и «№ накладной» заполняются сами после приёмки.
+   Подписи: «Заказал» и «Принял на склад» (утверждение директора не нужно). Под наряд — тот же лист, заголовок другой. #}
+{% block back %}/purchases/{{ p.id }}{% endblock %}
+{% block doc_title %}{{ "Заказ на склад" if not wo else "Заказ запчастей под наряд" }} № {{ num }}{% endblock %}
+{% block subtitle %}от {{ (p.ordered_on or p.created_at.astimezone()).strftime("%d.%m.%Y") }}{% if p.status == "draft" %} · черновик, ещё не заказано{% endif %}{% endblock %}
+{% block body %}
+<table>
+  <tr><th style="width:28%">Заказал</th><td>{{ buyer.full_name if buyer else "—" }}{% if buyer %} · {{ buyer.role.name|lower }}{% endif %}</td></tr>
+  <tr><th>Поставщик</th><td>{{ supplier.name if supplier else "не указан" }}{% if supplier and supplier.phone %} · {{ supplier.phone }}{% endif %}</td></tr>
+  {% if wo %}<tr><th>Под наряд</th><td>{{ wo.number }}{% if v %} · {{ v.make }} {{ v.model }} {{ fmt_plate(v.plate) }}{% endif %}</td></tr>{% endif %}
+  <tr><th>Привезут</th><td>{{ p.expected_on.strftime("%d.%m.%Y") if p.expected_on else "срок не указан" }}</td></tr>
+  <tr><th>Состояние</th><td>{{ state }}</td></tr>
+  {% if p.note %}<tr><th>Примечание</th><td>{{ p.note }}</td></tr>{% endif %}
+</table>
+
+<h2>Что заказано</h2>
+<table>
+  <thead><tr><th class="num">№</th><th>Наименование</th><th>Артикул · бренд</th><th class="num">Кол-во</th>
+    {% if cost_ok %}<th class="num">Цена, ₴</th><th class="num">Сумма, ₴</th>{% endif %}
+    <th class="num">Пришло</th><th>№ накладной</th></tr></thead>
+  <tbody>
+  {% for l in lines %}{% set c = cats.get(l.catalog_id) %}
+  <tr><td class="num">{{ loop.index }}</td>
+    <td>{{ c.name if c else "" }}</td>
+    <td>{{ c.article if c and c.article }}{% if c and c.brand %} · {{ c.brand }}{% endif %}</td>
+    <td class="num">{{ l.qty|num }}</td>
+    {% if cost_ok %}<td class="num">{{ l.price|money }}</td><td class="num">{{ (l.qty * l.price)|money }}</td>{% endif %}
+    <td class="num">{% if l.got > 0 %}{{ l.got|num }}{% if l.got < l.qty %} из {{ l.qty|num }}{% endif %}{% else %}—{% endif %}</td>
+    <td>{{ l.invoice or "" }}</td></tr>
+  {% endfor %}
+  </tbody>
+  {% if cost_ok %}<tfoot><tr><td colspan="5">Итого заказано на сумму</td><td class="num">{{ total|money }}</td><td colspan="2" class="num">пришло на {{ total_got|money }}</td></tr></tfoot>{% endif %}
+</table>
+<p class="muted" style="margin:0">Позиций: {{ lines|length }} · пришло полностью: {{ n_got }}{% if n_got < lines|length %} · ещё ждём: {{ lines|length - n_got }}{% endif %}</p>
+
+<div class="sign">
+  <div>Заказал{% if buyer %}: {{ buyer.short_name }}{% endif %}<br><span class="muted">подпись, дата</span></div>
+  <div>Принял на склад<br><span class="muted">подпись, дата</span></div>
+</div>
+{% endblock %}

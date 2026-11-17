@@ -93,8 +93,9 @@ def test_partsman_orders(client):
     _as(client, "pavel")
     page = client.get(f"/purchases/{pa.id}").text
     assert "Принять всё" in page and f"inv_" in page and "🚚 Привезли" not in page   # 14.11: построчно, № накладной
-    page = client.get("/purchases?tab=wait").text
-    assert "Привезли — ждут приёмки" not in page and f"/purchases/{pa.id}" in page and "Открыть · принять" in page
+    page = client.get("/stock/receive").text   # 17.11: кладовщик принимает в «Приходе» (в «Закупках» — только свои)
+    assert "Привезли — ждут приёмки" not in page and f"/purchases/{pa.id}" in page and 'name="inv_' in page
+    assert f"/purchases/{pa.id}" not in client.get("/purchases?tab=all").text
     # Неполная поставка по второму наряду: привезли 0 из 1 → ничего не принято, ждём дальше
     lb = _purchase_line("Фильтр ПО-тест")
     client.post(f"/purchases/{pb.id}/receive", data={"invoice": "ТН-1", "all": str(pb.id), "short": "1", f"qty_{lb}": "0", "invoice": "НК-777"})
@@ -105,13 +106,14 @@ def test_partsman_orders(client):
     with SessionLocal() as db:
         assert db.get(Purchase, pa.id).status == "partial"
     assert "Неполная поставка" in client.get(f"/purchases/{pa.id}").text
-    assert f"/purchases/{pa.id}" in client.get("/purchases?tab=wait").text   # остальное ещё ждём
+    assert f"/purchases/{pa.id}" in client.get("/stock/receive?tab=partial").text   # остальное ещё ждём
+    # 17.11.2026: «Заказы запчастистов» — группы по наряду, та же строка с приёмкой и «Принять всё» у наряда
     board = client.get(f"/purchases/by-partsman?u={oleg}").text
-    assert "Открыть · принять остальное" in board and "Открыть · принять</a>" in board
+    assert f'name="grp" value="wo:{_wo(url_a).id}"' in board and f'name="grp" value="wo:{_wo(url_b).id}"' in board
+    assert "пришло 1 из 2" in board and "Мои заказы" in board
     menu = client.get("/stock").text
     assert 'href="/purchases/by-partsman"' in menu and 'href="/my-orders"' not in menu
-    board = client.get(f"/purchases/by-partsman?u={oleg}").text
-    assert "Олег Запчастин" in board and "Колодки ПО-тест" in board and "Принять на склад" in board
+    assert "Олег Запчастин" in board and "Колодки ПО-тест" in board
     assert "заказал Запчастин" in client.get(f"/stock/receive?who={oleg}").text
     client.post(f"/purchases/{pa.id}/receive", data={"invoice": "ТН-1"})
     _as(client, "oleg")

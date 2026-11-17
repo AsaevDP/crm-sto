@@ -27,7 +27,7 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
         same["t"] += f" · {title}"
     else:
         lst.append({"c": color, "n": int(n), "t": title, "href": link or href, "alone": alone})
-    lst.sort(key=lambda x: ("red", "yellow", "green").index(x["c"]))
+    lst.sort(key=lambda x: ("red", "yellow", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
 def compute(ctx) -> dict:
@@ -183,15 +183,20 @@ def compute(ctx) -> dict:
                 IssueRequest.branch_id == bid, IssueRequest.status == "ready")) or 0, "готово — ждут, когда заберут")
 
     # ---------- Склад, Закупки (кладовщик) ----------
-    if ctx.can("stock.manage"):
+    if ctx.can("stock.receive"):
         _add(out, "/stock", "yellow", db.scalar(
             select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
             .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")),
                    PurchaseLine.received.is_(False))) or 0, "ждём приход", "/stock/receive")
-        # 14.11.2026 (брат): шага «Привезли» больше нет — у «Закупок» цифра: сколько накладных ждём
+    # 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы, сиреневая цифра у «Склада»
+    if ctx.can("stock.keep"):
+        from . import keep as ksvc
+        _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always")
+    # 17.11.2026 (брат): в «Закупках» у кладовщика — только свои заказы на склад; цифра — его черновики («Заказал» не нажат)
+    if ctx.can("purchases.stock") and not ctx.can("purchases.manage"):
         _add(out, "/purchases", "yellow", db.scalar(select(func.count()).select_from(Purchase).where(
-            Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")))) or 0, "ждём — принять, когда привезут",
-             "/purchases?tab=wait")
+            Purchase.branch_id == bid, Purchase.status == "draft", Purchase.created_by == me.id)) or 0,
+             "ваши черновики — нажмите «Заказан»", "/purchases?tab=draft")
 
     # ---------- Мои заказы (запчастист) ----------
     if ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman"):

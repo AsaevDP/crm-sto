@@ -481,9 +481,14 @@ def receive(pid, partial=False, rack="A"):
     if partial:   # накладная должна стать «неполная поставка» и быть видна и там, и в «Принятых»
         p = one(M.Purchase, M.Purchase.id == uuid.UUID(str(pid)))
         R.check(p.status == "partial", "неполная поставка → накладная «неполная поставка»", f"{pid}: {p.status}")
-        for tab in ("partial", "arrived"):
-            r = get("pavel", f"/purchases?tab={tab}", what=f"Закупки → {tab}")
-            R.check(r is not None and f"/purchases/{pid}" in r.text, f"неполная поставка видна во вкладке «{tab}»", str(pid))
+        # 17.11.2026: кладовщик видит это в «Приходе» («Неполная поставка», «Приняты» — по накладным);
+        # в «Закупках» у него только свои — там это видит тот, кто заказывал, и директор
+        r = get("pavel", "/stock/receive?tab=partial", what="Приход → Неполная поставка")
+        R.check(r is not None and f"/purchases/{pid}" in r.text, "неполная поставка видна в «Приходе → Неполная поставка»", str(pid))
+        r = get("pavel", "/stock/receive?tab=got", what="Приход → Приняты")
+        R.check(r is not None and f"№ {data['invoice']}" in r.text, "принятое видно в «Приходе → Приняты» по № накладной", str(pid))
+        r = get("director", f"/purchases?tab=arrived", what="Закупки → Приняты (директор)")
+        R.check(r is not None and f"/purchases/{pid}" in r.text, "неполная поставка у директора в «Закупках → Приняты»", str(pid))
 
 
 # ================================================================ наряд — путь машины по кнопкам
@@ -687,6 +692,10 @@ def step_approve(o, day, hhmm, send=True):
         fs = q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at)
         if o.fail_plan in ("all_no", "part_no") and not fs:
             o.fail_plan = None   # без диагностики (сценарий А) отказываться не от чего — работы известны заранее
+        # 17.11.2026: «отказался от всего» — только если в наряде нет работ, записанных при приёмке (например, мойка):
+        # они остаются, и наряд честно идёт дальше (раньше прогон ждал «Готово» и ловил ложную ошибку)
+        if o.fail_plan == "all_no" and any(not w.finding_id for w in q(M.WoWork, M.WoWork.work_order_id == o.id)):
+            o.fail_plan = None
         job_names = {j[1] for j in o.jobs}
         for f in fs:
             v = None
@@ -1360,7 +1369,9 @@ def run():
             razbor_sale(day)
         if n == 3:
             tool_check(day)
-        if n % 3 == 1:   # пополнение склада: запчастист заказывает, чего мало
+        if n == 1:
+            keep_setup(day)
+        if n % 3 == 1:   # пополнение склада: кладовщик — «Всегда в наличии» → «Заказать недостающее» (17.11.2026)
             restock(day)
         if n == 5:
             with at(day, "18:00"):   # инвентаризация одной позиции
@@ -1455,25 +1466,35 @@ def advance(o, day, hh):
         step_cancel(o, day, hh)
 
 
+def keep_setup(day):
+    """17.11.2026 (брат): кладовщик ведёт «Всегда в наличии» — ходовые позиции склада с нормой «не меньше N»."""
+    with at(day, "08:40"):
+        for i, (name, art, brand, qty, cost) in enumerate(STOCK[:10]):
+            cid = cat_id(name)
+            if cid:   # первым трём — норма выше остатка: будет что дозаказать («Заказать недостающее»)
+                mn = qty + 4 if i < 3 else max(qty // 2, 4)
+                post("pavel", "/stock/always", {"catalog_id": str(cid), "min_qty": str(mn)}, what="Всегда в наличии: норма")
+        r = get("pavel", "/stock/always", what="Всегда в наличии")
+        R.check(r is not None and r.status_code == 200, "«Всегда в наличии» открывается у кладовщика")
+
+
 def restock(day):
-    """Запчастист: всего, чего на складе меньше 5, — заказ «на склад»."""
-    low = []
-    for name, art, brand, qty, cost in STOCK:
-        cid = cat_id(name)
-        if cid and free_qty(cid) < 5:
-            low.append((name, art, brand, max(qty // 2, 6), cost))
-    if not low:
-        return
+    """17.11.2026 (брат): пополнение склада — кладовщик сам: «Всегда в наличии» → «Заказать недостающее» → черновик
+    на него → поставщик, дата → «Заказан». Принимает потом в «Приходе» с № накладной (как все)."""
     with at(day, "09:15"):
-        r = post("oleg", "/purchases/new", {"supplier_new": "Автотехнікс"}, what="Пополнение склада")
-        pid = r.url.path.rsplit("/", 1)[1] if r is not None else None
-        if not pid or not pid.count("-"):
-            return
-        post("oleg", f"/purchases/{pid}/lines", {"paste": "\n".join(f"{n}; {a}; {b}; {q_}; {c}" for n, a, b, q_, c in low)},
-             what="Список из Excel")
-        post("oleg", f"/purchases/{pid}", {"action": "save", "expected_on": str(day + timedelta(days=2)), "supplier_invoice": ""},
-             what="Дата «привезут»")
-        post("oleg", f"/purchases/{pid}/ordered", {"back": "/my-orders"}, what="✓ Заказал")
+        r = post("pavel", "/stock/always/order/missing", what="Заказать недостающее")
+        path = r.url.path if r is not None else ""
+        if not path.startswith("/purchases/"):
+            return   # всего хватает
+        pid = path.rsplit("/", 1)[1]
+        post("pavel", f"/purchases/{pid}", {"action": "save", "supplier_new": "Автотехнікс",
+                                            "expected_on": str(day + timedelta(days=2))}, what="Поставщик и дата")
+        post("pavel", f"/purchases/{pid}/ordered", {}, what="✓ Заказан (на склад)")
+        p = one(M.Purchase, M.Purchase.id == uuid.UUID(pid))
+        R.check(p is not None and p.status == "ordered" and p.created_by == uid("pavel") and not p.work_order_id,
+                "заказ на склад — на кладовщика, без наряда", pid)
+        doc = get("pavel", f"/purchases/{pid}/print", what="Заказ на склад (печать)")
+        R.check(doc is not None and "Заказ на склад" in doc.text, "«Заказ на склад» печатается", pid)
 
 
 # ================================================================ проверки логики и экраны

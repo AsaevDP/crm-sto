@@ -38,6 +38,12 @@ PERMISSIONS = [
     ("stock.look", "Смотреть склад и разбор: название и количество, без цен", "Склад и закупки"),
     ("parts.ask", "Просить запчасть со склада под свой наряд (согласует менеджер)", "Склад и закупки"),
     ("stock.manage", "Приход, ячейки, инвентаризация", "Склад и закупки"),
+    # 17.11.2026 (брат): приёмка — отдельное право (только с № накладной). У кладовщика есть; заму, директору, менеджеру —
+    # резервом, включается в «Настройки → Приёмка без кладовщика» (по умолчанию выключено)
+    ("stock.receive", "Принимать запчасти на склад (только с № накладной)", "Склад и закупки"),
+    ("purchases.stock", "Заказывать на склад — свои закупки без наряда (кладовщик)", "Склад и закупки"),
+    ("purchases.all", "Видеть закупки всех сотрудников (с фильтром по человеку)", "Склад и закупки"),
+    ("stock.keep", "«Всегда в наличии»: вести список запчастей и норму", "Склад и закупки"),
     ("stock.issue", "Выдача запчастей по запросу", "Склад и закупки"),
     ("stock.request_issue", "Просить выдачу запчастей со склада", "Склад и закупки"),
     # 12.11.2026 (брат): мойка и детейлинг — химия со склада (расход СТО, в счёт клиенту не идёт)
@@ -99,9 +105,9 @@ DEFAULT_ROLES = {
         "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
     "storekeeper": ("Кладовщик", "orange", [
         "orders.view_all", "purchases.view", "purchases.by_partsman", "stock.view", "stock.manage", "stock.issue",
-        "razbor.view", "tools.view", "tools.manage", *_OWN]),
+        "stock.receive", "purchases.stock", "stock.keep", "razbor.view", "tools.view", "tools.manage", *_OWN]),
     "content": ("Кладовщик-контентщик", "teal", [
-        "stock.view", "stock.manage", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
+        "stock.view", "stock.manage", "stock.receive", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
         "prices.view_sale", *_OWN]),
     "mechanic": ("Слесарь", "green", _MASTER),
     # 12.11.2026 (брат): автоэлектрик и моторист — как слесарь (свои работы в наряде, запчасти, сообщения)
@@ -115,12 +121,13 @@ DEFAULT_ROLES = {
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
-        "payroll.advance", "wash.view", "wash.buy", *_OWN]),
+        "payroll.advance", "wash.view", "wash.buy", "purchases.all", "stock.keep", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy",
+        "purchases.all", "stock.keep", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
         "reports.view", "money.view", "attendance.view_all", "payroll.view_all", "payroll.check", "payroll.pay",

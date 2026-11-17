@@ -232,6 +232,9 @@ class StockMovement(Entity):
     wo_part_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_parts.id"), nullable=True)
     purchase_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("purchases.id"), nullable=True)
     comment: Mapped[str] = mapped_column(Text, default="")
+    # 17.11.2026 (брат): приход — по какой накладной и какой строке закупки (вкладка «Приняты» по накладным)
+    invoice: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    purchase_line_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
 
 class IssueRequest(Entity):
@@ -267,3 +270,12 @@ class ChemRequest(Entity):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     reason: Mapped[str] = mapped_column(String(200), default="")
+
+
+class StockKeep(Entity):
+    """«Всегда в наличии» (17.11.2026, брат): запчасти и товары, которые всегда должны быть на складе в достаточном
+    объёме (часто идут в ремонт). Норма — не меньше `min_qty`. Список ведут кладовщик, директор, зам (право stock.keep)."""
+    __tablename__ = "stock_keep"
+    catalog_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("parts_catalog.id"), index=True)
+    min_qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)
+    note: Mapped[str] = mapped_column(Text, default="", server_default="")

@@ -28,6 +28,7 @@
   {% if ctx.can("users.manage") %}{{ tile("/settings/roles", "Роли и доступ", "кто что может", "indigo", "shield") }}{% endif %}
   {% if ctx.can("orders.grant_access") %}{{ tile("/settings/pairs", "Менеджеры и запчастисты", "кто с кем работает", "blue", "users") }}
   {{ tile("/access-requests", "Доступ ко всем нарядам", "запросы менеджеров", "red", "lock") }}{% endif %}
+  {% if ctx.can("users.manage") or ctx.user.role.code in ("director", "admin") %}{{ tile("/settings/receive-backup", "Приёмка без кладовщика", "зам, директор, менеджер — резерв", "orange", "stock") }}{% endif %}
 </div>
 {% endif %}
 

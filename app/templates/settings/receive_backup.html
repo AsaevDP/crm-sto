@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{# Приёмка без кладовщика (17.11.2026, брат): резерв, если кладовщиков нет. По старшинству — зам, директор, менеджер.
+   По умолчанию всё выключено. Включили — у роли появляется «Приход» на складе; без № накладной всё равно не принять. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Приёмка без кладовщика</h1></div>
+</header>
+<p class="footnote" style="margin:0 4px 12px">Принимать запчасти на склад может только кладовщик. Если кладовщиков нет (заболели, уволились) —
+  включите приёмку по старшинству: сначала заму, потом директору, в крайнем случае менеджеру. Правило то же, что у кладовщика:
+  без № накладной не примется. Когда кладовщик вернётся — выключите.</p>
+<div class="card compact rb-list">
+  {% for r in rows %}
+  <form class="rb-row" method="post" action="/settings/receive-backup">
+    <input type="hidden" name="code" value="{{ r.code }}">
+    <span class="rb-n">{{ loop.index }}</span>
+    <span class="rb-who"><b>{{ r.name }}</b><span class="caption">{{ r.sub }}</span></span>
+    {% if r.on %}<span class="chip" data-s="ready">✓ принимает</span>
+      <button class="btn btn-sm btn-gray">Выключить</button>
+    {% else %}<span class="chip" data-s="created">выключено</span>
+      <input type="hidden" name="on" value="1"><button class="btn btn-sm" {% if not r.exists %}disabled title="Такой роли нет"{% endif %}>Включить</button>{% endif %}
+  </form>
+  {% endfor %}
+</div>
+{% endblock %}

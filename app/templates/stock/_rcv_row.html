@@ -1,0 +1,44 @@
+{# Строка приёмки (17.11.2026, брат) — одна и та же в «Приходе» (группы по поставщику) и в «Заказах запчастистов»
+   (группы по наряду). Запчасть · сколько · ₴ за шт · под наряд / поставщик · ячейка · № накладной · «Пришло».
+   Без № накладной не принимается (в строке или общий у «Принять всё»). Принято — строка показывает ✓, ТТН и ячейку.
+   other: "wo" — колонка «Под наряд» (в «Приходе»), "sup" — колонка «Поставщик» (в «Заказах запчастистов»). #}
+{% macro rcv_head(other, can) %}
+<thead><tr><th>Запчасть</th><th class="num">Шт</th><th class="num" title="Цена за штуку из накладной — обязательно">₴ за шт</th>
+  <th>{{ "Под наряд" if other == "wo" else "Поставщик" }}</th><th>Ячейка</th><th>№ накладной</th>{% if can %}<th></th>{% endif %}</tr></thead>
+{% endmacro %}
+
+{% macro rcv_row(r, other, can, locations, loc_label, fmt_plate) %}
+{% set l = r.l %}
+<tr class="{{ 'urgent' if r.urgent and not l.received }} {{ 'rc-done-row' if l.received }}">
+  <td>{% if r.urgent and not l.received %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
+    <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
+  {% if l.received %}
+  <td class="num nowrap"><span class="chip" data-s="ready">✓ {{ l.got|num }}</span></td>
+  <td class="num nowrap">{{ l.price|money }}</td>
+  {% else %}
+  <td class="num nowrap">{% if can %}<input class="field rc-qty" name="qty_{{ l.id }}" value="{{ l.left|num }}" inputmode="decimal" aria-label="Сколько пришло">{% else %}{{ l.left|num }}{% endif %}
+    <div class="caption">{% if l.got > 0 %}пришло {{ l.got|num }} из {{ l.qty|num }}{% else %}ждём {{ l.left|num }}{% endif %}{% if r.part and l.qty > r.part.qty %} · на склад {{ (l.qty - r.part.qty)|num }}{% endif %}</div></td>
+  <td class="num nowrap">{% if can %}<input class="field rc-price{{ ' need' if not l.price }}" name="price_{{ l.id }}" value="{{ '%.2f'|format(l.price) if l.price else '' }}"
+      inputmode="decimal" placeholder="из накладной" aria-label="Цена за штуку из накладной">{% else %}{{ l.price|money }}{% endif %}</td>
+  {% endif %}
+  <td>{% if other == "wo" %}
+      {% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make if r.v }} {{ r.v.model if r.v }}</a> {% if r.v %}<span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>{% endif %}
+        <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}
+    {% else %}
+      <b>{{ r.sup.name if r.sup else "не указан" }}</b>
+    {% endif %}
+    {% if r.p.status == "partial" and not l.received %}<div class="caption">неполная поставка — ждём остальное</div>{% endif %}
+    <div class="caption"><a href="/purchases/{{ r.p.id }}">закупка</a>{% if r.buyer %} · заказал {{ r.buyer.short_name }}{% endif %}</div></td>
+  {% if l.received %}
+  <td class="caption">{% set loc = locations|selectattr("id", "equalto", l.location_id)|first %}{{ loc_label(loc) if loc else "без ячейки" }}</td>
+  <td><b>{{ l.invoice or "—" }}</b></td>
+  {% if can %}<td></td>{% endif %}
+  {% else %}
+  <td>{% if can %}<select class="field rc-cell" name="loc_{{ l.id }}" aria-label="Ячейка">
+      <option value="">— без ячейки —</option>
+      {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == r.cell %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select>{% endif %}</td>
+  <td>{% if can %}<input class="field rc-inv" name="inv_{{ l.id }}" placeholder="№ накладной" aria-label="Номер накладной">{% elif l.invoice %}{{ l.invoice }}{% endif %}</td>
+  {% if can %}<td><button class="btn btn-sm btn-tinted nowrap" name="line_id" value="{{ l.id }}">Пришло</button></td>{% endif %}
+  {% endif %}
+</tr>
+{% endmacro %}

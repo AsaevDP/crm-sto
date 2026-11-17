@@ -140,10 +140,12 @@ def get_or_create_item(db: Session, catalog_id, location_id) -> StockItem:
     return si
 
 
-def move(db: Session, typ: str, item: StockItem, qty, wo_part: WoPart | None = None, purchase_id=None, comment=""):
+def move(db: Session, typ: str, item: StockItem, qty, wo_part: WoPart | None = None, purchase_id=None, comment="",
+         invoice: str = "", line_id=None):
     db.add(StockMovement(type=typ, stock_item_id=item.id, qty=Decimal(qty), purchase_id=purchase_id, comment=comment,
                          wo_part_id=wo_part.id if wo_part else None,
-                         work_order_id=wo_part.work_order_id if wo_part else None))
+                         work_order_id=wo_part.work_order_id if wo_part else None,
+                         invoice=(invoice or "")[:80], purchase_line_id=line_id))
 
 
 # ---------- Подбор в наряд ----------
@@ -720,7 +722,7 @@ def default_location(db: Session, catalog_id):
     return max(items, key=lambda i: bal[i.id]["on_hand"]).location_id
 
 
-def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=None) -> Decimal:
+def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=None, invoice: str = "") -> Decimal:
     """Приход строки закупки (целиком или частью qty): в ячейку, под наряд — сразу в резерв.
     Ячейка не выбрана — кладём туда, где эта запчасть уже лежит. Возвращает, сколько принято."""
     left = line.left
@@ -733,7 +735,8 @@ def receive_line(db: Session, branch_id, line: PurchaseLine, location_id, qty=No
         location_id = default_location(db, line.catalog_id)
     item = get_or_create_item(db, line.catalog_id, location_id)
     item.cost = line.price
-    move(db, "in", item, take, purchase_id=line.purchase_id, comment="Приход по закупке")
+    move(db, "in", item, take, purchase_id=line.purchase_id, comment="Приход по закупке" + (f" · накладная {invoice}" if invoice else ""),
+         invoice=invoice, line_id=line.id)
     line.received_qty = line.got + take
     line.received, line.location_id = line.got >= line.qty, location_id
     if line.wo_part_id:

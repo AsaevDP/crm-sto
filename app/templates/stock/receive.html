@@ -2,15 +2,24 @@
 {# Приход (11.11.2026): всё, что ждём от поставщиков, на одном экране. «Пришло» — одна кнопка.
    Ячейка подставляется сама (где эта запчасть уже лежит). Под наряд — сразу в резерв; когда по наряду пришло всё,
    менеджер, слесарь и запчастист получают сообщение «Все запчасти на складе». #}
+{% from "stock/_rcv_row.html" import rcv_head, rcv_row %}
 {% block content %}
 <header class="page-head">
   <div>{% if who_user %}<a class="back" href="/purchases/by-partsman?u={{ who_user.id }}">{{ icon("back") }}Заказы запчастистов</a>{% else %}<a class="back" href="/stock">{{ icon("back") }}Склад</a>{% endif %}
     <h1 class="large-title">Приход{% if who_user %} · {{ who_user.short_name }}{% endif %}</h1></div>
-  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/purchases">Все закупки</a><a class="btn btn-sm btn-gray" href="/stock/issues">Выдача</a></div>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/purchases">Закупки</a><a class="btn btn-sm btn-gray" href="/stock/issues">Выдача</a></div>
 </header>
 <p class="footnote rc-hint">Что ждём от поставщиков. Пришло — впишите № накладной и нажмите «Пришло» у строки или «Принять всё» у поставщика (номер впишется во все строки).
   Привезли не всё — исправьте число в колонке «Шт», остальное будем ждать дальше.
   Ячейка подставлена сама — там, где эта запчасть уже лежит; можно поменять. 🔥 — слесарь просит срочно.</p>
+
+{# 17.11.2026 (брат): этапы — плитками, как в «Закупках». «Приняты» — по накладным. #}
+<div class="pult-tiles pu-tiles rc-tiles">
+  {% for key, (title, color, sub) in TABS.items() %}
+  <a class="ptile {{ 'zero' if not counts[key] }} {{ 'on' if tab == key }}" href="/stock/receive?tab={{ key }}{% if who_user %}&who={{ who_user.id }}{% endif %}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title }}</span><b>{{ counts[key] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
 
 {% if last %}
 <div class="card compact rc-done">
@@ -35,48 +44,56 @@
 </div>
 {% endif %}
 
-{# 13.11.2026 (брат): по поставщикам — от одного поставщика детали сразу для нескольких нарядов #}
+{# 13.11.2026 (брат): по поставщикам — от одного поставщика детали сразу для нескольких нарядов.
+   17.11.2026: строка — общая со «Заказами запчастистов» (stock/_rcv_row.html) #}
+{% if tab != "got" %}
 {% for g in groups %}
 <form class="card compact rc-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
-  {% if who_user %}<input type="hidden" name="who" value="{{ who_user.id }}">{% endif %}
+  {% if who_user %}<input type="hidden" name="who" value="{{ who_user.id }}">{% endif %}<input type="hidden" name="tab" value="{{ tab }}">
   <div class="card-h">
-    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}{% if g.invoices %} <span class="caption">· счёт {{ g.invoices|join(", ") }}</span>{% endif %}
+    <span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}
       {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
-      </span>
-    <span class="ov-actions">{% if g.ps|length == 1 %}<a class="btn btn-plain btn-sm" href="/purchases/{{ g.ps[0].id }}">Накладная</a>{% else %}<span class="caption">накладных: {{ g.ps|length }}</span>{% endif %}
+      {% if g.late %}<span class="chip" data-s="cancel">опаздывает</span>{% endif %}</span>
+    <span class="ov-actions">
       <input class="field rc-inv-all" name="invoice" placeholder="№ накладной" aria-label="Номер накладной для всех строк" title="Номер накладной — впишется во все строки этого поставщика">
-      <button class="btn btn-sm" name="sup" value="{{ g.key }}">Принять всё · {{ g.rows|length }}</button></span>
+      <button class="btn btn-sm" name="sup" value="{{ g.key }}">{{ "✓ Принять" if g.rows|length == 1 else "✓ Принять всё · " ~ g.rows|length }}</button></span>
   </div>
   <div class="tablewrap">
   <table class="table rc-table">
-    <thead><tr><th>Запчасть</th><th class="num">Шт</th><th class="num" title="Цена за штуку из накладной — обязательно">₴ за шт</th><th>Под наряд</th><th>Ячейка</th><th>№ накладной</th><th></th></tr></thead>
-    <tbody>
-    {% for r in g.rows %}
-    <tr class="{{ 'urgent' if r.urgent }}">
-      <td>{% if r.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
-        <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
-      <td class="num nowrap"><input class="field rc-qty" name="qty_{{ r.l.id }}" value="{{ r.l.left|num }}" inputmode="decimal" aria-label="Сколько пришло">
-        <div class="caption">{% if r.l.got > 0 %}пришло {{ r.l.got|num }} из {{ r.l.qty|num }}{% else %}ждём {{ r.l.left|num }}{% endif %}{% if r.part and r.l.qty > r.part.qty %} · на склад {{ (r.l.qty - r.part.qty)|num }}{% endif %}</div></td>
-      {# 13.11.2026 (брат): цена из накладной обязательна — без неё на склад не принимаем #}
-      <td class="num nowrap"><input class="field rc-price{{ ' need' if not r.l.price }}" name="price_{{ r.l.id }}" value="{{ '%.2f'|format(r.l.price) if r.l.price else '' }}"
-          inputmode="decimal" placeholder="из накладной" aria-label="Цена за штуку из накладной"></td>
-      <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make }} {{ r.v.model }}</a> <span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>
-        <div class="caption">{{ r.wo.number }}{% if r.mech %} · {{ r.mech.short_name }}{% endif %}</div>{% else %}<span class="caption">на склад</span>{% endif %}
-        {% if r.p.status == "partial" %}<div class="caption">неполная поставка — ждём остальное</div>{% endif %}
-        {% if g.ps|length > 1 %}<div class="caption"><a href="/purchases/{{ r.p.id }}">накладная</a>{% if r.buyer and g.buyers|length > 1 %} · {{ r.buyer.short_name }}{% endif %}</div>{% endif %}</td>
-      <td><select class="field rc-cell" name="loc_{{ r.l.id }}" aria-label="Ячейка">
-          <option value="">— без ячейки —</option>
-          {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == r.cell %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select></td>
-      {# 14.11.2026 (брат): № накладной обязателен — в строке или общий у «Принять всё» #}
-      <td><input class="field rc-inv" name="inv_{{ r.l.id }}" placeholder="№ накладной" aria-label="Номер накладной"></td>
-      <td><button class="btn btn-sm btn-tinted nowrap" name="line_id" value="{{ r.l.id }}">Пришло</button></td>
-    </tr>
-    {% endfor %}
-    </tbody>
+    {{ rcv_head("wo", true) }}
+    <tbody>{% for r in g.rows %}{{ rcv_row(r, "wo", true, locations, loc_label, fmt_plate) }}{% endfor %}</tbody>
   </table>
   </div>
 </form>
 {% else %}
-<div class="card compact"><p class="footnote" style="margin:0">Ничего не ждём — все заказанные запчасти приняты. Новые заказы появятся здесь, когда закупку отметят «Заказана».</p></div>
+<div class="card compact"><p class="footnote" style="margin:0">{{ {"wait": "Ничего не ждём — все заказанные запчасти приняты.", "partial": "Неполных поставок нет.", "late": "Опаздывающих нет."}[tab] }}</p></div>
 {% endfor %}
+{% else %}
+{# 17.11.2026 (брат): «Приняты» — по накладным: что пришло по каждому № накладной (на любые наряды и закупки) #}
+{% for g in invoices %}
+<section class="card compact rc-group rc-inv-group">
+  <div class="card-h">
+    <span class="headline">№ {{ g.inv }} <span class="caption">· {{ g.sup.name if g.sup else "поставщик не указан" }} · {{ g.when.astimezone().strftime("%d.%m %H:%M") }}{% if g.by %} · принял {{ g.by.short_name }}{% endif %}</span></span>
+    <span class="caption nowrap">{{ g.rows|length }} поз.{% if ctx.can("prices.view_purchase") %} · {{ g.total|money }} ₴{% endif %}</span>
+  </div>
+  <div class="tablewrap">
+  <table class="table rc-table">
+    <thead><tr><th>Запчасть</th><th class="num">Принято</th><th>Под наряд</th><th>Ячейка</th><th>Закупка</th></tr></thead>
+    <tbody>
+    {% for r in g.rows %}
+    <tr><td><b>{{ r.c.name if r.c else "" }}</b><div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
+      <td class="num nowrap"><b>{{ r.qty|num }}</b>{% if r.l.got < r.l.qty %}<div class="caption">всего {{ r.l.got|num }} из {{ r.l.qty|num }}</div>{% endif %}</td>
+      <td>{% if r.wo %}<a href="/orders/{{ r.wo.id }}">{{ r.v.make if r.v }} {{ r.v.model if r.v }}</a> {% if r.v %}<span class="ov-plate">{{ fmt_plate(r.v.plate) }}</span>{% endif %}
+        <div class="caption">{{ r.wo.number }}</div>{% else %}<span class="caption">на склад</span>{% endif %}</td>
+      <td class="caption">{{ loc_label(r.loc) if r.loc else "без ячейки" }}</td>
+      <td class="caption"><a href="/purchases/{{ r.p.id }}">открыть</a>{% if r.buyer %} · заказал {{ r.buyer.short_name }}{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% else %}
+<div class="card compact"><p class="footnote" style="margin:0">За 30 дней ничего не принято.</p></div>
+{% endfor %}
+{% endif %}
 {% endblock %}
