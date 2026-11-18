@@ -35,6 +35,8 @@ async def lifespan(_app):
         fix_half_ordered(db)   # 13.11.2026: «Заказал» по строке — сразу в накладную у кладовщика
         from .services.stock import fix_delivered
         fix_delivered(db)      # 14.11.2026: шага «Привезли» нет — такие накладные снова «Ждём» / «Неполная поставка»
+        from .services import keys as keys_svc
+        keys_svc.fill_open(db)  # 18.11.2026: машинам на станции без номера — ячейка ключей по порядку приезда
         from sqlalchemy import select
         from .models import Branch
         from .services import brands
@@ -54,6 +56,8 @@ async def lifespan(_app):
             from .services import razbor as razbor_svc
             for b in db.scalars(select(Branch)).all():
                 razbor_svc.seed_refs(db, b.id)
+            from .services import keys as keys_svc
+            keys_svc.fill_open(db)   # демо-наряды — тоже с ячейками ключей
             db.commit()
     backup.start_daily()   # и раз в сутки, пока CRM работает
     yield

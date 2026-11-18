@@ -416,7 +416,11 @@ def set_status(db: Session, wo: WorkOrder, new: str, comment: str = ""):
                            comment=comment))
     if new == "approve" and wo.status != "approve":
         wo.picked_at, wo.picked_by = None, None   # 13.11.2026: снова на согласование — подбор заново
+    reopened = new in WO_ACTIVE and wo.status in ("closed", "cancel")
     wo.status = new
+    if reopened:   # 18.11.2026: машина снова на станции — новый крючок для ключей (старый мог занять другой)
+        from . import keys
+        keys.assign(db, wo)
 
 
 def find_vehicle(db: Session, bid, f: IntakeForm) -> tuple[Vehicle | None, bool]:
@@ -509,6 +513,8 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     )
     db.add(wo)
     db.flush()
+    from . import keys   # 18.11.2026: номер крючка для ключей — сам, по кругу; все заняты — «Без ячейки»
+    keys.assign(db, wo)
     db.add(WoStatusHistory(work_order_id=wo.id, from_status="", to_status="created",
                            comment=f"Приёмка · в очереди на подъёмник {queue_for.number}" if queue_for else "Приёмка"))
     wo.queued_for = queue_for.number if queue_for else None   # для сообщения после приёмки (в базу не пишется)

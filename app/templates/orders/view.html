@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "orders/_card.html" import key_badge %}
 {% block content %}
 {% set n_find = findings|length %}
 {% macro finding_row(f) %}
@@ -98,6 +99,7 @@
       <div class="subhead">{% if v.year %}{{ v.year }} · {% endif %}{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км · {% endif %}{{ c.full_name }} · <a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a></div>
     </div>
     <div class="ov-actions">
+      {{ key_badge(wo) }}
       <span class="chip chip-lg" data-s="{{ wo.status }}">{{ STATUSES[wo.status] }}</span>
       <details class="docs-menu">
         <summary class="btn btn-sm btn-gray">Документы ▾</summary>

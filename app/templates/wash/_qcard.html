@@ -1,10 +1,11 @@
+{% from "orders/_card.html" import key_tag %}
 {# Карточка машины в очереди мойки (18.11.2026). c — wash.Car; mode: queue / doing / done #}
 {% macro qcard(c, mode) -%}
 <div class="card compact wq-card" data-st="{{ mode }}" id="q{{ c.o.id }}">
   <div class="wq-top">
     {% if mode == "queue" %}<span class="wq-pos" title="Место в очереди">{{ c.pos }}</span>{% endif %}
     <a class="wq-car" href="/orders/{{ c.o.id }}">
-      <b>{{ c.v.make if c.v else "" }} {{ c.v.model if c.v else "" }}</b>
+      <b>{{ c.v.make if c.v else "" }} {{ c.v.model if c.v else "" }} {{ key_tag(c.o) }}</b>
       <span class="mono wq-plate">{{ fmt_plate(c.v.plate) if c.v else "" }}</span>
       <span class="caption">{{ CLASSES.get(c.o.car_class, "") }}{% if c.box %} · {{ c.box.name or ("бокс " ~ c.box.number) }}{% endif %} · приехал {{ c.o.created_at.astimezone().strftime("%H:%M") }}</span>
     </a>

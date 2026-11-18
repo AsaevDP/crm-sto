@@ -47,7 +47,8 @@
     <div><h1>АКТ ПРИЁМА-ПЕРЕДАЧИ АВТОМОБИЛЯ В РЕМОНТ</h1>
       <div class="muted">к заказ-наряду № <b>{{ wo.number }}</b> · {{ wo.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }}</div></div>
     <div style="text-align:right"><b>{{ branding.name }}</b>
-      <div class="muted">Принял: {{ manager.full_name if manager else "____________" }}</div></div>
+      <div class="muted">Принял: {{ manager.full_name if manager else "____________" }}</div>
+      {% if wo.key_slot is not none %}<div style="margin-top:4px;font-size:13px">🔑 Ячейка ключей: <b style="font-size:20px">{{ wo.key_slot if wo.key_slot else "без ячейки" }}</b></div>{% endif %}</div>
   </div>
 
   <div class="top">

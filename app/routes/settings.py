@@ -587,6 +587,45 @@ def lift_add(ctx: Ctx = Depends(get_ctx)):
     return _back("/settings/lifts")
 
 
+# ======================= Ячейки ключей (18.11.2026) =======================
+@router.get("/keys")
+def keys_view(ctx: Ctx = Depends(get_ctx)):
+    """Сколько крючков в шкафу у каждого рабочего места и какие сейчас заняты (какой машиной)."""
+    ctx.need("settings.access")
+    from ..models import Vehicle, WorkOrder
+    from ..models.orders import WO_ACTIVE
+    from ..services import keys as ksvc
+    from ..services.orders import fmt_plate
+    rows = ctx.db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE),
+                                                 WorkOrder.key_slot.is_not(None))).all()
+    vs = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in rows])))} if rows else {}
+    by_slot = {o.key_slot: o for o in rows if o.key_slot}
+    without = [o for o in rows if o.key_slot == 0]
+    return ctx.render("settings/keys.html", title="Ячейки ключей", s=ksvc.stats(ctx.db, ctx.branch.id), by_slot=by_slot,
+                      without=without, vs=vs, fmt_plate=fmt_plate)
+
+
+@router.post("/keys")
+def keys_save(ctx: Ctx = Depends(get_ctx), count: str = Form("50")):
+    ctx.need("settings.access")
+    from ..services import keys as ksvc
+    try:
+        n = int(count.strip())
+    except ValueError:
+        n = 0
+    if not 1 <= n <= 500:
+        flash(ctx.request, "Число крючков — от 1 до 500", "error")
+        return _back("/settings/keys")
+    top = ksvc.stats(ctx.db, ctx.branch.id)["max_busy"]
+    if n < top:
+        flash(ctx.request, f"Крючок {top} сейчас занят — меньше {top} поставить нельзя, пока машину не выдадут", "error")
+        return _back("/settings/keys")
+    st.put(ctx.db, ctx.branch.id, "keys", {"count": n})
+    ctx.db.commit()
+    flash(ctx.request, f"Крючков в шкафу: {n}")
+    return _back("/settings/keys")
+
+
 # ======================= Менеджеры и запчастисты (12.11.2026) =======================
 # Пары «менеджер ↔ запчастист»: админ, директор, зам переставляют (не сработались, менеджер заболел).
 # Открытые наряды остаются за прежней парой — они их дорабатывают; новые наряды идут по новой паре.

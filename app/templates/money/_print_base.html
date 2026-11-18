@@ -39,7 +39,8 @@
 <div class="sheet">
   <div class="head">
     <div><h1>{% block doc_title %}{% endblock %}</h1><div class="muted">№ <b>{{ wo.number }}</b> от {{ wo.created_at.astimezone().strftime("%d.%m.%Y") }}</div></div>
-    <div style="text-align:right"><b>{{ branding.name }}</b></div>
+    <div style="text-align:right"><b>{{ branding.name }}</b>
+      {% if wo.key_slot is not none %}<div style="margin-top:2mm;font-size:12pt">🔑 Ячейка ключей: <b style="font-size:18pt">{{ wo.key_slot if wo.key_slot else "без ячейки" }}</b></div>{% endif %}</div>
   </div>
   <table>
     <tr><th style="width:30%">Заказчик</th><td>{{ c.full_name }}, {{ fmt_phone(c.phone) }}</td></tr>

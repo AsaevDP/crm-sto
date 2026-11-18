@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "orders/_card.html" import progress %}
+{% from "orders/_card.html" import progress, key_tag %}
 {% block content %}
 {% set WD = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"] %}
 {% set MG = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"] %}
@@ -30,7 +30,7 @@
       {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
       {% set st = "pause" if wo.id in paused else wo.status %}
       <a class="plift" data-st="{{ st }}" href="/orders/{{ wo.id }}" style="--mc:{{ color_css(colors.get(wo.mechanic_id, 'gray')) }}">
-        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ (l.name or "").split("·")[-1].strip() }}</span></span>
+        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ (l.name or "").split("·")[-1].strip() }}</span>{{ key_tag(wo) }}</span>
         <span class="plift-car">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></span>
         <span class="plift-row">{% if st == "pause" %}<span class="chip" data-s="waiting">⏸ Пауза</span>{% else %}<span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
           {% if mc %}<span class="plift-mech"><i></i>{{ mc.short_name }}</span>{% endif %}</span>

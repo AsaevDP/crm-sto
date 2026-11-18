@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "orders/_card.html" import key_badge %}
 {# Наряд глазами мойщика / детейлера (18.11.2026, брат): машина, что сделать, «Начал / Пауза / Выполнено», сообщения,
    химия. Ремонтных разделов (этапы, проблемы, диагностика, согласование, запчасти), цен и денег здесь нет. #}
 {% set WST = {"todo": "ждёт", "doing": "моют", "paused": "пауза", "done": "готово"} %}
@@ -12,6 +13,7 @@
       <h1 class="title-1">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></h1>
       <div class="subhead">{% if wo.car_class %}{{ CLASSES.get(wo.car_class, "") }}{% endif %}{% if box %} · {{ box.name or ("бокс " ~ box.number) }}{% endif %}{% if client %} · клиент {{ client.full_name }}{% endif %}</div>
     </div>
+    <div class="ov-actions">{{ key_badge(wo) }}</div>
   </div>
 </header>
 
