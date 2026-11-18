@@ -79,6 +79,27 @@ def test_storekeeper_orders_and_receives(client):
     got = client.get("/stock/receive?tab=got").text
     assert "№ ТТН-Б" in got and "Фильтр 1711" in got
     assert ls  # noqa
+    # 18.11.2026: «Заказы запчастистов → Приняты» — свежие сверху, день по календарику, «Все» сбоку
+    from datetime import date, timedelta
+    page = client.get("/purchases/by-partsman?st=arrived").text
+    assert 'type="date" name="d"' in page and "bp-day-all on" in page and "Масло 1711" in page
+    assert "Масло 1711" in client.get(f"/purchases/by-partsman?st=arrived&d={date.today().isoformat()}").text
+    old = client.get(f"/purchases/by-partsman?st=arrived&d={(date.today() - timedelta(days=5)).isoformat()}").text
+    assert "Масло 1711" not in old and "В этот день ничего не принято" in old
+
+
+def test_arrived_newest_first(client):
+    """Два наряда «на склад» нет — проверяем порядок на двух закупках кладовщика: последняя принятая — выше."""
+    _as(client, "pavel")
+    p1 = _new_stock_purchase(client, "Порядок-1", [("Первая 1811", "1", "10")])
+    p2 = _new_stock_purchase(client, "Порядок-2", [("Вторая 1811", "1", "10")])
+    for pid in (p1, p2):
+        client.post(f"/purchases/{pid}/ordered", data={})
+    l1, l2 = next(iter(_lines(p1).values())), next(iter(_lines(p2).values()))
+    client.post("/stock/receive", data={"line_id": str(l1.id), f"inv_{l1.id}": "П-1"})
+    client.post("/stock/receive", data={"line_id": str(l2.id), f"inv_{l2.id}": "П-2"})
+    page = client.get("/purchases/by-partsman?st=arrived&u=me").text
+    assert page.index("Вторая 1811") < page.index("Первая 1811")
 
 
 def test_backup_receiving_by_deputy_director_manager(client):

@@ -511,7 +511,7 @@ def my_orders(ctx: Ctx = Depends(get_ctx), st: str = ""):
 
 
 @router.get("/purchases/by-partsman")
-def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
+def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = "", d: str = ""):
     """Заказы запчастистов (кладовщик, директор, админ). 17.11.2026 (брат): как «Приход», но ГРУППЫ ПО ЗАКАЗ-НАРЯДУ —
     машина, менеджер, кто заказывал, пришло X из Y; внутри детали от любых поставщиков, та же строка с приёмкой
     (№ накладной обязателен). «На склад» — отдельной группой. Сверху плитки людей (по умолчанию «Все») и «Мои заказы»
@@ -539,6 +539,17 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
         raise Forbidden()
     ps = [p for p in allp if not who or p.created_by == who.id]
     since = datetime.now(timezone.utc) - timedelta(days=60)
+    day = _date(d) if st == "arrived" else None   # 18.11.2026 (брат): «Приняты» за выбранный день (календарик)
+    # когда деталь пришла — по приходу на склад (последний приход по строке); у старых строк — когда строку закрыли
+    arrived_at = {}
+    for lid, when in db.execute(select(StockMovement.purchase_line_id, func.max(StockMovement.created_at))
+                                .where(StockMovement.branch_id == ctx.branch.id, StockMovement.type == "in",
+                                       StockMovement.purchase_line_id.is_not(None))
+                                .group_by(StockMovement.purchase_line_id)):
+        arrived_at[lid] = when
+    def _when(l, p):
+        w = arrived_at.get(l.id) or l.updated_at or p.updated_at
+        return w if w.tzinfo else w.replace(tzinfo=timezone.utc)
     counts = {k: 0 for k in BP_TABS}
     groups: dict = {}
     for p in ps:
@@ -548,10 +559,10 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
             counts["wait"] += len(left)
             counts["partial"] += len(left) if p.status == "partial" else 0
             counts["late"] += len(left) if p.expected_on and p.expected_on < today else 0
-        got = [l for l in lines if l.received and (l.updated_at or p.updated_at).replace(tzinfo=timezone.utc) >= since]
+        got = [l for l in lines if l.received and _when(l, p) >= since]
         counts["arrived"] += len(got)
         if st == "arrived":
-            show = got
+            show = [l for l in got if not day or _when(l, p).astimezone().date() == day]
         elif p.status not in svc.OPEN or (st == "partial" and p.status != "partial") \
                 or (st == "late" and not (p.expected_on and p.expected_on < today)):
             continue
@@ -559,13 +570,16 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
             show = lines   # в работе — вся закупка: что пришло (✓) и что ждём
         for l in show:
             r = _line_row(db, l, p, cache)
+            r["when"] = _when(l, p) if l.received else None
             key = f"wo:{r['wo'].id}" if r["wo"] else "stock"
             if key not in groups:
                 mgr = db.get(User, r["wo"].manager_id) if r["wo"] and r["wo"].manager_id else None
                 groups[key] = {"key": key, "wo": r["wo"], "v": r["v"], "rows": [], "buyers": [], "urgent": False,
-                               "manager": mgr, "late": False}
+                               "manager": mgr, "late": False, "when": None}
             g = groups[key]
             g["rows"].append(r)
+            if r["when"] and (g["when"] is None or r["when"] > g["when"]):
+                g["when"] = r["when"]
             g["urgent"] |= r["urgent"] and not l.received
             g["late"] |= bool(not l.received and p.expected_on and p.expected_on < today)
             if r["buyer"] and r["buyer"].short_name not in g["buyers"]:
@@ -575,12 +589,19 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = ""):
         g["n"], g["got"] = len(g["rows"]), sum(1 for r in g["rows"] if r["l"].received)
         g["left"] = g["n"] - g["got"]
         g["rows"].sort(key=lambda r: (r["l"].received, not r["urgent"], r["c"].name if r["c"] else ""))
-    out.sort(key=lambda g: (g["key"] == "stock", not g["urgent"], not g["late"], g["wo"].number if g["wo"] else ""))
+    if st == "arrived":
+        # 18.11.2026 (брат): «Приняты» — по нарядам, самый свежий приход сверху (и внутри наряда тоже)
+        for g in out:
+            g["rows"].sort(key=lambda r: r["when"], reverse=True)
+        out.sort(key=lambda g: g["when"], reverse=True)
+    else:
+        out.sort(key=lambda g: (g["key"] == "stock", not g["urgent"], not g["late"], g["wo"].number if g["wo"] else ""))
     locations = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
                            .order_by(Location.rack, Location.shelf, Location.place)).all()
     back = str(ctx.request.url.path) + (f"?{ctx.request.url.query}" if ctx.request.url.query else "")
     return ctx.render("stock/by_partsman.html", title="Заказы запчастистов", who=who, u=u, st=st, TABS=BP_TABS,
                       counts=counts, groups=out, tiles=tiles, me_tile=me_tile, locations=locations, back=back,
+                      day=day, today=today,
                       can_recv=ctx.can("stock.receive"), loc_label=svc.location_label, fmt_plate=osvc.fmt_plate)
 
 

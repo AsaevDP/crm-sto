@@ -1946,3 +1946,12 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .kp-table tr.kp-yellow td { background: color-mix(in srgb, var(--orange) 8%, transparent); }
 .kp-miss { color: var(--red); }
 .kp-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* «Заказы запчастистов → Приняты» (18.11.2026): день по календарику и «Все» — сбоку, неприметно */
+.bp-day { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin: 0 2px 10px; }
+.bp-day .caption { margin-right: auto; }
+.bp-day-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 15px; color: var(--text-2); cursor: pointer; }
+.bp-day-pick .field { width: 150px; min-height: 32px; padding: 4px 8px; font-size: 13px; }
+.bp-day-all { font-size: 13px; color: var(--text-2); text-decoration: none; padding: 4px 8px; border-radius: 8px; }
+.bp-day-all:hover { background: var(--fill-2); color: var(--accent); }
+.bp-day-all.on { color: var(--accent); background: var(--fill-2); font-weight: 600; }

@@ -33,6 +33,17 @@
   {% endfor %}
 </div>
 
+{# 18.11.2026 (брат): «Приняты» — свежие сверху; сбоку неприметно — день по календарику и «Все» #}
+{% if st == "arrived" %}
+<form class="bp-day" method="get" action="/purchases/by-partsman">
+  <input type="hidden" name="st" value="arrived">{% if u %}<input type="hidden" name="u" value="{{ u }}">{% endif %}
+  <span class="caption">{% if day %}Принято {{ day.strftime("%d.%m.%Y") }}{% else %}Все за 60 дней · свежие сверху{% endif %}</span>
+  <label class="bp-day-pick" title="Показать только за этот день">📅
+    <input class="field" type="date" name="d" value="{{ day.isoformat() if day }}" max="{{ today.isoformat() }}" onchange="this.form.submit()" aria-label="День прихода"></label>
+  <a class="bp-day-all {{ 'on' if not day }}" href="/purchases/by-partsman?st=arrived{{ '&u=' ~ u if u }}">Все</a>
+</form>
+{% endif %}
+
 {% for g in groups %}
 {% set can = can_recv and g.left > 0 and st != "arrived" %}
 <form class="card compact rc-group bp-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
@@ -45,7 +56,8 @@
       {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
       {% if g.late %}<span class="chip" data-s="cancel">опаздывает</span>{% endif %}</span>
     <span class="ov-actions">
-      <span class="chip" data-s="{{ 'ready' if not g.left else ('picking' if g.got else 'waiting') }}">пришло {{ g.got }} из {{ g.n }}</span>
+      {% if st == "arrived" and g.when %}<span class="caption nowrap" title="Когда пришло на склад">пришло {{ g.when.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
+      <span class="chip" data-s="{{ 'ready' if not g.left else ('picking' if g.got else 'waiting') }}">{{ "принято " ~ g.n if st == "arrived" else "пришло " ~ g.got ~ " из " ~ g.n }}</span>
       {% if can %}
       <input class="field rc-inv-all" name="invoice" placeholder="№ накладной" aria-label="Номер накладной для всех строк наряда" title="Номер накладной — впишется во все строки">
       <button class="btn btn-sm" name="grp" value="{{ g.key }}">{{ "✓ Принять" if g.left == 1 else "✓ Принять всё · " ~ g.left }}</button>
@@ -59,6 +71,6 @@
   </div>
 </form>
 {% else %}
-<div class="card compact"><p class="footnote" style="margin:0">{{ {"wait": "Ничего не ждём — всё заказанное принято.", "partial": "Неполных поставок нет.", "late": "Опаздывающих нет.", "arrived": "За 60 дней ничего не принято."}[st] }}</p></div>
+<div class="card compact"><p class="footnote" style="margin:0">{{ {"wait": "Ничего не ждём — всё заказанное принято.", "partial": "Неполных поставок нет.", "late": "Опаздывающих нет.", "arrived": ("В этот день ничего не принято." if day else "За 60 дней ничего не принято.")}[st] }}</p></div>
 {% endfor %}
 {% endblock %}
