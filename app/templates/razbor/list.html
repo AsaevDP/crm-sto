@@ -2,7 +2,7 @@
 {# Разбор (11.11.2026): плитки по состояниям, слева дерево «марка → модель», сверху категории и подкатегории,
    в таблице — что где лежит и в каком состоянии. Продажи и отправки — отдельный экран «Продажи». #}
 {% block content %}
-{% set ST_CHIP = {"stock": "ready", "reserved": "waiting", "sent": "diag", "sold": "closed", "service": "instock", "writeoff": "cancel", "out": "created"} %}
+{% set ST_CHIP = {"stock": "ready", "reserved": "waiting", "sent": "diag", "sold": "closed", "service": "instock", "writeoff": "cancel", "out": "created", "unapproved": "approve", "declined": "cancel"} %}
 <header class="page-head">
   <h1 class="large-title">Разбор</h1>
   <form class="toolbar-row rz-search" method="get" action="/razbor">
@@ -18,7 +18,9 @@
 </header>
 
 <div class="pult-tiles rz-tiles">
-  {% for key, title, color, sub in [("stock", "В наличии", "green", tiles.stock_sum|money(0) ~ " ₴ по ценам"), ("reserved", "В резерве", "orange", "ждут покупателя"),
+  {# 18.11.2026 (брат): цену детали утверждает директор / зам — «Не утверждено» и «Отказано в утверждении» #}
+  {% for key, title, color, sub in [("unapproved", "Не утверждено", "orange", "ждут директора"), ("declined", "Отказано в утверждении", "red", "смотрите причину"),
+      ("stock", "В наличии", "green", tiles.stock_sum|money(0) ~ " ₴ по ценам"), ("reserved", "В резерве", "orange", "ждут покупателя"),
       ("sent", "Отправлено", "purple", "в пути, ждём деньги"), ("sold", "Продано", "blue", "за всё время"),
       ("service", "В наряды СТО", "teal", "поставили клиентам"), ("out", "Нет в наличии", "gray", "продано, списано")] %}
   {% set n = tiles[key] if key != "out" else tiles.sold + tiles.service + tiles.writeoff + tiles.out %}
@@ -27,6 +29,21 @@
   {% endfor %}
 </div>
 
+<div class="rz-layout">
+  <aside class="card compact rz-tree">
+    <div class="card-h"><span class="headline">Марки и модели</span>{% if make or model %}<a class="caption" href="{{ link(make='', model='', cat='', sub='') }}">все</a>{% endif %}</div>
+    {% for mk, x in mk_tree.items() %}
+    <details class="rz-mk" {% if mk == make %}open{% endif %}>
+      <summary class="{{ 'on' if mk == make and not model }}"><a href="{{ link(make=mk, model='', cat='', sub='') }}">{{ mk }}</a><span class="caption">{{ x.n }}</span></summary>
+      {% for md, n in x.models|dictsort %}
+      <a class="rz-md {{ 'on' if mk == make and md == model }}" href="{{ link(make=mk, model=md, cat='', sub='') }}"><span>{{ md }}</span><span class="caption">{{ n }}</span></a>
+      {% endfor %}
+    </details>
+    {% else %}<p class="footnote" style="margin:0">Пусто{% if f %} в этом состоянии{% endif %}</p>{% endfor %}
+  </aside>
+
+  <section class="rz-main">
+    {# 18.11.2026 (брат): плитки машин — справа над деталями, «Марки и модели» — слева сбоку #}
 {# 11.11.2026: «Доноры и окупаемость» — плитками во всю ширину. Одинаковые машины (марка + модель + год) — одна плитка
    «×2», внутри — каждая машина отдельно (код, статус, окупаемость). Новая машина сама появляется плиткой. #}
 {# 12.11.2026: доноры и деньги разборки — тем, кто ведёт разбор (контентщик, продавец, директор). Запчастисту и остальным,
@@ -62,20 +79,7 @@
 </section>
 {% endif %}
 
-<div class="rz-layout">
-  <aside class="card compact rz-tree">
-    <div class="card-h"><span class="headline">Марки и модели</span>{% if make or model %}<a class="caption" href="{{ link(make='', model='', cat='', sub='') }}">все</a>{% endif %}</div>
-    {% for mk, x in mk_tree.items() %}
-    <details class="rz-mk" {% if mk == make %}open{% endif %}>
-      <summary class="{{ 'on' if mk == make and not model }}"><a href="{{ link(make=mk, model='', cat='', sub='') }}">{{ mk }}</a><span class="caption">{{ x.n }}</span></summary>
-      {% for md, n in x.models|dictsort %}
-      <a class="rz-md {{ 'on' if mk == make and md == model }}" href="{{ link(make=mk, model=md, cat='', sub='') }}"><span>{{ md }}</span><span class="caption">{{ n }}</span></a>
-      {% endfor %}
-    </details>
-    {% else %}<p class="footnote" style="margin:0">Пусто{% if f %} в этом состоянии{% endif %}</p>{% endfor %}
-  </aside>
 
-  <section class="rz-main">
     <div class="rz-crumbs">
       <a href="{{ link(make='', model='', cat='', sub='') }}">Все марки</a>
       {% if make %}<span>›</span><a href="{{ link(model='', cat='', sub='') }}">{{ make }}</a>{% endif %}

@@ -2067,3 +2067,63 @@ a.key-cell:hover { outline: 2px solid var(--accent); }
 /* 18.11.2026: последнее действие на плитке наряда — мелко */
 .ocard-act { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .wq-act { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.nbadge.nb-orange { background: var(--orange); color: #fff; }   /* 18.11.2026: «нужно ваше действие» — оранжевый (раньше жёлтый) */
+.rsv-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
+.rsv-card { display: grid; gap: 4px; border-left: 4px solid var(--orange); }
+.rsv-car { color: var(--text); text-decoration: none; min-width: 0; }
+/* ===== Разбор: пропорции (18.11.2026, брат) ===== */
+.rz-main { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.rz-main .dt-sec { margin: 0; }
+.rz-main .dt-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
+.rz-tree { align-content: start; }
+.dn-layout { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 1000px) {
+  .dn-layout { grid-template-columns: 340px minmax(0, 1fr); }
+  .dn-side { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; scrollbar-width: thin; padding: 2px; }
+}
+.dn-side { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.dn-side .dn-top { grid-template-columns: minmax(0, 1fr) !important; }
+.dn-side .dn-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dn-side .dn-payback { margin: 0; }
+.dn-main { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.dn-main .dn-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); }
+/* состояния цены детали разбора */
+.chip[data-rs="unapproved"] { background: color-mix(in srgb, var(--orange) 20%, transparent); color: var(--orange); }
+.chip[data-rs="declined"] { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+/* Цены разбора — экран директора */
+.rp-cars { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.rp-car { display: grid; gap: 4px; color: var(--text); text-decoration: none; border-left: 4px solid var(--green); }
+.rp-car.wait { border-left-color: var(--red); }
+a.rp-car:hover { background: var(--fill-2); }
+.rp-nums { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.rp-n { padding: 2px 9px; border-radius: 999px; font-size: 13px; background: var(--fill); white-space: nowrap; }
+.rp-n.wait { background: color-mix(in srgb, var(--red) 16%, transparent); }
+.rp-n.ok { background: color-mix(in srgb, var(--green) 16%, transparent); }
+.rp-n.no { background: color-mix(in srgb, var(--orange) 18%, transparent); }
+.rp-head { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: space-between; margin: 8px 0; }
+.rp-head .back { display: inline-flex; align-items: center; color: var(--accent); text-decoration: none; }
+.rp-list { display: grid; gap: 10px; }
+.rp-row { display: grid; gap: 10px; border-left: 4px solid var(--red); }
+.rp-row[data-kind="change"] { border-left-color: var(--orange); }
+.rp-main { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+.rp-photo { flex: none; width: 64px; height: 64px; border-radius: 10px; background: var(--fill); overflow: hidden; }
+.rp-photo img { width: 100%; height: 100%; object-fit: cover; }
+.rp-info { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.rp-name { color: var(--text); text-decoration: none; }
+.rp-price { flex: none; display: grid; justify-items: end; text-align: right; }
+.rp-price b { font-size: 20px; white-space: nowrap; }
+.rp-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+.rp-ok { display: flex; gap: 8px; align-items: center; }
+.rp-no[open] { flex-basis: 100%; }
+.rp-no form { margin-top: 6px; }
+/* 18.11.2026: таблица карточками на телефоне (.mcards + data-l у ячеек) */
+@media (max-width: 760px) {
+  .mcards thead { display: none; }
+  .mcards, .mcards tbody { display: block; width: 100%; }
+  .mcards tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; padding: 10px 12px;
+    border-bottom: 1px solid var(--separator); }
+  .mcards td { display: block; padding: 0; border: 0; min-width: 0; text-align: left !important; white-space: normal; }
+  .mcards td.mc-wide { grid-column: 1 / -1; }
+  .mcards td[data-l]::before { content: attr(data-l); display: block; font-size: 12px; color: var(--text-2); margin-bottom: 2px; }
+  .mcards td[colspan] { grid-column: 1 / -1; }
+}

@@ -17,6 +17,9 @@
   </div>
 </header>
 
+{# 18.11.2026 (брат): слева — машина и окупаемость (и карточка донора), справа — категории и детали на всю ширину #}
+<div class="dn-layout">
+<aside class="dn-side">
 <div class="dn-top">
   {% if photos %}<div class="card compact dn-photos"><div class="pgallery sm">{% for p in photos[:4] %}<a href="/razbor/files/{{ p.file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""></a>{% endfor %}</div></div>{% endif %}
   <div class="pult-tiles dn-stats">
@@ -28,6 +31,22 @@
 </div>
 <div class="payback dn-payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></div>
 
+<details class="card compact work-edit">
+  <summary class="headline" style="font-size:14px">Карточка донора{% if can %} · изменить{% endif %}</summary>
+  <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}" enctype="multipart/form-data" data-compress style="margin-top:8px">
+    <div class="form-row three"><label>Марка<input class="field" name="make" value="{{ d.make }}"></label><label>Модель<input class="field" name="model" value="{{ d.model }}"></label><label>Год<input class="field" name="year" value="{{ d.year or '' }}" inputmode="numeric"></label></div>
+    <div class="form-row three"><label>Двигатель<input class="field" name="engine" value="{{ d.engine }}" placeholder="3.0 дизель"></label><label>КПП<input class="field" name="gearbox" value="{{ d.gearbox }}" placeholder="АКПП"></label><label>Кузов<input class="field" name="body" value="{{ d.body }}" placeholder="кроссовер"></label></div>
+    <div class="form-row three"><label>Цвет<input class="field" name="color" value="{{ d.color }}"></label><label>Пробег<input class="field" name="mileage" value="{{ d.mileage or '' }}" inputmode="numeric"></label><label>VIN<input class="field mono" name="vin" value="{{ d.vin }}"></label></div>
+    <div class="form-row three"><label>Куплен<input class="field" type="date" name="bought_on" value="{{ d.bought_on or '' }}"></label><label>Цена покупки ₴<input class="field" name="purchase_price" value="{{ '%.0f'|format(d.purchase_price) }}" inputmode="decimal"></label><label>Расходы ₴<input class="field" name="expenses" value="{{ '%.0f'|format(d.expenses) }}" inputmode="decimal"></label></div>
+    <input class="field" name="expenses_note" value="{{ d.expenses_note }}" placeholder="Расходы: эвакуатор 1500, разборка 3000…">
+    <div class="form-row"><select class="field" name="status">{% for k, v in DONOR_STATUS.items() %}<option value="{{ k }}" {% if k == d.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+      <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" hidden></label></div>
+    <textarea class="field" name="notes" rows="2" placeholder="Заметки: что битое, что уже снято">{{ d.notes }}</textarea>
+    {% if can %}<button class="btn btn-sm">Сохранить</button>{% endif %}
+  </form>
+</details>
+</aside>
+<section class="dn-main">
 <div class="dn-bar">
   <span class="headline">Категории</span>
   {% set n_empty = tiles|selectattr("n", "equalto", 0)|list|length %}
@@ -131,19 +150,7 @@
 </section>
 {% endif %}
 
-<details class="card compact work-edit">
-  <summary class="headline" style="font-size:14px">Карточка донора{% if can %} · изменить{% endif %}</summary>
-  <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}" enctype="multipart/form-data" data-compress style="margin-top:8px">
-    <div class="form-row three"><label>Марка<input class="field" name="make" value="{{ d.make }}"></label><label>Модель<input class="field" name="model" value="{{ d.model }}"></label><label>Год<input class="field" name="year" value="{{ d.year or '' }}" inputmode="numeric"></label></div>
-    <div class="form-row three"><label>Двигатель<input class="field" name="engine" value="{{ d.engine }}" placeholder="3.0 дизель"></label><label>КПП<input class="field" name="gearbox" value="{{ d.gearbox }}" placeholder="АКПП"></label><label>Кузов<input class="field" name="body" value="{{ d.body }}" placeholder="кроссовер"></label></div>
-    <div class="form-row three"><label>Цвет<input class="field" name="color" value="{{ d.color }}"></label><label>Пробег<input class="field" name="mileage" value="{{ d.mileage or '' }}" inputmode="numeric"></label><label>VIN<input class="field mono" name="vin" value="{{ d.vin }}"></label></div>
-    <div class="form-row three"><label>Куплен<input class="field" type="date" name="bought_on" value="{{ d.bought_on or '' }}"></label><label>Цена покупки ₴<input class="field" name="purchase_price" value="{{ '%.0f'|format(d.purchase_price) }}" inputmode="decimal"></label><label>Расходы ₴<input class="field" name="expenses" value="{{ '%.0f'|format(d.expenses) }}" inputmode="decimal"></label></div>
-    <input class="field" name="expenses_note" value="{{ d.expenses_note }}" placeholder="Расходы: эвакуатор 1500, разборка 3000…">
-    <div class="form-row"><select class="field" name="status">{% for k, v in DONOR_STATUS.items() %}<option value="{{ k }}" {% if k == d.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-      <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" hidden></label></div>
-    <textarea class="field" name="notes" rows="2" placeholder="Заметки: что битое, что уже снято">{{ d.notes }}</textarea>
-    {% if can %}<button class="btn btn-sm">Сохранить</button>{% endif %}
-  </form>
-</details>
+</section>
+</div>
 <script src="{{ asset('/static/js/photos.js') }}"></script>
 {% endblock %}

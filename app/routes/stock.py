@@ -1273,6 +1273,42 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
                       args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))
 
 
+@router.get("/stock/reserved")
+def stock_reserved(ctx: Ctx = Depends(get_ctx)):
+    """«В резерве» (18.11.2026, брат): плитку на «Складе» можно открыть — какие наряды, какие детали, где лежат, сколько."""
+    ctx.need("stock.view", "stock.look")
+    from collections import defaultdict
+    from ..models import StockMovement
+    db, bid = ctx.db, ctx.branch.id
+    left = defaultdict(lambda: Decimal(0))   # (wo_part_id, stock_item_id) → ещё в резерве
+    for pid, sid, typ, qty in db.execute(select(StockMovement.wo_part_id, StockMovement.stock_item_id, StockMovement.type,
+                                                StockMovement.qty).where(StockMovement.branch_id == bid,
+                                                                         StockMovement.wo_part_id.is_not(None),
+                                                                         StockMovement.type.in_(("reserve", "unreserve", "issue")))):
+        left[(pid, sid)] += Decimal(qty or 0) if typ == "reserve" else -Decimal(qty or 0)
+    keys = [(p, s) for (p, s), q in left.items() if q > 0]
+    parts = {p.id: p for p in db.scalars(select(WoPart).where(WoPart.id.in_({p for p, _ in keys})))} if keys else {}
+    items = {i.id: i for i in db.scalars(select(StockItem).where(StockItem.id.in_({s for _, s in keys})))} if keys else {}
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_({p.work_order_id for p in parts.values()})))} if parts else {}
+    vs = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))} if orders else {}
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == bid))}
+    locs = {l.id: svc.location_label(l) for l in db.scalars(select(Location).where(Location.branch_id == bid))}
+    groups: dict = {}
+    for p_id, s_id in keys:
+        p = parts.get(p_id)
+        o = orders.get(p.work_order_id) if p else None
+        if not o:
+            continue
+        g = groups.setdefault(o.id, {"o": o, "v": vs.get(o.vehicle_id), "mgr": people.get(o.manager_id),
+                                     "mech": people.get(o.mechanic_id), "rows": []})
+        it = items.get(s_id)
+        g["rows"].append({"p": p, "qty": left[(p_id, s_id)], "loc": locs.get(it.location_id, "") if it else ""})
+    out = sorted(groups.values(), key=lambda g: osvc.fresh_key(g["o"]), reverse=True)
+    from ..models.orders import WO_STATUSES
+    return ctx.render("stock/reserved.html", title="В резерве", groups=out, STATUSES=WO_STATUSES, fmt_plate=osvc.fmt_plate,
+                      n=sum(len(g["rows"]) for g in out))
+
+
 def _pick_orders(ctx: Ctx) -> list[dict]:
     """Открытые наряды запчастиста, куда можно добавить со склада (12.11.2026): номер, машина, этап."""
     if not ctx.can("parts.pick"):

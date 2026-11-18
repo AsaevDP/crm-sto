@@ -25,6 +25,23 @@ def login(c, login, password):
     return r
 
 
+def approve_razbor():
+    """18.11.2026 (брат): новые детали разбора ждут утверждения цены директором — в тестах продаж утверждаем все сразу."""
+    from app.db import SessionLocal
+    from app.models import StockItem
+    from app.models.razbor import RazborPrice
+    from sqlalchemy import select
+    from app.db import current_branch_id
+    from app.models import Branch
+    with SessionLocal() as db:
+        current_branch_id.set(db.scalar(select(Branch.id)))   # журнал пишется с филиалом
+        for r in db.scalars(select(RazborPrice).where(RazborPrice.status == "pending", RazborPrice.kind == "new")):
+            r.status, r.final_price = "approved", r.price
+        for i in db.scalars(select(StockItem).where(StockItem.price_state.in_(("pending", "declined")))):
+            i.price_state = ""
+        db.commit()
+
+
 def agree(c, url, then="oleg", partsman="oleg"):
     """13.11.2026 (брат): запчастист подбирает на согласовании, заказ уходит поставщику только после того, как
     менеджер «Согласовал с клиентом». Запчастист — «Подбор завершён», менеджер — согласовал; дальше входим как then."""

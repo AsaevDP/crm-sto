@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import Donor, PartCatalog, RazborCategory, StockItem
 
-from .conftest import login
+from .conftest import approve_razbor, login
 
 
 def _parts(did):
@@ -47,6 +47,7 @@ def test_donor_tiles(client):
     # Удалить ошибочную деталь можно; проданную — нельзя
     left = p["Фара левая (плитки)"][0]
     right = p["Фара правая (плитки)"][0]
+    approve_razbor()   # 18.11.2026: продать можно только с утверждённой ценой
     client.post(f"/razbor/parts/{right.id}/sell", data={"action": "sold", "price": "6400", "delivery": "pickup", "pay_method": "cash"})
     client.post(f"/razbor/parts/{right.id}/delete", data={"back": f"/razbor/donors/{d1.id}"})
     client.post(f"/razbor/parts/{left.id}/delete", data={"back": f"/razbor/donors/{d1.id}"})

@@ -534,13 +534,19 @@ def donor_view(did: str, ctx: Ctx = Depends(get_ctx), cat: str = "", empty: str 
     from ..models.razbor import ITEM_STATES
     ref = svc.tree(db, ctx.branch.id)
     # Плитки: все категории справочника + те, что есть у деталей, но не в справочнике
-    names = [c["c"].name for c in ref["cats"]]
-    for r in rows:
-        if (r["c"].category or "Прочее") not in names:
-            names.append(r["c"].category or "Прочее")
+    # 18.11.2026: «Кузов» и «Кузов » / «кузов» — одна плитка (раньше было две одинаковые)
+    def norm(x):
+        return " ".join((x or "Прочее").split()).lower()
+    names, seen = [], set()
+    for nm in [c["c"].name for c in ref["cats"]] + [r["c"].category or "Прочее" for r in rows]:
+        if norm(nm) not in seen:
+            seen.add(norm(nm))
+            names.append(" ".join(nm.split()))
+    if cat and norm(cat) in seen:
+        cat = next(n for n in names if norm(n) == norm(cat))
     tiles = []
     for k, name in enumerate(names):
-        mine = [r for r in rows if (r["c"].category or "Прочее") == name]
+        mine = [r for r in rows if norm(r["c"].category) == norm(name)]
         tiles.append({"name": name, "n": len(mine), "color": TILE_COLORS[k % len(TILE_COLORS)],
                       "stock": sum(1 for r in mine if r["state"] in ("stock", "reserved")),
                       "sold": sum(1 for r in mine if r["state"] in ("sold", "sent", "service")),
@@ -553,7 +559,7 @@ def donor_view(did: str, ctx: Ctx = Depends(get_ctx), cat: str = "", empty: str 
         used[c or "Прочее"] = used.get(c or "Прочее", 0) + 1
     if cat and cat not in names:
         cat = ""
-    open_rows = [r for r in rows if (r["c"].category or "Прочее") == cat] if cat else []
+    open_rows = [r for r in rows if norm(r["c"].category) == norm(cat)] if cat else []
     subs = {}
     for r in open_rows:
         subs.setdefault(r["c"].subcategory or "", []).append(r)
@@ -696,8 +702,13 @@ def part_view(iid: str, ctx: Ctx = Depends(get_ctx)):
     sales = db.scalars(select(UsedSale).where(UsedSale.stock_item_id == i.id).order_by(UsedSale.created_at.desc())).all()
     moves = db.scalars(select(StockMovement).where(StockMovement.stock_item_id == i.id).order_by(StockMovement.created_at.desc())).all()
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    from ..models.razbor import CHANNELS, ITEM_STATES
-    return ctx.render("razbor/part.html", title=f"{i.code} {row['c'].name}", r=row, i=i, photos=photos, sales=sales,
+    from ..models.razbor import CHANNELS, ITEM_STATES, RazborPrice
+    from ..services import razbor_price as rp
+    last_change = db.scalar(select(RazborPrice).where(RazborPrice.stock_item_id == i.id, RazborPrice.kind == "change")
+                            .order_by(RazborPrice.created_at.desc()).limit(1))
+    price = {"blocked": rp.blocked(i), "state": i.price_state or "", "wait_new": rp.pending(db, i.id, "new"),
+             "decline": rp.last_decline(db, i.id) if i.price_state == "declined" else None, "change": last_change}
+    return ctx.render("razbor/part.html", title=f"{i.code} {row['c'].name}", r=row, i=i, photos=photos, sales=sales, price=price,
                       moves=moves, people=people, locations=_locations(ctx), CONDITIONS=CONDITIONS, DELIVERY=DELIVERY,
                       SALE_STATUS=SALE_STATUS, PAY_METHODS=PAY_METHODS, MOVEMENT_TYPES=MOVEMENT_TYPES,
                       loc_label=ssvc.location_label, fmt_phone=osvc.fmt_phone, ref=svc.tree(db, ctx.branch.id),
@@ -717,7 +728,14 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         cat.category = c.strip()[:60] or guess_razbor_category(cat.name)
     if s is not None:
         cat.subcategory = s.strip()[:60]
-    i.sale_price = ssvc.money(_dec(form.get("price")))
+    # 18.11.2026 (брат): утверждённую цену кладовщик не меняет — только «Запросить изменение цены».
+    # Пока не утверждена (ждёт / отказано) — поправить можно, директор увидит новую цену.
+    from ..services import razbor_price as rp
+    if rp.blocked(i) and form.get("price") and _dec(form.get("price")) > 0:
+        i.sale_price = ssvc.money(_dec(form.get("price")))
+        req = rp.pending(ctx.db, i.id, "new")
+        if req:
+            req.price = i.sale_price
     if form.get("condition") in CONDITIONS:
         i.condition = str(form.get("condition"))
     i.description = str(form.get("description", "")).strip()
@@ -729,6 +747,137 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     ctx.db.commit()
     flash(request, "Сохранено")
     return _to(f"/razbor/parts/{iid}")
+
+
+# ======================= Утверждение цен разбора (18.11.2026, брат) =======================
+@router.post("/razbor/parts/{iid}/resubmit")
+def part_resubmit(iid: str, ctx: Ctx = Depends(get_ctx), note: str = Form("")):
+    """Отказано → «Отправить ещё раз»: сколько угодно раз; деталь висит в «Отказано», пока не утвердят."""
+    ctx.need("razbor.manage")
+    from ..services import razbor_price as rp
+    i = _item(ctx, iid)
+    if not rp.blocked(i):
+        raise Forbidden()
+    rp.submit_new(ctx.db, i, note)
+    ctx.db.commit()
+    flash(ctx.request, f"{i.code} — отправлено директору ещё раз")
+    return _to(f"/razbor/parts/{iid}")
+
+
+@router.post("/razbor/parts/{iid}/price-request")
+def part_price_request(iid: str, ctx: Ctx = Depends(get_ctx), price: str = Form(""), note: str = Form("")):
+    """Утверждённая цена — кладовщик разбора просит изменить (новая цена + причина), решает директор / зам."""
+    ctx.need("razbor.manage")
+    from ..services import razbor_price as rp
+    i = _item(ctx, iid)
+    err = rp.request_change(ctx.db, i, ssvc.money(_dec(price)), note)
+    if err:
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Запрос на изменение цены отправлен директору")
+    return _to(f"/razbor/parts/{iid}")
+
+
+PRICE_TABS = {"new": ("Новые детали", "red"), "change": ("Изменение цены", "orange"), "history": ("История", "gray")}
+
+
+@router.get("/razbor/prices")
+def razbor_prices(ctx: Ctx = Depends(get_ctx), tab: str = "new", donor: str = ""):
+    """«Цены разбора» (директор, зам, админ): плитки по машинам → неутверждённые детали → «Утвердить» / «Отказать»;
+    запросы на изменение цены; история решений."""
+    ctx.need("razbor.price")
+    from ..models.razbor import RazborPrice
+    from ..services import razbor_price as rp
+    db, bid = ctx.db, ctx.branch.id
+    tab = tab if tab in PRICE_TABS else "new"
+    c = rp.counts(db, bid)
+    data = dict(tab=tab, TABS=PRICE_TABS, c=c, donor=None, reqs=[], tiles=[])
+    q = select(RazborPrice).where(RazborPrice.branch_id == bid)
+    if tab == "history":
+        q = q.where(RazborPrice.status != "pending").order_by(RazborPrice.decided_at.desc()).limit(150)
+    else:
+        q = q.where(RazborPrice.status == "pending", RazborPrice.kind == tab).order_by(RazborPrice.created_at)
+    reqs = db.scalars(q).all()
+    if tab == "new":
+        data["tiles"] = rp.by_donor(db, bid)
+        if donor:
+            d = _donor(ctx, donor)
+            data["donor"] = d
+            reqs = [r for r in reqs if db.get(StockItem, r.stock_item_id).donor_id == d.id]
+        else:
+            reqs = []
+    items = {i.id: i for i in db.scalars(select(StockItem).where(StockItem.id.in_([r.stock_item_id for r in reqs])))} if reqs else {}
+    cats = {x.id: x for x in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([i.catalog_id for i in items.values()])))} if items else {}
+    photos = {}
+    for p in db.scalars(select(StockPhoto).where(StockPhoto.stock_item_id.in_(list(items))).order_by(StockPhoto.created_at)) if items else []:
+        photos.setdefault(p.stock_item_id, p)
+    declines = {}
+    for r in reqs:
+        if r.repeat:
+            declines[r.id] = rp.last_decline(db, r.stock_item_id)
+    data.update(reqs=reqs, items=items, cats=cats, photos=photos, declines=declines, CONDITIONS=CONDITIONS,
+                back_url="/razbor/prices?tab=" + tab + (f"&donor={data['donor'].id}" if data["donor"] else ""),
+                people={u.id: u for u in db.scalars(select(User).where(User.branch_id == bid))})
+    return ctx.render("razbor/prices.html", title="Цены разбора", **data)
+
+
+def _price_req(ctx: Ctx, rid: str):
+    from ..models.razbor import RazborPrice
+    r = ctx.db.get(RazborPrice, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    return r
+
+
+def _prices_back(ctx: Ctx, r, back: str):
+    return back if back.startswith("/razbor/prices") else "/razbor/prices"
+
+
+@router.post("/razbor/prices/{rid}/approve")
+def razbor_price_approve(rid: str, ctx: Ctx = Depends(get_ctx), price: str = Form(""), back: str = Form("")):
+    ctx.need("razbor.price")
+    from ..services import razbor_price as rp
+    r = _price_req(ctx, rid)
+    err = rp.approve(ctx.db, r, ctx.user, ssvc.money(_dec(price)) if price.strip() else None)
+    if err:
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        i = ctx.db.get(StockItem, r.stock_item_id)
+        flash(ctx.request, f"{i.code} — цена {r.final_price} ₴ утверждена" + (" — деталь в наличии" if r.kind == "new" else ""))
+    return _to(_prices_back(ctx, r, back))
+
+
+@router.post("/razbor/prices/{rid}/decline")
+def razbor_price_decline(rid: str, ctx: Ctx = Depends(get_ctx), answer: str = Form(""), back: str = Form("")):
+    ctx.need("razbor.price")
+    from ..services import razbor_price as rp
+    r = _price_req(ctx, rid)
+    err = rp.decline(ctx.db, r, ctx.user, answer)
+    if err:
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Отказано — кладовщик разбора увидит причину" if r.kind == "new" else "Отказано — цена осталась прежней")
+    return _to(_prices_back(ctx, r, back))
+
+
+@router.post("/razbor/prices/donor/{did}/approve-all")
+def razbor_price_approve_all(did: str, ctx: Ctx = Depends(get_ctx)):
+    """«Утвердить все по машине» — по ценам, которые указал кладовщик."""
+    ctx.need("razbor.price")
+    from ..models.razbor import RazborPrice
+    from ..services import razbor_price as rp
+    d = _donor(ctx, did)
+    n = 0
+    for r in ctx.db.scalars(select(RazborPrice).join(StockItem, StockItem.id == RazborPrice.stock_item_id).where(
+            StockItem.donor_id == d.id, RazborPrice.status == "pending", RazborPrice.kind == "new")):
+        if not rp.approve(ctx.db, r, ctx.user):
+            n += 1
+    ctx.db.commit()
+    flash(ctx.request, f"{d.code} {d.make} {d.model}: утверждено деталей — {n}")
+    return _to(f"/razbor/prices?tab=new")
 
 
 async def _sell(request: Request, ctx: Ctx, i: StockItem, form, back: str):

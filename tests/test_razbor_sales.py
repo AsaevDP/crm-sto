@@ -7,7 +7,7 @@ from app.models import Donor, RazborCategory, RazborMake, RazborModel, StockItem
 from app.services import razbor as rsvc
 from app.services import stock as ssvc
 
-from .conftest import login
+from .conftest import approve_razbor, login
 
 
 def _bal(item_id):
@@ -36,6 +36,7 @@ def test_refs_tree_and_sales_flow(client):
                                 ("Сиденье водителя (тест разбора)", "3000", "Салон||Сиденья")):
         client.post(f"/razbor/donors/{d.id}/parts", data={"name": name, "price": price, "qty": "1", "condition": "good",
                                                           "catsub": catsub})
+    approve_razbor()   # 18.11.2026: цены утвердил директор
     with SessionLocal() as db:
         rows = db.execute(select(StockItem, rsvc.PartCatalog).join(rsvc.PartCatalog, rsvc.PartCatalog.id == StockItem.catalog_id)
                           .where(StockItem.donor_id == d.id)).all()

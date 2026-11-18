@@ -20,12 +20,39 @@
       {% else %}<p class="footnote" style="margin:0">Фото нет — без фото на сайте продаётся хуже</p>{% endif %}
       {% if i.description %}<p class="ov-text">{{ i.description }}</p>{% endif %}
     </div>
+    {# 18.11.2026 (брат): цену утверждает директор / зам. Не утверждена — с деталью ничего делать нельзя #}
+    {% if price.state == "pending" %}
+    <div class="wo-now" style="--sc:var(--orange)"><div class="grow"><b>Цена ждёт утверждения</b>
+      <span class="wo-now-t">Директор или зам утвердит цену (может поправить). До этого продать, зарезервировать, отправить или поставить в наряд нельзя.</span></div></div>
+    {% elif price.state == "declined" %}{% set dcl = price.decline %}
+    <div class="wo-now" style="--sc:var(--red)"><div class="grow"><b>Отказано в утверждении</b>
+      <span class="wo-now-t">{% if dcl %}{{ dcl.answer }}{% if dcl.decided_at %} · {{ dcl.decided_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}{% endif %}</span>
+      {% if price.wait_new %}<span class="wo-now-t">Отправлено снова {{ price.wait_new.created_at.astimezone().strftime("%d.%m %H:%M") }} · ждёт директора</span>{% endif %}</div>
+      {% if ctx.can("razbor.manage") %}<details class="rp-again"><summary class="btn btn-sm">{{ "Отправить ещё раз" if not price.wait_new else "Дописать и отправить" }}</summary>
+        <form method="post" action="/razbor/parts/{{ i.id }}/resubmit" class="form dense one-shot" style="margin-top:6px">
+          <input class="field" name="note" maxlength="500" placeholder="Что исправили (необязательно)">
+          <button class="btn btn-sm">Отправить на утверждение</button></form></details>{% endif %}
+    </div>
+    {% elif ctx.can("razbor.manage") %}{% set ch = price.change %}
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Цена утверждена · {{ i.sale_price|money(0) }} ₴</span></div>
+      {% if ch and ch.status == "pending" %}<p class="hint" style="margin:0">Запрос: {{ ch.price|money(0) }} ₴ · {{ ch.note }} — ждёт директора</p>
+      {% else %}
+      {% if ch and ch.status == "declined" %}<p class="hint warn" style="margin:0 0 6px">Изменение на {{ ch.price|money(0) }} ₴ — отказано: {{ ch.answer }}</p>{% endif %}
+      <details><summary class="btn btn-sm btn-gray">Запросить изменение цены</summary>
+        <form method="post" action="/razbor/parts/{{ i.id }}/price-request" class="form dense one-shot" style="margin-top:6px">
+          <div class="form-row"><label>Новая цена, ₴<input class="field" name="price" inputmode="decimal" required></label>
+            <label>Причина<input class="field" name="note" required maxlength="500" placeholder="Например: на рынке дешевле"></label></div>
+          <button class="btn btn-sm">Отправить директору</button></form></details>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if ctx.can("razbor.manage") %}
-    <details class="card compact work-edit"><summary class="caption">Изменить: цена, состояние, ячейка, фото, «на сайт»</summary>
+    <details class="card compact work-edit"><summary class="caption">Изменить: {{ "цена, " if price.blocked }}состояние, ячейка, фото, «на сайт»</summary>
       <form class="form dense" method="post" action="/razbor/parts/{{ i.id }}" enctype="multipart/form-data" data-compress>
         <input class="field" name="name" value="{{ r.c.name }}" aria-label="Название">
         {{ catsub_select(ref, r.c.category or "", r.c.subcategory or "") }}
-        <div class="form-row three"><input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal" aria-label="Цена">
+        <div class="form-row three">{% if price.blocked %}<input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal" aria-label="Цена (ещё не утверждена)">{% else %}<input class="field" value="{{ '%.0f'|format(i.sale_price) }} ₴ · утверждена" disabled aria-label="Цена утверждена">{% endif %}
           <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == i.condition %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
           <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}" {% if l.id == i.location_id %}selected{% endif %}>{{ loc_label(l) }}</option>{% endfor %}</select></div>
         <textarea class="field" name="description" rows="2" placeholder="Описание для объявления">{{ i.description }}</textarea>

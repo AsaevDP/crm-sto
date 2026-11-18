@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles as tiles_m with context %}
+{# Цены разбора (18.11.2026, брат): директор / зам / админ утверждают цену новой детали (можно поправить) или отказывают
+   с причиной; запросы кладовщика разбора на изменение цены; история. #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Цены разбора</h1>
+    <p class="footnote" style="margin:0">Пока цена не утверждена, деталь нельзя продать, зарезервировать, отправить или поставить в наряд.</p></div>
+</header>
+
+{{ tiles_m([
+  {"t": "Новые детали", "n": c.new, "c": "red" if c.new else "gray", "s": "ждут утверждения", "href": "/razbor/prices?tab=new", "on": tab == "new"},
+  {"t": "Изменение цены", "n": c.change, "c": "orange" if c.change else "gray", "s": "просит кладовщик разбора", "href": "/razbor/prices?tab=change", "on": tab == "change"},
+  {"t": "История", "n": "", "c": "gray", "s": "кто, что и когда решил", "href": "/razbor/prices?tab=history", "on": tab == "history", "zero": false},
+], "rp-tiles") }}
+
+{% macro req_row(r, show_car=False) %}{% set i = items[r.stock_item_id] %}{% set cat = cats.get(i.catalog_id) %}{% set who = people.get(r.created_by) %}
+<div class="card compact rp-row" data-kind="{{ r.kind }}">
+  <div class="rp-main">
+    <a class="rp-photo" href="/razbor/parts/{{ i.id }}">{% if photos.get(i.id) %}<img loading="lazy" src="/razbor/files/{{ photos[i.id].file }}" alt="">{% endif %}</a>
+    <div class="rp-info">
+      <a class="headline rp-name" href="/razbor/parts/{{ i.id }}">{{ cat.name if cat else i.code }}</a>
+      <div class="caption">{{ i.code }}{% if show_car %} · {{ i.donor_make }} {{ i.donor_model }}{% endif %} · {{ CONDITIONS.get(i.condition, i.condition) }}{% if cat and cat.category %} · {{ cat.category }}{% endif %}</div>
+      <div class="caption">{{ who.short_name if who else "" }} · {{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}{% if r.note %} · 💬 {{ r.note }}{% endif %}</div>
+      {% if r.repeat %}{% set dcl = declines.get(r.id) %}<div class="hint warn" style="margin:2px 0 0">Повторно · раньше отказано{% if dcl %}: {{ dcl.answer }}{% endif %}</div>{% endif %}
+    </div>
+    <div class="rp-price">
+      {% if r.kind == "change" %}<span class="caption">было <s>{{ r.old_price|money(0) }} ₴</s></span>{% endif %}
+      <span class="caption">{{ "просит" if r.kind == "change" else "цена кладовщика" }}</span><b>{{ r.price|money(0) }} ₴</b>
+    </div>
+  </div>
+  <div class="rp-acts">
+    <form method="post" action="/razbor/prices/{{ r.id }}/approve" class="rp-ok one-shot">
+      <input type="hidden" name="back" value="{{ back_url }}">
+      <label class="wp-money"><input class="field num" name="price" value="{{ r.price|money(0) }}" inputmode="decimal" aria-label="Цена, ₴"><span>₴</span></label>
+      <button class="btn btn-sm">✓ Утвердить</button>
+    </form>
+    <details class="rp-no">
+      <summary class="btn btn-sm btn-gray">Отказать…</summary>
+      <form method="post" action="/razbor/prices/{{ r.id }}/decline" class="form dense one-shot">
+        <input type="hidden" name="back" value="{{ back_url }}">
+        <input class="field" name="answer" required maxlength="500" placeholder="{{ 'Почему цену не меняем' if r.kind == 'change' else 'Что не так с деталью (увидит кладовщик разбора)' }}">
+        <button class="btn btn-sm btn-danger">Отказать</button>
+      </form>
+    </details>
+  </div>
+</div>
+{% endmacro %}
+
+
+{% if tab == "new" %}
+  {% if donor %}
+  <div class="rp-head">
+    <a class="back" href="/razbor/prices?tab=new">{{ icon("back") }}Все машины</a>
+    <h2 class="title-2">{{ donor.code }} · {{ donor.make }} {{ donor.model }}{% if donor.year %} · {{ donor.year }}{% endif %}</h2>
+    {% if reqs %}<form method="post" action="/razbor/prices/donor/{{ donor.id }}/approve-all" class="one-shot" onsubmit="return confirm('Утвердить все {{ reqs|length }} по ценам кладовщика?')"><button class="btn btn-sm btn-tinted">✓ Утвердить все · {{ reqs|length }}</button></form>{% endif %}
+  </div>
+  <div class="rp-list">{% for r in reqs %}{{ req_row(r) }}{% else %}<p class="footnote">По этой машине всё утверждено.</p>{% endfor %}</div>
+  {% else %}
+  <div class="rp-cars">
+    {% for t in tiles %}
+    <a class="card compact rp-car{{ ' wait' if t.wait }}" href="/razbor/prices?tab=new&donor={{ t.d.id }}">
+      <span class="headline">{{ t.d.make }} {{ t.d.model }}{% if t.d.year %} · {{ t.d.year }}{% endif %}</span>
+      <span class="caption">{{ t.d.code }}</span>
+      <span class="rp-nums">
+        <span class="rp-n wait"><b>{{ t.wait }}</b> не утверждено</span>
+        <span class="rp-n ok"><b>{{ t.ok }}</b> утверждено</span>
+        {% if t.declined %}<span class="rp-n no"><b>{{ t.declined }}</b> отказано</span>{% endif %}
+      </span>
+    </a>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Деталей разбора пока нет.</p></div>{% endfor %}
+  </div>
+  {% endif %}
+{% elif tab == "change" %}
+  <div class="rp-list">{% for r in reqs %}{{ req_row(r, True) }}{% else %}<p class="footnote">Запросов на изменение цены нет.</p>{% endfor %}</div>
+{% else %}
+  <div class="tablewrap"><table class="table dense-table mcards">
+    <thead><tr><th>Когда</th><th>Деталь</th><th>Что</th><th class="num">Цена</th><th>Решение</th><th>Кто</th></tr></thead>
+    <tbody>{% for r in reqs %}{% set i = items.get(r.stock_item_id) %}{% set cat = cats.get(i.catalog_id) if i else none %}{% set by = people.get(r.decided_by) %}
+    <tr><td class="nowrap" data-l="Когда">{{ r.decided_at.astimezone().strftime("%d.%m %H:%M") if r.decided_at else "" }}</td>
+      <td data-l="Деталь" class="mc-wide">{% if i %}<a href="/razbor/parts/{{ i.id }}">{{ i.code }} {{ cat.name if cat else "" }}</a><div class="caption">{{ i.donor_make }} {{ i.donor_model }}</div>{% endif %}</td>
+      <td class="caption" data-l="Что">{{ "изменение цены" if r.kind == "change" else ("повторно" if r.repeat else "новая деталь") }}</td>
+      <td class="num nowrap" data-l="Цена">{% if r.status == "approved" %}<b>{{ r.final_price|money(0) }} ₴</b>{% if r.final_price != r.price %}<div class="caption">просили {{ r.price|money(0) }}</div>{% endif %}{% else %}{{ r.price|money(0) }} ₴{% endif %}</td>
+      <td data-l="Решение" class="mc-wide">{% if r.status == "approved" %}<span class="chip" data-s="ready">утверждено</span>{% else %}<span class="chip" data-s="cancel">отказано</span><div class="caption">{{ r.answer }}</div>{% endif %}</td>
+      <td class="nowrap" data-l="Кто">{{ by.short_name if by else "" }}</td></tr>
+    {% else %}<tr><td colspan="6" class="footnote">Решений пока не было.</td></tr>{% endfor %}</tbody>
+  </table></div>
+{% endif %}
+{% endblock %}

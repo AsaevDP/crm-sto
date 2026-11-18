@@ -157,8 +157,8 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     tiles = [
         ("На СТО", sum(counts.get(s, 0) for s in WO_ACTIVE), "/orders?tab=active", "blue", "машин"),
         ("Диагностика", counts.get("diag", 0), "/orders?status=diag", "purple", "у слесарей"),
-        ("Согласование", counts.get("approve", 0), "/orders?status=approve", "yellow", "ответ клиента"),
-        ("Запчасти", counts.get("picking", 0) + counts.get("waiting", 0), "/orders?status=waiting", "orange",
+        ("Согласование", counts.get("approve", 0), "/orders?status=approve", "orange", "ответ клиента"),
+        ("Запчасти", counts.get("picking", 0) + counts.get("waiting", 0), "/orders?status=waiting", "yellow",
          f"подбор {counts.get('picking', 0)} · ждём {counts.get('waiting', 0)}"),
         ("Готовы", counts.get("ready", 0) + counts.get("paid", 0), "/orders?status=ready", "green", "ждут клиента"),
         ("Запись сегодня", len([a for a in appts if a.status != "cancel"]), "/schedule", "teal",

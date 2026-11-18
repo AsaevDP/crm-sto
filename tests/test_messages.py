@@ -131,6 +131,7 @@ def test_mechanic_stock_filters_and_razbor(client):
         free = rsvc.add_part(db, bid, d, "Фара левая (слесарь)", 1, 4500, "good", None, category="Оптика", subcategory="Фары")
         sold = rsvc.add_part(db, bid, d, "Дверь передняя (слесарь)", 1, 7000, "good", None, category="Кузов", subcategory="Двери")
         db.flush()
+        free.price_state = sold.price_state = ""   # 18.11.2026: цены утвердил директор
         rsvc.reserve_for_buyer(db, bid, sold, 1, 7000, "Покупатель", "0991112233", "np")   # купили — ждёт отправки
         db.commit()
         dkey = str(d.id)

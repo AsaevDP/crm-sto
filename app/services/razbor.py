@@ -68,11 +68,16 @@ def add_part(db: Session, branch_id, donor: Donor | None, name: str, qty, price,
     db.add(item)
     db.flush()
     ssvc.move(db, "in", item, Decimal(qty or 1), comment=f"Разбор {donor.code if donor else ''}".strip())
+    from . import razbor_price   # 18.11.2026: новая деталь — цену утверждает директор / зам
+    razbor_price.submit_new(db, item)
     return item
 
 
 def reserve_for_buyer(db: Session, branch_id, item: StockItem, qty, price, buyer_name, buyer_phone, delivery,
                       pay_method="cash", comment="", np_address="", cod=False, channel="") -> UsedSale | str:
+    from . import razbor_price
+    if razbor_price.blocked(item):
+        return razbor_price.block_error(item)
     b = ssvc.balances(db, branch_id, [item.id])[item.id]
     qty = Decimal(qty or 1)
     if b["free"] < qty:
@@ -102,6 +107,9 @@ def mark_sold(db: Session, s: UsedSale, price=None, ttn: str = "", pay_method: s
 
 def sell_now(db: Session, branch_id, item: StockItem, qty, price, buyer_name, buyer_phone, delivery, pay_method, ttn=""):
     """Продажа сразу (без резерва), например покупатель приехал сам."""
+    from . import razbor_price
+    if razbor_price.blocked(item):
+        return razbor_price.block_error(item)
     b = ssvc.balances(db, branch_id, [item.id])[item.id]
     if b["free"] < Decimal(qty or 1):
         return "Свободного остатка нет"
@@ -164,6 +172,9 @@ def return_sale(db: Session, s: UsedSale, note: str = "") -> str:
 
 def writeoff(db: Session, branch_id, item: StockItem, qty, reason: str) -> str:
     """Списать б/у деталь (разбилась, не годится). Только свободный остаток."""
+    from . import razbor_price
+    if razbor_price.blocked(item):
+        return razbor_price.block_error(item)
     b = ssvc.balances(db, branch_id, [item.id])[item.id]
     qty = Decimal(qty or 1)
     if b["free"] < qty:
@@ -218,7 +229,9 @@ def item_states(db: Session, branch_id, items, bal=None) -> dict:
     out = {}
     for i in items:
         b = bal[i.id]
-        if b["on_hand"] > 0:
+        if b["on_hand"] > 0 and (i.price_state or "") in ("pending", "declined"):   # 18.11.2026: цена не утверждена
+            out[i.id] = "unapproved" if i.price_state == "pending" else "declined"
+        elif b["on_hand"] > 0:
             out[i.id] = "stock" if b["free"] > 0 else "reserved"
         elif i.id in sent:
             out[i.id] = "sent"
@@ -348,7 +361,7 @@ def export_rows(db: Session, branch_id) -> list[dict]:
     rows = []
     for i in items:
         free = bal[i.id]["free"]
-        if free <= 0:
+        if free <= 0 or (i.price_state or "") in ("pending", "declined"):   # 18.11.2026: цена не утверждена — не на сайт
             continue
         cat = db.get(PartCatalog, i.catalog_id)
         donor = db.get(Donor, i.donor_id) if i.donor_id else None

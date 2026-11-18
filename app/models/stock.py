@@ -160,6 +160,10 @@ class StockItem(Entity):
     description: Mapped[str] = mapped_column(Text, default="")
     # Штрихкод наклейки (10.11.2026): 12 цифр «20…», у каждой позиции — новой и б/у. Сканер «печатает» его в поиск.
     barcode: Mapped[str | None] = mapped_column(String(20), default=None, nullable=True, index=True)
+    # Цена разбора утверждена? (18.11.2026, брат): "" — утверждена (и все старые детали), "pending" — новая, ждёт директора,
+    # "declined" — отказано (висит в «Отказано в утверждении», пока не утвердят; можно отправлять ещё раз).
+    # Пока не утверждена — продать, зарезервировать, поставить в наряд, отправить, списать нельзя (services/razbor_price.py)
+    price_state: Mapped[str | None] = mapped_column(String(10), default="", server_default="", nullable=True, index=True)
 
 
 class StockPhoto(Entity):

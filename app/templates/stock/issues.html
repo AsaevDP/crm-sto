@@ -11,9 +11,10 @@
        aria-current="{{ 'page' if tab == key else 'false' }}" style="--tc:{{ color_css(color) }}">
       <span class="ptile-t">{{ title }}</span><b>{{ n or 0 }}</b><span class="ptile-s">{{ sub }}</span></a>
     {% endmacro %}
-    {{ itile("parts", "Запчасти", n_parts, "blue", "ждут выдачи") }}
-    {% if can_tools %}{{ itile("tools", "Инструмент", n_tools, "orange", "просят и сдают") }}{% endif %}
-    {% if can_chem %}{{ itile("chem", "Химия", n_chem, "teal", "для мойки") }}{% endif %}
+    {# 18.11.2026: просят выдать — красная, как цифра в меню; пусто — серая #}
+    {{ itile("parts", "Запчасти", n_parts, "red" if n_parts else "gray", "ждут выдачи") }}
+    {% if can_tools %}{{ itile("tools", "Инструмент", n_tools, "red" if n_tools else "gray", "просят и сдают") }}{% endif %}
+    {% if can_chem %}{{ itile("chem", "Химия", n_chem, "red" if n_chem else "gray", "для мойки") }}{% endif %}
   </nav>
   {% endif %}
 </header>

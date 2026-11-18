@@ -609,7 +609,7 @@ def paired_partsman(db: Session, manager_id, partsmen: list):
 
 
 # ---------- Шаги наряда и «что сделать сейчас» (11.11.2026) ----------
-STEPS = [("Приём", "blue"), ("Проблемы", "purple"), ("Согласование", "yellow"), ("Запчасти", "orange"),
+STEPS = [("Приём", "blue"), ("Проблемы", "purple"), ("Согласование", "orange"), ("Запчасти", "yellow"),
          ("Ремонт", "teal"), ("Выдача", "green")]
 STEP_OF = {"created": 0, "diag": 1, "approve": 2, "picking": 3, "waiting": 3, "instock": 3, "work": 4,
            "ready": 5, "paid": 5, "closed": 6}

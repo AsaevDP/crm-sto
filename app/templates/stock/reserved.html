@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "orders/_card.html" import key_tag %}
+{# «В резерве» (18.11.2026, брат): что лежит на складе под наряды — по нарядам, свежие сверху #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">В резерве</h1>
+    <p class="footnote" style="margin:0">Под наряды: {{ groups|length }} · позиций {{ n }}. Лежит на складе, выдаётся мастеру по запросу.</p></div>
+</header>
+
+<div class="rsv-list">
+  {% for g in groups %}
+  <div class="card compact rsv-card">
+    <div class="card-h">
+      <a class="headline rsv-car" href="/orders/{{ g.o.id }}">{{ g.v.make if g.v else "" }} {{ g.v.model if g.v else "" }}
+        <span class="mono caption">{{ fmt_plate(g.v.plate) if g.v else "" }}</span> {{ key_tag(g.o) }}</a>
+      <span class="chip" data-s="{{ g.o.status }}">{{ STATUSES.get(g.o.status, g.o.status) }}</span>
+    </div>
+    <div class="caption">наряд {{ g.o.number }}{% if g.mgr %} · ведёт {{ g.mgr.short_name }}{% endif %}{% if g.mech %} · мастер {{ g.mech.short_name }}{% endif %}</div>
+    {% for r in g.rows %}
+    <div class="kv"><span>{{ r.p.name }}{% if r.loc %} <span class="caption">· {{ r.loc }}</span>{% endif %}</span><b class="nowrap">{{ r.qty|num }} шт</b></div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">Сейчас под наряды ничего не зарезервировано.</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

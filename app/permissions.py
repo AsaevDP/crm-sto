@@ -52,6 +52,8 @@ PERMISSIONS = [
     ("wash.buy", "Заказывать химию для мойки у поставщика («Закупка для мойки»)", "Мойка"),
     # 18.11.2026 (брат): прайс мойки (услуги и цены) и боксы мойки правят менеджер, директор, зам, админ; мойщик — только видит
     ("wash.prices", "Прайс мойки: услуги, цены, боксы мойки", "Мойка"),
+    # 18.11.2026 (брат): цену новой детали разбора и её изменение утверждают директор и зам (админ — всё)
+    ("razbor.price", "Утверждать цены разбора (новые детали и изменение цены)", "Разбор"),
     ("razbor.view", "Видеть разбор (б/у)", "Разбор"),
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
@@ -123,12 +125,12 @@ DEFAULT_ROLES = {
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
-        "payroll.advance", "wash.view", "wash.buy", "wash.prices", "purchases.all", "stock.keep", *_OWN]),
+        "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price", "purchases.all", "stock.keep", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices",
+        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price",
         "purchases.all", "stock.keep", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
@@ -168,6 +170,8 @@ MENU = [
     ("/razbor", "Разбор", "car", ["razbor.view"]),
     # 12.11.2026: второй кладовщик (разбор) — подготовить, выдать, отправить; цифра — сколько подготовить
     ("/razbor/shipping", "Выдача и отправка", "box", ["razbor.manage"]),
+    # 18.11.2026: директору и заму — утвердить цены разбора (новые детали 🔴, изменение цены 🟠)
+    ("/razbor/prices", "Цены разбора", "money", ["razbor.price"]),
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),

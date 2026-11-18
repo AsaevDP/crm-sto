@@ -542,6 +542,11 @@ def populate():
                 if photo and (PHOTOS / f"{photo}.jpg").exists():
                     db.add(StockPhoto(stock_item_id=item.id, file=rsvc.save_photo((PHOTOS / f"{photo}.jpg").read_bytes())))
                 db.flush()
+                # 18.11.2026: эти детали — «давние», цена уже утверждена директором
+                from .models.razbor import RazborPrice
+                for rq in db.scalars(select(RazborPrice).where(RazborPrice.stock_item_id == item.id)):
+                    rq.status, rq.final_price = "approved", rq.price
+                item.price_state = ""
                 if name in sold_plan:
                     bn, bp, dl, ttn, pm = sold_plan[name]
                     rsvc.sell_now(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, dl, pm, ttn)
@@ -561,6 +566,8 @@ def populate():
                                                np_address=addr, cod=True, channel="site")
                     db.flush()
                     rsvc.ship(db, s, ttn, cod=True)
+        # 18.11.2026: ещё 3 машины — с неутверждёнными ценами (директор утверждает в «Ценах разбора»)
+        add_razbor_examples(db, branch.id, users["director"].id if "director" in users else None)
 
         # ---- Табель: отметки по картам за прошлый и текущий месяц ----
         import random
@@ -794,6 +801,54 @@ def _demo_wash(db, branch, users, as_user):
             db.add(w2)
     db.flush()
     _demo_wash_queue(db, branch, users, as_user)
+
+
+RAZBOR_EXAMPLES = [   # 18.11.2026 (брат): ещё машины в разбор — с неутверждёнными ценами, для «Цен разбора»
+    ("Volkswagen", "Passat B7", 2012, "1.8 TSI", "ДСГ-7", "седан", "серый", 186000, 120000, 6000, [
+        ("Фара передняя левая", "Оптика", "Фары", 5200), ("Фара передняя правая", "Оптика", "Фары", 5200),
+        ("Капот", "Кузов", "Капот", 7800), ("Бампер передний", "Кузов", "Бамперы", 4500),
+        ("Блок ABS", "Электрика и блоки", "Блоки управления", 6500), ("Турбина", "Двигатель и навесное", "Турбина", 14000)]),
+    ("Hyundai", "Tucson TL", 2016, "2.0 MPI", "АКПП 6", "кроссовер", "белый", 142000, 260000, 9000, [
+        ("Дверь передняя левая", "Кузов", "Двери", 9500), ("Зеркало левое", "Стёкла и зеркала", "", 3200),
+        ("Генератор", "Электрика и блоки", "", 5400), ("Сиденье водителя", "Салон", "Сиденья", 6000),
+        ("Фонарь задний правый", "Оптика", "Фонари", 3800)]),
+    ("Renault", "Megane III", 2011, "1.5 dCi", "МКПП 6", "универсал", "синий", 231000, 80000, 4000, [
+        ("Коробка передач МКПП", "КПП и привод", "Коробка передач", 11000), ("Стартер", "Электрика и блоки", "", 2400),
+        ("Крышка багажника", "Кузов", "Крышка багажника", 5000), ("Руль с подушкой", "Салон", "Руль и подушки", 4200)]),
+]
+
+
+def add_razbor_examples(db, branch_id, director_id=None):
+    """3 машины на разборе с деталями. У первой часть цен уже утверждена, одной детали отказано (с причиной);
+    у остальных — всё ждёт директора. Повторно не добавляет (по марке и модели)."""
+    from .db import now as _now
+    from .models import Donor
+    from .models.razbor import RazborPrice
+    from .services import razbor as rsvc
+    out = 0
+    for k, (make, model, year, eng, gb, body, color, km, price, exp, parts) in enumerate(RAZBOR_EXAMPLES):
+        if db.scalar(select(Donor.id).where(Donor.branch_id == branch_id, Donor.make == make, Donor.model == model)):
+            continue
+        d = Donor(branch_id=branch_id, code=rsvc.next_donor_code(db, branch_id), make=make, model=model, year=year,
+                  engine=eng, gearbox=gb, body=body, color=color, mileage=km, purchase_price=Decimal(price),
+                  expenses=Decimal(exp), bought_on=_now().date())
+        db.add(d)
+        db.flush()
+        rsvc.ensure_make_model(db, branch_id, make, model)
+        items = [rsvc.add_part(db, branch_id, d, name, 1, Decimal(p), "good", None, publish=True, category=cat,
+                               subcategory=sub) for name, cat, sub, p in parts]
+        db.flush()
+        if k == 0 and director_id:   # Passat: 3 утверждены, «Турбине» отказано, остальное ждёт
+            for i in items[:3]:
+                r = db.scalar(select(RazborPrice).where(RazborPrice.stock_item_id == i.id))
+                r.status, r.final_price, r.decided_by, r.decided_at = "approved", r.price, director_id, _now()
+                i.price_state = ""
+            r = db.scalar(select(RazborPrice).where(RazborPrice.stock_item_id == items[5].id))
+            r.status, r.answer, r.decided_by, r.decided_at = "declined", "Проверить люфт вала и сфотографировать крыльчатку", director_id, _now()
+            items[5].price_state = "declined"
+        out += 1
+    db.flush()
+    return out
 
 
 def _demo_wash_queue(db, branch, users, as_user):

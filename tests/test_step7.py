@@ -11,7 +11,7 @@ from app.db import SessionLocal
 from app.models import Donor, StockItem, UsedSale
 from app.services import razbor as rsvc
 
-from .conftest import login
+from .conftest import approve_razbor, login
 from .test_step3 import JPEG
 
 FETCH = {"x-requested-with": "fetch"}
@@ -41,6 +41,7 @@ def test_donor_parts_sale_and_export(client):
                                                       "condition": "good", "publish": "1", "description": "Без трещин"}, files=files)
     client.post(f"/razbor/donors/{d.id}/parts", data={"name": "Зеркало правое (тест)", "price": "2200", "qty": "1",
                                                       "condition": "excellent", "publish": "1"})
+    approve_razbor()   # 18.11.2026: цены утвердил директор
     with SessionLocal() as db:
         items = db.scalars(select(StockItem).where(StockItem.donor_id == d.id).order_by(StockItem.code)).all()
         codes = [i.code for i in items]

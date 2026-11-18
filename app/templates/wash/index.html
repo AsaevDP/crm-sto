@@ -17,7 +17,7 @@
 {{ tiles_m([
   {"t": "Очередь", "n": brd.queue|length, "c": "blue", "s": "моют: " ~ brd.doing|length ~ " · готовы: " ~ brd.done|length, "href": "/wash?tab=now", "on": tab == "now"},
   {"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"},
-  {"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=chem", "zero": not asks},
+  {"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=asks", "on": tab == "asks", "zero": not asks},
   {"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low},
   {"t": "Закупка для мойки", "n": n_open, "c": "teal", "s": "заказы химии в работе", "href": "/wash?tab=buy", "on": tab == "buy", "zero": not n_open},
 ], "wash-tiles") }}
@@ -55,6 +55,28 @@
   {% endfor %}
 </div>
 {% endif %}
+{% elif tab == "asks" %}
+{# 18.11.2026 (брат): «Просят» — мойщик / детейлер просит химию, кладовщик ещё не выдал #}
+<div class="tablewrap">
+  <table class="table dense-table wash-asks mcards">
+    <thead><tr><th>Когда</th><th>Кто просит</th><th>Что</th><th class="num">Сколько</th><th class="num">На складе</th><th>Для машины</th></tr></thead>
+    <tbody>
+    {% for a in asks %}{% set v = ask_cars.get(a.wo.vehicle_id) if a.wo else none %}
+    <tr>
+      <td class="nowrap" data-l="Когда">{{ a.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</td>
+      <td data-l="Кто просит">{{ a.who.full_name if a.who else "—" }}{% if a.who %}<div class="caption">{{ MASTERS.get(a.who.role.code, "") }}</div>{% endif %}</td>
+      <td data-l="Что" class="mc-wide"><b>{{ a.c.name if a.c else "" }}</b>{% if a.c and item_loc.get(a.c.id) %}<div class="caption">{{ locs.get(item_loc[a.c.id], "") }}</div>{% endif %}
+        {% if a.r.note %}<div class="caption">💬 {{ a.r.note }}</div>{% endif %}</td>
+      <td class="num nowrap" data-l="Сколько"><b>{{ a.r.qty|num }}</b></td>
+      <td class="num nowrap" data-l="На складе">{% set f = free.get(a.c.id, 0) if a.c else 0 %}<span class="{{ 'late' if f < a.r.qty }}">{{ f|num }}</span></td>
+      <td data-l="Для машины" class="mc-wide">{% if a.wo %}<a href="/orders/{{ a.wo.id }}">{{ (v.make ~ " " ~ v.model) if v else a.wo.number }}</a>{% if v %}<div class="caption mono">{{ fmt_plate(v.plate) }}</div>{% endif %}{% else %}<span class="caption">для мойки в целом</span>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="footnote">Сейчас никто ничего не просит.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="footnote">Выдаёт кладовщик в «Запросах на выдачу → Химия». Химия — расход СТО, клиенту в счёт не идёт.</p>
+
 {% elif tab == "chem" %}
 <div class="cl-grid wash-grid">
   <section class="ov-col on">

@@ -79,7 +79,7 @@ def wash(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     asks = csvc.requests(db, bid, "new")
     chem_p = db.scalars(select(Purchase).where(Purchase.branch_id == bid, Purchase.kind == "chem")
                         .order_by(Purchase.created_at.desc()).limit(100)).all()
-    if tab not in ("now", "chem", "buy"):
+    if tab not in ("now", "chem", "buy", "asks"):
         tab = "now"
     low = [x for x in items if x["free"] <= LOW]
     data = dict(tab=tab, cars=cars, items=items, asks=asks, low=low, WASH_ST=WASH_ST, fmt_plate=osvc.fmt_plate,
@@ -90,6 +90,12 @@ def wash(ctx: Ctx = Depends(get_ctx), tab: str = ""):
         data.update(usage=csvc.usage_by_person(db, bid, 30), done=csvc.requests(db, bid, ("issued", "declined"), days=30)[:40],
                     locs={l.id: ssvc.location_label(l) for l in db.scalars(select(Location).where(Location.branch_id == bid))},
                     cost_ok=ctx.can("prices.view_purchase"))
+    if tab == "asks":   # 18.11.2026: плитка «Просят» — кто и какую химию просит, для какой машины
+        data.update(ask_cars={v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_(
+                        [x["wo"].vehicle_id for x in asks if x["wo"]])))} if asks else {},
+                    free={x["c"].id: x["free"] for x in items},
+                    locs={l.id: ssvc.location_label(l) for l in db.scalars(select(Location).where(Location.branch_id == bid))},
+                    item_loc={x["c"].id: x["loc"] for x in items})
     if tab == "buy":
         stats = {}
         for l in db.scalars(select(PurchaseLine).where(PurchaseLine.purchase_id.in_([p.id for p in chem_p]))):

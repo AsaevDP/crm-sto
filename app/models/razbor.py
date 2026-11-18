@@ -23,8 +23,26 @@ DELIVERY = {"pickup": "Самовывоз", "np": "Нова Пошта", "other"
 # Откуда пришёл покупатель (11.11.2026) — чтобы видеть, где продаётся лучше
 CHANNELS = {"phone": "Звонок", "site": "Сайт", "olx": "OLX", "social": "Соцсети", "walkin": "Пришёл сам", "other": "Другое"}
 # Состояние детали на складе разбора (считается по движениям и продажам)
-ITEM_STATES = {"stock": "В наличии", "reserved": "В резерве", "sent": "Отправлено", "sold": "Продано",
-               "service": "В наряд СТО", "writeoff": "Списано", "out": "Нет в наличии"}
+ITEM_STATES = {"unapproved": "Не утверждено", "declined": "Отказано", "stock": "В наличии", "reserved": "В резерве",
+               "sent": "Отправлено", "sold": "Продано", "service": "В наряд СТО", "writeoff": "Списано", "out": "Нет в наличии"}
+
+
+class RazborPrice(Entity):
+    """Утверждение цены детали разбора (18.11.2026, брат). kind: new — новая деталь (или повторно после отказа),
+    change — кладовщик разбора просит изменить утверждённую цену. Решают директор, зам, админ (право razbor.price):
+    утвердить (цену можно поправить) или отказать с причиной."""
+    __tablename__ = "razbor_prices"
+    stock_item_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("stock_items.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10), default="new")            # new / change
+    price: Mapped[Decimal] = mapped_column(MONEY, default=0)                # какую цену просит кладовщик
+    old_price: Mapped[Decimal] = mapped_column(MONEY, default=0)            # для change — какая была
+    note: Mapped[str] = mapped_column(Text, default="")                     # пояснение кладовщика
+    repeat: Mapped[bool] = mapped_column(Boolean, default=False)            # отправлено повторно после отказа
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)   # pending / approved / declined
+    final_price: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    answer: Mapped[str] = mapped_column(Text, default="")                   # причина отказа
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class RazborMake(Entity):

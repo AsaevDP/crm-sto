@@ -69,7 +69,8 @@ def reserved_for_part(db: Session, wo_part_id) -> dict:
 
 def catalog_free(db: Session, branch_id, catalog_ids) -> dict:
     """{catalog_id: свободно всего по всем ячейкам}"""
-    items = db.scalars(select(StockItem).where(StockItem.catalog_id.in_(list(catalog_ids)))).all()
+    items = [i for i in db.scalars(select(StockItem).where(StockItem.catalog_id.in_(list(catalog_ids))))
+             if (i.price_state or "") not in ("pending", "declined")]   # 18.11.2026: неутверждённая б/у — не «свободна»
     bal = balances(db, branch_id, [i.id for i in items])
     out = defaultdict(lambda: D0)
     for i in items:
@@ -151,7 +152,9 @@ def move(db: Session, typ: str, item: StockItem, qty, wo_part: WoPart | None = N
 # ---------- Подбор в наряд ----------
 def reserve_from_stock(db: Session, branch_id, part: WoPart) -> bool:
     """Зарезервировать позицию со свободного остатка (можно из нескольких ячеек)."""
-    items = db.scalars(select(StockItem).where(StockItem.catalog_id == part.catalog_id)).all()
+    # 18.11.2026: б/у деталь с неутверждённой ценой в наряд не ставится
+    items = [i for i in db.scalars(select(StockItem).where(StockItem.catalog_id == part.catalog_id))
+             if (i.price_state or "") not in ("pending", "declined")]
     bal = balances(db, branch_id, [i.id for i in items])
     need = Decimal(part.qty)
     if sum((bal[i.id]["free"] for i in items), D0) < need:

@@ -986,6 +986,8 @@ def razbor_start(day):
                                "Блок ABS; 3800", "Генератор; 2600", "Стартер; 1900", "Зеркало правое; 1500",
                                "Коробка АКПП U760E; 28000", "Двигатель 2AR-FE в сборе; 52000"))
             post("dmitro", f"/razbor/donors/{d.id}/parts/bulk", {"lines": lines, "condition": "good"}, what="Детали донора списком")
+            # 18.11.2026: цены новых деталей утверждает директор — до этого их не продать
+            post("director", f"/razbor/prices/donor/{d.id}/approve-all", {}, what="Директор утвердил цены разбора")
 
 
 def razbor_sale(day, stop=""):

@@ -71,8 +71,8 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
 ORDER_STAGES = {
     "active": ("На СТО", "blue", WO_ACTIVE),
     "intake": ("Приём и диагностика", "purple", ("created", "diag")),
-    "approve": ("Согласование", "yellow", ("approve",)),
-    "parts": ("Запчасти", "orange", ("picking", "waiting", "instock")),
+    "approve": ("Согласование", "orange", ("approve",)),   # 18.11.2026: как оранжевая цифра «согласовать»
+    "parts": ("Запчасти", "yellow", ("picking", "waiting", "instock")),
     "work": ("В работе", "teal", ("work",)),
     "ready": ("Готовы к выдаче", "green", ("ready", "paid")),
     "closed": ("Закрыты", "gray", ("closed",)),

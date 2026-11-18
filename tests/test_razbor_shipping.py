@@ -9,7 +9,7 @@ from app.db import SessionLocal
 from app.models import Carrier, Donor, StockItem, UsedSale
 from app.services import razbor as rsvc
 
-from .conftest import login
+from .conftest import approve_razbor, login
 
 
 def _sale(item_id):
@@ -25,6 +25,7 @@ def test_razbor_shipping(client):
     for name in ("Фара (самовывоз)", "Бампер (почта)", "Дверь (курьер)"):
         client.post(f"/razbor/donors/{d.id}/parts", data={"name": name, "price": "1000", "qty": "1", "condition": "good",
                                                           "catsub": "Оптика||Фары"})
+    approve_razbor()   # 18.11.2026: цены утвердил директор
     with SessionLocal() as db:
         items = {db.get(rsvc.PartCatalog, i.catalog_id).name: i for i in db.scalars(select(StockItem).where(StockItem.donor_id == d.id))}
     before = client.get("/api/notify").json()["razbor"]
