@@ -1,17 +1,22 @@
 {% extends "base.html" %}
-{# Заказы запчастистов (17.11.2026, брат): как «Приход», но группы — по ЗАКАЗ-НАРЯДУ: машина, менеджер, кто заказывал,
-   пришло X из Y. Внутри — детали от любых поставщиков, та же строка с приёмкой (stock/_rcv_row.html): ячейка,
-   № накладной (обязателен), «Пришло», «Принять всё» у наряда. «На склад» — отдельной группой внизу.
-   Плитки людей: «Все» (по умолчанию), каждый запчастист и «Мои заказы» — заказы самого кладовщика. #}
-{% from "stock/_rcv_row.html" import rcv_head, rcv_row %}
+{# Заказы по нарядам — один шаблон для двух экранов (17–18.11.2026, брат):
+   mode "all"  — «Заказы запчастистов» у кладовщика (директора): плитки людей + «Мои заказы» кладовщика, приёмка в строке;
+   mode "mine" — «Мои заказы» у запчастиста: только свои; вкладка «Заказать» — черновики (поставщик у детали, «Заказал»).
+   Группы — по ЗАКАЗ-НАРЯДУ: машина, менеджер, кто заказывал, пришло X из Y; «На склад» — отдельной группой.
+   Везде свежие сверху; сбоку неприметно — календарик дня и «Все». Строка приёмки — stock/_rcv_row.html. #}
+{% from "stock/_rcv_row.html" import rcv_head, rcv_row, todo_head, todo_row %}
 {% block content %}
+{% set base = "/my-orders" if mode == "mine" else "/purchases/by-partsman" %}
+{% set uq = "&u=" ~ u if u else "" %}
 <header class="page-head">
-  <div><h1 class="large-title">Заказы запчастистов</h1></div>
+  <div><h1 class="large-title">{{ title }}</h1></div>
   <div class="ov-actions">
     {% if can_recv %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход · по поставщикам</a>{% endif %}
+    {% if mode == "mine" %}<a class="btn btn-sm btn-gray" href="/purchases">Закупки</a>{% endif %}
   </div>
 </header>
 
+{% if mode == "all" %}
 {% set qs = "&st=" ~ st if st != "wait" else "" %}
 <div class="pult-tiles vs-tiles pm-people">
   <a class="ptile {{ 'on' if not u }}" href="/purchases/by-partsman{{ '?st=' ~ st if st != 'wait' }}" style="--tc:{{ color_css('blue') }}">
@@ -25,38 +30,64 @@
     <span class="ptile-t">{{ t.u.full_name }}</span><b>{{ t.n }}</b><span class="ptile-s">{{ t.u.role.name|lower }} · ждём</span></a>
   {% endfor %}
 </div>
+{% endif %}
 
 <div class="pult-tiles st-mini">
-  {% for k, (title, color, sub) in TABS.items() %}
-  <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="/purchases/by-partsman?st={{ k }}{{ '&u=' ~ u if u }}" style="--tc:{{ color_css(color) }}">
-    <span class="ptile-t">{{ title }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% for k, (title_, color, sub) in TABS.items() %}
+  <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="{{ base }}?st={{ k }}{{ uq }}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title_ }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
   {% endfor %}
 </div>
 
-{# 18.11.2026 (брат): «Приняты» — свежие сверху; сбоку неприметно — день по календарику и «Все» #}
-{% if st == "arrived" %}
-<form class="bp-day" method="get" action="/purchases/by-partsman">
-  <input type="hidden" name="st" value="arrived">{% if u %}<input type="hidden" name="u" value="{{ u }}">{% endif %}
-  <span class="caption">{% if day %}Принято {{ day.strftime("%d.%m.%Y") }}{% else %}Все за 60 дней · свежие сверху{% endif %}</span>
+{# 18.11.2026 (брат): свежие сверху; сбоку неприметно — день по календарику и «Все» #}
+{% set day_word = {"todo": "Согласовано", "arrived": "Принято"}.get(st, "Заказано") %}
+<form class="bp-day" method="get" action="{{ base }}">
+  <input type="hidden" name="st" value="{{ st }}">{% if u %}<input type="hidden" name="u" value="{{ u }}">{% endif %}
+  <span class="caption">{% if day %}{{ day_word }} {{ day.strftime("%d.%m.%Y") }}{% else %}Все{{ " за 60 дней" if st == "arrived" }} · свежие сверху{% endif %}</span>
   <label class="bp-day-pick" title="Показать только за этот день">📅
-    <input class="field" type="date" name="d" value="{{ day.isoformat() if day }}" max="{{ today.isoformat() }}" onchange="this.form.submit()" aria-label="День прихода"></label>
-  <a class="bp-day-all {{ 'on' if not day }}" href="/purchases/by-partsman?st=arrived{{ '&u=' ~ u if u }}">Все</a>
+    <input class="field" type="date" name="d" value="{{ day.isoformat() if day }}" max="{{ today.isoformat() }}" onchange="this.form.submit()" aria-label="День"></label>
+  <a class="bp-day-all {{ 'on' if not day }}" href="{{ base }}?st={{ st }}{{ uq }}">Все</a>
 </form>
-{% endif %}
 
 {% for g in groups %}
-{% set can = can_recv and g.left > 0 and st != "arrived" %}
-<form class="card compact rc-group bp-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
-  <input type="hidden" name="back" value="{{ back }}">{% if who %}<input type="hidden" name="who" value="{{ who.id }}">{% endif %}
+{% if st == "todo" %}
+{# «Заказать» (запчастист): согласовано с клиентом, лежит в черновике — у каждой детали поставщик и «Заказал» #}
+<section class="card compact rc-group bp-group {{ 'urgent' if g.urgent }}">
   <div class="card-h">
     <span class="headline">{% if g.wo %}<a href="/orders/{{ g.wo.id }}">{{ g.v.make if g.v }} {{ g.v.model if g.v }}</a>
         {% if g.v %}<span class="ov-plate">{{ fmt_plate(g.v.plate) }}</span>{% endif %}
         <span class="caption">· наряд {{ g.wo.number }}{% if g.manager %} · менеджер {{ g.manager.short_name }}{% endif %}</span>
       {% else %}На склад <span class="caption">· без наряда</span>{% endif %}
-      {% if g.buyers %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
+      {% if g.nosup %}<span class="caption" style="color:var(--orange)">· без поставщика: {{ g.nosup }}</span>{% endif %}</span>
+    <span class="ov-actions">
+      <span class="caption nowrap" title="Когда менеджер согласовал">согласовано {{ g.when.astimezone().strftime("%d.%m %H:%M") }}</span>
+      {% if g.wo %}<a class="btn btn-sm btn-gray" href="/my-orders/wo/{{ g.wo.id }}">Открыть заказ</a>{% endif %}
+      {% if g.wo and can_order and not g.nosup %}
+      <form method="post" action="/my-orders/wo/{{ g.wo.id }}/ordered" style="margin:0"><input type="hidden" name="back" value="{{ back }}">
+        <button class="btn btn-sm">✓ Заказал всё · {{ g.n }}</button></form>{% endif %}
+    </span>
+  </div>
+  <div class="tablewrap">
+  <table class="table rc-table">
+    {{ todo_head(cost_ok) }}
+    <tbody>{% for r in g.rows %}{{ todo_row(r, suppliers, back, can_order, cost_ok, today) }}{% endfor %}</tbody>
+  </table>
+  </div>
+</section>
+{% else %}
+{% set can = can_recv and g.left > 0 and st != "arrived" %}
+<form class="card compact rc-group bp-group {{ 'urgent' if g.urgent }}" method="post" action="/stock/receive">
+  <input type="hidden" name="back" value="{{ back }}">{% if who and mode == "all" %}<input type="hidden" name="who" value="{{ who.id }}">{% endif %}
+  <div class="card-h">
+    <span class="headline">{% if g.wo %}<a href="/orders/{{ g.wo.id }}">{{ g.v.make if g.v }} {{ g.v.model if g.v }}</a>
+        {% if g.v %}<span class="ov-plate">{{ fmt_plate(g.v.plate) }}</span>{% endif %}
+        <span class="caption">· наряд {{ g.wo.number }}{% if g.manager %} · менеджер {{ g.manager.short_name }}{% endif %}</span>
+      {% else %}На склад <span class="caption">· без наряда</span>{% endif %}
+      {% if g.buyers and mode == "all" %}<span class="caption">· заказал {{ g.buyers|join(", ") }}</span>{% endif %}
       {% if g.late %}<span class="chip" data-s="cancel">опаздывает</span>{% endif %}</span>
     <span class="ov-actions">
-      {% if st == "arrived" and g.when %}<span class="caption nowrap" title="Когда пришло на склад">пришло {{ g.when.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
+      <span class="caption nowrap" title="{{ 'Когда пришло на склад' if st == 'arrived' else 'Когда заказали' }}">{{ "пришло" if st == "arrived" else "заказано" }} {{ g.when.astimezone().strftime("%d.%m %H:%M") }}</span>
+      {% if mode == "mine" and g.wo %}<a class="btn btn-sm btn-plain" href="/my-orders/wo/{{ g.wo.id }}">Заказ по наряду</a>{% endif %}
       <span class="chip" data-s="{{ 'ready' if not g.left else ('picking' if g.got else 'waiting') }}">{{ "принято " ~ g.n if st == "arrived" else "пришло " ~ g.got ~ " из " ~ g.n }}</span>
       {% if can %}
       <input class="field rc-inv-all" name="invoice" placeholder="№ накладной" aria-label="Номер накладной для всех строк наряда" title="Номер накладной — впишется во все строки">
@@ -70,7 +101,25 @@
   </table>
   </div>
 </form>
+{% endif %}
 {% else %}
-<div class="card compact"><p class="footnote" style="margin:0">{{ {"wait": "Ничего не ждём — всё заказанное принято.", "partial": "Неполных поставок нет.", "late": "Опаздывающих нет.", "arrived": ("В этот день ничего не принято." if day else "За 60 дней ничего не принято.")}[st] }}</p></div>
+<div class="card compact"><p class="footnote" style="margin:0">{% if day %}В этот день ничего нет.{% else %}{{ {"todo": "Заказывать нечего — всё согласованное уже заказано.", "wait": "Ничего не ждём — всё заказанное принято.", "partial": "Неполных поставок нет.", "late": "Опаздывающих нет.", "arrived": "За 60 дней ничего не принято."}[st] }}{% endif %}</p></div>
 {% endfor %}
+{% if st == "todo" %}
+<script>
+// Поставщик у детали: выбрали — сохраняется сразу; «Новый…» — спросим название
+document.querySelectorAll("[data-sup-pick]").forEach(function (s) {
+  var was = s.value;
+  s.addEventListener("change", function () {
+    if (s.value === "__new") {
+      var name = (prompt("Название нового поставщика") || "").trim();
+      if (!name) { s.value = was; return; }
+      s.form.supplier_new.value = name;
+      s.value = was;
+    }
+    s.form.submit();
+  });
+});
+</script>
+{% endif %}
 {% endblock %}

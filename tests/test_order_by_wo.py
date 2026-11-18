@@ -102,7 +102,7 @@ def test_receive_needs_invoice_per_line(client):
     _as(client, "oleg")
     mine = client.get("/my-orders?st=arrived").text
     assert "Фильтр НК" in mine and "Ремень НК" not in mine
-    assert "Ремень НК" in client.get("/my-orders").text
+    assert "Ремень НК" in client.get("/my-orders?st=wait").text
     # «Склад → Приход»: без номера «Принять всё» ничего не берёт; с общим номером — всё остальное
     _as(client, "pavel")
     assert f'name="inv_{ls["Ремень НК"]}"' in client.get("/stock/receive").text

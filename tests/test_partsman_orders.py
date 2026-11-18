@@ -63,17 +63,17 @@ def test_partsman_orders(client):
     assert 'href="/my-orders"' in menu and 'href="/purchases/by-partsman"' not in menu
     mine = client.get("/my-orders").text
     assert "Колодки ПО-тест" in mine and "Фильтр ПО-тест" in mine and "Датчик ПО-тест" in mine
-    assert "Заказать по нарядам" in mine and "Открыть заказ" in mine and f"/my-orders/wo/{_wo(url_a).id}" in mine
+    assert "Заказать" in mine and "Открыть заказ" in mine and "свежие сверху" in mine and f"/my-orders/wo/{_wo(url_a).id}" in mine
     assert "в наряд 1, на склад 2" in mine
     assert client.get("/purchases/by-partsman").status_code == 403
 
     # «✓ Заказал» — прямо в «Моих заказах», у каждого черновика; поставщик и прочее не стираются
-    assert "Выбрать поставщика" in mine and f'action="/purchase-lines/' not in mine   # без поставщика — сначала выбрать
+    assert "Выбрать поставщика" in mine and '/ordered"' not in mine   # без поставщика — сначала выбрать
     assert "без поставщика" in client.post(f"/purchases/{pa.id}/ordered", data={}).text
     with SessionLocal() as db:
         assert db.get(Purchase, pa.id).status == "draft"                       # без поставщика не заказать
     client.post(f"/purchases/{pa.id}", data={"action": "save", "note": "до 16:00", "supplier_new": "ПО-поставщик"})
-    assert f'action="/purchase-lines/' in client.get("/my-orders").text
+    assert '/ordered"' in client.get("/my-orders").text
     r =client.post(f"/purchases/{pa.id}/ordered", data={"back": "/my-orders"}, follow_redirects=False)
     assert r.status_code in (302, 303) and r.headers["location"] == "/my-orders"
     with SessionLocal() as db:

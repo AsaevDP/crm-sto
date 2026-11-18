@@ -42,3 +42,34 @@
   {% endif %}
 </tr>
 {% endmacro %}
+
+{# «Заказать» в «Моих заказах» (18.11.2026, брат): согласовано, в черновике — поставщик у детали и «Заказал».
+   Без поставщика «Заказал» нельзя — подсказка «Выбрать поставщика». Дата «привезут» — необязательно. #}
+{% macro todo_head(cost_ok) %}
+<thead><tr><th>Запчасть</th><th class="num">Шт</th>{% if cost_ok %}<th class="num">₴ за шт</th>{% endif %}<th>Поставщик</th><th>Привезут</th><th></th></tr></thead>
+{% endmacro %}
+
+{% macro todo_row(r, suppliers, back, can, cost_ok, today) %}
+{% set l = r.l %}
+<tr class="{{ 'urgent' if r.urgent }}">
+  <td>{% if r.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}<b>{{ r.c.name if r.c else "" }}</b>
+    <div class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</div></td>
+  <td class="num nowrap">{{ l.qty|num }}{% if r.part %}<div class="caption">в наряд {{ r.part.qty|num }}{% if l.qty > r.part.qty %}, на склад {{ (l.qty - r.part.qty)|num }}{% endif %}</div>{% endif %}</td>
+  {% if cost_ok %}<td class="num nowrap">{{ l.price|money }}</td>{% endif %}
+  <td>{% if can %}
+    <form method="post" action="/purchase-lines/{{ l.id }}/supplier" class="ow-sup" style="margin:0">
+      <input type="hidden" name="back" value="{{ back }}"><input type="hidden" name="supplier_new" value="">
+      {% set ids = suppliers|map(attribute="id")|list %}
+      <select class="field{{ ' need' if not r.sup }}" name="supplier_id" aria-label="Поставщик" data-sup-pick>
+        {% if not r.sup %}<option value="">— поставщик —</option>
+        {% elif r.sup.id not in ids %}<option value="{{ r.sup.id }}" selected>{{ r.sup.name }}</option>{% endif %}
+        {% for s in suppliers %}<option value="{{ s.id }}" {% if r.sup and s.id == r.sup.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        <option value="__new">＋ Новый поставщик…</option></select>
+    </form>{% else %}{{ r.sup.name if r.sup else "не выбран" }}{% endif %}</td>
+  <td>{% if can and r.sup %}<input class="field ow-date" type="date" name="expected_on" form="ord-{{ l.id }}" min="{{ today.isoformat() }}" aria-label="Когда привезут" title="Когда привезут (необязательно)">{% endif %}</td>
+  <td class="nowrap">{% if can %}{% if r.sup %}
+    <form id="ord-{{ l.id }}" method="post" action="/purchase-lines/{{ l.id }}/ordered" style="margin:0">
+      <input type="hidden" name="back" value="{{ back }}"><button class="btn btn-sm">Заказал</button></form>
+    {% else %}<span class="caption" style="color:var(--orange)">Выбрать поставщика</span>{% endif %}{% endif %}</td>
+</tr>
+{% endmacro %}

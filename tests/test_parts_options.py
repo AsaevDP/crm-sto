@@ -124,7 +124,7 @@ def test_manager_problems_options_choice_and_acts(client):
     # «Мои заказы»: заказать по наряду — по строке «Заказал», последняя строка — вся закупка «заказано»
     login(client, "oleg", "oleg123")
     mine = client.get("/my-orders").text
-    assert "Заказать по нарядам" in mine and _wo(url).number in mine
+    assert "Заказать" in mine and _wo(url).number in mine
     # 13.11.2026: без поставщика «Заказал» нельзя; заказанная деталь сразу в накладной у кладовщика
     client.post(f"/purchase-lines/{lines[0].id}/ordered", data={"back": "/my-orders"})
     with SessionLocal() as db:

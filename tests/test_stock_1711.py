@@ -85,7 +85,7 @@ def test_storekeeper_orders_and_receives(client):
     assert 'type="date" name="d"' in page and "bp-day-all on" in page and "Масло 1711" in page
     assert "Масло 1711" in client.get(f"/purchases/by-partsman?st=arrived&d={date.today().isoformat()}").text
     old = client.get(f"/purchases/by-partsman?st=arrived&d={(date.today() - timedelta(days=5)).isoformat()}").text
-    assert "Масло 1711" not in old and "В этот день ничего не принято" in old
+    assert "Масло 1711" not in old and "В этот день ничего нет" in old
 
 
 def test_arrived_newest_first(client):
@@ -169,3 +169,22 @@ def test_always_in_stock(client):
     assert client.get("/stock/always").status_code == 200
     _as(client, "director")
     assert "Колодки 1711" in client.get("/stock/always/print").text
+
+
+def test_my_orders_like_storekeeper(client):
+    """18.11.2026 (брат): «Мои заказы» у запчастиста — как у кладовщика: группы по нарядам, «Заказать» (черновики,
+    поставщик у детали и «Заказал»), свежие сверху, календарик дня и «Все»."""
+    from datetime import date, timedelta
+    _as(client, "oleg")
+    p1 = _new_stock_purchase(client, "Мои-1", [("Старая 1811", "1", "10")])
+    p2 = _new_stock_purchase(client, "Мои-2", [("Свежая 1811", "1", "10")])
+    page = client.get("/my-orders").text                                    # есть черновики → вкладка «Заказать»
+    assert "Заказать" in page and 'data-sup-pick' in page and "Старая 1811" in page
+    assert page.index("Свежая 1811") < page.index("Старая 1811")            # свежие сверху
+    for pid in (p1, p2):
+        client.post(f"/purchases/{pid}/ordered", data={})
+    wait = client.get("/my-orders?st=wait").text
+    assert "Свежая 1811" in wait and 'type="date" name="d"' in wait and "bp-day-all on" in wait
+    assert "Свежая 1811" in client.get(f"/my-orders?st=wait&d={date.today().isoformat()}").text
+    assert "Свежая 1811" not in client.get(f"/my-orders?st=wait&d={(date.today() - timedelta(days=3)).isoformat()}").text
+    assert 'name="inv_' not in wait                                         # запчастист не принимает
