@@ -60,7 +60,7 @@ def _active_orders(ctx: Ctx):
     from ..models import Vehicle, WorkOrder, WoWork
     from ..models.orders import WO_ACTIVE
     orders = ctx.db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE))
-                            .order_by(WorkOrder.created_at.desc())).all()
+                            .order_by(osvc.FRESH)).all()
     vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
     works = {}
     for w in ctx.db.scalars(select(WoWork).where(WoWork.work_order_id.in_([o.id for o in orders])).order_by(WoWork.created_at)):

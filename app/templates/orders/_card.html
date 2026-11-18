@@ -34,6 +34,7 @@
     <div class="caption">{{ x.c.full_name }}{% if x.mechanic %} · слесарь {{ x.mechanic.short_name }}{% endif %}{% if x.o.scenario == "A" %} · без диагностики{% endif %}</div>
     {% if x.urgent %}<span class="urg-tag" style="justify-self:start">🔥 срочная деталь</span>{% endif %}
     {% if x.prog and x.prog.total %}{{ progress(x.prog) }}{% endif %}
+    {% if x.act %}<span class="ocard-act">{{ x.act }}</span>{% endif %}
   </div>
 </a>
 {%- endmacro %}

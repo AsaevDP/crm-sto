@@ -51,7 +51,7 @@ def on_wash(db, branch_id) -> list[dict]:
     orders = db.scalars(select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.status.in_(WO_ACTIVE), or_(
         WorkOrder.mechanic_id.in_(ids),
         WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id.in_(ids)))))
-        .order_by(WorkOrder.created_at)).all()
+        .order_by(osvc.FRESH)).all()   # 18.11.2026: свежие сверху
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == branch_id))}
     out = []
     for o in orders:

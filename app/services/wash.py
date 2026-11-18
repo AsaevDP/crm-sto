@@ -18,6 +18,7 @@ from ..db import now
 from ..models import User, Vehicle, WorkOrder, WoWork, WoWorkSession
 from ..models.orders import WO_ACTIVE
 from ..models.wash import WashBox, WashService
+from .orders import activity_label
 
 CLASSES = {"car": "Легковая", "suv": "Кроссовер", "bus": "Бус"}
 KINDS = {"wash": "Мойка", "detail": "Детейлинг"}
@@ -96,6 +97,7 @@ class Car:
     eta_start: datetime | None = None
     eta_end: datetime | None = None
     pos: int = 0                     # место в очереди (1 — следующая)
+    act: str = ""                    # «изм. 14:32 · Литвиненко» — последнее действие
 
 
 def _stage(o: WorkOrder, works) -> str:
@@ -142,10 +144,13 @@ def board(db: Session, branch_id) -> dict:
             left += m
         who_ids = list(dict.fromkeys(i for i in [*(w.mechanic_id for w in ws), o.mechanic_id] if i))
         cars.append(Car(o=o, v=vehicles.get(o.vehicle_id), works=ws, stage=_stage(o, ws), minutes=total, left=left,
-                        box=all_boxes.get(o.wash_box_id), who=[people[i] for i in who_ids if i in people]))
+                        box=all_boxes.get(o.wash_box_id), who=[people[i] for i in who_ids if i in people],
+                        act=activity_label(o, people.get(o.activity_by))))
     queue = sorted([c for c in cars if c.stage == "queue"], key=lambda c: _sort_key(c.o))
-    doing = sorted([c for c in cars if c.stage == "doing"], key=lambda c: c.o.created_at)
-    done = sorted([c for c in cars if c.stage == "done"], key=lambda c: c.o.created_at)
+    # 18.11.2026: «Моют» и «Готовы» — свежие сверху (последнее действие); очередь — по приезду (дата приёмки)
+    from .orders import fresh_key
+    doing = sorted([c for c in cars if c.stage == "doing"], key=lambda c: fresh_key(c.o), reverse=True)
+    done = sorted([c for c in cars if c.stage == "done"], key=lambda c: fresh_key(c.o), reverse=True)
     # Дорожки: каждый работающий бокс; боксов нет — одна общая
     lanes = {b.id: t for b in all_boxes.values() if b.active} or {None: t}
 

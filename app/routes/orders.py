@@ -46,7 +46,8 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
     vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
     clients = {c.id: c for c in ctx.db.scalars(select(Client).where(Client.id.in_([o.client_id for o in orders])))}
     lifts = {l.id: l for l in ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id))}
-    people = _people(ctx, *[o.mechanic_id for o in orders], *[o.partsman_id for o in orders])
+    people = _people(ctx, *[o.mechanic_id for o in orders], *[o.partsman_id for o in orders],
+                     *[o.activity_by for o in orders])
     first_photo = {}
     for p in ctx.db.scalars(select(WoPhoto).where(WoPhoto.work_order_id.in_(ids)).order_by(WoPhoto.created_at)):
         first_photo.setdefault(p.work_order_id, p)
@@ -61,6 +62,7 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
         "o": o, "v": vehicles.get(o.vehicle_id), "prog": prog.get(o.id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
         "mechanic": people.get(o.mechanic_id), "partsman": people.get(o.partsman_id),
         "photo": first_photo.get(o.id), "n_photos": n_photos.get(o.id, 0),
+        "act": svc.activity_label(o, people.get(o.activity_by)),
     } for o in orders]
 
 
@@ -144,7 +146,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
             conds.append(Client.phone.contains(digits))
         query = (query.join(Vehicle, Vehicle.id == WorkOrder.vehicle_id).join(Client, Client.id == WorkOrder.client_id)
                  .where(or_(*conds)))
-    orders = ctx.db.scalars(query.order_by(WorkOrder.created_at.desc()).limit(200)).all()
+    orders = ctx.db.scalars(query.order_by(svc.FRESH).limit(200)).all()   # 18.11.2026: свежие сверху
     lifts = []
     if ctx.can("lifts.take") and is_master(ctx.user):
         lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.active.is_(True))
@@ -1094,7 +1096,7 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
     # Наряды клиента + история его машин при прошлых владельцах (смена владельца, 11.11.2026)
     # 12.11.2026: менеджер видит и прошлые визиты клиента у других менеджеров (вся история)
     orders = ctx.db.scalars(svc.client_orders_query(ctx, c.id, [v.id for v in vehicles])
-                            .order_by(WorkOrder.created_at.desc())).all()
+                            .order_by(svc.FRESH)).all()
     events = ctx.db.scalars(select(ClientEvent).where(ClientEvent.client_id == c.id)
                             .order_by(ClientEvent.created_at.desc()).limit(300)).all()
     recs = [e for e in events if e.kind == "recommendation" and not e.resolved]

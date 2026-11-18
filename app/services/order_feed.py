@@ -150,6 +150,10 @@ def build(db: Session, wo: WorkOrder, limit: int = 200) -> list[dict]:
                                                AuditLog.created_at >= wo.created_at)):
         if (r.changes or {}).get("work_order_id") == str(wo.id):
             rows.append(r)
+    # 18.11.2026: номер крючка для ключей ставит программа сама — в ленте это не действие
+    from ..audit import NOT_ACTION
+    rows = [r for r in rows if not (r.table == "work_orders" and r.action == "update" and r.changes
+                                    and set(r.changes) <= NOT_ACTION | {"activity_at", "activity_by"})]
     rows.sort(key=lambda r: r.created_at, reverse=True)
     objs = {}
     for table, model in CHILDREN.items():

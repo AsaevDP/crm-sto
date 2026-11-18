@@ -4,7 +4,7 @@ import secrets
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import DATA_DIR
@@ -155,6 +155,68 @@ def visible_orders_query(ctx):
                         WorkOrder.id.in_(select(OrderMaster.work_order_id).where(OrderMaster.user_id == me,
                                                                                 OrderMaster.active.is_(True)))))
     return q
+
+
+# 18.11.2026 (брат): плитки нарядов — свежие сверху: по последнему действию (activity_at), у старых — по дате приёмки
+FRESH = func.coalesce(WorkOrder.activity_at, WorkOrder.created_at).desc()
+
+
+def fresh_key(wo: WorkOrder):
+    """Для сортировки уже загруженных нарядов в Python: последнее действие (или приёмка)."""
+    return wo.activity_at or wo.created_at
+
+
+def activity_label(wo: WorkOrder, who=None) -> str:
+    """Подпись на плитке: «изм. 14:32 · Демченко» (сегодня), «изм. вчера 18:05», «изм. 17.11 09:10»."""
+    from datetime import datetime, timedelta
+    from .attendance import _aware, local_tz
+    at = wo.activity_at or wo.created_at
+    if not at:
+        return ""
+    t = _aware(at).astimezone(local_tz())
+    today = datetime.now(local_tz()).date()
+    when = (t.strftime("%H:%M") if t.date() == today else
+            "вчера " + t.strftime("%H:%M") if t.date() == today - timedelta(days=1) else t.strftime("%d.%m %H:%M"))
+    return f"изм. {when}" + (f" · {who.short_name}" if who else "")
+
+
+def fill_activity(db: Session) -> int:
+    """При запуске: нарядам без времени последнего действия — время из журнала (наряд и всё по нему, кроме номера
+    крючка, который ставит программа). Так порядок сразу совпадает с «Лентой действий»."""
+    from ..audit import NOT_ACTION, ORDER_TABLES
+    from ..models import AuditLog
+    from ..db import Base
+    rows = db.scalars(select(WorkOrder).where(or_(WorkOrder.activity_at.is_(None), WorkOrder.activity_by.is_(None)))).all()
+    if not rows:
+        return 0
+    need = {str(w.id): w for w in rows}
+    last = {}
+
+    def bump(wid, at, who=None):
+        if wid in need and at and (wid not in last or at > last[wid][0]):
+            last[wid] = (at, who)
+
+    for r in db.execute(select(AuditLog.record_id, AuditLog.created_at, AuditLog.changes, AuditLog.created_by)
+                        .where(AuditLog.table == "work_orders", AuditLog.record_id.in_(list(need)))):
+        if r.changes and set(r.changes) <= NOT_ACTION:
+            continue
+        bump(r.record_id, r.created_at, r.created_by)
+    tables = {t.name: t for t in Base.metadata.sorted_tables}
+    for name in ORDER_TABLES:
+        t = tables.get(name)
+        if t is None or "work_order_id" not in t.c:
+            continue
+        child = {str(i): str(w) for i, w in db.execute(select(t.c.id, t.c.work_order_id)
+                                                       .where(t.c.work_order_id.is_not(None))) if str(w) in need}
+        if not child:
+            continue
+        for rid, at, who in db.execute(select(AuditLog.record_id, AuditLog.created_at, AuditLog.created_by).where(
+                AuditLog.table == name, AuditLog.record_id.in_(list(child)))):
+            bump(child[rid], at, who)
+    for wid, wo in need.items():
+        wo.activity_at, wo.activity_by = last.get(wid, (wo.activity_at or wo.created_at, wo.created_by))
+    db.flush()
+    return len(rows)
 
 
 def work_owner(wo: WorkOrder, w: WoWork):

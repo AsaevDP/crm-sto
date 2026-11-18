@@ -134,6 +134,10 @@ class WorkOrder(Entity):
     # Ячейка ключей (18.11.2026): номер крючка 1…N в шкафу у каждого рабочего места; 0 — «Без ячейки» (все были заняты),
     # пусто — наряд из времени до ячеек. Вручную не меняется (services/keys.py)
     key_slot: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # Последнее действие по наряду (18.11.2026, брат): любое изменение наряда, его работ, запчастей, оплат, проблем, фото,
+    # сообщений, запросов — ставится само (audit.py). По нему плитки нарядов: свежие сверху. Просмотр — не действие.
+    activity_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), default=now, nullable=True, index=True)
+    activity_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)   # кто сделал последнее действие (пусто — программа)
 
 
 class WoStatusHistory(Entity):

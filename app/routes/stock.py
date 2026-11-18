@@ -1281,7 +1281,7 @@ def _pick_orders(ctx: Ctx) -> list[dict]:
                                 WorkOrder.awaiting_prepay.is_not(True))
     if not ctx.can("orders.view_all") or ctx.user.role.code == "partsman":
         q = q.where(WorkOrder.partsman_id == ctx.user.id)
-    orders = ctx.db.scalars(q.order_by(WorkOrder.created_at.desc()).limit(40)).all()
+    orders = ctx.db.scalars(q.order_by(osvc.FRESH).limit(40)).all()
     vs = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
     from ..models.orders import WO_STATUSES
     return [{"id": o.id, "label": f"{o.number[-6:]} · {vs[o.vehicle_id].make} {vs[o.vehicle_id].model} {osvc.fmt_plate(vs[o.vehicle_id].plate)}"
@@ -1859,7 +1859,7 @@ def ready_page(ctx: Ctx = Depends(get_ctx)):
     что он подготовил (забрать → «Выдано»), что недавно выдано. Подготовленное по чужим нарядам — ниже."""
     ctx.need("stock.pickup", "stock.issue")
     rows = _requests(ctx, "ready")
-    rows.sort(key=lambda x: x["r"].ready_at or x["r"].created_at)
+    rows.sort(key=lambda x: x["r"].ready_at or x["r"].created_at, reverse=True)   # 18.11.2026: свежие сверху
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     return ctx.render("stock/ready.html", title="Запросы на выдачу", mine=[x for x in rows if _ready_mine(ctx, x)],
                       others=[x for x in rows if not _ready_mine(ctx, x)], people=people, fmt_plate=osvc.fmt_plate,

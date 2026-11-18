@@ -37,6 +37,8 @@ async def lifespan(_app):
         fix_delivered(db)      # 14.11.2026: шага «Привезли» нет — такие накладные снова «Ждём» / «Неполная поставка»
         from .services import keys as keys_svc
         keys_svc.fill_open(db)  # 18.11.2026: машинам на станции без номера — ячейка ключей по порядку приезда
+        from .services.orders import fill_activity
+        fill_activity(db)       # 18.11.2026: время последнего действия по наряду — из журнала (плитки: свежие сверху)
         from sqlalchemy import select
         from .models import Branch
         from .services import brands

@@ -2064,3 +2064,6 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 a.key-cell:hover { outline: 2px solid var(--accent); }
 /* плитка наряда: длинный статус («Согласование», «Ждёт запчасти») не вылезает за край — переносится под номер */
 .ocard-top { flex-wrap: wrap; row-gap: 4px; }
+/* 18.11.2026: последнее действие на плитке наряда — мелко */
+.ocard-act { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.wq-act { font-size: 11px; color: var(--text-3); white-space: nowrap; }
