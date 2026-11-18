@@ -1320,6 +1320,28 @@ def leave_for_today(day):
     with at(day, "17:30"):
         chem_ask("moyka")
         chem_ask("detail")
+    # 18.11.2026 (брат): кладовщику — «Всегда в наличии»: одну позицию дозаказал, но «Заказан» ещё не нажал (черновик
+    # «Заказ на склад» ждёт поставщика), а вторая — ниже нормы и не заказана (красная строка, сиреневая цифра)
+    keep_names = [n for n, *_ in STOCK[3:10] if cat_id(n)]
+    if len(keep_names) >= 2:
+        with at(day, "17:50"):
+            a, b = keep_names[0], keep_names[1]
+            post("pavel", "/stock/always", {"catalog_id": str(cat_id(a)), "min_qty": str(int(free_qty(cat_id(a))) + 6)},
+                 what="Всегда в наличии: норма выше остатка")
+            post("pavel", "/stock/always/order/missing", what="Заказать недостающее (черновик — «Заказан» руками)")
+            post("pavel", "/stock/always", {"catalog_id": str(cat_id(b)), "min_qty": str(int(free_qty(cat_id(b))) + 4)},
+                 what="Всегда в наличии: ещё одна ниже нормы")
+        r = get("pavel", "/api/notify", what="Цифры меню")
+        R.check(r is not None and any(x["c"] == "purple" for x in r.json().get("badges", {}).get("/stock", [])),
+                "сиреневая цифра «Всегда в наличии» у кладовщика")
+    # Неполная поставка на сегодня: заказ кладовщика на склад — привезли часть одной позиции, остальное ждём
+    sp = next((p for p in q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.created_by == uid("pavel"))), None)
+    sl = next((l for l in q(M.PurchaseLine, M.PurchaseLine.purchase_id == sp.id) if l.qty >= 2), None) if sp else None
+    if sl:
+        with at(day, "17:55"):
+            post("pavel", "/stock/receive", {"line_id": str(sl.id), f"qty_{sl.id}": "1", f"inv_{sl.id}": "ТТН-30117"},
+                 what="Неполная поставка: привезли 1 (остальное ждём)")
+        R.check(one(M.Purchase, M.Purchase.id == sp.id).status == "partial", "заказ на склад — неполная поставка", str(sp.id))
     # Разбор: подготовить, упаковано, отправлено
     for stop in ("reserve", "reserve", "pack", "ship"):
         razbor_sale(day, stop=stop)
