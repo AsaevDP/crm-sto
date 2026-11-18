@@ -835,8 +835,9 @@ def add_razbor_examples(db, branch_id, director_id=None):
         db.add(d)
         db.flush()
         rsvc.ensure_make_model(db, branch_id, make, model)
-        items = [rsvc.add_part(db, branch_id, d, name, 1, Decimal(p), "good", None, publish=True, category=cat,
-                               subcategory=sub) for name, cat, sub, p in parts]
+        # категория — по подробному справочнику (угадывается по названию; старые названия в списке не используются)
+        items = [rsvc.add_part(db, branch_id, d, name, 1, Decimal(p), "good", None, publish=True)
+                 for name, _cat, _sub, p in parts]
         db.flush()
         if k == 0 and director_id:   # Passat: 3 утверждены, «Турбине» отказано, остальное ждёт
             for i in items[:3]:

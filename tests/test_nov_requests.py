@@ -31,7 +31,7 @@ def test_category_guess():
     assert guess_category("Фильтр масляный", "to") == "Фильтры"
     assert guess_section("Колодки тормозные передние") == "repair"
     assert guess_category("Колодки тормозные передние", "repair") == "Тормоза"
-    assert guess_razbor_category("Фара передняя левая") == "Оптика"
+    assert guess_razbor_category("Фара передняя левая") == "Освещение"   # 18.11.2026: подробный справочник
     assert guess_razbor_category("Что-то странное") == "Прочее"
 
 
@@ -179,7 +179,7 @@ def test_razbor_category_filter(client):
     client.post(f"/razbor/donors/{did}/parts", data={"name": "Фара левая (кат)", "price": "5000", "qty": "1"})
     client.post(f"/razbor/donors/{did}/parts", data={"name": "Дверь задняя (кат)", "price": "3000", "qty": "1",
                                                      "category": "Кузов"})
-    page = client.get("/razbor?cat=Оптика").text
+    page = client.get("/razbor?cat=Освещение").text   # 18.11.2026: «Фара» сама попала в «Освещение»
     assert "Фара левая (кат)" in page and "Дверь задняя (кат)" not in page
     assert "Дверь задняя (кат)" in client.get("/razbor?cat=Кузов").text
     assert uuid.UUID(did)

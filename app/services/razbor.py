@@ -54,9 +54,11 @@ def add_part(db: Session, branch_id, donor: Donor | None, name: str, qty, price,
              subcategory: str = "") -> StockItem:
     """Новая б/у деталь: каталог (kind=used) + позиция склада с кодом Р-0001 + приход."""
     from ..models.stock import guess_razbor_category
+    from .razbor_catalog import guess   # 18.11.2026: категория не выбрана — угадываем вместе с подкатегорией
+    gc, gs = guess(name)
     cat = PartCatalog(name=name.strip()[:200], article=article.strip()[:80], kind="used",
-                      category=(category.strip()[:60] or guess_razbor_category(name)),
-                      subcategory=(subcategory or "").strip()[:60],
+                      category=(category.strip()[:60] or gc),
+                      subcategory=((subcategory or "").strip()[:60] or (gs if not category.strip() or category.strip() == gc else "")),
                       fits=f"{donor.make} {donor.model} {donor.year or ''}".strip() if donor else "")
     db.add(cat)
     db.flush()
@@ -257,13 +259,9 @@ def seed_refs(db: Session, branch_id):
     """Стартовые справочники: категории из списка + подкатегории; марки и модели — из уже заведённых доноров."""
     from ..models import RazborCategory, RazborMake, RazborModel
     from ..models.stock import RAZBOR_CATEGORIES
-    if not db.scalar(select(RazborCategory.id).where(RazborCategory.branch_id == branch_id)):
-        for n, name in enumerate(RAZBOR_CATEGORIES, 1):
-            c = RazborCategory(branch_id=branch_id, name=name, sort=n)
-            db.add(c)
-            db.flush()
-            for k, sub in enumerate(SUBCATS.get(name, []), 1):
-                db.add(RazborCategory(branch_id=branch_id, name=sub, parent_id=c.id, sort=k))
+    # 18.11.2026 (брат): категории — по подробному справочнику; недостающие заводятся сами, старые детали переносятся
+    from . import razbor_catalog
+    razbor_catalog.apply(db, branch_id)
     if not db.scalar(select(RazborMake.id).where(RazborMake.branch_id == branch_id)):
         pairs = set(db.execute(select(Donor.make, Donor.model).where(Donor.branch_id == branch_id)).all())
         pairs |= set(db.execute(select(StockItem.donor_make, StockItem.donor_model).where(

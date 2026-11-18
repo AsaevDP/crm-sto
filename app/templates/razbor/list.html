@@ -90,7 +90,8 @@
     </div>
     <div class="rz-cats">
       {% if not cat %}
-      {% for c in ref.cats %}{% set n = cat_counts.get(c.c.name, 0) %}{% if n %}<a class="rz-cat" href="{{ link(cat=c.c.name, sub='') }}">{{ c.c.name }} <b>{{ n }}</b></a>{% endif %}{% endfor %}
+      {# 18.11.2026 (брат): все категории справочника с количеством деталей; пустые — бледнее #}
+      {% for c in ref.cats %}{% set n = cat_counts.get(c.c.name, 0) %}<a class="rz-cat {{ 'zero' if not n }}" href="{{ link(cat=c.c.name, sub='') }}">{{ c.c.name }} <b>{{ n }}</b></a>{% endfor %}
       {% for k, n in cat_counts.items() if k not in ref.cats|map(attribute="c")|map(attribute="name")|list %}<a class="rz-cat" href="{{ link(cat=k, sub='') }}">{{ k }} <b>{{ n }}</b></a>{% endfor %}
       {% else %}
       {% for c in ref.cats if c.c.name == cat %}{% for s in c.subs %}{% set n = sub_counts.get(s.name, 0) %}

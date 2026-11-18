@@ -30,8 +30,8 @@ def test_refs_tree_and_sales_flow(client):
         d = db.scalar(select(Donor).where(Donor.make == "Skoda (тест)"))
         mk = db.scalar(select(RazborMake).where(RazborMake.name == "Skoda (тест)"))
         assert mk and db.scalar(select(RazborModel).where(RazborModel.make_id == mk.id, RazborModel.name == "Octavia A7 (тест)"))
-        assert db.scalar(select(RazborCategory).where(RazborCategory.name == "Оптика", RazborCategory.parent_id.is_(None)))
-    for name, price, catsub in (("Фара левая (тест разбора)", "5000", "Оптика||Фары"),
+        assert db.scalar(select(RazborCategory).where(RazborCategory.name == "Освещение", RazborCategory.parent_id.is_(None)))   # 18.11.2026
+    for name, price, catsub in (("Фара левая (тест разбора)", "5000", "Освещение||Передняя оптика"),
                                 ("Зеркало левое (тест разбора)", "1500", "Стёкла и зеркала||"),
                                 ("Сиденье водителя (тест разбора)", "3000", "Салон||Сиденья")):
         client.post(f"/razbor/donors/{d.id}/parts", data={"name": name, "price": price, "qty": "1", "condition": "good",
@@ -42,11 +42,11 @@ def test_refs_tree_and_sales_flow(client):
                           .where(StockItem.donor_id == d.id)).all()
         by = {c.name: i for i, c in rows}
         cats = {c.name: (c.category, c.subcategory) for i, c in rows}
-    assert cats["Фара левая (тест разбора)"] == ("Оптика", "Фары")
+    assert cats["Фара левая (тест разбора)"] == ("Освещение", "Передняя оптика")
     lamp, mirror, seat = by["Фара левая (тест разбора)"], by["Зеркало левое (тест разбора)"], by["Сиденье водителя (тест разбора)"]
     # Дерево: марка → модель → категория → подкатегория
-    page = client.get("/razbor?make=Skoda+(тест)&model=Octavia+A7+(тест)&cat=Оптика").text
-    assert "Фара левая (тест разбора)" in page and "Зеркало левое (тест разбора)" not in page and "Фары" in page
+    page = client.get("/razbor?make=Skoda+(тест)&model=Octavia+A7+(тест)&cat=Освещение").text
+    assert "Фара левая (тест разбора)" in page and "Зеркало левое (тест разбора)" not in page and "Передняя оптика" in page
 
     # Почта: новая продажа с экрана «Продажи» → резерв → «Отправить» → ТТН → в пути → получено
     client.post("/razbor/sales/new", data={"item_id": str(lamp.id), "action": "reserve", "buyer_name": "Покупатель НП (тест)",
@@ -103,7 +103,7 @@ def test_refs_tree_and_sales_flow(client):
         assert db.get(RazborMake, empty.id) is None
     # Переименовать подкатегорию — у детали тоже
     with SessionLocal() as db:
-        headlights = db.scalar(select(RazborCategory).where(RazborCategory.name == "Фары"))
+        headlights = db.scalar(select(RazborCategory).where(RazborCategory.name == "Передняя оптика"))
     client.post("/razbor/refs", data={"action": "rename_cat", "rid": str(headlights.id), "name": "Фары головные"})
     with SessionLocal() as db:
         assert db.get(rsvc.PartCatalog, db.get(StockItem, lamp.id).catalog_id).subcategory == "Фары головные"

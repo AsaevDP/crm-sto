@@ -27,7 +27,9 @@ CATEGORIES = {
     "chem": ["Шампуни", "Полироли и воски", "Очистители", "Для салона", "Для шин и дисков", "Расходники для мойки"],
 }
 # Категории разбора (б/у детали)
-RAZBOR_CATEGORIES = ["Двигатель и навесное", "КПП и привод", "Ходовая и подвеска", "Тормоза", "Рулевое",
+from ..services.razbor_catalog_data import CATALOG as _RZ_CATALOG   # 18.11.2026: подробный справочник разбора
+RAZBOR_CATEGORIES = [c for c, _ in _RZ_CATALOG]
+_OLD_RAZBOR_CATEGORIES = ["Двигатель и навесное", "КПП и привод", "Ходовая и подвеска", "Тормоза", "Рулевое",
                      "Кузов", "Оптика", "Стёкла и зеркала", "Салон", "Электрика и блоки", "Охлаждение и климат",
                      "Диски и шины", "Выхлоп", "Прочее"]
 _RAZBOR_WORDS = [("двигат", "Двигатель и навесное"), ("мотор", "Двигатель и навесное"), ("турбин", "Двигатель и навесное"),
@@ -44,6 +46,12 @@ _RAZBOR_WORDS = [("двигат", "Двигатель и навесное"), ("�
 
 
 def guess_razbor_category(name: str) -> str:
+    # 18.11.2026: категории разбора — по подробному справочнику (services/razbor_catalog.py)
+    from ..services.razbor_catalog import guess
+    return guess(name)[0]
+
+
+def _old_guess_razbor_category(name: str) -> str:
     n = (name or "").lower()
     for word, cat in _RAZBOR_WORDS:
         if word in n:

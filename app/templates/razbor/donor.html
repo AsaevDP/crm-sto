@@ -3,7 +3,28 @@
 {# Машина-донор (11.11.2026): как «Пульт». Сверху сводка и окупаемость, ниже плитки категорий (общие для всех машин,
    справочник «Марки и категории»). Открыл плитку — детали этой машины в этой категории: добавить по одной или списком,
    перенести в другую категорию, удалить ошибочную, открыть карточку детали. #}
-{% block content %}
+{# 18.11.2026 (брат): добавить деталь — категория и подкатегория из справочника (20 категорий), подсказки названий:
+   выбрал «Фара в сборе» — категория ставится сама; не выбрал — угадаем по названию #}
+{% macro part_form(cat="", sub="") %}
+<form class="form dense dn-addform" method="post" action="/razbor/donors/{{ d.id }}/parts" enctype="multipart/form-data" data-compress>
+  <div class="caption">＋ Деталь{% if cat %} в «{{ cat }}»{% endif %}</div>
+  <div class="form-row dn-row">
+    <input class="field" name="name" list="rz-hints" placeholder="Название: начните писать — «Фара…» *" required data-hint autocomplete="off">
+    <input class="field dn-n" name="price" inputmode="decimal" placeholder="Цена ₴">
+    <input class="field dn-n" name="qty" value="1" inputmode="decimal" aria-label="Кол-во">
+  </div>
+  <label class="caption">Категория › подкатегория{{ catsub_select(ref, cat, sub) }}</label>
+  <div class="form-row dn-row">
+    <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
+    <input class="field mono" name="article" placeholder="Оригинальный номер">
+  </div>
+  <input class="field" name="description" placeholder="Для объявления: без трещин, крепления целые…">
+  <div class="form-row dn-row"><label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" multiple hidden></label>
+    <label class="row" style="padding:0"><span class="grow">На сайт</span><input type="checkbox" class="switch" name="publish" value="1" checked></label>
+    <button class="btn btn-sm">Добавить деталь</button></div>
+</form>
+{% endmacro %}{% block content %}
 {% set ST = ITEM_STATES %}
 {% set can = ctx.can("razbor.manage") %}
 {% set here = "/razbor/donors/" ~ d.id %}
@@ -49,6 +70,7 @@
 <section class="dn-main">
 <div class="dn-bar">
   <span class="headline">Категории</span>
+  {% if can %}<button class="btn btn-sm" type="button" onclick="document.getElementById('dn-addpart').showModal()">{{ icon("plus") }}Деталь</button>{% endif %}
   {% set n_empty = tiles|selectattr("n", "equalto", 0)|list|length %}
   {% if n_empty %}<a class="btn btn-plain btn-sm" href="{{ here }}?{% if cat %}cat={{ cat|urlencode }}&{% endif %}{{ '' if show_empty else 'empty=1' }}#cats">{{ "Скрыть пустые" if show_empty else "Показать пустые · " ~ n_empty }}</a>{% endif %}
   {% if can %}
@@ -108,26 +130,7 @@
 
   {% if can %}
   <div class="dn-add">
-    <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}/parts" enctype="multipart/form-data" data-compress>
-      <div class="caption">＋ Деталь в «{{ cat }}»</div>
-      <input type="hidden" name="catsub" value="{{ cat }}||" id="dn-catsub">
-      <div class="form-row dn-row">
-        <input class="field" name="name" placeholder="Название: Фара передняя левая *" required>
-        {% if t.ref and t.ref.subs %}<select class="field" aria-label="Подкатегория" onchange="document.getElementById('dn-catsub').value = '{{ cat|e }}||' + this.value">
-          <option value="">Подкатегория…</option>{% for s in t.ref.subs %}<option>{{ s.name }}</option>{% endfor %}</select>{% endif %}
-        <input class="field dn-n" name="price" inputmode="decimal" placeholder="Цена ₴">
-        <input class="field dn-n" name="qty" value="1" inputmode="decimal" aria-label="Кол-во">
-      </div>
-      <div class="form-row dn-row">
-        <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-        <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
-        <input class="field mono" name="article" placeholder="Оригинальный номер">
-      </div>
-      <input class="field" name="description" placeholder="Для объявления: без трещин, крепления целые…">
-      <div class="form-row dn-row"><label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" multiple hidden></label>
-        <label class="row" style="padding:0"><span class="grow">На сайт</span><input type="checkbox" class="switch" name="publish" value="1" checked></label>
-        <button class="btn btn-sm">Добавить деталь</button></div>
-    </form>
+    {{ part_form(cat) }}
     <details class="dn-bulk"><summary class="btn btn-plain btn-sm">📋 Добавить несколько списком</summary>
       <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}/parts/bulk">
         <input type="hidden" name="category" value="{{ cat }}">
@@ -152,5 +155,25 @@
 
 </section>
 </div>
-<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% if can %}
+<dialog id="dn-addpart" class="sheet">{{ part_form() }}
+  <button class="btn btn-gray btn-sm" type="button" onclick="this.closest('dialog').close()">Закрыть</button></dialog>
+<datalist id="rz-hints">{% for h in hints %}<option value="{{ h.name }}" data-c="{{ h.cat }}||{{ h.sub }}">{% endfor %}</datalist>
+<script>
+// Подсказка выбрана — категория ставится сама; своё название — угадываем по словам (если категорию не выбрали)
+(function () {
+  const map = {}; document.querySelectorAll('#rz-hints option').forEach(o => map[o.value.toLowerCase()] = o.dataset.c);
+  document.querySelectorAll('[data-hint]').forEach(inp => inp.addEventListener('change', async () => {
+    const sel = inp.form.elements.catsub; if (!sel) return;
+    let v = map[inp.value.trim().toLowerCase()];
+    if (!v && !sel.value && inp.value.trim().length > 2) {
+      const r = await fetch('/api/razbor/guess?name=' + encodeURIComponent(inp.value.trim())).catch(() => null);
+      if (r && r.ok) v = (await r.json()).catsub;
+    }
+    if (v && [...sel.options].some(o => o.value === v)) sel.value = v;
+    else if (v) { const c = v.split('||')[0] + '||'; if ([...sel.options].some(o => o.value === c)) sel.value = c; }
+  }));
+})();
+</script>
+{% endif %}<script src="{{ asset('/static/js/photos.js') }}"></script>
 {% endblock %}

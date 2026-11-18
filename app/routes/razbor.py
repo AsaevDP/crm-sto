@@ -569,7 +569,21 @@ def donor_view(did: str, ctx: Ctx = Depends(get_ctx), cat: str = "", empty: str 
                       DONOR_STATUS=DONOR_STATUS, loc_label=ssvc.location_label, ref=ref, ITEM_STATES=ITEM_STATES,
                       tiles=tiles, cat=cat, show_empty=bool(empty), used=used, open_rows=open_rows,
                       subs=dict(sorted(subs.items(), key=lambda x: (x[0] == "", x[0]))), can_delete=can_delete,
-                      open_tile=next((t for t in tiles if t["name"] == cat), None))
+                      open_tile=next((t for t in tiles if t["name"] == cat), None), hints=_hints())
+
+
+def _hints():
+    from ..services.razbor_catalog import hints
+    return hints()
+
+
+@router.get("/api/razbor/guess")
+def razbor_guess(ctx: Ctx = Depends(get_ctx), name: str = ""):
+    """18.11.2026: категория и подкатегория по названию детали — для формы «＋ Деталь»."""
+    ctx.need("razbor.manage")
+    from ..services.razbor_catalog import guess
+    c, s = guess(name)
+    return {"catsub": f"{c}||{s}" if c != "Прочее" or s else ""}
 
 
 def _donor_back(d: Donor, cat: str = "") -> str:
