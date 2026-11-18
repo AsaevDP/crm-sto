@@ -2,6 +2,8 @@
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/orders">{{ icon("back") }}Наряды</a><h1 class="large-title">Приёмка</h1></div>
+  {# 18.11.2026 (брат): только мойка — короткая форма без диагностики, запчастиста и подъёмника #}
+  <a class="btn btn-tinted wash-quick" href="/wash/new">🫧 Быстрая приёмка на мойку</a>
 </header>
 
 <form id="intake" class="intake fill" autocomplete="off" novalidate>

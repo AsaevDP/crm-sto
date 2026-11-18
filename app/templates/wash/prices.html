@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{# Прайс мойки (18.11.2026, брат): услуги, цена по классу машины, примерное время. Править и добавлять — менеджер,
+   директор, зам, админ (право wash.prices). Мойщик только смотрит. Скрытая услуга не предлагается при приёмке,
+   в старых нарядах остаётся как была. Каждая правка — в журнале (кто, когда, было → стало). #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="{{ '/wash' if ctx.can('wash.view') else '/wash/queue' }}">{{ icon("back") }}Мойка</a><h1 class="large-title">Прайс мойки</h1>
+    <p class="footnote" style="margin:0">{% if can_edit %}Поменяйте цену в строке — сохранится сама. Новые цены — для новых машин, принятые раньше не меняются.{% else %}Цены меняет менеджер.{% endif %}</p></div>
+  {% if can_edit %}<div class="ov-actions">
+    <a class="btn btn-sm btn-gray" href="/wash/boxes">Боксы мойки</a>
+    <button class="btn btn-sm" type="button" onclick="document.getElementById('wsadd').showModal()">{{ icon("plus") }}Добавить услугу</button></div>{% endif %}
+</header>
+
+{% set shown = rows if hidden else rows|selectattr("active")|list %}
+{% for kind, label in KINDS.items() %}{% set grp = shown|selectattr("kind", "equalto", kind)|list %}{% if grp %}
+<div class="group-title">{{ label }} · {{ grp|length }}</div>
+<div class="tablewrap">
+<table class="table wp-table">
+  <thead><tr><th>Услуга</th>{% for k, t in CLASSES.items() %}<th class="num">{{ t }}</th>{% endfor %}<th class="num">Время</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for s in grp %}
+  {% if can_edit %}
+  <tr id="s{{ s.id }}" class="{{ 'muted' if not s.active }}">
+    <td><form id="f{{ s.id }}" method="post" action="/wash/prices/{{ s.id }}" class="wp-form"></form>
+      <input class="field wp-name" form="f{{ s.id }}" name="name" value="{{ s.name }}" maxlength="120" aria-label="Название">
+      <input type="hidden" form="f{{ s.id }}" name="kind" value="{{ s.kind }}">{% if not s.active %}<span class="caption">скрыта</span>{% endif %}</td>
+    {% for k in CLASSES %}<td class="num" data-l="{{ CLASSES[k] }}"><label class="wp-money"><input class="field num" form="f{{ s.id }}" name="price_{{ k }}" value="{{ s['price_' ~ k]|money(0) }}" inputmode="decimal" aria-label="{{ CLASSES[k] }}, ₴"><span>₴</span></label></td>{% endfor %}
+    <td class="num" data-l="Минут"><label class="wp-money"><input class="field num" form="f{{ s.id }}" name="minutes" value="{{ s.minutes }}" inputmode="numeric" aria-label="Минут"><span>мин</span></label></td>
+    <td class="nowrap wp-acts"><span class="caption wp-ok" hidden>✓ сохранено</span>
+      <form method="post" action="/wash/prices/{{ s.id }}" style="display:inline"><input type="hidden" name="toggle" value="1"><button class="btn btn-plain btn-sm">{{ "Скрыть" if s.active else "Вернуть" }}</button></form></td>
+  </tr>
+  {% else %}
+  <tr><td><b>{{ s.name }}</b></td>{% for k in CLASSES %}<td class="num nowrap" data-l="{{ CLASSES[k] }}">{{ s['price_' ~ k]|money(0) }} ₴</td>{% endfor %}<td class="num nowrap" data-l="Время">{{ fmt_min(s.minutes) }}</td></tr>
+  {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}{% endfor %}
+{% if n_hidden and can_edit %}<p class="footnote">{% if hidden %}<a href="/wash/prices">Спрятать скрытые</a>{% else %}<a href="/wash/prices?hidden=1">Показать скрытые · {{ n_hidden }}</a>{% endif %}</p>{% endif %}
+
+{% if can_edit %}
+<dialog id="wsadd" class="sheet">
+  <form method="post" action="/wash/prices" class="form">
+    <h2 class="title-2">Новая услуга</h2>
+    <label>Название *<input class="field" name="name" required maxlength="120" placeholder="Например: Антидождь на стёкла"></label>
+    <div class="segmented seg-wide" id="wskind">{% for k, t in KINDS.items() %}<button type="button" data-v="{{ k }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ t }}</button>{% endfor %}</div>
+    <input type="hidden" name="kind" value="wash">
+    <div class="form-row">
+      {% for k, t in CLASSES.items() %}<label>{{ t }}, ₴{% if loop.first %} *{% endif %}<input class="field" name="price_{{ k }}" inputmode="decimal" {% if loop.first %}required{% else %}placeholder="как у легковой"{% endif %}></label>{% endfor %}
+    </div>
+    <label>Сколько времени, мин<input class="field" name="minutes" value="30" inputmode="numeric"></label>
+    <div class="form-row"><button class="btn">Добавить</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+<script>
+(function () {
+  document.getElementById('wskind').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    b.closest('form').elements.kind.value = b.dataset.v;
+  });
+  // Цена / название / время — сохраняются сами, когда поле теряет фокус
+  document.querySelectorAll('.wp-table input.field').forEach(inp => {
+    let was = inp.value;
+    inp.addEventListener('change', async () => {
+      const f = document.getElementById(inp.getAttribute('form'));
+      const fd = new FormData(); document.querySelectorAll(`[form="${f.id}"]`).forEach(x => fd.append(x.name, x.value));
+      const row = inp.closest('tr'), ok = row.querySelector('.wp-ok');
+      const r = await fetch(f.action, { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } }).catch(() => null);
+      if (r && r.ok) { was = inp.value; ok.hidden = false; setTimeout(() => ok.hidden = true, 1800); }
+      else { inp.value = was; alert('Не сохранилось — проверьте связь'); }
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -93,7 +93,7 @@
   <a class="back" href="/orders">{{ icon("back") }}Наряды</a>
   <div class="ov-title">
     <div>
-      <div class="footnote mono">{{ wo.number }} · {{ "А · без диагностики" if wo.scenario == "A" else "Б · с диагностикой" }}</div>
+      <div class="footnote mono">{{ wo.number }} · {% if flow.wash %}🫧 мойка{% if wo.car_class %} · {{ CLASSES.get(wo.car_class, "")|lower }}{% endif %}{% else %}{{ "А · без диагностики" if wo.scenario == "A" else "Б · с диагностикой" }}{% endif %}</div>
       <h1 class="title-1">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></h1>
       <div class="subhead">{% if v.year %}{{ v.year }} · {% endif %}{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км · {% endif %}{{ c.full_name }} · <a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a></div>
     </div>
@@ -113,7 +113,7 @@
 </header>
 
 {# Шаги наряда: от приёма до выдачи — нажал, и страница переходит к блоку этого шага (11.11.2026) #}
-{% set STEP_GO = [("intake", "main"), ("problems", "main"), ("problems", "main"), ("parts", "diag"), ("works", "diag"), ("money", "hist")] %}
+{% set STEP_GO = [("intake", "main"), ("works", "diag"), ("money", "hist")] if flow.wash else [("intake", "main"), ("problems", "main"), ("problems", "main"), ("parts", "diag"), ("works", "diag"), ("money", "hist")] %}
 <ol class="wo-steps" aria-label="Этапы наряда">
   {% for s in flow.steps %}{% set go = STEP_GO[loop.index0] %}
   <li><a class="wo-step" href="#{{ go[0] }}" data-goto="{{ go[1] }}" data-state="{{ s.state }}" style="--sc:var(--{{ s.color }})" title="Перейти: {{ s.label }}"><span class="wo-dot">{{ "✓" if s.state == "done" else s.n }}</span><span class="wo-lbl">{{ s.label }}</span></a></li>
@@ -173,12 +173,12 @@
 
 {# На iPhone — вкладки, на ПК всё видно сразу колонками: слева направо — как идёт работа #}
 <div class="segmented seg-wide ov-tabs" id="ovtabs">
-  <button type="button" data-t="main" aria-pressed="true">Проблемы{% if n_find %} · {{ n_find }}{% endif %}</button>
-  <button type="button" data-t="diag" aria-pressed="false">Запчасти</button>
+  <button type="button" data-t="main" aria-pressed="true">{% if flow.wash %}Приём{% else %}Проблемы{% if n_find %} · {{ n_find }}{% endif %}{% endif %}</button>
+  <button type="button" data-t="diag" aria-pressed="false">{{ "Мойка" if flow.wash else "Запчасти" }}</button>
   <button type="button" data-t="hist" aria-pressed="false">Деньги</button>
 </div>
 
-<div class="ov-grid fill">
+<div class="ov-grid fill{% if flow.wash %} ov-wash{% endif %}">
   {# ===== Колонка 1: приём → проблемы → согласование ===== #}
   <section class="ov-col" data-t="main">
     <div class="card compact step-card {{ 'now' if flow.cur == 0 }}" id="intake" style="--sc:var(--blue)">
@@ -188,7 +188,9 @@
       {% if photos %}
       <div class="pgallery sm">{% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>
       {% else %}<p class="footnote">Нет фото</p>{% endif %}
-      {% if wo.complaint %}<p class="ov-text"><span class="footnote">Со слов клиента:</span> {{ wo.complaint }}</p>{% endif %}
+      {% if wo.complaint %}<p class="ov-text"><span class="footnote">{{ "Пожелания клиента:" if flow.wash else "Со слов клиента:" }}</span> {{ wo.complaint }}</p>{% endif %}
+      {% if flow.wash %}<div class="kv"><span>Класс машины</span><b>{{ CLASSES.get(wo.car_class, "—") }}</b></div>
+      <div class="kv"><span>Бокс</span><b>{{ (wash_box.name or ("Бокс " ~ wash_box.number)) if wash_box else "любой свободный" }}</b></div>{% endif %}
       {# 12.11.2026 (брат): VIN — на виду, одним нажатием скопировать (запчастисту — для подбора по каталогу) #}
       <div class="kv kv-vin"><span>VIN</span>{% if v.vin %}<b class="mono" id="wo-vin">{{ v.vin }}</b>
         <button type="button" class="btn btn-plain btn-sm vin-copy" data-copy="{{ v.vin }}" title="Скопировать VIN">Копировать</button>
@@ -198,12 +200,12 @@
       <div class="kv"><span>В машине</span><b class="wrap">{% for i in wo.intake_items or [] %}{{ INTAKE_LABELS.get(i, i) }}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</b></div>
       {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}
     </div>
-    {{ problems_card }}
+    {% if not flow.wash %}{{ problems_card }}{% endif %}
   </section>
 
   {# ===== Колонка 2: запчасти → работы ===== #}
   <section class="ov-col" data-t="diag">
-    {% include "orders/_parts.html" %}
+    {% if not flow.wash %}{% include "orders/_parts.html" %}{% endif %}
     {% include "orders/_works.html" %}
 
     {% if wo_tools or can_issue_tool or can_request_tool or tool_pending %}
@@ -273,15 +275,15 @@
       <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign" id="assign-f">
         <label>Менеджер — ведёт клиента<select class="field" name="manager_id">
           {% for u in managers %}<option value="{{ u.id }}" {% if u.id == wo.manager_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-        <label>Пост (подъёмник)<select class="field" name="lift_id" id="as-lift"><option value="">Без поста (очередь)</option>
-          {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>
-        <label>Ведущий мастер<select class="field" name="mechanic_id" id="as-mech"><option value="">Не выбран</option>
+        {% if not flow.wash %}<label>Пост (подъёмник)<select class="field" name="lift_id" id="as-lift"><option value="">Без поста (очередь)</option>
+          {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>{% endif %}
+        <label>{{ "Кто моет" if flow.wash else "Ведущий мастер" }}<select class="field" name="mechanic_id" id="as-mech"><option value="">Не выбран</option>
           {% for code, label in MASTERS.items() %}{% set grp = mechanics|selectattr("role.code", "equalto", code)|list %}{% if grp %}<optgroup label="{{ label }}">
           {% for u in grp %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}</select></label>
-        <label>Запчастист<select class="field" name="partsman_id"><option value="">Не выбран</option>
-          {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
+        {% if not flow.wash %}<label>Запчастист<select class="field" name="partsman_id"><option value="">Не выбран</option>
+          {% for u in partsmen %}<option value="{{ u.id }}" {% if u.id == wo.partsman_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>{% endif %}
         <button class="btn btn-sm" onclick="return confirm('Передать наряд? Новому придёт сообщение, у прежнего наряд пропадёт.')">Передать</button>
-        <p class="hint" style="margin:0">За каждым постом — свой мастер: другой пост = другой мастер. Несделанные работы перейдут новому.</p>
+        <p class="hint" style="margin:0"{% if flow.wash %} hidden{% endif %}>За каждым постом — свой мастер: другой пост = другой мастер. Несделанные работы перейдут новому.</p>
       </form>
       {# Ещё мастера на машине — это не передача: ведущий остаётся #}
       <div class="masters-box">
@@ -299,9 +301,9 @@
       </div>
       {% else %}
       {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
-      <div class="kv"><span>Подъёмник</span><b>{{ lift.number ~ " · " ~ lift.name if lift else "—" }}</b></div>
+      {% if not flow.wash %}<div class="kv"><span>Подъёмник</span><b>{{ lift.number ~ " · " ~ lift.name if lift else "—" }}</b></div>{% endif %}
       <div class="kv"><span>Ведущий мастер</span><b>{{ mc.full_name if mc else "—" }}</b></div>
-      <div class="kv"><span>Запчастист</span><b>{{ pm.full_name if pm else "—" }}</b></div>
+      {% if not flow.wash %}<div class="kv"><span>Запчастист</span><b>{{ pm.full_name if pm else "—" }}</b></div>{% endif %}
       <div class="kv"><span>Менеджер</span><b>{{ mg.full_name if mg else "—" }}</b></div>
       {% for m in extra %}<div class="kv"><span>{{ MASTERS.get(m.user.role.code, "мастер") }}</span><b>{{ m.user.full_name }}</b></div>{% endfor %}
       {% endif %}

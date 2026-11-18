@@ -1,0 +1,32 @@
+{# Карточка машины в очереди мойки (18.11.2026). c — wash.Car; mode: queue / doing / done #}
+{% macro qcard(c, mode) -%}
+<div class="card compact wq-card" data-st="{{ mode }}" id="q{{ c.o.id }}">
+  <div class="wq-top">
+    {% if mode == "queue" %}<span class="wq-pos" title="Место в очереди">{{ c.pos }}</span>{% endif %}
+    <a class="wq-car" href="/orders/{{ c.o.id }}">
+      <b>{{ c.v.make if c.v else "" }} {{ c.v.model if c.v else "" }}</b>
+      <span class="mono wq-plate">{{ fmt_plate(c.v.plate) if c.v else "" }}</span>
+      <span class="caption">{{ CLASSES.get(c.o.car_class, "") }}{% if c.box %} · {{ c.box.name or ("бокс " ~ c.box.number) }}{% endif %} · приехал {{ c.o.created_at.astimezone().strftime("%H:%M") }}</span>
+    </a>
+    <div class="wq-eta">
+      {% if mode == "queue" and c.eta_start %}
+        <span class="caption">начнут</span><b>{{ "сейчас" if (c.eta_start - now).total_seconds() < 60 else "≈ " ~ c.eta_start.astimezone().strftime("%H:%M") }}</b>
+        <span class="caption">готово ≈ {{ c.eta_end.astimezone().strftime("%H:%M") }}</span>
+      {% elif mode == "doing" and c.eta_end %}
+        <span class="caption">готово</span><b>≈ {{ c.eta_end.astimezone().strftime("%H:%M") }}</b><span class="caption">осталось ≈ {{ fmt_min(c.left) }}</span>
+      {% elif mode == "done" %}
+        <span class="chip" data-s="{{ 'paid' if c.o.status == 'paid' else 'ready' }}">{{ "оплачено" if c.o.status == "paid" else "готово" }}</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="wq-works">
+    {% for w in c.works %}<span class="wq-w" data-ws="{{ w.status }}">{{ "✓ " if w.status == "done" }}{{ w.name }}</span>{% endfor %}
+    <span class="caption nowrap">≈ {{ fmt_min(c.minutes) }}</span>
+  </div>
+  {% if c.o.complaint %}<div class="caption wq-note">💬 {{ c.o.complaint }}</div>{% endif %}
+  <div class="wq-foot">
+    <span class="caption">{% if c.who %}{% for u in c.who %}{{ u.short_name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}мойщик не назначен{% endif %}</span>
+    {% if caller is defined %}<div class="wq-acts">{{ caller() }}</div>{% endif %}
+  </div>
+</div>
+{%- endmacro %}

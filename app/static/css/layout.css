@@ -1955,3 +1955,82 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .bp-day-all { font-size: 13px; color: var(--text-2); text-decoration: none; padding: 4px 8px; border-radius: 8px; }
 .bp-day-all:hover { background: var(--fill-2); color: var(--accent); }
 .bp-day-all.on { color: var(--accent); background: var(--fill-2); font-weight: 600; }
+
+/* ===== Мойка: очередь, быстрая приёмка, прайс (18.11.2026) ===== */
+.wash-quick { margin-bottom: 6px; }
+.wq-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1000px) { .wq-cols { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); } }
+.wq-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
+.wq-cols .wq-list { grid-template-columns: minmax(0, 1fr); }
+.wq-card { display: grid; gap: 8px; border-left: 4px solid var(--blue); min-width: 0; }
+.wq-card[data-st="doing"] { border-left-color: var(--teal); }
+.wq-card[data-st="done"] { border-left-color: var(--green); }
+.wq-top { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+.wq-pos { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
+  background: var(--fill); color: var(--text); font-variant-numeric: tabular-nums; }
+.wq-card:first-child .wq-pos { background: var(--blue); color: #fff; }
+.wq-car { display: grid; gap: 1px; min-width: 0; flex: 1; color: var(--text); text-decoration: none; }
+.wq-car:hover b { color: var(--accent); }
+.wq-plate { font-size: 15px; }
+.wq-eta { flex: none; display: grid; justify-items: end; text-align: right; gap: 0; }
+.wq-eta b { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wq-eta .caption { white-space: nowrap; }
+.wq-works { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.wq-w { padding: 3px 10px; border-radius: 999px; background: var(--fill); font-size: 14px; }
+.wq-w[data-ws="doing"] { background: color-mix(in srgb, var(--teal) 22%, transparent); }
+.wq-w[data-ws="paused"] { background: color-mix(in srgb, var(--orange) 22%, transparent); }
+.wq-w[data-ws="done"] { color: var(--text-2); text-decoration: line-through; }
+.wq-note { overflow-wrap: anywhere; }
+.wq-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.wq-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.wq-next { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-left: 4px solid var(--teal); margin: 4px 0 8px; }
+.wq-next .grow { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.wq-next .btn { min-height: 52px; font-size: 18px; padding: 0 24px; }
+@media (max-width: 600px) { .wq-next form, .wq-next .btn { width: 100%; } }
+
+.wash-form-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1000px) { .wash-form-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.wash-form .wf-sub { font-size: 15px; margin-top: 4px; }
+.wash-form .wf-gt { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.wash-form .wf-kind { margin-top: 2px; text-transform: uppercase; letter-spacing: .04em; }
+.wsv-list { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
+.wash-form label.wsv, .wsv { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--fill-2);
+  border: 1.5px solid transparent; cursor: pointer; min-width: 0; }
+.wsv input { flex: none; width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.wsv-n { flex: 1; min-width: 0; display: grid; font-size: 15px; line-height: 1.25; color: var(--text); }
+.wsv-n small { color: var(--text-2); font-size: 13px; }
+.wsv-p { flex: none; font-variant-numeric: tabular-nums; color: var(--text); }
+.wash-form .form-row { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+.wsv:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.wsv-total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 8px 2px 0;
+  border-top: 1px solid var(--separator); font-size: 17px; }
+
+.wp-table td { vertical-align: middle; }
+.wp-table td:first-child { width: 40%; }
+.wp-table .wp-name { min-width: 240px; width: 100%; font-weight: 600; }
+.wp-money { display: inline-flex; align-items: center; gap: 4px; }
+.wp-money .field { width: 90px; text-align: right; min-height: 36px; padding: 6px 10px; font-variant-numeric: tabular-nums; }
+.wp-money span { color: var(--text-2); font-size: 14px; }
+.wp-acts { text-align: right; }
+.wp-ok { color: var(--green); margin-right: 6px; }
+
+.wo-wash { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 900px) { .wo-wash { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } }
+.wo-wash .work-btns .btn { min-height: 44px; padding: 0 18px; font-size: 16px; }
+/* наряд мойки: «Приём» короткий — «Услуги» сразу под ним, без пустого места */
+@media (min-width: 900px) and (max-width: 1599px) { .ov-grid.ov-wash { grid-template-rows: auto 1fr; } }
+/* прайс мойки на телефоне: каждая услуга — карточка, название сверху, цены по классам и время — в ряд с подписями */
+@media (max-width: 760px) {
+  .wp-table thead { display: none; }
+  .wp-table, .wp-table tbody { display: block; width: 100%; }
+  .wp-table tr { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; padding: 10px 12px;
+    border-bottom: 1px solid var(--separator); }
+  .wp-table td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; }
+  .wp-table td:first-child, .wp-table td.wp-acts { grid-column: 1 / -1; }
+  .wp-table td.wp-acts { text-align: left; }
+  .wp-table td[data-l]::before { content: attr(data-l); display: block; font-size: 12px; color: var(--text-2); margin-bottom: 2px; }
+  .wp-table .wp-name { min-width: 0; width: 100%; }
+  .wp-money { display: flex; }
+  .wp-money .field { width: 100%; min-width: 0; text-align: left; }
+  .wp-money span { display: none; }
+}

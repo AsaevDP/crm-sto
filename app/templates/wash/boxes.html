@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{# Боксы мойки (18.11.2026, брат): места, где моют. Каждый бокс — своя очередь по времени. Один бокс — просто очередь. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/wash/prices">{{ icon("back") }}Прайс мойки</a><h1 class="large-title">Боксы мойки</h1></div>
+  <form method="post" action="/wash/boxes"><button class="btn btn-sm btn-tinted">{{ icon("plus") }}Добавить бокс</button></form>
+</header>
+<p class="subhead" style="margin:0">Сколько машин моют одновременно. По боксам считается «≈ начнут / ≈ готово» в очереди. Боксов нет — мойка считается одним местом.</p>
+
+<div class="lift-grid">
+  {% for b in boxes %}
+  {% set here = (brd.doing + brd.queue)|selectattr("o.wash_box_id", "equalto", b.id)|list %}
+  <form class="card lift-edit {% if not b.active %}muted{% endif %}" method="post" action="/wash/boxes/{{ b.id }}">
+    <div class="lift-num">{{ b.number }}</div>
+    <input class="field" name="name" value="{{ b.name }}" maxlength="60" placeholder="Название" aria-label="Название бокса {{ b.number }}">
+    <span class="caption">{% if here %}сейчас: {% for c in here %}{{ fmt_plate(c.v.plate) if c.v else "" }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}свободен{% endif %}</span>
+    <label class="lift-active"><input type="checkbox" class="switch" name="active" value="1" {% if b.active %}checked{% endif %}> работает</label>
+    <button class="btn btn-sm">Сохранить</button>
+  </form>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">Боксов пока нет — нажмите «Добавить бокс». Например: «Мойка 1», «Мойка 2», «Детейлинг».</p></div>
+  {% endfor %}
+</div>
+{% endblock %}

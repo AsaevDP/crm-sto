@@ -81,6 +81,10 @@ ORDER_STAGES = {
 def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", status: str = "",
                 p: str = "", d: str = "", f: str = "", t: str = "", found: str = ""):
     ctx.need("orders.view_all", "orders.view_own")
+    # 18.11.2026 (брат): у мойщика и детейлера вместо ремонтных вкладок — очередь мойки
+    from ..permissions import WASHERS
+    if ctx.user.role.code in WASHERS:
+        return RedirectResponse("/wash/queue", status_code=303)
     # 12.11.2026: менеджер видит свои наряды (и 3 дня после выдачи). Клиент вернулся (гарантия) — ищет по ТОЧНЫМ данным
     # (полный госномер / телефон / VIN / номер наряда): найденный клиент и все его наряды открыты ему 1 час, поиск — в журнал.
     if q.strip() and not found and svc.manager_limited(ctx):
@@ -264,6 +268,12 @@ def clients_search(ctx: Ctx = Depends(get_ctx), q: str = ""):
 def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("orders.view_all", "orders.view_own")
     wo = _order(ctx, order_id)
+    # 18.11.2026 (брат): мойщику и детейлеру ремонтные разделы не нужны — свой короткий экран: машина, что сделать,
+    # «Начал / Пауза / Выполнено», сообщения, химия
+    from ..permissions import WASHERS
+    if ctx.user.role.code in WASHERS:
+        from .wash import washer_order_view
+        return washer_order_view(ctx, wo)
     db = ctx.db
     photos = db.scalars(select(WoPhoto).where(WoPhoto.work_order_id == wo.id).order_by(WoPhoto.created_at)).all()
     works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all()
@@ -394,8 +404,21 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         partsmen=svc.staff_by_role(db, ctx.branch.id, "partsman") if can_assign else [],
         mechanics=svc.staff_by_role(db, ctx.branch.id, "masters") if can_assign else [],
         lifts=svc.lifts_with_load(db, ctx.branch.id) if can_assign else [],
+        CLASSES=_wash_classes(), wash_box=_wash_box(db, wo),
         **_order_tools(ctx, wo, works),
     )
+
+
+def _wash_classes():
+    from ..services.wash import CLASSES
+    return CLASSES
+
+
+def _wash_box(db, wo):
+    if not wo.wash_box_id:
+        return None
+    from ..models.wash import WashBox
+    return db.get(WashBox, wo.wash_box_id)
 
 
 def _order_msgs(ctx: Ctx, wo) -> dict:

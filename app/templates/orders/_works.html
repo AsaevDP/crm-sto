@@ -10,8 +10,8 @@
 </select>
 {%- endmacro %}
 {% set n_done = works|selectattr("status", "equalto", "done")|list|length %}
-<div class="card compact step-card {{ 'now' if flow.cur == 4 }}" id="works" style="--sc:var(--teal)">
-  <div class="card-h"><span class="headline"><span class="stepno">5</span>Работы · {{ n_done }} из {{ works|length }}</span>
+<div class="card compact step-card {{ 'now' if flow.cur == 4 or (flow.wash and flow.cur == 1) }}" id="works" style="--sc:var(--teal)">
+  <div class="card-h"><span class="headline"><span class="stepno">{{ 2 if flow.wash else 5 }}</span>{{ "Услуги мойки" if flow.wash else "Работы" }} · {{ n_done }} из {{ works|length }}</span>
     {% if show_price and works %}<span class="footnote nowrap">итого <b>{{ t.works|money }} ₴</b></span>{% endif %}</div>
   {% if works %}{{ progress({"done": n_done, "total": works|length, "pct": (100 * n_done / works|length)|round|int,
       "level": "all" if n_done == works|length else ("part" if n_done else "zero")}) }}{% endif %}

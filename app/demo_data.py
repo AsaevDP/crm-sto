@@ -793,3 +793,49 @@ def _demo_wash(db, branch, users, as_user):
             w2.price = msvc.work_price(w2)
             db.add(w2)
     db.flush()
+    _demo_wash_queue(db, branch, users, as_user)
+
+
+def _demo_wash_queue(db, branch, users, as_user):
+    """18.11.2026: быстрая приёмка на мойку — прайс, бокс, одна машина моется, две в очереди."""
+    from .models import Client, Vehicle, WoWork, WoWorkSession
+    from .models.wash import WashBox
+    from .services import numbering
+    from .services import orders as osvc
+    from .services import wash as wsvc
+    from .db import now as _now
+    as_user("irina")
+    wsvc.ensure_defaults(db, branch.id)
+    db.add(WashBox(number=1, name="Мойка 1"))
+    db.flush()
+    svc = {s.name: s for s in wsvc.services(db, branch.id)}
+    cars = [("Сергей Бондаренко", "380679001001", "АА4512КМ", "Toyota", "RAV4", "suv",
+             ["Комплексная мойка (кузов + салон)", "Чернение шин"], "Коврики не мыть, только пылесос", True),
+            ("Марина Ткаченко", "380679001002", "КА7781ВІ", "Skoda", "Fabia", "car",
+             ["Мойка кузова (бесконтактная)", "Мойка ковриков"], "", False),
+            ("Игорь Савчук", "380679001003", "ВС3307АН", "Mercedes-Benz", "Sprinter", "bus",
+             ["Мойка кузова ручная", "Пылесос салона"], "", False)]
+    for name, phone, plate, make, model, cls, names, note, doing in cars:
+        c = Client(full_name=name, phone=phone)
+        db.add(c)
+        db.flush()
+        v = Vehicle(client_id=c.id, plate=plate, make=make, model=model)
+        db.add(v)
+        db.flush()
+        wo = WorkOrder(number=numbering.next_number(db, branch.id), client_id=c.id, vehicle_id=v.id, status="created",
+                       scenario="A", manager_id=users["irina"].id, kind="wash", car_class=cls, complaint=note,
+                       mechanic_id=users["moyka"].id if doing else None)
+        db.add(wo)
+        db.flush()
+        for n in names:
+            s = svc[n]
+            p = wsvc.price(s, cls)
+            db.add(WoWork(work_order_id=wo.id, name=n, pricing="fixed", rate=p, qty=Decimal(1), price=p,
+                          mechanic_id=wo.mechanic_id, wash_service_id=s.id, minutes=s.minutes,
+                          status="doing" if doing and n == names[0] else "todo"))
+        osvc.set_status(db, wo, "work", "Мойка: в очередь")
+        db.flush()
+        if doing:
+            first = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status == "doing"))
+            db.add(WoWorkSession(work_order_id=wo.id, wo_work_id=first.id, mechanic_id=wo.mechanic_id, started_at=_now()))
+    db.flush()

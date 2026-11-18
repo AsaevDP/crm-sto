@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "wash/_qcard.html" import qcard with context %}
+{# Экран мойщика / детейлера (18.11.2026, брат): моя машина сейчас → «Взять следующую» → очередь → готовые.
+   Ремонтных разделов нет. Машины с ремонта, где у меня есть мойка, — отдельным блоком. #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Мойка</h1><p class="footnote" style="margin:0">В очереди: {{ brd.queue|length }} · моют: {{ brd.doing|length }} · готовы: {{ brd.done|length }}</p></div>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/wash/my">Химия</a><a class="btn btn-sm btn-gray" href="/wash/prices">Прайс</a></div>
+</header>
+
+{% if mine_now %}
+<div class="group-title">Я мою сейчас</div>
+<div class="wq-list">
+  {% for c in mine_now %}{% call qcard(c, "doing") %}<a class="btn btn-sm" href="/orders/{{ c.o.id }}">Открыть · отметить</a>{% endcall %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="wq-next card compact">
+  {% if nxt %}
+  <div class="grow"><b>Следующая: {% set c = brd.queue|selectattr("o.id", "equalto", nxt.id)|first %}{{ c.v.make }} {{ c.v.model }} · <span class="mono">{{ fmt_plate(c.v.plate) }}</span></b>
+    <span class="caption">{% for w in c.works %}{{ w.name }}{% if not loop.last %}, {% endif %}{% endfor %} · ≈ {{ fmt_min(c.minutes) }}</span></div>
+  <form method="post" action="/wash/take" class="one-shot"><button class="btn btn-lg">🫧 Взять следующую</button></form>
+  {% else %}
+  <div class="grow"><b>Очередь пуста</b><span class="caption">Новые машины появятся здесь, как только менеджер примет их на мойку.</span></div>
+  {% endif %}
+</div>
+
+<div class="group-title" id="queue">Очередь · {{ brd.queue|length }}</div>
+<div class="wq-list">
+  {% for c in brd.queue %}
+  {% if can_take(c) and nxt and c.o.id != nxt.id %}{% call qcard(c, "queue") %}<form method="post" action="/wash/take" class="one-shot"><input type="hidden" name="order_id" value="{{ c.o.id }}"><button class="btn btn-sm btn-gray">Взять эту</button></form>{% endcall %}
+  {% else %}{{ qcard(c, "queue") }}{% endif %}
+  {% else %}<p class="footnote">Никто не ждёт.</p>{% endfor %}
+</div>
+
+{% set others = brd.doing|reject("in", mine_now)|list %}
+{% if others %}
+<div class="group-title">Моют другие</div>
+<div class="wq-list">{% for c in others %}{{ qcard(c, "doing") }}{% endfor %}</div>
+{% endif %}
+
+{% if repair %}
+<div class="group-title">С ремонта — мойка в наряде</div>
+<div class="wash-cars">
+  {% for x in repair %}{% set s = WASH_ST[x.st] %}
+  <a class="card compact wash-car" href="/orders/{{ x.o.id }}" data-st="{{ x.st }}">
+    <div class="card-h"><span class="headline">{{ x.v.make }} {{ x.v.model }}</span><span class="chip" data-s="{{ s[1] }}">{{ s[0] }}</span></div>
+    <div class="subhead"><span class="mono">{{ fmt_plate(x.v.plate) }}</span></div>
+    {% for w in x.works %}<div class="kv"><span>{{ w.name }}</span></div>{% endfor %}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if brd.done %}
+<div class="group-title">Готовы · ждут клиента</div>
+<div class="wq-list">{% for c in brd.done %}{{ qcard(c, "done") }}{% endfor %}</div>
+{% endif %}
+{% endblock %}

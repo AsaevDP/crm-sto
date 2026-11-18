@@ -32,7 +32,7 @@
 </div>
 {% endif %}
 
-{% if ctx.can("stock.manage") or ctx.can("razbor.manage") or ctx.can("tools.manage") %}
+{% if ctx.can("stock.manage") or ctx.can("razbor.manage") or ctx.can("tools.manage") or ctx.can("wash.prices") %}
 <div class="group-title">Справочники разделов</div>
 <div class="set-tiles">
   {% if ctx.can("stock.manage") %}{{ tile("/stock/categories", "Категории склада", "ТО и запчасти", "blue", "stock") }}
@@ -40,6 +40,7 @@
   {% if ctx.can("razbor.manage") %}{{ tile("/razbor/refs", "Марки и категории разбора", "для доноров и деталей", "orange", "car") }}
   {{ tile("/razbor/carriers", "Службы доставки", "почта, курьеры — для разбора", "indigo", "box") }}{% endif %}
   {% if ctx.can("tools.manage") %}{{ tile("/tools?view=cabinets", "Шкафы инструмента", "шкафы и полки", "teal", "tool") }}{% endif %}
+  {% if ctx.can("wash.prices") %}{{ tile("/wash/prices", "Прайс мойки", "услуги, цены, боксы", "teal", "drop") }}{% endif %}
 </div>
 {% endif %}
 {% endblock %}

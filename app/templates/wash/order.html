@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{# Наряд глазами мойщика / детейлера (18.11.2026, брат): машина, что сделать, «Начал / Пауза / Выполнено», сообщения,
+   химия. Ремонтных разделов (этапы, проблемы, диагностика, согласование, запчасти), цен и денег здесь нет. #}
+{% set WST = {"todo": "ждёт", "doing": "моют", "paused": "пауза", "done": "готово"} %}
+{% set WCOL = {"todo": "created", "doing": "work", "paused": "waiting", "done": "ready"} %}
+{% block content %}
+<header class="ov-head">
+  <a class="back" href="/wash/queue">{{ icon("back") }}Мойка</a>
+  <div class="ov-title">
+    <div>
+      <div class="footnote mono">{{ wo.number }}{% if is_wash %} · 🫧 мойка{% else %} · машина с ремонта{% endif %}</div>
+      <h1 class="title-1">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></h1>
+      <div class="subhead">{% if wo.car_class %}{{ CLASSES.get(wo.car_class, "") }}{% endif %}{% if box %} · {{ box.name or ("бокс " ~ box.number) }}{% endif %}{% if client %} · клиент {{ client.full_name }}{% endif %}</div>
+    </div>
+  </div>
+</header>
+
+{% set n_done = works|selectattr("status", "equalto", "done")|list|length %}
+{% if take_c %}
+<div class="wo-now" style="--sc:var(--teal)">
+  <div class="grow"><b>Машина в очереди · {{ take_c.pos }}-я</b><span class="wo-now-t">Возьмите её — вы станете исполнителем, первая услуга начнётся сразу.</span></div>
+  <form class="wo-now-acts one-shot" method="post" action="/wash/take"><input type="hidden" name="order_id" value="{{ wo.id }}"><button class="btn">🫧 Взять машину</button></form>
+</div>
+{% elif wo.status in ("ready", "paid") or (works and n_done == works|length) %}
+<div class="wo-now" style="--sc:var(--green)"><div class="grow"><b>✓ Всё сделано</b><span class="wo-now-t">Менеджер позвонит клиенту и выдаст машину.</span></div>
+  <a class="btn btn-sm btn-gray" href="/wash/queue">К очереди</a></div>
+{% elif wo.status == "closed" %}
+<div class="wo-now" style="--sc:var(--gray)"><div class="grow"><b>Машина выдана клиенту</b></div></div>
+{% endif %}
+
+<div class="wo-wash">
+  <section class="stack">
+    <div class="card compact" id="works">
+      <div class="card-h"><span class="headline">Что сделать · {{ n_done }} из {{ works|length }}</span></div>
+      {% for w in works %}
+      <div class="part work" data-ws="{{ w.status }}">
+        <div class="part-main">
+          <span class="part-name">{{ w.name }}{% if w.minutes %}<span class="caption work-who">≈ {{ fmt_min(w.minutes) }}</span>{% endif %}</span>
+          <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
+        </div>
+        {% if w.status == "done" and w.done_at %}<div class="caption work-done-by">✓ Выполнено {{ w.done_at.astimezone().strftime("%d.%m %H:%M") }}</div>{% endif %}
+        {% if w.status == "paused" and pauses.get(w.id) %}<div class="hint warn" style="margin:0">Пауза: {{ pauses[w.id].pause_reason }} · с {{ pauses[w.id].started_at.astimezone().strftime("%H:%M") }}</div>{% endif %}
+        {% if w.id in own_ok and w.status != "done" %}
+        <div class="work-btns">
+          {% if w.status in ("todo", "paused") %}
+          <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="start"><button class="btn btn-sm">{{ "Продолжить" if w.status == "paused" else "Начал" }}</button></form>
+          {% endif %}
+          {% if w.status == "doing" %}
+          <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state" class="pause-form"><input type="hidden" name="action" value="pause">
+            <input type="hidden" name="reason"><button class="btn btn-sm btn-gray">Пауза</button></form>
+          {% endif %}
+          <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="done"><button class="btn btn-sm btn-tinted">✓ Выполнено</button></form>
+        </div>
+        {% elif w.status != "done" and not take_c and not is_wash %}
+        <p class="caption" style="margin:4px 0 0">Можно начать, когда слесари закончат с машиной.</p>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="footnote" style="margin:0">Для вас здесь работ нет.</p>
+      {% endfor %}
+      {% if others %}<p class="caption" style="margin:8px 0 0">Делает другой мастер: {% for w in others %}{{ w.name }}{% set u = people.get(w.mechanic_id) %}{% if u %} ({{ u.short_name }}){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+    </div>
+
+    {% if wo.complaint and is_wash %}<div class="card compact"><div class="card-h"><span class="headline">Пожелания клиента</span></div><p class="ov-text" style="margin:0">{{ wo.complaint }}</p></div>{% endif %}
+
+    <div class="card compact">
+      <div class="card-h"><span class="headline">Машина при приёмке · фото {{ photos|length }}</span></div>
+      {% if photos %}<div class="pgallery sm">{% for p in photos %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>{% else %}<p class="footnote" style="margin:0">Фото нет</p>{% endif %}
+      {% if wo.intake_note %}<div class="kv"><span>Замечания</span><b class="wrap">{{ wo.intake_note }}</b></div>{% endif %}
+      <div class="kv"><span>Топливо</span><b>{{ FUEL_LEVELS.get(wo.fuel_level, "—") }}</b></div>
+    </div>
+  </section>
+
+  <section class="stack">
+    {% set om = order_msgs %}
+    <div class="card compact" id="msgs">
+      <div class="card-h"><span class="headline">Сообщения · {{ om.rows|length }}</span><a class="btn btn-sm btn-tinted" href="/wash/my">🧴 Химия</a></div>
+      {% for m in om.rows[-6:] %}{% set who = om.people.get(m.created_by) %}
+      <div class="kv" style="align-items:flex-start"><span><b>{{ who.short_name if who else "" }}</b>{% if m.text %}<span style="display:block">{{ m.text }}</span>{% endif %}</span>
+        <span class="caption nowrap">{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      {% else %}<p class="footnote" style="margin:0">Пока нет. Что-то не так с машиной — напишите менеджеру.</p>{% endfor %}
+      {% if om.can_write %}
+      <form class="form dense" method="post" action="/messages">
+        <input type="hidden" name="order_id" value="{{ wo.id }}"><input type="hidden" name="back" value="/orders/{{ wo.id }}#msgs">
+        <input type="hidden" name="to" value="manager">
+        <textarea class="field" name="text" rows="2" maxlength="1000" placeholder="Сообщение менеджеру по этой машине" required></textarea>
+        <button class="btn btn-sm">Отправить</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+</div>
+<script>
+  document.querySelectorAll('.pause-form').forEach(f => f.addEventListener('submit', e => {
+    const r = prompt('Причина паузы (обед, другая машина, нет химии…)', 'Обед');
+    if (r === null) { e.preventDefault(); return; }
+    f.elements.reason.value = r;
+  }));
+</script>
+{% endblock %}

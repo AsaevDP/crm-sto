@@ -2,7 +2,7 @@
    С 11.11.2026: в долг не работаем — «Выдать авто» только после полной оплаты. #}
 {% if ctx.can("money.view") %}
 <div class="card compact step-card {{ 'now' if flow.cur == 5 }}" id="money" style="--sc:var(--green)">
-  <div class="card-h"><span class="headline"><span class="stepno">6</span>Деньги и выдача</span>
+  <div class="card-h"><span class="headline"><span class="stepno">{{ 3 if flow.wash else 6 }}</span>Деньги и выдача</span>
     <span class="ov-actions"><a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}/print" target="_blank">Заказ-наряд</a></span></div>
 
   {% if wo.awaiting_prepay %}<div class="flash error" style="margin:0">Ждёт предоплату {{ (wo.prepay_amount)|money }} ₴ — подбор и закупка заблокированы</div>{% endif %}

@@ -124,6 +124,13 @@ class WorkOrder(Entity):
     warranty_closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     warranty_closed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     warranty_prev_closed: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)   # первая выдача (для отчётов)
+    # Мойка (18.11.2026): kind="wash" — быстрая приёмка на мойку (без диагностики, запчастей, подъёмника).
+    # car_class — класс машины для прайса (car / suv / bus), wash_box_id — бокс мойки, queue_rank — место в очереди
+    # (менеджер поднимает машину «↑»; пусто — по времени приезда).
+    kind: Mapped[str | None] = mapped_column(String(10), default="", server_default="", nullable=True, index=True)
+    car_class: Mapped[str | None] = mapped_column(String(10), default="", server_default="", nullable=True)
+    wash_box_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wash_boxes.id"), nullable=True)
+    queue_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class WoStatusHistory(Entity):
@@ -170,6 +177,9 @@ class WoWork(Entity):
     done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     is_warranty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")   # гарантийная работа (0 ₴)
     done_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)  # кто нажал «Готово»
+    # Мойка (18.11.2026): работа из прайса мойки и её примерная длительность (для очереди)
+    wash_service_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wash_services.id"), nullable=True)
+    minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class WoPart(Entity):

@@ -50,6 +50,8 @@ PERMISSIONS = [
     ("chem.ask", "Просить у кладовщика химию для мойки и ухода (мойщик, детейлер)", "Мойка"),
     ("wash.view", "Раздел «Мойка»: машины на мойке, химия, кто сколько взял", "Мойка"),
     ("wash.buy", "Заказывать химию для мойки у поставщика («Закупка для мойки»)", "Мойка"),
+    # 18.11.2026 (брат): прайс мойки (услуги и цены) и боксы мойки правят менеджер, директор, зам, админ; мойщик — только видит
+    ("wash.prices", "Прайс мойки: услуги, цены, боксы мойки", "Мойка"),
     ("razbor.view", "Видеть разбор (б/у)", "Разбор"),
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
@@ -99,7 +101,7 @@ DEFAULT_ROLES = {
         # 13.11.2026 (брат): менеджер запчасти не добавляет (только выбирает варианты и убирает в архив) — без parts.offer
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
-        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.buy", *_OWN]),
+        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.buy", "wash.prices", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "purchases.mine", "stock.view",
         "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
@@ -121,12 +123,12 @@ DEFAULT_ROLES = {
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
-        "payroll.advance", "wash.view", "wash.buy", "purchases.all", "stock.keep", *_OWN]),
+        "payroll.advance", "wash.view", "wash.buy", "wash.prices", "purchases.all", "stock.keep", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy",
+        "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices",
         "purchases.all", "stock.keep", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [

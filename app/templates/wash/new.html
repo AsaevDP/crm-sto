@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{# Быстрая приёмка на мойку (18.11.2026, брат): клиент, авто, класс машины, услуги из прайса (= работы наряда с ценой),
+   кто моет, бокс, топливо. Фото — по желанию. Без жалобы, диагностики, запчастиста и подъёмника. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/wash">{{ icon("back") }}Мойка</a><h1 class="large-title">🫧 Приёмка на мойку</h1></div>
+  <div class="ov-actions">
+    <span class="caption">В очереди: <b>{{ brd.queue|length }}</b> · моют: <b>{{ brd.doing|length }}</b></span>
+    <a class="btn btn-sm btn-gray" href="/orders/new">Обычная приёмка (ремонт)</a>
+  </div>
+</header>
+
+<form id="wform" class="wash-form" autocomplete="off" novalidate>
+  <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id">
+  <input type="hidden" name="intake_token" value="{{ intake_token }}">
+  <div class="wash-form-cols">
+  <div class="stack">
+    {# ---------- 1. Клиент ---------- #}
+    <section class="stack">
+      <div class="group-title">1 · Клиент</div>
+      <div class="card form">
+        <div class="search-box">
+          <input class="field search" id="find" placeholder="Найти: телефон, госномер, фамилия" inputmode="search">
+          <div class="results" id="results" hidden></div>
+        </div>
+        <div class="picked" id="picked" hidden>
+          <span class="tag">из базы</span><span id="picked-text" class="grow"></span>
+          <button type="button" class="btn btn-plain btn-sm" id="unpick">Новый клиент</button>
+        </div>
+        <div class="form-row">
+          <label>Телефон *<input class="field" name="phone" type="tel" inputmode="tel" placeholder="067 123 45 67" required></label>
+          <label>Имя *<input class="field" name="name" placeholder="Олег Коваленко" required autocapitalize="words"></label>
+        </div>
+      </div>
+    </section>
+
+    {# ---------- 2. Авто ---------- #}
+    <section class="stack">
+      <div class="group-title">2 · Автомобиль</div>
+      <div class="card form">
+        <div class="vehicles" id="vehicles" hidden></div>
+        <div class="form-row">
+          <label>Госномер *<input class="field mono plate" name="plate" placeholder="АА 1234 ВС" required autocapitalize="characters"></label>
+          <label>Марка *<input class="field" name="make" list="makes" placeholder="Toyota" required></label>
+          <label>Модель *<input class="field" name="model" placeholder="Camry" required></label>
+        </div>
+        <div class="form-row">
+          <label>Пробег, км<input class="field" name="mileage" inputmode="numeric" placeholder="необязательно"></label>
+          <label>VIN<input class="field mono" name="vin" maxlength="17" autocapitalize="characters" placeholder="необязательно"></label>
+        </div>
+        <datalist id="makes">{% for m in makes %}<option value="{{ m }}">{% endfor %}</datalist>
+        <div class="headline wf-sub">Класс машины *</div>
+        <div class="segmented seg-wide" id="cls">
+          {% for k, t in CLASSES.items() %}<button type="button" data-v="{{ k }}" aria-pressed="false">{{ t }}</button>{% endfor %}
+        </div>
+        <input type="hidden" name="car_class">
+      </div>
+    </section>
+
+    {# ---------- Фото (необязательно) ---------- #}
+    <section class="stack">
+      <div class="group-title">Фото · по желанию</div>
+      <div class="card form">
+        <div class="pp-grid" id="pgrid"></div>
+        <label class="btn btn-tinted btn-block pp-add">{{ icon("plus") }}Сфотографировать машину<input type="file" id="pinput" accept="image/*" multiple hidden></label>
+        <p class="hint" id="pcount">1–2 фото, чтобы потом не спорить о царапинах. Можно без фото.</p>
+      </div>
+    </section>
+    {# ---------- 3. Кто моет и где ---------- #}
+    <section class="stack">
+      <div class="group-title">3 · Кто моет</div>
+      <div class="card form">
+        <div class="form-row">
+          <label>Мойщик
+            <select class="field" name="washer_id"><option value="">Любой свободный</option>
+              {% for u in washers %}<option value="{{ u.id }}">{{ u.full_name }} · {{ MASTERS.get(u.role.code, "")|lower }}</option>{% endfor %}</select>
+          </label>
+          {% if boxes %}<label>Бокс
+            <select class="field" name="box_id"><option value="">Любой свободный</option>
+              {% for b in boxes %}<option value="{{ b.id }}">{{ b.name or ("Бокс " ~ b.number) }}</option>{% endfor %}</select>
+          </label>{% endif %}
+        </div>
+        <div class="headline wf-sub">Топливо</div>
+        <div class="segmented seg-wide" id="fuel">
+          {% for v, t in FUEL_LEVELS.items() %}<button type="button" data-v="{{ v }}" aria-pressed="false" title="{{ t }}">{{ {0: "0", 100: "100%"}.get(v, t) }}</button>{% endfor %}
+        </div>
+        <input type="hidden" name="fuel_level">
+        <label>Заметка (царапины, что оставили в машине)<input class="field" name="intake_note"></label>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    {# ---------- 4. Услуги ---------- #}
+    <section class="stack">
+      <div class="group-title wf-gt">4 · Услуги *{% if ctx.can("wash.prices") %}<a class="caption" href="/wash/prices">прайс →</a>{% endif %}</div>
+      <div class="card form">
+        <p class="hint" id="cls-hint">Выберите класс машины — цены подставятся.</p>
+        {% for kind, label in KINDS.items() %}{% set grp = services|selectattr("kind", "equalto", kind)|list %}{% if grp %}
+        <div class="caption wf-kind">{{ label }}</div>
+        <div class="wsv-list">
+          {% for s in grp %}
+          <label class="wsv"><input type="checkbox" name="service_id" value="{{ s.id }}" data-min="{{ s.minutes }}"
+              data-car="{{ s.price_car }}" data-suv="{{ s.price_suv }}" data-bus="{{ s.price_bus }}">
+            <span class="wsv-n">{{ s.name }}<small>{{ fmt_min(s.minutes) }}</small></span>
+            <b class="wsv-p nowrap" data-p>{{ s.price_car|money(0) }} ₴</b></label>
+          {% endfor %}
+        </div>
+        {% endif %}{% endfor %}
+        <div class="wsv-total"><span>Итого <span class="caption" id="tmin"></span></span><b class="nowrap" id="tsum">0 ₴</b></div>
+        <label>Пожелания клиента<input class="field" name="note" placeholder="Например: багажник не трогать, коврики оставить"></label>
+      </div>
+    </section>
+  </div>
+  </div>
+  <div class="flash error" id="errors" hidden></div>
+  <div class="submit-bar"><button class="btn" id="submit">Поставить в очередь</button></div>
+</form>
+
+<script src="{{ asset('/static/js/photos.js') }}"></script>
+<script>
+(function () {
+  const form = document.getElementById('wform');
+  const $ = n => form.elements[n];
+  const picker = PhotoPicker(document.getElementById('pinput'), document.getElementById('pgrid'), 6,
+    n => { document.getElementById('pcount').textContent = n ? `Фото: ${n}` : '1–2 фото, чтобы потом не спорить о царапинах. Можно без фото.'; });
+  function seg(id, field, onSet) {
+    document.getElementById(id).addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', x === b));
+      $(field).value = b.dataset.v; onSet && onSet(b.dataset.v);
+    });
+  }
+  // ---- Класс машины → цены услуг; итог и время ----
+  const fmt = n => Math.round(n).toLocaleString('ru-RU').replace(/ /g, ' ') + ' ₴';
+  const fmtMin = m => m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч` + (m % 60 ? ` ${String(m % 60).padStart(2, '0')} мин` : '');
+  function recalc() {
+    const cls = $('car_class').value || 'car';
+    let sum = 0, min = 0;
+    form.querySelectorAll('.wsv input').forEach(ch => {
+      const p = parseFloat(ch.dataset[cls]) || 0;
+      ch.closest('.wsv').querySelector('[data-p]').textContent = fmt(p);
+      if (ch.checked) { sum += p; min += +ch.dataset.min || 0; }
+    });
+    document.getElementById('tsum').textContent = fmt(sum);
+    document.getElementById('tmin').textContent = min ? '· ≈ ' + fmtMin(min) : '';
+  }
+  seg('cls', 'car_class', () => { document.getElementById('cls-hint').hidden = true; recalc(); });
+  seg('fuel', 'fuel_level');
+  form.addEventListener('change', e => { if (e.target.name === 'service_id') recalc(); });
+  recalc();
+
+  // ---- Поиск клиента (как в обычной приёмке) ----
+  const find = document.getElementById('find'), results = document.getElementById('results');
+  const picked = document.getElementById('picked'), vbox = document.getElementById('vehicles');
+  let timer, found = [];
+  find.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = find.value.trim();
+      if (q.length < 2) { results.hidden = true; return; }
+      const r = await fetch('/api/clients/search?q=' + encodeURIComponent(q), { headers: { 'x-requested-with': 'fetch' } });
+      if (!r.ok) return;
+      found = (await r.json()).items;
+      results.innerHTML = found.length ? found.map((c, i) => `
+        <button type="button" class="res" data-i="${i}"><span class="avatar">${esc(c.name.split(' ').map(s => s[0]).slice(0, 2).join(''))}</span>
+        <span class="grow"><b>${esc(c.name)}</b><span class="caption">${esc(c.phone_fmt)} · ${c.vehicles.map(v => esc(v.plate_fmt + ' ' + v.make)).join(', ') || 'нет авто'}</span></span></button>`).join('')
+        : '<div class="res footnote">Не нашли — заполните поля ниже, клиент создастся сам</div>';
+      results.hidden = false;
+    }, 250);
+  });
+  results.addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (b) pickClient(found[+b.dataset.i]); });
+  function pickClient(c) {
+    $('client_id').value = c.id; $('phone').value = c.phone_fmt; $('name').value = c.name;
+    document.getElementById('picked-text').textContent = `${c.name}, ${c.phone_fmt}`;
+    picked.hidden = false; results.hidden = true; find.value = '';
+    vbox.innerHTML = c.vehicles.map((v, i) => `<button type="button" class="vchip" data-v="${i}">${esc(v.plate_fmt)} · ${esc(v.make)} ${esc(v.model)}</button>`).join('')
+      + '<button type="button" class="vchip" data-v="new">＋ Другое авто</button>';
+    vbox.hidden = false;
+    vbox.onclick = e => {
+      const b = e.target.closest('.vchip'); if (!b) return;
+      vbox.querySelectorAll('.vchip').forEach(x => x.classList.toggle('on', x === b));
+      const v = b.dataset.v === 'new' ? null : c.vehicles[+b.dataset.v];
+      $('vehicle_id').value = v ? v.id : '';
+      for (const k of ['plate', 'make', 'model', 'vin', 'mileage']) $(k).value = v ? (k === 'plate' ? v.plate_fmt : (v[k] ?? '')) : '';
+    };
+    if (c.vehicles.length === 1) vbox.querySelector('.vchip').click();
+  }
+  document.getElementById('unpick').onclick = () => {
+    $('client_id').value = ''; $('vehicle_id').value = ''; picked.hidden = true; vbox.hidden = true;
+    for (const k of ['phone', 'name', 'plate', 'make', 'model', 'vin', 'mileage']) $(k).value = '';
+  };
+  function esc(s) { return String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+
+  // ---- Отправка ----
+  const btn = document.getElementById('submit'), errBox = document.getElementById('errors');
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    picker.appendTo(fd);
+    btn.disabled = true; btn.textContent = 'Сохраняю…'; errBox.hidden = true;
+    try {
+      const r = await fetch('/wash/new', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+      const res = await r.json().catch(() => ({}));
+      if (r.ok && res.ok) { location.href = res.url; return; }
+      errBox.innerHTML = 'Проверьте: ' + (res.errors || [res.error || 'ошибка сервера']).map(esc).join(', ');
+      errBox.hidden = false; errBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (err) {
+      errBox.textContent = 'Нет связи с сервером. Проверьте Wi-Fi и нажмите ещё раз.'; errBox.hidden = false;
+    }
+    btn.disabled = false; btn.textContent = 'Поставить в очередь';
+  });
+})();
+</script>
+{% endblock %}

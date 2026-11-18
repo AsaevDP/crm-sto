@@ -219,6 +219,9 @@ def can_view(ctx, wo: WorkOrder) -> bool:
                 or history_order(ctx, wo) or wo.id in set(hsvc.handed_out(ctx.db, ctx.branch.id, ctx.user.id)))
     if ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id):
         return True
+    from ..permissions import WASHERS   # 18.11.2026: мойщик видит все машины в очереди мойки (берёт следующую)
+    if (wo.kind or "") == "wash" and wo.status in WO_ACTIVE and ctx.user.role.code in WASHERS:
+        return True
     from ..models import OrderMaster   # 13.11.2026: ещё мастер на машине (электрик, моторист…)
     if ctx.db.scalar(select(OrderMaster.id).where(OrderMaster.work_order_id == wo.id, OrderMaster.user_id == ctx.user.id,
                                                   OrderMaster.active.is_(True)).limit(1)):
@@ -547,6 +550,8 @@ STEP_OF = {"created": 0, "diag": 1, "approve": 2, "picking": 3, "waiting": 3, "i
 def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_works: int = 0, n_done: int = 0,
          options_open: int = 0) -> dict:
     """Полоса шагов наверху наряда и подсказка: что сейчас сделать и кому."""
+    if (wo.kind or "") == "wash":
+        return _wash_flow(wo, mech, n_works, n_done)
     cur = STEP_OF.get(wo.status, -1)
     skip = {1} if wo.scenario == "A" and not n_find else set()   # 13.11.2026: согласование есть и в сценарии А
     steps = [{"n": i + 1, "label": label, "color": color,
@@ -593,6 +598,34 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
         color = "green"
     tab = "main" if cur <= 2 else ("diag" if cur <= 4 else "hist")
     return {"steps": steps, "cur": cur, "title": title, "text": text, "color": color, "tab": tab}
+
+
+WASH_STEPS = [("Приём", "blue"), ("Мойка", "teal"), ("Выдача", "green")]
+WASH_STEP_OF = {"created": 0, "work": 1, "ready": 2, "paid": 2, "closed": 3}
+
+
+def _wash_flow(wo: WorkOrder, mech: str, n_works: int, n_done: int) -> dict:
+    """Быстрый наряд мойки (18.11.2026): шаги «Приём → Мойка → Выдача», без диагностики и запчастей."""
+    cur = WASH_STEP_OF.get(wo.status, -1)
+    steps = [{"n": i + 1, "label": label, "color": color,
+              "state": "done" if i < cur else ("now" if i == cur else "todo")} for i, (label, color) in enumerate(WASH_STEPS)]
+    s = wo.status
+    if s == "cancel":
+        title, text, color = "Наряд отменён", wo.cancel_reason or "", "red"
+    elif s == "work" and not n_done and not mech:
+        title, text, color = "В очереди на мойку", "Мойщик возьмёт машину кнопкой «Взять следующую».", "teal"
+    elif s == "work":
+        title, text, color = f"Мойка · {mech or 'мойщик'}", f"Готово услуг: {n_done} из {n_works}.", "teal"
+    elif s == "ready":
+        title, text, color = "Машина помыта", "Позвоните клиенту, примите оплату и выдайте машину.", "green"
+    elif s == "paid":
+        title, text, color = "Оплачено — выдайте машину", "Блок «Деньги и выдача».", "green"
+    else:
+        title = "Выдан клиенту"
+        text = wo.closed_at.astimezone().strftime("%d.%m.%Y %H:%M") if wo.closed_at else ""
+        color = "green"
+    return {"steps": steps, "cur": cur, "title": title, "text": text, "color": color,
+            "tab": "diag" if cur <= 1 else "hist", "wash": True}
 
 
 def reopen(db: Session, wo: WorkOrder) -> str:

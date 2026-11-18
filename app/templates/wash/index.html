@@ -1,18 +1,21 @@
 {% extends "base.html" %}
 {% from "_tiles.html" import tiles as tiles_m with context %}
+{% from "wash/_qcard.html" import qcard with context %}
 {# Мойка (12.11.2026): машины на мойке, химия (сколько есть, кто сколько взял), закупка химии для мойки.
    Химия — расход СТО, входит в стоимость мойки, клиенту в счёт не идёт. #}
 {% block content %}
 <header class="page-head">
   <div><h1 class="large-title">Мойка</h1></div>
   <div class="ov-actions">
+    {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/wash/new">🫧 Принять на мойку</a>{% endif %}
+    <a class="btn btn-sm btn-gray" href="/wash/prices">Прайс</a>
     <a class="btn btn-sm btn-gray" href="/stock?sec=chem">Химия на складе</a>
     {% if ctx.can("wash.buy") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('wnew').showModal()">{{ icon("plus") }}Заказать химию</button>{% endif %}
   </div>
 </header>
 
 {{ tiles_m([
-  {"t": "На мойке", "n": cars|length, "c": "blue", "s": "машин по нарядам", "href": "/wash?tab=now", "on": tab == "now"},
+  {"t": "Очередь", "n": brd.queue|length, "c": "blue", "s": "моют: " ~ brd.doing|length ~ " · готовы: " ~ brd.done|length, "href": "/wash?tab=now", "on": tab == "now"},
   {"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"},
   {"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=chem", "zero": not asks},
   {"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low},
@@ -20,6 +23,27 @@
 ], "wash-tiles") }}
 
 {% if tab == "now" %}
+{% set manage = ctx.can("orders.approve") %}
+<div class="wq-cols">
+  <section>
+    <div class="group-title" id="queue">Очередь · {{ brd.queue|length }}{% if brd.n_lanes > 1 %} <span class="caption">· боксов: {{ brd.n_lanes }}</span>{% endif %}</div>
+    <div class="wq-list">
+      {% for c in brd.queue %}
+      {% if manage and not loop.first %}{% call qcard(c, "queue") %}<form method="post" action="/wash/{{ c.o.id }}/up" class="one-shot"><button class="btn btn-sm btn-gray" title="Поднять в очереди — клиент спешит или постоянный">↑ Выше</button></form>{% endcall %}
+      {% else %}{{ qcard(c, "queue") }}{% endif %}
+      {% else %}<div class="card compact"><p class="footnote" style="margin:0">Очередь пуста.{% if ctx.can("orders.create") %} <a href="/wash/new">Принять машину на мойку →</a>{% endif %}</p></div>{% endfor %}
+    </div>
+  </section>
+  <section>
+    <div class="group-title">Моют · {{ brd.doing|length }}</div>
+    <div class="wq-list">{% for c in brd.doing %}{{ qcard(c, "doing") }}{% else %}<p class="footnote">Сейчас никто не моет.</p>{% endfor %}</div>
+    <div class="group-title">Готовы — позвонить клиенту · {{ brd.done|length }}</div>
+    <div class="wq-list">{% for c in brd.done %}{% call qcard(c, "done") %}<a class="btn btn-sm btn-tinted" href="/orders/{{ c.o.id }}#money">Оплата и выдача</a>{% endcall %}{% else %}<p class="footnote">Пока нет.</p>{% endfor %}</div>
+  </section>
+</div>
+
+{% if cars %}
+<div class="group-title">С ремонта — мойка как работа в наряде · {{ cars|length }}</div>
 <div class="wash-cars">
   {% for x in cars %}{% set s = WASH_ST[x.st] %}
   <a class="card compact wash-car" href="/orders/{{ x.o.id }}#works" data-st="{{ x.st }}">
@@ -28,11 +52,9 @@
     {% for w in x.works %}<div class="kv"><span>{{ w.name }}</span><b class="caption">{{ {"todo": "ждёт", "doing": "в работе", "paused": "пауза", "done": "✓ готово"}[w.status] }}</b></div>{% endfor %}
     <div class="caption">{% for u in x.who %}{{ MASTERS.get(u.role.code, "") }} · {{ u.full_name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if x.mgr %} · ведёт {{ x.mgr.short_name }}{% endif %}</div>
   </a>
-  {% else %}
-  <div class="card compact"><p class="footnote" style="margin:0">Сейчас машин на мойке нет. Мойка и детейлинг — работы в наряде: менеджер добавляет работу «Мойка» и выбирает исполнителя (мойщик или детейлер).</p></div>
   {% endfor %}
 </div>
-
+{% endif %}
 {% elif tab == "chem" %}
 <div class="cl-grid wash-grid">
   <section class="ov-col on">
