@@ -36,7 +36,7 @@ def test_catalog_categories_and_guess(client):
     # форма: выбор категории и подсказки; список — все категории с количеством
     page = client.get(f"/razbor/donors/{d.id}").text
     assert 'id="dn-addpart"' in page and 'id="rz-hints"' in page and "Освещение › Задняя оптика" in page
-    lst = client.get("/razbor").text
+    lst = client.get("/razbor?v=parts&empty=1").text   # 19.11.2026: «Все детали», с пустыми
     assert "Гибрид и электро" in lst and "Освещение" in lst
     # свою категорию и подкатегорию добавить можно
     client.post("/razbor/refs", data={"action": "add_cat", "name": "Тюнинг (спр)"})

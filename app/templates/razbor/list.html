@@ -1,12 +1,15 @@
 {% extends "base.html" %}
-{# Разбор (11.11.2026): плитки по состояниям, слева дерево «марка → модель», сверху категории и подкатегории,
-   в таблице — что где лежит и в каком состоянии. Продажи и отправки — отдельный экран «Продажи». #}
+{# Разбор (19.11.2026, брат — «интуитивно непонятно»): две вкладки.
+   «Машины» — крупные карточки машин: окупаемость и сколько деталей в каком состоянии.
+   «Все детали» — слева дерево категорий с количеством (подкатегории раскрываются), справа детали группами
+   «категория → подкатегория»; марка и модель — выпадающими списками. Состояния — плитками в один ряд. #}
 {% block content %}
 {% set ST_CHIP = {"stock": "ready", "reserved": "waiting", "sent": "diag", "sold": "closed", "service": "instock", "writeoff": "cancel", "out": "created", "unapproved": "approve", "declined": "cancel"} %}
 <header class="page-head">
   <h1 class="large-title">Разбор</h1>
   <form class="toolbar-row rz-search" method="get" action="/razbor">
-    {% for k, v in [("f", f), ("make", make), ("model", model), ("cat", cat), ("sub", sub), ("donor", donor)] if v %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <input type="hidden" name="v" value="parts">
+    {% for k, val in [("f", f), ("make", make), ("model", model), ("cat", cat), ("sub", sub), ("donor", donor)] if val %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
     <input class="field search" name="q" value="{{ q }}" placeholder="Код Р-0001, деталь, марка, модель, VIN" autocomplete="off">
   </form>
   <div class="ov-actions">
@@ -17,107 +20,119 @@
   </div>
 </header>
 
-<div class="pult-tiles rz-tiles">
-  {# 18.11.2026 (брат): цену детали утверждает директор / зам — «Не утверждено» и «Отказано в утверждении» #}
-  {% for key, title, color, sub in [("unapproved", "Не утверждено", "orange", "ждут директора"), ("declined", "Отказано в утверждении", "red", "смотрите причину"),
-      ("stock", "В наличии", "green", tiles.stock_sum|money(0) ~ " ₴ по ценам"), ("reserved", "В резерве", "orange", "ждут покупателя"),
-      ("sent", "Отправлено", "purple", "в пути, ждём деньги"), ("sold", "Продано", "blue", "за всё время"),
-      ("service", "В наряды СТО", "teal", "поставили клиентам"), ("out", "Нет в наличии", "gray", "продано, списано")] %}
+{% set show_cars = ctx.can("razbor.manage", "razbor.sell", "reports.finance") %}
+{% if show_cars %}
+<div class="segmented rz-views" role="tablist">
+  <a role="tab" href="/razbor?v=cars" aria-pressed="{{ 'true' if v == 'cars' else 'false' }}">🚗 Машины · {{ donors|length }}</a>
+  <a role="tab" href="/razbor?v=parts" aria-pressed="{{ 'true' if v == 'parts' else 'false' }}">🔧 Все детали · {{ n_all }}</a>
+</div>
+{% endif %}
+
+{# Состояния — в один ряд; нажал — «Все детали» с этим фильтром #}
+<div class="rz-states">
+  {% for key, title, color in [("unapproved", "Не утверждено", "orange"), ("declined", "Отказано", "red"), ("stock", "В наличии", "green"),
+      ("reserved", "В резерве", "yellow"), ("sent", "Отправлено", "purple"), ("sold", "Продано", "blue"), ("service", "В наряды СТО", "teal"),
+      ("out", "Нет в наличии", "gray")] %}
   {% set n = tiles[key] if key != "out" else tiles.sold + tiles.service + tiles.writeoff + tiles.out %}
-  <a class="ptile {{ 'zero' if not n }} {{ 'on' if f == key }}" href="{{ link(f=('' if f == key else key), make='', model='', cat='', sub='') }}" style="--tc:{{ color_css(color) }}">
-    <span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
+  <a class="rz-st {{ 'zero' if not n }} {{ 'on' if f == key and v == 'parts' }}" href="{{ link(v='parts', f=('' if f == key else key), cat='', sub='') }}" style="--tc:{{ color_css(color) }}">
+    <span>{{ title }}</span><b>{{ n }}</b></a>
   {% endfor %}
 </div>
 
-<div class="rz-layout">
-  <aside class="card compact rz-tree">
-    <div class="card-h"><span class="headline">Марки и модели</span>{% if make or model %}<a class="caption" href="{{ link(make='', model='', cat='', sub='') }}">все</a>{% endif %}</div>
-    {% for mk, x in mk_tree.items() %}
-    <details class="rz-mk" {% if mk == make %}open{% endif %}>
-      <summary class="{{ 'on' if mk == make and not model }}"><a href="{{ link(make=mk, model='', cat='', sub='') }}">{{ mk }}</a><span class="caption">{{ x.n }}</span></summary>
-      {% for md, n in x.models|dictsort %}
-      <a class="rz-md {{ 'on' if mk == make and md == model }}" href="{{ link(make=mk, model=md, cat='', sub='') }}"><span>{{ md }}</span><span class="caption">{{ n }}</span></a>
+{% if v == "cars" %}
+{# ===================== Машины ===================== #}
+<div class="rzc-grid">
+  {# одинаковые машины (марка + модель + год) — одна карточка «×2», внутри каждая отдельно (решение 11.11.2026) #}
+  {% for g in donor_groups if g["items"]|length > 1 %}
+  <div class="card compact rzc rzc-multi">
+    <span class="rzc-ph">{% if g.photo %}<img src="/razbor/files/{{ g.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}<span>🚗</span>{% endif %}</span>
+    <span class="rzc-body">
+      <span class="rzc-t"><b>{{ g.make }} {{ g.model }}</b>{% if g.year %} <span class="caption">{{ g.year }}</span>{% endif %} <span class="rzc-x">×{{ g["items"]|length }}</span></span>
+      <span class="payback"><span style="width:{{ [g.pct, 100]|min }}%" class="{{ 'ok' if g.pct >= 100 }}"></span></span>
+      <span class="caption nowrap">окупились на <b>{{ g.pct }}%</b> · на полке {{ g.left }}</span>
+      {% for d in g["items"] %}{% set e = eco[d.id] %}{% set s = by_donor.get(d.id, {}) %}
+      <a class="rzc-one" href="/razbor/donors/{{ d.id }}"><span>{{ d.code }} · {{ DONOR_STATUS[d.status] }}</span>
+        <span class="caption nowrap">{{ s.get('stock', 0) }} в наличии · {{ e.pct }}%</span></a>
       {% endfor %}
-    </details>
-    {% else %}<p class="footnote" style="margin:0">Пусто{% if f %} в этом состоянии{% endif %}</p>{% endfor %}
+    </span>
+  </div>
+  {% endfor %}
+  {% for g in donor_groups if g["items"]|length == 1 %}{% set d = g["items"][0] %}{% set e = eco[d.id] %}{% set s = by_donor.get(d.id, {}) %}{% set ph = dphoto.get(d.id) %}
+  <a class="card compact rzc" href="/razbor/donors/{{ d.id }}">
+    <span class="rzc-ph">{% if ph %}<img src="/razbor/files/{{ ph.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}<span>🚗</span>{% endif %}</span>
+    <span class="rzc-body">
+      <span class="rzc-t"><b>{{ d.make }} {{ d.model }}</b>{% if d.year %} <span class="caption">{{ d.year }}</span>{% endif %}</span>
+      <span class="caption">{{ d.code }} · {{ DONOR_STATUS[d.status] }}{% if d.engine %} · {{ d.engine }}{% endif %}</span>
+      <span class="payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></span>
+      <span class="caption nowrap">окупилась на <b class="{{ 'dt-ok' if e.pct >= 100 }}">{{ e.pct }}%</b> · {{ e.earned|money(0) }} из {{ e.invested|money(0) }} ₴</span>
+      <span class="rzc-nums">
+        <span class="rzc-n" data-k="stock"><b>{{ s.get('stock', 0) }}</b> в наличии</span>
+        {% if s.get('unapproved') %}<span class="rzc-n" data-k="unapproved"><b>{{ s.unapproved }}</b> не утверждено</span>{% endif %}
+        {% if s.get('declined') %}<span class="rzc-n" data-k="declined"><b>{{ s.declined }}</b> отказано</span>{% endif %}
+        {% if s.get('reserved') %}<span class="rzc-n" data-k="reserved"><b>{{ s.reserved }}</b> в резерве</span>{% endif %}
+        {% set gone = s.get('sold', 0) + s.get('sent', 0) + s.get('service', 0) %}{% if gone %}<span class="rzc-n" data-k="sold"><b>{{ gone }}</b> продано</span>{% endif %}
+      </span>
+    </span>
+  </a>
+  {% endfor %}
+  {% if ctx.can("razbor.manage") %}
+  <button class="card compact rzc rzc-new" type="button" onclick="document.getElementById('dnew').showModal()">{{ icon("plus") }}<span>Новый донор</span></button>
+  {% endif %}
+  {% if not donors and not ctx.can("razbor.manage") %}<div class="card compact"><p class="footnote" style="margin:0">Машин на разборе пока нет</p></div>{% endif %}
+</div>
+
+{% else %}
+{# ===================== Все детали ===================== #}
+<form class="rz-filters" method="get" action="/razbor">
+  <input type="hidden" name="v" value="parts">
+  {% for k, val in [("f", f), ("cat", cat), ("sub", sub), ("q", q)] if val %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
+  <select class="field" name="make" onchange="this.form.model && (this.form.model.value=''); this.form.submit()" aria-label="Марка">
+    <option value="">Все марки</option>{% for m in makes_all %}<option {% if m == make %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>
+  {% if make %}<select class="field" name="model" onchange="this.form.submit()" aria-label="Модель">
+    <option value="">Все модели</option>{% for m in models_all %}<option {% if m == model %}selected{% endif %}>{{ m }}</option>{% endfor %}</select>{% endif %}
+  {% if f or make or cat or q %}<a class="btn btn-plain btn-sm" href="/razbor?v=parts">Сбросить фильтры</a>{% endif %}
+</form>
+
+<div class="rzp-layout">
+  <aside class="card compact rzp-tree">
+    <a class="rzp-cat {{ 'on' if not cat }}" href="{{ link(cat='', sub='') }}"><span>Все категории</span><b>{{ cat_counts.values()|sum }}</b></a>
+    {% set n_empty = ref.cats|rejectattr("c.name", "in", cat_counts.keys()|list)|list|length %}
+    {% for c in ref.cats %}{% set n = cat_counts.get(c.c.name, 0) %}
+    {% if n or show_empty or c.c.name == cat %}
+    <a class="rzp-cat {{ 'on' if c.c.name == cat and not sub }} {{ 'zero' if not n }}" href="{{ link(cat=c.c.name, sub='') }}"><span>{{ c.c.name }}</span><b>{{ n }}</b></a>
+    {% if c.c.name == cat %}{% set sc = sub_all.get(cat, {}) %}
+      {% for s in c.subs %}{% set m = sc.get(s.name, 0) %}{% if m or show_empty %}
+      <a class="rzp-sub {{ 'on' if sub == s.name }} {{ 'zero' if not m }}" href="{{ link(sub=('' if sub == s.name else s.name)) }}"><span>{{ s.name }}</span><b>{{ m }}</b></a>
+      {% endif %}{% endfor %}
+      {% if sc.get("") %}<span class="rzp-sub muted-tag"><span>без подкатегории</span><b>{{ sc[""] }}</b></span>{% endif %}
+    {% endif %}
+    {% endif %}{% endfor %}
+    {% for k, n in cat_counts.items() if k not in ref.cats|map(attribute="c")|map(attribute="name")|list %}
+    <a class="rzp-cat {{ 'on' if k == cat }}" href="{{ link(cat=k, sub='') }}"><span>{{ k }}</span><b>{{ n }}</b></a>{% endfor %}
+    {% if n_empty %}<a class="rzp-more caption" href="{{ link(empty=('' if show_empty else '1')) }}">{{ "Скрыть пустые" if show_empty else "Показать пустые · " ~ n_empty }}</a>{% endif %}
   </aside>
 
-  <section class="rz-main">
-    {# 18.11.2026 (брат): плитки машин — справа над деталями, «Марки и модели» — слева сбоку #}
-{# 11.11.2026: «Доноры и окупаемость» — плитками во всю ширину. Одинаковые машины (марка + модель + год) — одна плитка
-   «×2», внутри — каждая машина отдельно (код, статус, окупаемость). Новая машина сама появляется плиткой. #}
-{# 12.11.2026: доноры и деньги разборки — тем, кто ведёт разбор (контентщик, продавец, директор). Запчастисту и остальным,
-   кто только смотрит, — сразу поиск, марки и список деталей. #}
-{% if ctx.can("razbor.manage", "razbor.sell", "reports.finance") %}
-<section class="dt-sec">
-  <div class="group-title">Доноры и окупаемость · {{ donors|length }} {{ "машина" if donors|length == 1 else ("машины" if donors|length in (2, 3, 4) else "машин") }}</div>
-  <div class="dt-grid">
-    {% for g in donor_groups %}{% set multi = g["items"]|length > 1 %}{% set one = g["items"][0] %}
-    <{{ "div" if multi else "a" }} class="card compact dt-tile {{ 'multi' if multi }}"{% if not multi %} href="/razbor/donors/{{ one.id }}"{% endif %}>
-      <div class="dt-head">
-        <span class="dt-ph">{% if g.photo %}<img src="/razbor/files/{{ g.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}🚗{% endif %}</span>
-        <span class="dt-name"><b>{{ g.make }} {{ g.model }}</b>
-          <span class="caption">{% if g.year %}{{ g.year }} · {% endif %}{% if multi %}{{ g["items"]|length }} шт{% else %}{{ one.code }} · {{ DONOR_STATUS[one.status] }}{% endif %}</span></span>
-        {% if multi %}<span class="dt-count">×{{ g["items"]|length }}</span>{% endif %}
-      </div>
-      <span class="payback"><span style="width:{{ [g.pct, 100]|min }}%" class="{{ 'ok' if g.pct >= 100 }}"></span></span>
-      <span class="caption nowrap">{{ g.earned|money(0) }} из {{ g.invested|money(0) }} ₴ · <b class="{{ 'dt-ok' if g.pct >= 100 }}">{{ g.pct }}%</b> · на полке {{ g.left }}</span>
-      {% if multi %}
-      <div class="dt-list">
-        {% for d in g["items"] %}{% set e = eco[d.id] %}
-        <a href="/razbor/donors/{{ d.id }}"><span>{{ d.code }} · {{ DONOR_STATUS[d.status] }}</span><span class="caption nowrap">{{ e.pct }}% · на полке {{ e.parts_left }}</span></a>
-        {% endfor %}
-      </div>
-      {% endif %}
-    </{{ "div" if multi else "a" }}>
+  <section class="rzp-main">
+    {% for g in part_groups %}
+    <div class="card compact rzp-group">
+      <div class="rzp-gh"><a class="headline" href="{{ link(cat=g.name, sub='') }}">{{ g.name }}</a><span class="rzp-gn">{{ g.n }}</span></div>
+      {% for s, rs in g.subs %}
+      {% if s or g.subs|length > 1 %}<div class="rzp-sh">{{ s or "Без подкатегории" }} <span class="caption">{{ rs|length }}</span></div>{% endif %}
+      {% for r in rs %}
+      <a class="rzp-row {{ 'muted' if r.state in ('sold', 'service', 'writeoff', 'out') }}" href="/razbor/parts/{{ r.i.id }}">
+        <span class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}<span class="dn-nophoto">📷</span>{% endif %}</span>
+        <span class="rzp-name"><b>{{ r.c.name }}</b><span class="caption"><span class="mono">{{ r.i.code }}</span> · {{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }}{% if r.loc %} · {{ r.loc }}{% endif %}</span></span>
+        <b class="nowrap rzp-price">{{ r.i.sale_price|money(0) }} ₴</b>
+        <span class="chip" data-rs="{{ r.state }}">{{ ITEM_STATES[r.state] }}</span>
+      </a>
+      {% endfor %}{% endfor %}
+    </div>
+    {% else %}
+    <div class="card compact"><p class="footnote" style="margin:0">Деталей нет{% if q or f or make or cat %} по фильтру{% endif %}.</p></div>
     {% endfor %}
-    {% if ctx.can("razbor.manage") %}
-    <button class="card compact dt-tile dt-new" type="button" onclick="document.getElementById('dnew').showModal()">{{ icon("plus") }}<span>Новый донор</span></button>
-    {% endif %}
-    {% if not donor_groups and not ctx.can("razbor.manage") %}<div class="card compact"><p class="footnote" style="margin:0">Доноров пока нет</p></div>{% endif %}
-  </div>
-</section>
-{% endif %}
-
-
-    <div class="rz-crumbs">
-      <a href="{{ link(make='', model='', cat='', sub='') }}">Все марки</a>
-      {% if make %}<span>›</span><a href="{{ link(model='', cat='', sub='') }}">{{ make }}</a>{% endif %}
-      {% if model %}<span>›</span><a href="{{ link(cat='', sub='') }}">{{ model }}</a>{% endif %}
-      {% if cat %}<span>›</span><a href="{{ link(sub='') }}">{{ cat }}</a>{% endif %}
-      {% if sub %}<span>›</span><b>{{ sub }}</b>{% endif %}
-      {% if f %}<span class="chip">{{ FILTERS[f] }}</span>{% endif %}
-    </div>
-    <div class="rz-cats">
-      {% if not cat %}
-      {# 18.11.2026 (брат): все категории справочника с количеством деталей; пустые — бледнее #}
-      {% for c in ref.cats %}{% set n = cat_counts.get(c.c.name, 0) %}<a class="rz-cat {{ 'zero' if not n }}" href="{{ link(cat=c.c.name, sub='') }}">{{ c.c.name }} <b>{{ n }}</b></a>{% endfor %}
-      {% for k, n in cat_counts.items() if k not in ref.cats|map(attribute="c")|map(attribute="name")|list %}<a class="rz-cat" href="{{ link(cat=k, sub='') }}">{{ k }} <b>{{ n }}</b></a>{% endfor %}
-      {% else %}
-      {% for c in ref.cats if c.c.name == cat %}{% for s in c.subs %}{% set n = sub_counts.get(s.name, 0) %}
-      <a class="rz-cat {{ 'on' if sub == s.name }} {{ 'zero' if not n }}" href="{{ link(sub=('' if sub == s.name else s.name)) }}">{{ s.name }}{% if n %} <b>{{ n }}</b>{% endif %}</a>{% endfor %}{% endfor %}
-      <a class="rz-cat back" href="{{ link(cat='', sub='') }}">← все категории</a>
-      {% endif %}
-    </div>
-    <div class="tablewrap">
-      <table class="table rz-table">
-        <thead><tr><th></th><th>Код</th><th>Деталь</th><th>Где</th><th class="num">Цена</th><th>Состояние</th></tr></thead>
-        <tbody>
-        {% for r in rows %}
-        <tr class="row-link {{ 'muted' if r.state in ('sold', 'service', 'writeoff', 'out') }}" onclick="location.href='/razbor/parts/{{ r.i.id }}'">
-          <td class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% endif %}</td>
-          <td class="mono nowrap">{{ r.i.code }}</td>
-          <td><b>{{ r.c.name }}</b><div class="caption">{{ r.c.category or "Прочее" }}{% if r.c.subcategory %} › {{ r.c.subcategory }}{% endif %} · {{ r.i.donor_make }} {{ r.i.donor_model }}{% if r.i.donor_year %} {{ r.i.donor_year }}{% endif %} · {{ CONDITIONS.get(r.i.condition, "") }}</div></td>
-          <td class="caption nowrap">{{ r.loc or "—" }}</td>
-          <td class="num nowrap">{{ r.i.sale_price|money(0) }} ₴</td>
-          <td class="nowrap"><span class="chip" data-s="{{ ST_CHIP[r.state] }}">{{ ITEM_STATES[r.state] }}</span>{% if r.b.on_hand > 1 %} <span class="caption">{{ r.b.on_hand|num }} шт</span>{% endif %}{% if r.i.publish_on_site and r.state == "stock" %} <span class="tag" title="Уходит в экспорт для сайта">сайт</span>{% endif %}</td>
-        </tr>
-        {% else %}<tr><td colspan="6" class="footnote">Деталей нет{% if q or f or make or cat %} по фильтру{% endif %}</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
   </section>
 </div>
+{% endif %}
 
 {% if ctx.can("razbor.manage") %}
 <dialog id="dnew" class="sheet">
@@ -139,3 +154,4 @@
 {% endif %}
 <script src="{{ asset('/static/js/photos.js') }}"></script>
 {% endblock %}
+

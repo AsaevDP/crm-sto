@@ -2127,3 +2127,101 @@ a.rp-car:hover { background: var(--fill-2); }
   .mcards td[data-l]::before { content: attr(data-l); display: block; font-size: 12px; color: var(--text-2); margin-bottom: 2px; }
   .mcards td[colspan] { grid-column: 1 / -1; }
 }
+
+/* ===== Разбор: «Машины» / «Все детали» (19.11.2026, брат) ===== */
+.rz-views { display: inline-flex; margin: 4px 0 10px; }
+.rz-views a { display: inline-flex; align-items: center; justify-content: center; padding: 7px 16px; border-radius: 9px; font-size: 15px;
+  font-weight: 600; color: var(--text); text-decoration: none; white-space: nowrap; }
+.rz-views a[aria-pressed="true"] { background: var(--surface); box-shadow: var(--shadow-1, 0 1px 3px rgba(0,0,0,.12)); }
+.rz-states { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.rz-st { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; text-decoration: none;
+  color: var(--text); background: color-mix(in srgb, var(--tc) 14%, var(--surface)); border: 1.5px solid transparent; font-size: 14px; white-space: nowrap; }
+.rz-st b { font-variant-numeric: tabular-nums; color: var(--tc); }
+.rz-st.zero { opacity: .5; }
+.rz-st.on { border-color: var(--tc); }
+.rzc-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); align-items: stretch; }
+.rzc { display: flex; gap: 14px; align-items: flex-start; color: var(--text); text-decoration: none; min-width: 0; }
+a.rzc:hover { background: var(--fill-2); }
+.rzc-ph { flex: none; width: 96px; height: 96px; border-radius: 14px; background: var(--fill); overflow: hidden; display: grid; place-items: center; font-size: 40px; }
+.rzc-ph img { width: 100%; height: 100%; object-fit: cover; }
+.rzc-body { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.rzc-t { font-size: 17px; }
+.rzc-nums { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+.rzc-n { padding: 2px 9px; border-radius: 999px; font-size: 13px; background: var(--fill); white-space: nowrap; }
+.rzc-n[data-k="stock"] { background: color-mix(in srgb, var(--green) 16%, transparent); }
+.rzc-n[data-k="unapproved"] { background: color-mix(in srgb, var(--orange) 18%, transparent); }
+.rzc-n[data-k="declined"] { background: color-mix(in srgb, var(--red) 16%, transparent); }
+.rzc-n[data-k="reserved"] { background: color-mix(in srgb, var(--yellow) 22%, transparent); }
+.rzc-n[data-k="sold"] { background: color-mix(in srgb, var(--blue) 14%, transparent); }
+.rzc-new { justify-content: center; align-items: center; flex-direction: column; gap: 6px; min-height: 124px; border: 2px dashed var(--separator);
+  background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+.rz-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.rz-filters .field { width: auto; min-width: 180px; }
+.rzp-layout { display: grid; gap: 14px; align-items: start; }
+@media (min-width: 1000px) {
+  .rzp-layout { grid-template-columns: 290px minmax(0, 1fr); }
+  .rzp-tree { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; scrollbar-width: thin; }
+}
+.rzp-tree { display: grid; gap: 1px; align-content: start; }
+.rzp-cat, .rzp-sub { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 9px;
+  color: var(--text); text-decoration: none; font-size: 15px; min-width: 0; }
+.rzp-cat span, .rzp-sub span { min-width: 0; }
+.rzp-cat b, .rzp-sub b { flex: none; font-size: 13px; font-variant-numeric: tabular-nums; padding: 1px 8px; border-radius: 999px; background: var(--fill); }
+.rzp-cat:hover, .rzp-sub:hover { background: var(--fill-2); }
+.rzp-cat.on, .rzp-sub.on { background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 600; }
+.rzp-cat.zero, .rzp-sub.zero { color: var(--text-3); }
+.rzp-sub { padding-left: 24px; font-size: 14px; }
+.rzp-more { padding: 8px 10px; color: var(--accent); text-decoration: none; }
+.rzp-main { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.rzp-group { display: grid; gap: 2px; }
+.rzp-gh { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--separator); }
+.rzp-gh a { color: var(--text); text-decoration: none; }
+.rzp-gn { font-weight: 700; padding: 2px 10px; border-radius: 999px; background: var(--fill); font-variant-numeric: tabular-nums; }
+.rzp-sh { font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .03em; margin: 8px 0 2px; }
+.rzp-row { display: flex; align-items: center; gap: 12px; padding: 6px 4px; border-radius: 10px; color: var(--text); text-decoration: none; min-width: 0; }
+.rzp-row:hover { background: var(--fill-2); }
+.rzp-row .thumb-cell { flex: none; }
+.rzp-name { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.rzp-name .caption { overflow-wrap: anywhere; }
+.rzp-price { flex: none; }
+.rzp-row .chip { flex: none; }
+@media (max-width: 600px) { .rzp-row { flex-wrap: wrap; } .rzp-name { flex-basis: calc(100% - 70px); } .rzp-price { margin-left: 62px; } }
+
+/* ===== Машина-донор, новый вид (19.11.2026) ===== */
+.dn-money { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: center; margin-bottom: 14px; }
+.dn-mph { flex: none; width: 64px; height: 64px; border-radius: 12px; overflow: hidden; background: var(--fill); }
+.dn-mph img { width: 100%; height: 100%; object-fit: cover; }
+.dn-m { display: grid; gap: 0; min-width: 0; }
+.dn-m b { font-size: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dn-m.ok b { color: var(--green); }
+.dn-m.left b { color: var(--orange); }
+.dn-mbar { flex: 1 1 200px; display: flex; align-items: center; gap: 10px; min-width: 160px; }
+.dn-mbar .payback { flex: 1; margin: 0; }
+.dn-mbar b { font-size: 18px; }
+.dn2-layout { display: grid; gap: 14px; align-items: start; }
+@media (min-width: 1000px) {
+  .dn2-layout { grid-template-columns: 300px minmax(0, 1fr); }
+  .dn2-side { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; scrollbar-width: thin; padding: 2px; }
+}
+.dn2-side { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.dn2-cats { display: grid; gap: 1px; }
+.dn2-empty { margin-top: 6px; }
+.dn2-empty summary { cursor: pointer; padding: 6px 10px; }
+button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit; cursor: pointer; text-align: left; }
+.dn2-cats .dn-addcat { display: flex; gap: 6px; margin-top: 8px; }
+.dn2-main { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.rzp-gh-r { display: flex; align-items: center; gap: 8px; }
+.dn2-row { padding: 2px 0; }
+.dn2-a { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; color: var(--text); text-decoration: none; padding: 4px; border-radius: 10px; }
+.dn2-a:hover { background: var(--fill-2); }
+.dn2-row .dn-more { flex: none; }
+.rzp-group:target, .rzp-group[data-open] { box-shadow: 0 0 0 2px var(--accent); }
+@media (max-width: 600px) { .dn2-a { flex-wrap: wrap; } }
+.card.rzc { display: flex; flex-direction: row; }
+.card.rzc.rzc-new { flex-direction: column; }
+.segmented.rz-views { display: inline-flex; width: auto; max-width: 100%; }
+.card.dn-money { display: flex; flex-direction: row; flex-wrap: wrap; }
+.card.dn-money { gap: 10px 30px; align-items: center; }
+.rzc-x { padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent, #fff); font-size: 13px; font-weight: 700; }
+.rzc-one { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--fill-2); color: var(--text); text-decoration: none; }
+.rzc-one:hover { background: var(--fill); }

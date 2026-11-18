@@ -1,13 +1,10 @@
 {% extends "base.html" %}
 {% from "razbor/_catsub.html" import catsub_select %}
-{# Машина-донор (11.11.2026): как «Пульт». Сверху сводка и окупаемость, ниже плитки категорий (общие для всех машин,
-   справочник «Марки и категории»). Открыл плитку — детали этой машины в этой категории: добавить по одной или списком,
-   перенести в другую категорию, удалить ошибочную, открыть карточку детали. #}
-{# 18.11.2026 (брат): добавить деталь — категория и подкатегория из справочника (20 категорий), подсказки названий:
-   выбрал «Фара в сборе» — категория ставится сама; не выбрал — угадаем по названию #}
+{# Машина-донор (19.11.2026, брат — «интуитивно непонятно»): сверху машина и деньги одной строкой; слева — категории
+   этой машины с количеством (нажал — прокрутка), справа — ВСЕ детали машины сразу, группами «категория → подкатегория».
+   «＋ Деталь» — окно: название с подсказками, категория › подкатегория (или угадаем), цена, состояние, ячейка, фото. #}
 {% macro part_form(cat="", sub="") %}
 <form class="form dense dn-addform" method="post" action="/razbor/donors/{{ d.id }}/parts" enctype="multipart/form-data" data-compress>
-  <div class="caption">＋ Деталь{% if cat %} в «{{ cat }}»{% endif %}</div>
   <div class="form-row dn-row">
     <input class="field" name="name" list="rz-hints" placeholder="Название: начните писать — «Фара…» *" required data-hint autocomplete="off">
     <input class="field dn-n" name="price" inputmode="decimal" placeholder="Цена ₴">
@@ -15,7 +12,7 @@
   </div>
   <label class="caption">Категория › подкатегория{{ catsub_select(ref, cat, sub) }}</label>
   <div class="form-row dn-row">
-    <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <select class="field" name="condition">{% for k, val in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ val }}</option>{% endfor %}</select>
     <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
     <input class="field mono" name="article" placeholder="Оригинальный номер">
   </div>
@@ -24,142 +21,132 @@
     <label class="row" style="padding:0"><span class="grow">На сайт</span><input type="checkbox" class="switch" name="publish" value="1" checked></label>
     <button class="btn btn-sm">Добавить деталь</button></div>
 </form>
-{% endmacro %}{% block content %}
+{% endmacro %}
+{% block content %}
 {% set ST = ITEM_STATES %}
 {% set can = ctx.can("razbor.manage") %}
 {% set here = "/razbor/donors/" ~ d.id %}
 <header class="ov-head">
-  <a class="back" href="/razbor?make={{ d.make|urlencode }}&model={{ d.model|urlencode }}">{{ icon("back") }}Разбор · {{ d.make }}</a>
+  <a class="back" href="/razbor?v=cars">{{ icon("back") }}Разбор · машины</a>
   <div class="ov-title">
     <div><div class="footnote mono">{{ d.code }}{% if d.vin %} · VIN {{ d.vin }}{% endif %}</div>
       <h1 class="title-1">{{ d.make }} {{ d.model }}{% if d.year %} · {{ d.year }}{% endif %}</h1>
       <div class="subhead">{{ [d.engine, d.gearbox, d.body, d.color]|select|join(" · ") or "характеристики не заполнены" }}{% if d.mileage %} · {{ "{:,}".format(d.mileage).replace(",", " ") }} км{% endif %}</div></div>
-    <span class="chip chip-lg" data-ds="{{ d.status }}">{{ DONOR_STATUS[d.status] }}</span>
+    <div class="ov-actions">
+      <span class="chip chip-lg" data-ds="{{ d.status }}">{{ DONOR_STATUS[d.status] }}</span>
+      {% if can %}<button class="btn btn-sm" type="button" onclick="dnAdd('')">{{ icon("plus") }}Деталь</button>{% endif %}
+    </div>
   </div>
 </header>
 
-{# 18.11.2026 (брат): слева — машина и окупаемость (и карточка донора), справа — категории и детали на всю ширину #}
-<div class="dn-layout">
-<aside class="dn-side">
-<div class="dn-top">
-  {% if photos %}<div class="card compact dn-photos"><div class="pgallery sm">{% for p in photos[:4] %}<a href="/razbor/files/{{ p.file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""></a>{% endfor %}</div></div>{% endif %}
-  <div class="pult-tiles dn-stats">
-    <span class="ptile" style="--tc:{{ color_css('gray') }}"><span class="ptile-t">Вложено</span><b class="nowrap">{{ e.invested|money(0) }} ₴</b><span class="ptile-s">покупка + расходы</span></span>
-    <span class="ptile" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Заработано</span><b class="nowrap">{{ e.earned|money(0) }} ₴</b><span class="ptile-s">продажи + в наряды · {{ e.pct }}%</span></span>
-    <span class="ptile" style="--tc:{{ color_css('green' if e.profit >= 0 else 'orange') }}"><span class="ptile-t">{{ "Прибыль" if e.profit >= 0 else "До окупаемости" }}</span><b class="nowrap">{{ (e.profit|abs)|money(0) }} ₴</b><span class="ptile-s">{{ "окупился" if e.profit >= 0 else "осталось вернуть" }}</span></span>
-    <span class="ptile" style="--tc:{{ color_css('teal') }}"><span class="ptile-t">На полке</span><b class="nowrap">{{ e.on_shelf|money(0) }} ₴</b><span class="ptile-s">{{ e.parts_left }} из {{ e.parts_total }} деталей</span></span>
-  </div>
-</div>
-<div class="payback dn-payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></div>
-
-<details class="card compact work-edit">
-  <summary class="headline" style="font-size:14px">Карточка донора{% if can %} · изменить{% endif %}</summary>
-  <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}" enctype="multipart/form-data" data-compress style="margin-top:8px">
-    <div class="form-row three"><label>Марка<input class="field" name="make" value="{{ d.make }}"></label><label>Модель<input class="field" name="model" value="{{ d.model }}"></label><label>Год<input class="field" name="year" value="{{ d.year or '' }}" inputmode="numeric"></label></div>
-    <div class="form-row three"><label>Двигатель<input class="field" name="engine" value="{{ d.engine }}" placeholder="3.0 дизель"></label><label>КПП<input class="field" name="gearbox" value="{{ d.gearbox }}" placeholder="АКПП"></label><label>Кузов<input class="field" name="body" value="{{ d.body }}" placeholder="кроссовер"></label></div>
-    <div class="form-row three"><label>Цвет<input class="field" name="color" value="{{ d.color }}"></label><label>Пробег<input class="field" name="mileage" value="{{ d.mileage or '' }}" inputmode="numeric"></label><label>VIN<input class="field mono" name="vin" value="{{ d.vin }}"></label></div>
-    <div class="form-row three"><label>Куплен<input class="field" type="date" name="bought_on" value="{{ d.bought_on or '' }}"></label><label>Цена покупки ₴<input class="field" name="purchase_price" value="{{ '%.0f'|format(d.purchase_price) }}" inputmode="decimal"></label><label>Расходы ₴<input class="field" name="expenses" value="{{ '%.0f'|format(d.expenses) }}" inputmode="decimal"></label></div>
-    <input class="field" name="expenses_note" value="{{ d.expenses_note }}" placeholder="Расходы: эвакуатор 1500, разборка 3000…">
-    <div class="form-row"><select class="field" name="status">{% for k, v in DONOR_STATUS.items() %}<option value="{{ k }}" {% if k == d.status %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-      <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" hidden></label></div>
-    <textarea class="field" name="notes" rows="2" placeholder="Заметки: что битое, что уже снято">{{ d.notes }}</textarea>
-    {% if can %}<button class="btn btn-sm">Сохранить</button>{% endif %}
-  </form>
-</details>
-</aside>
-<section class="dn-main">
-<div class="dn-bar">
-  <span class="headline">Категории</span>
-  {% if can %}<button class="btn btn-sm" type="button" onclick="document.getElementById('dn-addpart').showModal()">{{ icon("plus") }}Деталь</button>{% endif %}
-  {% set n_empty = tiles|selectattr("n", "equalto", 0)|list|length %}
-  {% if n_empty %}<a class="btn btn-plain btn-sm" href="{{ here }}?{% if cat %}cat={{ cat|urlencode }}&{% endif %}{{ '' if show_empty else 'empty=1' }}#cats">{{ "Скрыть пустые" if show_empty else "Показать пустые · " ~ n_empty }}</a>{% endif %}
-  {% if can %}
-  <form class="dn-addcat" method="post" action="/razbor/refs">
-    <input type="hidden" name="action" value="add_cat"><input type="hidden" name="ret" value="{{ here }}?empty=1#cats">
-    <input class="field" name="name" placeholder="Новая категория" required aria-label="Новая категория"><button class="btn btn-sm btn-gray">＋ Категория</button>
-  </form>
-  {% endif %}
-</div>
-<div class="dn-tiles" id="cats">
-  {% for t in tiles if t.n or show_empty or t.name == cat %}
-  <div class="dn-tile {{ 'zero' if not t.n }} {{ 'on' if t.name == cat }}" style="--tc:{{ color_css(t.color) }}">
-    <a class="dn-tile-a" href="{{ here if t.name == cat else here ~ '?cat=' ~ t.name|urlencode ~ ('&empty=1' if show_empty else '') ~ '#cat' }}">
-      <span class="ptile-t">{{ t.name }}</span><b>{{ t.n }}</b>
-      <span class="ptile-s">{% if t.n %}в наличии {{ t.stock }}{% if t.sold %} · продано {{ t.sold }}{% endif %}{% if t.sum %} · {{ t.sum|money(0) }} ₴{% endif %}{% else %}пусто — нажмите, чтобы добавить{% endif %}</span>
-    </a>
-    {% if can and not t.n and t.ref and not used.get(t.name) %}
-    <form method="post" action="/razbor/refs" class="dn-tile-del" onsubmit="return confirm('Убрать категорию «{{ t.name|e }}» у всех машин? Деталей в ней нет.')">
-      <input type="hidden" name="action" value="del_cat"><input type="hidden" name="rid" value="{{ t.ref.c.id }}"><input type="hidden" name="ret" value="{{ here }}?empty=1#cats">
-      <button class="btn btn-plain btn-sm" title="Убрать категорию" aria-label="Убрать категорию">✕</button></form>
-    {% endif %}
-  </div>
-  {% else %}
-  <p class="footnote" style="margin:0">Деталей с этой машины ещё нет. Нажмите «Показать пустые» и выберите категорию — или добавьте деталь ниже.</p>
-  {% endfor %}
+{# Деньги — одной строкой, с полоской окупаемости #}
+<div class="card compact dn-money">
+  {% if photos %}<a class="dn-mph" href="/razbor/files/{{ photos[0].file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ photos[0].file.split('/')[-1] }}" alt=""></a>{% endif %}
+  <div class="dn-m"><span class="caption">Вложено</span><b>{{ e.invested|money(0) }} ₴</b></div>
+  <div class="dn-m"><span class="caption">Заработано</span><b>{{ e.earned|money(0) }} ₴</b></div>
+  <div class="dn-m {{ 'ok' if e.profit >= 0 else 'left' }}"><span class="caption">{{ "Прибыль" if e.profit >= 0 else "До окупаемости" }}</span><b>{{ (e.profit|abs)|money(0) }} ₴</b></div>
+  <div class="dn-m"><span class="caption">На полке</span><b>{{ e.on_shelf|money(0) }} ₴</b><span class="caption">{{ e.parts_left }} из {{ e.parts_total }} деталей</span></div>
+  <div class="dn-mbar"><span class="payback"><span style="width:{{ [e.pct, 100]|min }}%" class="{{ 'ok' if e.pct >= 100 }}"></span></span><b class="{{ 'dt-ok' if e.pct >= 100 }}">{{ e.pct }}%</b></div>
 </div>
 
-{% if cat %}
-{% set t = open_tile %}
-<section class="card compact dn-cat" id="cat" style="--tc:{{ color_css(t.color) }}">
-  <div class="card-h"><span class="headline">{{ cat }} · {{ open_rows|length }}</span><a class="btn btn-plain btn-sm" href="{{ here }}{{ '?empty=1' if show_empty }}#cats">Свернуть</a></div>
-  {% for sub, rs in subs.items() %}
-  {% if subs|length > 1 or sub %}<div class="dn-sub">{{ sub or "Без подкатегории" }} <span class="caption">{{ rs|length }}</span></div>{% endif %}
-  {% for r in rs %}
-  <div class="dn-part {{ 'muted' if r.state in ('sold', 'service', 'writeoff', 'out') }}">
-    <a class="dn-part-a" href="/razbor/parts/{{ r.i.id }}">
-      <span class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}<span class="dn-nophoto">📷</span>{% endif %}</span>
-      <span class="grow"><b>{{ r.c.name }}</b><span class="caption"><span class="mono">{{ r.i.code }}</span> · {{ CONDITIONS.get(r.i.condition, "") }}{% if r.loc %} · {{ r.loc }}{% endif %}{% if r.b.on_hand > 1 %} · {{ r.b.on_hand|num }} шт{% endif %}</span></span>
-      <b class="nowrap">{{ r.i.sale_price|money(0) }} ₴</b>
-      <span class="chip" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>
-    </a>
-    {% if can %}
-    <details class="pu-more dn-more"><summary class="btn btn-plain btn-sm" aria-label="Ещё">•••</summary>
-      <div class="pu-menu card compact">
-        <form method="post" action="/razbor/parts/{{ r.i.id }}/move" class="form dense"><input type="hidden" name="back" value="{{ here }}?cat={{ cat|urlencode }}#cat">
-          <label class="caption">Перенести в категорию{{ catsub_select(ref, r.c.category or "", r.c.subcategory or "") }}</label>
-          <button class="btn btn-sm btn-gray">Перенести</button></form>
-        {% if r.i.id in can_delete %}
-        <form method="post" action="/razbor/parts/{{ r.i.id }}/delete" onsubmit="return confirm('Удалить {{ r.i.code }} «{{ r.c.name|e }}»? Только если завели по ошибке.')">
-          <input type="hidden" name="back" value="{{ here }}?cat={{ cat|urlencode }}#cat"><button class="btn btn-sm btn-plain danger">Удалить (завели по ошибке)</button></form>
-        {% else %}<span class="caption">Удалить нельзя — были продажа или резерв. Можно «Списать» в карточке детали.</span>{% endif %}
-      </div></details>
-    {% endif %}
-  </div>
-  {% endfor %}
-  {% else %}<p class="footnote" style="margin:0">В этой категории с этой машины деталей пока нет.</p>{% endfor %}
-
-  {% if can %}
-  <div class="dn-add">
-    {{ part_form(cat) }}
-    <details class="dn-bulk"><summary class="btn btn-plain btn-sm">📋 Добавить несколько списком</summary>
-      <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}/parts/bulk">
-        <input type="hidden" name="category" value="{{ cat }}">
-        <p class="footnote" style="margin:0">По одной детали на строку: <b>Название; цена; количество</b> (цена и количество — по желанию). Фото добавите потом в карточке детали.</p>
-        <textarea class="field" name="lines" rows="5" placeholder="Фара передняя левая; 6500&#10;Фара передняя правая; 6500&#10;Птф левая; 900; 1"></textarea>
-        <div class="form-row dn-row">
-          {% if t.ref and t.ref.subs %}<select class="field" name="subcategory"><option value="">Подкатегория…</option>{% for s in t.ref.subs %}<option>{{ s.name }}</option>{% endfor %}</select>{% endif %}
-          <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
-          <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select>
-          <button class="btn btn-sm">Добавить все</button></div>
+<div class="dn2-layout">
+  <aside class="dn2-side">
+    <div class="card compact dn2-cats">
+      <div class="card-h"><span class="headline">Категории · {{ rows|length }} дет.</span></div>
+      {% for g in groups %}
+      <a class="rzp-cat" href="#g{{ loop.index }}"><span>{{ g.name }}</span><b>{{ g.n }}</b></a>
+      {% else %}<p class="footnote" style="margin:0">Деталей с этой машины ещё нет{% if can %} — нажмите «＋ Деталь»{% endif %}.</p>{% endfor %}
+      {% set empties = tiles|selectattr("n", "equalto", 0)|list %}
+      {% if can and empties %}
+      <details class="dn2-empty"{% if show_empty %} open{% endif %}><summary class="caption">Пустые категории · {{ empties|length }}</summary>
+        {% for t in empties %}<button type="button" class="rzp-cat zero dn2-addto" onclick="dnAdd({{ (t.name ~ '||')|tojson }})"><span>{{ t.name }}</span><b>＋</b></button>{% endfor %}
+      </details>
+      <form class="dn-addcat" method="post" action="/razbor/refs">
+        <input type="hidden" name="action" value="add_cat"><input type="hidden" name="ret" value="{{ here }}?empty=1">
+        <input class="field" name="name" placeholder="Своя категория" required aria-label="Новая категория"><button class="btn btn-sm btn-gray">＋</button>
+      </form>
+      {% endif %}
+    </div>
+    <details class="card compact work-edit">
+      <summary class="headline" style="font-size:14px">Карточка машины{% if can %} · изменить{% endif %}</summary>
+      <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}" enctype="multipart/form-data" data-compress style="margin-top:8px">
+        <div class="form-row"><label>Марка<input class="field" name="make" value="{{ d.make }}"></label><label>Модель<input class="field" name="model" value="{{ d.model }}"></label></div>
+        <div class="form-row"><label>Год<input class="field" name="year" value="{{ d.year or '' }}" inputmode="numeric"></label><label>Пробег<input class="field" name="mileage" value="{{ d.mileage or '' }}" inputmode="numeric"></label></div>
+        <div class="form-row"><label>Двигатель<input class="field" name="engine" value="{{ d.engine }}" placeholder="3.0 дизель"></label><label>КПП<input class="field" name="gearbox" value="{{ d.gearbox }}" placeholder="АКПП"></label></div>
+        <div class="form-row"><label>Кузов<input class="field" name="body" value="{{ d.body }}" placeholder="кроссовер"></label><label>Цвет<input class="field" name="color" value="{{ d.color }}"></label></div>
+        <label>VIN<input class="field mono" name="vin" value="{{ d.vin }}"></label>
+        <div class="form-row"><label>Куплен<input class="field" type="date" name="bought_on" value="{{ d.bought_on or '' }}"></label><label>Цена покупки ₴<input class="field" name="purchase_price" value="{{ '%.0f'|format(d.purchase_price) }}" inputmode="decimal"></label></div>
+        <label>Расходы ₴<input class="field" name="expenses" value="{{ '%.0f'|format(d.expenses) }}" inputmode="decimal"></label>
+        <input class="field" name="expenses_note" value="{{ d.expenses_note }}" placeholder="Расходы: эвакуатор 1500, разборка 3000…">
+        <div class="form-row"><select class="field" name="status">{% for k, val in DONOR_STATUS.items() %}<option value="{{ k }}" {% if k == d.status %}selected{% endif %}>{{ val }}</option>{% endfor %}</select>
+          <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" hidden></label></div>
+        <textarea class="field" name="notes" rows="2" placeholder="Заметки: что битое, что уже снято">{{ d.notes }}</textarea>
+        {% if can %}<button class="btn btn-sm">Сохранить</button>{% endif %}
       </form>
     </details>
-    {% if t.ref %}
-    <form class="form-row dn-row dn-addsub" method="post" action="/razbor/refs">
-      <input type="hidden" name="action" value="add_sub"><input type="hidden" name="rid" value="{{ t.ref.c.id }}"><input type="hidden" name="ret" value="{{ here }}?cat={{ cat|urlencode }}#cat">
-      <input class="field" name="name" placeholder="Новая подкатегория в «{{ cat }}»" required><button class="btn btn-sm btn-gray">＋ Подкатегория</button></form>
-    {% endif %}
-  </div>
-  {% endif %}
-</section>
-{% endif %}
+  </aside>
 
-</section>
+  <section class="dn2-main">
+    {% for g in groups %}{% set gi = loop.index %}
+    <div class="card compact rzp-group" id="g{{ gi }}"{% if g.name == cat %} data-open{% endif %}>
+      <div class="rzp-gh"><span class="headline">{{ g.name }}</span>
+        <span class="rzp-gh-r"><span class="caption">в наличии {{ g.stock }}{% if g.sum %} · {{ g.sum|money(0) }} ₴{% endif %}</span><span class="rzp-gn">{{ g.n }}</span>
+          {% if can %}<button type="button" class="btn btn-plain btn-sm" onclick="dnAdd({{ (g.name ~ '||')|tojson }})" title="Добавить деталь в «{{ g.name }}»">＋</button>{% endif %}</span></div>
+      {% for s, rs in g.subs %}
+      {% if s or g.subs|length > 1 %}<div class="rzp-sh">{{ s or "Без подкатегории" }} <span class="caption">{{ rs|length }}</span></div>{% endif %}
+      {% for r in rs %}
+      <div class="rzp-row dn2-row {{ 'muted' if r.state in ('sold', 'service', 'writeoff', 'out') }}">
+        <a class="dn2-a" href="/razbor/parts/{{ r.i.id }}">
+          <span class="thumb-cell">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="" loading="lazy">{% else %}<span class="dn-nophoto">📷</span>{% endif %}</span>
+          <span class="rzp-name"><b>{{ r.c.name }}</b><span class="caption"><span class="mono">{{ r.i.code }}</span> · {{ CONDITIONS.get(r.i.condition, "") }}{% if r.loc %} · {{ r.loc }}{% endif %}{% if r.b.on_hand > 1 %} · {{ r.b.on_hand|num }} шт{% endif %}</span></span>
+          <b class="nowrap rzp-price">{{ r.i.sale_price|money(0) }} ₴</b>
+          <span class="chip" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>
+        </a>
+        {% if can %}
+        <details class="pu-more dn-more"><summary class="btn btn-plain btn-sm" aria-label="Ещё">•••</summary>
+          <div class="pu-menu card compact">
+            <form method="post" action="/razbor/parts/{{ r.i.id }}/move" class="form dense"><input type="hidden" name="back" value="{{ here }}#g{{ gi }}">
+              <label class="caption">Перенести в категорию{{ catsub_select(ref, r.c.category or "", r.c.subcategory or "") }}</label>
+              <button class="btn btn-sm btn-gray">Перенести</button></form>
+            {% if r.i.id in can_delete %}
+            <form method="post" action="/razbor/parts/{{ r.i.id }}/delete" onsubmit="return confirm('Удалить {{ r.i.code }} «{{ r.c.name|e }}»? Только если завели по ошибке.')">
+              <input type="hidden" name="back" value="{{ here }}"><button class="btn btn-sm btn-plain danger">Удалить (завели по ошибке)</button></form>
+            {% else %}<span class="caption">Удалить нельзя — были продажа или резерв. Можно «Списать» в карточке детали.</span>{% endif %}
+          </div></details>
+        {% endif %}
+      </div>
+      {% endfor %}{% endfor %}
+    </div>
+    {% else %}
+    <div class="card compact"><p class="footnote" style="margin:0">С этой машины ещё ничего не снято.{% if can %} Нажмите «＋ Деталь» — название с подсказками, категория подставится сама.{% endif %}</p></div>
+    {% endfor %}
+  </section>
 </div>
+
 {% if can %}
-<dialog id="dn-addpart" class="sheet">{{ part_form() }}
-  <button class="btn btn-gray btn-sm" type="button" onclick="this.closest('dialog').close()">Закрыть</button></dialog>
+<dialog id="dn-addpart" class="sheet">
+  <h2 class="title-2">＋ Деталь · {{ d.make }} {{ d.model }}</h2>
+  {{ part_form() }}
+  <details class="dn-bulk"><summary class="btn btn-plain btn-sm">📋 Добавить несколько списком</summary>
+    <form class="form dense" method="post" action="/razbor/donors/{{ d.id }}/parts/bulk">
+      <p class="footnote" style="margin:0">По одной детали на строку: <b>Название; цена; количество</b>. Категорию выберите или оставьте «угадать» — у каждой детали своя.</p>
+      <textarea class="field" name="lines" rows="5" placeholder="Фара передняя левая; 6500&#10;Фара передняя правая; 6500&#10;Птф левая; 900; 1"></textarea>
+      <div class="form-row dn-row">{{ catsub_select(ref, "", "") }}
+        <select class="field" name="condition">{% for k, val in CONDITIONS.items() %}<option value="{{ k }}" {% if k == "good" %}selected{% endif %}>{{ val }}</option>{% endfor %}</select>
+        <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}">{{ loc_label(l) }}</option>{% endfor %}</select></div>
+      <button class="btn btn-sm">Добавить все</button>
+    </form>
+  </details>
+  <button class="btn btn-gray btn-sm" type="button" onclick="this.closest('dialog').close()" style="margin-top:8px">Закрыть</button>
+</dialog>
 <datalist id="rz-hints">{% for h in hints %}<option value="{{ h.name }}" data-c="{{ h.cat }}||{{ h.sub }}">{% endfor %}</datalist>
 <script>
+// «＋ Деталь» — окно; «＋» у категории — то же окно с выбранной категорией
+function dnAdd(catsub) {
+  const dlg = document.getElementById('dn-addpart'), sel = dlg.querySelector('.dn-addform select[name=catsub]');
+  if (sel) sel.value = [...sel.options].some(o => o.value === catsub) ? catsub : '';
+  dlg.showModal(); dlg.querySelector('[data-hint]').focus();
+}
 // Подсказка выбрана — категория ставится сама; своё название — угадываем по словам (если категорию не выбрали)
 (function () {
   const map = {}; document.querySelectorAll('#rz-hints option').forEach(o => map[o.value.toLowerCase()] = o.dataset.c);
@@ -173,7 +160,9 @@
     if (v && [...sel.options].some(o => o.value === v)) sel.value = v;
     else if (v) { const c = v.split('||')[0] + '||'; if ([...sel.options].some(o => o.value === c)) sel.value = c; }
   }));
+  const open = document.querySelector('[data-open]'); if (open) open.scrollIntoView({ block: 'start' });
 })();
 </script>
-{% endif %}<script src="{{ asset('/static/js/photos.js') }}"></script>
+{% endif %}
+<script src="{{ asset('/static/js/photos.js') }}"></script>
 {% endblock %}

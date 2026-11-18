@@ -61,9 +61,9 @@ def test_donor_payback_tiles_group_same_cars(client):
     login(client, "dmitro", "dmitro123")
     for year in ("2012", "2012", "2014"):
         client.post("/razbor/donors", data={"make": "Opel (двойня)", "model": "Astra J", "year": year})
-    page = client.get("/razbor").text
-    sec = page.split('class="dt-sec"')[1].split("</section>")[0]
-    tiles = [t for t in sec.split('dt-tile') if "Opel (двойня) Astra J" in t]
+    page = client.get("/razbor?v=cars").text   # 19.11.2026: вкладка «Машины»
+    sec = page.split('class="rzc-grid"')[1].split('rzc-new')[0] + 'Новый донор'
+    tiles = [t for t in sec.split('class="card compact rzc') if "Opel (двойня)" in t and "Astra J" in t]
     assert len(tiles) == 2                                   # 2012 ×2 и 2014 отдельно
     twin = next(t for t in tiles if "×2" in t)
     with SessionLocal() as db:

@@ -568,6 +568,7 @@ def populate():
                     rsvc.ship(db, s, ttn, cod=True)
         # 18.11.2026: ещё 3 машины — с неутверждёнными ценами (директор утверждает в «Ценах разбора»)
         add_razbor_examples(db, branch.id, users["director"].id if "director" in users else None)
+        add_more_razbor_parts(db, branch.id, users["director"].id if "director" in users else None)   # 19.11.2026
 
         # ---- Табель: отметки по картам за прошлый и текущий месяц ----
         import random
@@ -850,6 +851,59 @@ def add_razbor_examples(db, branch_id, director_id=None):
         out += 1
     db.flush()
     return out
+
+
+MORE_PARTS = [   # 19.11.2026 (брат): больше деталей по машинам — чтобы «пощупать» все категории разбора
+    ("Генератор", 3500), ("Стартер", 2500), ("Компрессор кондиционера", 6500), ("Радиатор охлаждения", 2800),
+    ("Вентилятор радиатора с диффузором", 2200), ("Помпа", 900), ("Дроссельная заслонка", 1800), ("Катушка зажигания", 600),
+    ("ЭБУ двигателя", 4500), ("Блок ABS", 5000), ("Суппорт передний левый", 1400), ("Амортизатор передний правый", 1300),
+    ("Рычаг передний нижний левый", 1100), ("Рулевая рейка", 7500), ("Привод передний левый", 2200),
+    ("Фара передняя правая", 5000), ("Фонарь задний левый", 1800), ("Зеркало правое", 2200),
+    ("Стеклоподъёмник передний правый", 1100), ("Дверь задняя левая", 4500), ("Крыло переднее правое", 2600),
+    ("Бампер задний", 3800), ("Сиденье пассажира", 3500), ("Магнитола штатная", 4000), ("Приборная панель", 2500),
+    ("Подушка безопасности водителя", 3000), ("Диск литой R16", 1800), ("Топливный насос", 1600),
+    ("Глушитель основной", 1500), ("Интеркулер", 2400), ("Радиатор печки", 1200), ("Моторчик печки", 1300),
+    ("Ступица задняя левая", 900), ("Пружина задняя", 600), ("Стабилизатор передний", 1000), ("Лямбда-зонд", 1100),
+]
+_PRICE_K = {"bmw": 1.4, "volkswagen": 1.1, "hyundai": 1.2, "renault": 0.9, "toyota": 1.0}
+
+
+def add_more_razbor_parts(db, branch_id, director_id=None, per_car=18):
+    """К каждой машине на разборе — до per_car деталей из MORE_PARTS (каждой машине — свой набор, без повторов).
+    У каждой машины: последние 2 детали ждут директора, одна в резерве под покупателя, одна продана; остальное в наличии."""
+    from .db import now as _now
+    from .models import Donor, PartCatalog, StockItem
+    from .models.razbor import RazborPrice
+    from .services import razbor as rsvc
+    added = 0
+    donors = db.scalars(select(Donor).where(Donor.branch_id == branch_id).order_by(Donor.created_at)).all()
+    for k, d in enumerate(donors):
+        have = {n.lower() for n, in db.execute(select(PartCatalog.name).join(StockItem, StockItem.catalog_id == PartCatalog.id)
+                                               .where(StockItem.donor_id == d.id))}
+        start = (k * 7) % len(MORE_PARTS)
+        pick = [MORE_PARTS[(start + j) % len(MORE_PARTS)] for j in range(len(MORE_PARTS))]
+        pick = [p for p in pick if p[0].lower() not in have][:per_car]
+        if len(pick) < 6:
+            continue   # у этой машины уже есть почти всё
+        kk = _PRICE_K.get(d.make.lower(), 1.0)
+        items = []
+        for name, price in pick:
+            p = Decimal(int(round(price * kk / 50.0)) * 50)
+            items.append(rsvc.add_part(db, branch_id, d, name, 1, p, ("good", "excellent", "fair")[len(items) % 3], None,
+                                       publish=True))
+        db.flush()
+        for i in items[:-2]:   # утвердил директор
+            for r in db.scalars(select(RazborPrice).where(RazborPrice.stock_item_id == i.id, RazborPrice.status == "pending")):
+                r.status, r.final_price, r.decided_by, r.decided_at = "approved", r.price, director_id, _now()
+            i.price_state = ""
+        db.flush()
+        if len(items) > 4:
+            rsvc.reserve_for_buyer(db, branch_id, items[0], 1, items[0].sale_price, "Покупатель (пример)", "0631234567", "np",
+                                   np_address="Киев, отд. 5", channel="olx")
+            rsvc.sell_now(db, branch_id, items[1], 1, items[1].sale_price, "Сергей (пример)", "0501230000", "pickup", "cash")
+        added += len(items)
+        db.flush()
+    return added
 
 
 def _demo_wash_queue(db, branch, users, as_user):

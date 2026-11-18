@@ -85,8 +85,13 @@ RZ_FILTERS = {"": "Все", "stock": "В наличии", "reserved": "Резе�
 # ======================= Склад разбора: марка → модель → категория =======================
 @router.get("/razbor")
 def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "", cat: str = "", sub: str = "",
-           make: str = "", model: str = ""):
+           make: str = "", model: str = "", v: str = "", empty: str = ""):
     ctx.need("razbor.view")
+    # 19.11.2026 (брат): две вкладки — «Машины» (по умолчанию) и «Все детали» (дерево категорий слева, детали группами)
+    if v not in ("cars", "parts"):
+        v = "parts" if (q or f or cat or sub or make or model or donor) else "cars"
+    if not ctx.can("razbor.manage", "razbor.sell", "reports.finance"):
+        v = "parts"   # кто только смотрит (запчастист) — сразу детали
     db = ctx.db
     query = select(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id).where(
         StockItem.branch_id == ctx.branch.id, PartCatalog.kind == "used")
@@ -126,6 +131,7 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
         cat_counts[c] = cat_counts.get(c, 0) + 1
         if c == cat and r["c"].subcategory:
             sub_counts[r["c"].subcategory] = sub_counts.get(r["c"].subcategory, 0) + 1
+    rows_mk = rows   # до выбора категории — для счётчиков дерева
     if cat:
         rows = [r for r in rows if (r["c"].category or "Прочее") == cat]
     if sub:
@@ -152,14 +158,40 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
                                                                              UsedSale.status == s)) or 0
                for s in ("reserved", "sent")}
     ref = svc.tree(db, ctx.branch.id)
-    keep = {"q": q, "f": f, "donor": donor, "make": make, "model": model, "cat": cat, "sub": sub}
+    keep = {"v": v, "q": q, "f": f, "donor": donor, "make": make, "model": model, "cat": cat, "sub": sub, "empty": empty}
 
     def link(**kw):
         from urllib.parse import urlencode
         d = {**keep, **kw}
-        return "/razbor?" + urlencode({k: v for k, v in d.items() if v})
+        return "/razbor?" + urlencode({k: val for k, val in d.items() if val})
+    # 19.11.2026: карточка каждой машины — сколько деталей в каком состоянии
+    by_donor: dict = {}
+    for r in all_rows:
+        if r["i"].donor_id:
+            s = by_donor.setdefault(r["i"].donor_id, {})
+            s[r["state"]] = s.get(r["state"], 0) + 1
+    # «Все детали»: подкатегории каждой категории с количеством; детали — группами «категория → подкатегория»
+    sub_all: dict = {}
+    for r in rows_mk:
+        c0 = r["c"].category or "Прочее"
+        sub_all.setdefault(c0, {})
+        s0 = r["c"].subcategory or ""
+        sub_all[c0][s0] = sub_all[c0].get(s0, 0) + 1
+    order = [c["c"].name for c in ref["cats"]]
+    groups_map: dict = {}
+    for r in rows:
+        c0 = r["c"].category or "Прочее"
+        groups_map.setdefault(c0, {}).setdefault(r["c"].subcategory or "", []).append(r)
+    part_groups = [{"name": c0, "n": sum(len(x) for x in subs.values()),
+                    "subs": sorted(subs.items(), key=lambda kv: (kv[0] == "", kv[0]))}
+                   for c0, subs in sorted(groups_map.items(),
+                                          key=lambda kv: (order.index(kv[0]) if kv[0] in order else 999, kv[0]))]
+    makes_all = sorted({r["i"].donor_make for r in all_rows if r["i"].donor_make})
+    models_all = sorted({r["i"].donor_model for r in all_rows if r["i"].donor_make == make and r["i"].donor_model}) if make else []
     return ctx.render("razbor/list.html", title="Разбор", rows=rows, q=q, f=f, donor=donor, donors=donors, eco=eco,
-                      donor_groups=donor_groups,
+                      donor_groups=donor_groups, v=v, by_donor=by_donor, sub_all=sub_all, part_groups=part_groups,
+                      show_empty=bool(empty), makes_all=makes_all, models_all=models_all, n_all=len(all_rows),
+                      dphoto=dphoto,
                       cat=cat, sub=sub, make=make, model=model, cat_counts=cat_counts, sub_counts=sub_counts,
                       mk_tree=dict(sorted(mk_tree.items())), ref=ref, tiles=tiles, link=link, FILTERS=RZ_FILTERS,
                       ITEM_STATES=ITEM_STATES, n_sales=n_sales, CONDITIONS=CONDITIONS, DONOR_STATUS=DONOR_STATUS,
@@ -563,13 +595,24 @@ def donor_view(did: str, ctx: Ctx = Depends(get_ctx), cat: str = "", empty: str 
     subs = {}
     for r in open_rows:
         subs.setdefault(r["c"].subcategory or "", []).append(r)
-    can_delete = svc.deletable(db, [r["i"] for r in open_rows]) if open_rows else set()
+    # 19.11.2026 (брат): все детали машины сразу — группами «категория → подкатегория», в порядке справочника
+    groups = []
+    for t in tiles:
+        mine = [r for r in rows if norm(r["c"].category) == norm(t["name"])]
+        if not mine:
+            continue
+        subs_g: dict = {}
+        for r in mine:
+            subs_g.setdefault(r["c"].subcategory or "", []).append(r)
+        groups.append({"name": t["name"], "n": len(mine), "ref": t["ref"], "stock": t["stock"], "sum": t["sum"],
+                       "subs": sorted(subs_g.items(), key=lambda kv: (kv[0] == "", kv[0]))})
+    can_delete = svc.deletable(db, [r["i"] for r in rows]) if rows else set()
     return ctx.render("razbor/donor.html", title=f"{d.code} {d.make} {d.model}", d=d, rows=rows, photos=photos,
                       e=svc.economy(db, ctx.branch.id, d), locations=_locations(ctx), CONDITIONS=CONDITIONS,
                       DONOR_STATUS=DONOR_STATUS, loc_label=ssvc.location_label, ref=ref, ITEM_STATES=ITEM_STATES,
                       tiles=tiles, cat=cat, show_empty=bool(empty), used=used, open_rows=open_rows,
                       subs=dict(sorted(subs.items(), key=lambda x: (x[0] == "", x[0]))), can_delete=can_delete,
-                      open_tile=next((t for t in tiles if t["name"] == cat), None), hints=_hints())
+                      open_tile=next((t for t in tiles if t["name"] == cat), None), hints=_hints(), groups=groups)
 
 
 def _hints():
@@ -593,10 +636,14 @@ def _donor_back(d: Donor, cat: str = "") -> str:
 
 @router.post("/razbor/donors/{did}/parts/bulk")
 def parts_bulk(did: str, ctx: Ctx = Depends(get_ctx), lines: str = Form(""), category: str = Form(""),
-               subcategory: str = Form(""), condition: str = Form("good"), location_id: str = Form("")):
-    """Несколько деталей сразу, по строке: «Название; цена; кол-во» (цена и кол-во — по желанию)."""
+               subcategory: str = Form(""), condition: str = Form("good"), location_id: str = Form(""),
+               catsub: str = Form(None)):
+    """Несколько деталей сразу, по строке: «Название; цена; кол-во» (цена и кол-во — по желанию).
+    19.11.2026: категория — одним списком «категория › подкатегория» (catsub); пусто — угадываем по каждому названию."""
     ctx.need("razbor.manage")
     d = _donor(ctx, did)
+    if catsub is not None:
+        category, _, subcategory = catsub.partition("||")
     loc = ctx.db.get(Location, _uuid(location_id)) if location_id else None
     n, no_price = 0, []
     for raw in lines.splitlines():
