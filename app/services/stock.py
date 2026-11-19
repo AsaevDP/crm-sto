@@ -542,7 +542,7 @@ def sent_lines(db: Session, part: WoPart) -> list:
             if db.get(Purchase, l.purchase_id).status != "draft" or l.ordered_at]
 
 
-def archive_part(db: Session, part: WoPart, user_id) -> str:
+def archive_part(db: Session, part: WoPart, user_id, tell: bool = True) -> str:
     """13.11.2026 (брат): «Убрать» → в архив наряда, а не насовсем. Резерв снимается, из черновика закупки строка уходит;
     уже заказанное у поставщика — запчастисту сообщение «отмените заказ» (приедет — ляжет на свободный склад).
     Возвращает ошибку или ''."""
@@ -560,7 +560,7 @@ def archive_part(db: Session, part: WoPart, user_id) -> str:
     from ..db import now
     part.archived_at, part.archived_by = now(), user_id
     db.flush()
-    if sent:
+    if sent and tell:
         from . import notify
         wo = db.get(WorkOrder, part.work_order_id)
         notify.send(db, [wo.partsman_id], "order_cancel", f"Отмените заказ: {part.name}",
@@ -675,6 +675,22 @@ def price_error(db: Session, wo: WorkOrder) -> str:
     return f"Укажите цену (закупка и наценка): {names} — без цены подбор не завершить"
 
 
+def lonely_option_error(db: Session, wo: WorkOrder) -> str:
+    """19.11.2026 (брат): «вариант на выбор» без второго варианта — это не выбор (в наряде 39 так согласовались два
+    комплекта колодок). Ошибка или ''."""
+    groups: dict = {}
+    for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.option_group.is_not(None),
+                                             WoPart.option_group != "", WoPart.status.in_(("option", "declined")))):
+        groups.setdefault(p.option_group, []).append(p)
+    for items in groups.values():
+        if len(items) == 1 and items[0].status == "option":
+            c = db.get(PartCatalog, items[0].catalog_id) if items[0].catalog_id else None
+            nm = f"{items[0].name}{' ' + c.brand if c and c.brand else ''}"
+            return (f"У варианта «{nm}» нет второго — добавьте ещё вариант («Ещё вариант») "
+                    "или уберите его и добавьте как обычную позицию")
+    return ""
+
+
 def mark_picked(db: Session, wo: WorkOrder, user) -> str:
     """13.11.2026 (брат): запчастист закончил подбор, пока менеджер согласует — «Подбор завершён» ничего не заказывает,
     только отмечает и пишет менеджеру: можно звонить клиенту. Без цены у позиции — нельзя. Возвращает ошибку или ''."""
@@ -686,6 +702,9 @@ def mark_picked(db: Session, wo: WorkOrder, user) -> str:
     undecided = [p for p in parts if p.plan != "order" and not p.option_group]
     if undecided:
         return f"По каждой запчасти выберите: со склада или заказать («{undecided[0].name}»)"
+    err = lonely_option_error(db, wo)
+    if err:
+        return err
     wo.picked_at, wo.picked_by = now(), user.id
     from . import notify
     n = db.scalar(select(func.count()).select_from(WoPart).where(WoPart.work_order_id == wo.id,

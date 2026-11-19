@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{# «Лишнее после отказов» (19.11.2026, брат): клиент отказался от детали уже после согласования.
+   Заказана и едет → запчастист: «Отменил у поставщика» или «Пусть приедет — на склад».
+   На складе → «Оставить на складе» (подбирается в другие машины), «Вернуть поставщику» (списание), «Продать». #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Лишнее после отказов</h1>
+    <p class="footnote" style="margin:0">Клиент отказался от детали после согласования. Причина — у каждой строки и в наряде.</p></div>
+  <nav class="segmented" aria-label="Что показать">
+    <a href="/stock/leftovers?tab=open" aria-pressed="{{ (tab == 'open')|lower }}">Решить{% if n_open %} · {{ n_open }}{% endif %}</a>
+    <a href="/stock/leftovers?tab=done" aria-pressed="{{ (tab == 'done')|lower }}">Решено{% if n_done %} · {{ n_done }}{% endif %}</a>
+  </nav>
+</header>
+
+<div class="lo-list">
+  {% for x in rows %}{% set lo = x.lo %}{% set st = STATUS[lo.status] %}
+  <div class="card compact lo-card" data-st="{{ lo.status }}">
+    <div class="card-h">
+      <span class="headline">{{ x.part.name if x.part else (x.cat.name if x.cat else "") }}{% if x.cat and x.cat.brand %} <span class="tag">{{ x.cat.brand }}</span>{% endif %}</span>
+      <span class="chip" data-c="{{ st[1] }}" style="--cc:{{ color_css(st[1]) }}">{{ st[0] }}</span>
+    </div>
+    <div class="subhead">{{ lo.qty|num }} шт{% if show_cost and lo.cost %} · закупка {{ lo.cost|money }} ₴{% endif %}
+      {% if x.wo %} · <a href="/orders/{{ x.wo.id }}#parts">наряд {{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} <span class="mono">{{ fmt_plate(x.v.plate) }}</span>{% endif %}{% endif %}</div>
+    <div class="lo-why">Причина отказа: <b>{{ lo.reason }}</b> · {{ lo.created_at.astimezone().strftime("%d.%m %H:%M") }}</div>
+    {% if x.by %}<div class="caption">решил {{ x.by.full_name }}{% if lo.decided_at %} · {{ lo.decided_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}{% if lo.note %} · {{ lo.note }}{% endif %}</div>{% endif %}
+    {% if can %}
+    <div class="lo-acts">
+      {% if lo.status == "decide" %}
+      <form method="post" action="/stock/leftovers/{{ lo.id }}"><input type="hidden" name="action" value="cancel"><button class="btn btn-sm">Отменил у поставщика</button></form>
+      <form method="post" action="/stock/leftovers/{{ lo.id }}" class="lo-note"><input type="hidden" name="action" value="to_stock"><input type="hidden" name="note">
+        <button class="btn btn-sm btn-gray">Отменить нельзя — пусть приедет на склад</button></form>
+      {% elif lo.status == "wait" %}
+      <span class="caption">Едет от поставщика — когда кладовщик примет, ляжет на склад свободной; тогда решите, что с ней делать.</span>
+      {% elif lo.status in ("stock", "kept", "sale") %}
+      {% if lo.status != "kept" %}<form method="post" action="/stock/leftovers/{{ lo.id }}"><input type="hidden" name="action" value="keep"><button class="btn btn-sm btn-gray">Оставить на складе</button></form>{% endif %}
+      <form method="post" action="/stock/leftovers/{{ lo.id }}" onsubmit="return confirm('Вернуть поставщику? Деталь спишется со склада.')"><input type="hidden" name="action" value="return"><button class="btn btn-sm btn-gray">Вернуть поставщику</button></form>
+      {% if lo.status != "sale" %}<form method="post" action="/stock/leftovers/{{ lo.id }}"><input type="hidden" name="action" value="sale"><button class="btn btn-sm btn-gray">Продать</button></form>{% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">{{ "Решать нечего." if tab == "open" else "Пока ничего не решали." }}</p></div>
+  {% endfor %}
+</div>
+<p class="footnote">«Оставить на складе» — деталь свободная, её можно подобрать в другую машину. «Продать» — пометка: когда будет сайт,
+  такие детали попадут во вкладку «Новые запчасти». «Вернуть поставщику» — списание со склада с пометкой «возврат».</p>
+<script>
+  document.querySelectorAll('.lo-note').forEach(f => f.addEventListener('submit', e => {
+    const r = prompt('Почему нельзя отменить? (например, «поставщик не принимает отказ»)', '');
+    if (r === null) { e.preventDefault(); return; }
+    f.elements.note.value = r;
+  }));
+</script>
+{% endblock %}

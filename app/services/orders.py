@@ -799,7 +799,29 @@ def work_for_finding(db: Session, wo: WorkOrder, f, yes: bool):
     db.flush()
 
 
-def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False) -> str:
+def duplicate_parts(db: Session, wo: WorkOrder) -> list[dict]:
+    """19.11.2026 (брат): одна и та же деталь в наряде несколько раз (как в наряде 39: колодки TRW со склада + Jurid +
+    Toyota) — перед «Согласовал с клиентом» спрашиваем, берёт ли клиент все. [{name, items: [«TRW · на складе», …]}]."""
+    from ..models import PartCatalog, WoPart
+    from ..models.orders import PART_OFF
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
+    groups: dict = {}
+    for p in parts:
+        groups.setdefault(" ".join((p.name or "").lower().replace("ё", "е").split()), []).append(p)
+    out = []
+    for items in groups.values():
+        if len(items) < 2:
+            continue
+        labels = []
+        for p in items:
+            c = db.get(PartCatalog, p.catalog_id) if p.catalog_id else None
+            where = "на складе" if p.status == "reserved" else "под заказ"
+            labels.append(f"{c.brand if c and c.brand else 'без бренда'} · {where}")
+        out.append({"name": items[0].name, "items": labels})
+    return out
+
+
+def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False, dups_ok: bool = False) -> str:
     """«Согласовал с клиентом» (13.11.2026, брат): проблемы, работы и запчасти — разом, после того как запчастист
     закончил подбор. Только теперь запчасти заказываются. Возвращает текст ошибки или ''.
     Отказы → рекомендации в карту клиента. no_parts — менеджер подтвердил «запчасти не нужны» без подбора."""
@@ -838,6 +860,11 @@ def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False) -> str:
         if wo.partsman_id and not wo.picked_at and not (no_parts and not fresh):
             return ("Запчастист ещё не закончил подбор — дождитесь «Подбор завершён»"
                     + ("" if fresh else ". Если запчасти не нужны — «Согласовал — запчасти не нужны»"))
+    if works and not dups_ok:   # 19.11.2026: одна деталь несколько раз — клиент точно берёт все?
+        d = duplicate_parts(db, wo)
+        if d:
+            return (f"«{d[0]['name']}» в наряде {len(d[0]['items'])} раза ({', '.join(d[0]['items'])}). "
+                    "Если клиент берёт все — отметьте «Да, клиент берёт все», иначе уберите лишнее")
     for f in findings:
         if f.approval == "no":
             event(db, wo, "recommendation", f.text, finding=f, urgency=f.urgency)

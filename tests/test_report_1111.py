@@ -215,9 +215,12 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     assert _parts(url2)[0].status == "reserved"
     _as(client, "oleg")
-    r = client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", follow_redirects=False)
+    # 19.11.2026: после согласования — «Клиент отказался» с причиной; без причины не убирается
+    client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", follow_redirects=False)
+    assert _parts(url2)[0].status == "reserved"
+    r = client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", data={"reason": "Клиент купил сам"}, follow_redirects=False)
     assert r.status_code == 303
-    assert _parts(url2)[0].status == "archived"   # 13.11.2026: «Убрать» — в архив наряда, можно вернуть
+    assert _parts(url2)[0].status == "archived" and _parts(url2)[0].refuse_reason == "Клиент купил сам"
     with SessionLocal() as db:
         assert not ssvc.reserved_for_part(db, _parts(url2)[0].id)
 

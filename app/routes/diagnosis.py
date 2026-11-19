@@ -142,12 +142,13 @@ def finding_approval(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx)
 
 
 @router.post("/orders/{order_id}/approval-done")
-def approval_done(order_id: str, ctx: Ctx = Depends(get_ctx), no_parts: str = Form("")):
-    """«Согласовал с клиентом» (13.11.2026): проблемы, работы и запчасти разом — после «Подбор завершён»."""
+def approval_done(order_id: str, ctx: Ctx = Depends(get_ctx), no_parts: str = Form(""), dups_ok: str = Form("")):
+    """«Согласовал с клиентом» (13.11.2026): проблемы, работы и запчасти разом — после «Подбор завершён».
+    19.11.2026: одна деталь несколько раз — нужна галочка «Да, клиент берёт все» (dups_ok)."""
     ctx.need("orders.approve")
     wo = _order(ctx, order_id)
     if wo.status == "approve":
-        err = svc.finish_approval(ctx.db, wo, no_parts=bool(no_parts))
+        err = svc.finish_approval(ctx.db, wo, no_parts=bool(no_parts), dups_ok=bool(dups_ok))
         if err:
             ctx.db.rollback()
             flash(ctx.request, err, "error")

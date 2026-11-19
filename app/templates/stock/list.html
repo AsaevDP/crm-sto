@@ -19,6 +19,8 @@
 {% if ctx.can("stock.receive") %}{% set _ = it.append({"t": "Приход", "n": to_receive, "c": "orange", "s": "ждём от поставщиков", "href": "/stock/receive"}) %}{% endif %}
 {# 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы (сиреневая) #}
 {% set _ = it.append({"t": "Всегда в наличии", "n": keep_below, "c": "purple", "s": "ниже нормы" if keep_below else "всё в норме", "href": "/stock/always", "zero": not keep_below}) %}
+{# 19.11.2026 (брат): клиент отказался после согласования — что лишнее у СТО (решить: оставить, вернуть, продать) #}
+{% if ctx.can("parts.pick", "stock.manage") %}{% set _ = it.append({"t": "Лишнее после отказов", "n": leftovers_n or 0, "c": "orange" if leftovers_n else "gray", "s": "решить, что делать", "href": "/stock/leftovers", "zero": not leftovers_n}) %}{% endif %}
 {% if ctx.can("stock.issue", "tools.manage") %}{% set _ = it.append({"t": "Выдача", "n": new_requests or 0, "c": "red" if new_requests else "gray", "s": "просят слесари", "href": "/stock/issues"}) %}{% endif %}
 {# 18.11.2026 (брат): запчастисту сумма склада ни к чему #}{% if ctx.can("prices.view_purchase") and ctx.user.role.code != "partsman" %}{% set _ = it.append({"t": "На складе на", "n": tiles.sum|money(0) ~ " ₴", "c": "teal", "s": "по закупочным ценам", "zero": false}) %}{% endif %}
 {{ tiles_m(it, "st-tiles") }}

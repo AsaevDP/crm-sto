@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select
 from ..models import Client, ClientEvent, Lift, User, Vehicle, WoFinding, WoPhoto, WorkOrder, WoStatusHistory, WoWork
 from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, URGENCY, WO_ACTIVE, WO_STATUSES
 from ..services import orders as svc
+from ..services import leftovers as lsvc
 from ..web import Ctx, Forbidden, flash, get_ctx
 from ..permissions import MASTERS, is_master
 
@@ -382,6 +383,10 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id
                                 or any(w.mechanic_id == ctx.user.id for w in works))),
         parts_coming=[p for p in parts if p.status in ("need", "ordered", "arrived")],
+        # 19.11.2026: отказ клиента после согласования — что решил запчастист (видно в архиве наряда)
+        leftover_map=lsvc.for_order(db, wo.id),
+        LEFT_STATUS=lsvc.STATUS,
+        dup_names=svc.duplicate_parts(db, wo) if wo.status == "approve" else [],
         parts_total=sum((p.price * p.qty for p in counted), 0), n_counted=len(counted),
         t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, PAY_IN=PAY_IN,
         pay_token=uuid.uuid4().hex,

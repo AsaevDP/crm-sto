@@ -288,6 +288,27 @@ class ChemRequest(Entity):
     reason: Mapped[str] = mapped_column(String(200), default="")
 
 
+class PartLeftover(Entity):
+    """«Лишнее после отказов» (19.11.2026, брат): клиент отказался от детали уже после согласования.
+    Деталь уже заказана у поставщика → запчастист решает: «Отменил у поставщика» или «Пусть приедет — на склад».
+    Деталь на складе (приехала / ждала в резерве) → она свободная у СТО: оставить, вернуть поставщику или «Продать».
+    status: decide — ждёт решения запчастиста (заказана, едет); wait — приедет на склад; stock — лежит на складе, решить;
+    kept — оставили на складе; sale — на продажу; returned — вернули поставщику; cancelled — отменили у поставщика;
+    undone — клиент передумал, деталь снова в наряде."""
+    __tablename__ = "part_leftovers"
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"), index=True)
+    wo_part_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("wo_parts.id"), index=True)
+    catalog_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("parts_catalog.id"), nullable=True)
+    purchase_line_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)
+    cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="decide", index=True)
+    note: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
 class StockKeep(Entity):
     """«Всегда в наличии» (17.11.2026, брат): запчасти и товары, которые всегда должны быть на складе в достаточном
     объёме (часто идут в ремонт). Норма — не меньше `min_qty`. Список ведут кладовщик, директор, зам (право stock.keep)."""

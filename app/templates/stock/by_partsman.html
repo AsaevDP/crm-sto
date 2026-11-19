@@ -13,6 +13,8 @@
   <div class="ov-actions">
     {% if can_recv %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход · по поставщикам</a>{% endif %}
     {% if mode == "mine" %}<a class="btn btn-sm btn-gray" href="/purchases">Закупки</a>{% endif %}
+    {# 19.11.2026 (брат): клиент отказался от уже заказанной детали — решает запчастист #}
+    <a class="btn btn-sm btn-gray" href="/stock/leftovers">Лишнее после отказов</a>
   </div>
 </header>
 

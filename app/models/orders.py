@@ -220,6 +220,8 @@ class WoPart(Entity):
     prev_status: Mapped[str | None] = mapped_column(String(10), default="", nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     archived_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 19.11.2026 (брат): после «Согласовал с клиентом» убрать можно только как «Клиент отказался» — с причиной
+    refuse_reason: Mapped[str | None] = mapped_column(Text, default="", nullable=True)
 
 
 class Notification(Entity):

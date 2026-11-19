@@ -1812,6 +1812,17 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .iss-acts .field.mini { width: 80px; flex: none; }
 .iss-acts details > summary { list-style: none; display: inline-flex; }
 .iss-acts details > summary::-webkit-details-marker { display: none; }
+/* 19.11.2026: «Лишнее после отказов» */
+.lo-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); align-items: start; }
+.lo-card { display: grid; gap: 6px; border-left: 4px solid var(--orange); min-width: 0; }
+.lo-card[data-st="decide"] { border-left-color: var(--red); }
+.lo-card[data-st="kept"], .lo-card[data-st="returned"], .lo-card[data-st="cancelled"], .lo-card[data-st="undone"] { border-left-color: var(--gray); }
+.lo-card[data-st="sale"] { border-left-color: var(--teal); }
+.lo-card .chip[data-c] { background: color-mix(in srgb, var(--cc) 16%, transparent); color: var(--cc); white-space: normal; }
+.lo-why { overflow-wrap: anywhere; }
+.lo-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.lo-acts form { margin: 0; }
+.part-refused { display: block; overflow-wrap: anywhere; }
 /* 19.11.2026: химия у кладовщика — «Сколько» + «Готово к выдаче» / «Выдано сразу» */
 .chem-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0; }
 .chem-acts form { margin: 0; }

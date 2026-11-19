@@ -186,8 +186,20 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
     ctx.db.flush()
     label = f"«{cat.name}»{' · ' + cat.brand if cat.brand else ''}"
     if action == "option":
-        grp = option_group if option_group and ctx.db.scalar(select(WoPart.id).where(
-            WoPart.work_order_id == wo.id, WoPart.option_group == option_group)) else uuid.uuid4().hex
+        grp = None
+        if option_group.startswith("part:"):
+            # 19.11.2026 (брат): вариант к детали, уже взятой со склада / «заказать» — она тоже становится вариантом
+            # (резерв снимается до выбора клиента; выберут её — снова со склада)
+            base = ctx.db.get(WoPart, _uuid(option_group[5:]))
+            if base and base.work_order_id == wo.id and base.status in ("reserved", "need") and not base.option_group \
+                    and wo.status in svc.PLAN_STATUSES:
+                svc.release_part(ctx.db, base, "Стала вариантом на выбор клиенту")
+                grp = uuid.uuid4().hex
+                base.option_group, base.status, base.plan = grp, "option", ""
+        elif option_group and ctx.db.scalar(select(WoPart.id).where(
+                WoPart.work_order_id == wo.id, WoPart.option_group == option_group)):
+            grp = option_group
+        grp = grp or uuid.uuid4().hex
         part.option_group, part.status = grp, "option"
         msg = f"{label} — вариант на выбор клиенту"
     elif action == "need":
@@ -287,13 +299,30 @@ def _can_archive(ctx: Ctx, wo: WorkOrder) -> bool:
 
 
 @router.post("/orders/{order_id}/parts/{part_id}/delete")
-def part_delete(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
-    """«Убрать» → в архив наряда (13.11.2026): резерв снимается, черновая строка закупки убирается, позицию можно вернуть."""
+def part_delete(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    """«Убрать» → в архив наряда (13.11.2026): резерв снимается, черновая строка закупки убирается, позицию можно вернуть.
+    19.11.2026 (брат): после «Согласовал с клиентом» — только «Клиент отказался» с причиной; уже заказанное у
+    поставщика и приехавшее — в «Лишнее после отказов» (решает запчастист), см. services/leftovers.py."""
     ctx.need("parts.pick", "orders.approve")
     wo = _order(ctx, order_id)
     part = ctx.db.get(WoPart, _uuid(part_id))
     if not _can_archive(ctx, wo) or not part or part.work_order_id != wo.id or part.status in ("returned", "archived"):
         raise Forbidden()
+    from ..services import leftovers as lsvc
+    if lsvc.after_approval(wo) and part.status not in ("option", "declined"):
+        err = lsvc.refuse(ctx.db, wo, part, ctx.user, reason)
+        if not err:
+            from ..services import money as msvc
+            err = msvc.guard_total(ctx.db, wo)
+        if err:
+            ctx.db.rollback()
+            flash(ctx.request, err, "error")
+            return _to(f"/orders/{order_id}#parts")
+        svc.refresh_order_status(ctx.db, wo)
+        ctx.db.commit()
+        flash(ctx.request, f"Клиент отказался от «{part.name}» — в архиве наряда"
+              + (". Уже заказанное — решает запчастист («Лишнее после отказов»)" if wo.partsman_id else ""))
+        return _to(f"/orders/{order_id}#parts")
     err = svc.archive_part(ctx.db, part, ctx.user.id)
     if not err:
         from ..services import money as msvc
@@ -316,7 +345,24 @@ def part_restore(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
     part = ctx.db.get(WoPart, _uuid(part_id))
     if not _can_archive(ctx, wo) or not part or part.work_order_id != wo.id or part.status != "archived":
         raise Forbidden()
-    svc.restore_part(ctx.db, ctx.branch.id, wo, part)
+    # 19.11.2026: клиент передумал после отказа — по уже решённому «лишнему» (отменили / вернули / продаём) вернуть нельзя
+    from ..models import PartLeftover
+    los = ctx.db.scalars(select(PartLeftover).where(PartLeftover.wo_part_id == part.id, PartLeftover.status != "undone")).all()
+    if any(lo.status not in ("decide", "stock", "wait") for lo in los):
+        flash(ctx.request, "По этой детали запчастист уже решил (отменил заказ / вернул / оставил) — добавьте её заново", "error")
+        return _to(f"/orders/{order_id}#parts")
+    reattached = False
+    for lo in los:
+        line = ctx.db.get(PurchaseLine, lo.purchase_line_id) if lo.purchase_line_id and lo.status == "decide" else None
+        if line and line.wo_part_id is None and not line.received:   # ещё едет — тот же заказ снова под эту машину
+            line.wo_part_id, reattached = part.id, True
+        lo.status = "undone"
+    part.refuse_reason = ""
+    if reattached:
+        part.status, part.prev_status, part.archived_at, part.archived_by = "ordered", "", None, None
+        ctx.db.flush()
+    else:
+        svc.restore_part(ctx.db, ctx.branch.id, wo, part)
     _after_part_added(ctx, wo, part)
     if wo.status == "ready" and part.status in ("need", "ordered", "reserved"):
         osvc.set_status(ctx.db, wo, "work", f"Вернули запчасть «{part.name}» — машина снова в ремонте")
@@ -325,6 +371,49 @@ def part_restore(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.db.commit()
     flash(ctx.request, f"«{part.name}» вернули в наряд")
     return _to(f"/orders/{order_id}#parts")
+
+
+def _leftovers_open(ctx: Ctx) -> int:
+    from ..models import PartLeftover
+    from ..services import leftovers as lsvc
+    return ctx.db.scalar(select(func.count()).select_from(PartLeftover).where(
+        PartLeftover.branch_id == ctx.branch.id, PartLeftover.status.in_(lsvc.OPEN))) or 0
+
+
+# ======================= Лишнее после отказов (19.11.2026, брат) =======================
+@router.get("/stock/leftovers")
+def leftovers_page(ctx: Ctx = Depends(get_ctx), tab: str = ""):
+    """Клиент отказался от детали после согласования: заказанное — запчастист решает (отменить у поставщика / пусть
+    приедет на склад); лежащее на складе — оставить, вернуть поставщику или «Продать». Кладовщик видит и тоже отмечает."""
+    ctx.need("parts.pick", "stock.manage", "purchases.by_partsman")
+    from ..services import leftovers as lsvc
+    tab = tab if tab in ("open", "done") else "open"
+    allrows = lsvc.rows(ctx.db, ctx.branch.id, tuple(lsvc.STATUS))
+    ctx.db.commit()   # «приедет на склад» → приехало: статус обновился
+    rows = [x for x in allrows if (x["lo"].status in lsvc.OPEN) == (tab == "open")][:200]
+    return ctx.render("stock/leftovers.html", title="Лишнее после отказов", rows=rows, tab=tab, STATUS=lsvc.STATUS,
+                      n_open=sum(1 for x in allrows if x["lo"].status in lsvc.OPEN),
+                      n_done=sum(1 for x in allrows if x["lo"].status not in lsvc.OPEN),
+                      can=ctx.can("parts.pick", "stock.manage"), fmt_plate=osvc.fmt_plate,
+                      show_cost=ctx.can("prices.view_purchase"))
+
+
+@router.post("/stock/leftovers/{lid}")
+def leftovers_decide(lid: str, ctx: Ctx = Depends(get_ctx), action: str = Form(""), note: str = Form("")):
+    ctx.need("parts.pick", "stock.manage")
+    from ..models import PartLeftover
+    from ..services import leftovers as lsvc
+    lo = ctx.db.get(PartLeftover, _uuid(lid))
+    if not lo or lo.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = lsvc.decide(ctx.db, lo, ctx.user, action, note)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"Отмечено: {lsvc.STATUS[lo.status][0]} — менеджер получил сообщение")
+    return _to("/stock/leftovers")
 
 
 @router.post("/orders/{order_id}/parts/{part_id}/return")
@@ -1268,6 +1357,7 @@ def stock_list(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
                       SECTIONS=SECTIONS, pick_orders=_pick_orders(ctx),
                       to_receive=_receive_count(ctx) if ctx.can("stock.receive") else 0,
                       keep_below=ksvc.below_count(ctx.db, ctx.branch.id),
+                      leftovers_n=_leftovers_open(ctx),
                       sec=sec, cat=cat, sub=sub, make=make, model=model, tree=sc.tree(db, ctx.branch.id, sec),
                       counts=counts, makes=mm, models=mm.get(make, []), n_locations=n_locations, fit_label=sc.fit_label,
                       args=lambda **o: _stock_args(**{**dict(sec=sec, cat=cat, sub=sub, make=make, model=model, q=q, only=only), **o}))

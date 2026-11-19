@@ -668,13 +668,19 @@ def step_pick(o, day, hhmm, send=True):
             for name, art, brand, cost in j[5]:
                 post(pm, f"{o.url}/parts", {"name": name, "article": art, "brand": brand, "qty": "1", "cost": str(cost),
                                             "markup_pct": "30", "wo_work_id": str(w.id), "action": "order"}, what=f"Заказать: {name}")
-        # Варианты на выбор клиенту — одна деталь двух фирм, одной группой («ещё вариант к: …»)
+        # Варианты на выбор клиенту — одна деталь двух фирм, ОДНОЙ группой («ещё вариант к: …»).
+        # 19.11.2026: раньше прогон искал группу неверно — варианты ложились по одному, менеджер «выбирал» оба
+        # (наряд 39: три комплекта колодок). Если такие колодки уже взяты со склада — они тоже становятся вариантом.
         if o.kind == "mechanic" and rnd.random() < 0.15:
-            g = ""
+            base = next((p for p in parts_of(o) if p.name == "Колодки тормозные передние" and p.status == "reserved"), None)
+            g = f"part:{base.id}" if base else ""
             for brand, cost in (("Jurid", "1050"), ("Toyota", "2300")):
                 post(pm, f"{o.url}/parts", {"name": "Колодки тормозные передние", "brand": brand, "qty": "1", "cost": cost,
                                             "markup_pct": "35", "action": "option", "option_group": g}, what="Вариант на выбор клиенту")
-                g = g or (one(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group or ""
+                grp = next((p.option_group for p in parts_of(o) if p.status == "option" and p.option_group), "")
+                g = grp or g
+            groups = {p.option_group for p in parts_of(o) if p.status == "option"}
+            R.check(len(groups) == 1, "варианты на выбор — одной группой", f"{o.wo().number}: групп {len(groups)}")
         post(pm, f"{o.url}/picking-done", what="Подбор завершён")
     R.check(o.wo().picked_at is not None or o.wo().status != "approve", "«Подбор завершён» отмечен", o.wo().number)
     o.step = "approve"
@@ -713,7 +719,12 @@ def step_approve(o, day, hhmm, send=True):
                 v = "no"
             if v and f.approval != v:
                 post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": v}, what="Клиент отказался", fetch=True)
-        post(o.mgr, f"{o.url}/approval-done", what="Согласовал с клиентом")
+        # 19.11.2026: одна деталь несколько раз (две работы с одним маслом) — менеджер подтверждает, что клиент берёт все
+        from app.services import orders as _osvc
+        with SessionLocal() as db_:
+            dups = _osvc.duplicate_parts(db_, db_.get(M.WorkOrder, o.id))
+        post(o.mgr, f"{o.url}/approval-done", {"dups_ok": "1"} if dups else {}, what="Согласовал с клиентом"
+             + (" (да, клиент берёт все)" if dups else ""))
     st = o.wo().status
     if o.fail_plan == "all_no":
         R.check(st == "ready", "клиент отказался от всего → «Готово» без работ", st)
@@ -1538,6 +1549,40 @@ def leave_for_today(day):
                     and o.wo().status == "waiting", "часть пришла — слесарь запросил выдачу, наряд «Ждём запчасти»",
                     o.wo().number)
         o.step = "wait_parts_today"
+    # 6б) 19.11.2026 (брат): клиент отказался ПОСЛЕ согласования. Заказано у поставщика: одна деталь — ждёт решения
+    #     запчастиста (🔴), вторая — «пусть приедет на склад», приехала (🟠 оставить / вернуть / продать)
+    o = fresh_mech("10:20")
+    if o:
+        with at(day, "11:30"):
+            for name, art, brand, cost in (("Амортизатор задний", "343457", "Kayaba", "1900"),
+                                           ("Опора амортизатора", "MK018", "SACHS", "640"),
+                                           ("Отбойник амортизатора", "900046", "SACHS", "310")):
+                post("oleg", f"{o.url}/parts", {"name": name, "article": art, "brand": brand, "qty": "2", "cost": cost,
+                                                "markup_pct": "35", "action": "order"}, what=f"Заказать: {name}")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+        step_approve(o, day, "11:50", send=True)
+        ps = {p.name: p for p in parts_of(o)}
+        with at(day, "13:10"):
+            for nm in ("Опора амортизатора", "Отбойник амортизатора"):
+                if nm in ps:
+                    post("irina", f"{o.url}/parts/{ps[nm].id}/delete", {"reason": "Клиент поставит свои — купил на разборке"},
+                         what="Клиент отказался (уже заказано)")
+        lo = one(M.PartLeftover, M.PartLeftover.wo_part_id == ps["Отбойник амортизатора"].id) if "Отбойник амортизатора" in ps else None
+        R.check(lo is not None and lo.status == "decide", "отказ от заказанного — решает запчастист", o.wo().number)
+        if lo:
+            with at(day, "14:00"):
+                post("oleg", f"/stock/leftovers/{lo.id}", {"action": "to_stock", "note": "Поставщик не принимает отказ"},
+                     what="Отказ клиента: пусть приедет на склад")
+            line = one(M.PurchaseLine, M.PurchaseLine.id == lo.purchase_line_id)
+            loc = (q(M.Location, M.Location.rack == "B") or q(M.Location))[0]
+            if line:
+                with at(day, "16:40"):
+                    post("pavel", "/stock/receive", {"line_id": str(line.id), f"loc_{line.id}": str(loc.id),
+                                                     f"inv_{line.id}": "ТТН-61205"}, what="Приняли отказанное — на склад")
+            get("oleg", "/stock/leftovers", what="Лишнее после отказов")
+            R.check(one(M.PartLeftover, M.PartLeftover.id == lo.id).status == "stock",
+                    "отказанное приехало — «на складе, решить»", o.wo().number)
+        o.step = "refused_today"
     # 7) 13.11.2026: машина на диагностике у двух мастеров — слесарь закончил, электрик ещё нет
     c = rnd.choice(CLIENTS)
     with at(day, "13:30"):

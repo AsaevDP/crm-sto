@@ -20,7 +20,7 @@ SKIP_FIELDS = {"updated_at", "created_at", "activity_at", "activity_by"}
 
 # 18.11.2026: изменения в этих таблицах — «действие по наряду»: у наряда обновляется activity_at (плитки — свежие сверху)
 ORDER_TABLES = {"wo_works", "wo_parts", "wo_findings", "wo_photos", "payments", "issue_requests", "order_messages",
-                "order_masters", "order_handovers", "tool_requests", "chem_requests", "wash_queue_requests"}
+                "order_masters", "order_handovers", "tool_requests", "chem_requests", "wash_queue_requests", "part_leftovers"}
 # номер крючка ставит программа сама — это не действие человека; место в очереди мойки (19.11.2026) переписывается у всех
 # машин сразу, когда менеджер двигает одну, — свежесть остальных нарядов от этого не меняется
 NOT_ACTION = {"key_slot", "queue_rank"}

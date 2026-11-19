@@ -47,8 +47,15 @@
     {% endif %}
     {# 13.11.2026 (брат): «Убрать» — в архив наряда (вернуть можно до оплаты и закрытия) — менеджер и запчастист #}
     {% if can_archive and p.status not in ("issued", "installed", "returned") %}
+    {% if wo.status in ("created", "diag", "approve") or p.status in ("option", "declined") %}
     <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" onsubmit="return confirm('Убрать «{{ p.name|replace("'", "")|replace('"', '') }}» в архив наряда? Вернуть можно в «Архив».')">
       <button class="btn btn-plain btn-sm" style="color:var(--red)">Убрать</button></form>
+    {% else %}
+    {# 19.11.2026 (брат): после «Согласовал с клиентом» — только «Клиент отказался» с причиной; заказанное решает запчастист #}
+    <form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/delete" class="refuse-form" data-name="{{ p.name|replace('"', '') }}"
+          data-sent="{{ 1 if p.status in ('ordered', 'arrived') and p.id not in draft_parts else 0 }}">
+      <input type="hidden" name="reason"><button class="btn btn-plain btn-sm" style="color:var(--red)">Клиент отказался</button></form>
+    {% endif %}
     {% endif %}
     {% if p.status in ("issued", "installed") and wo.status not in ("paid", "closed", "cancel")
           and (ctx.can("stock.manage") or ctx.can("stock.issue") or can_pick) %}
@@ -57,6 +64,16 @@
     {% endif %}
   </div>
   {% endif %}
+  <script>
+    // 19.11.2026: «Клиент отказался» — причина обязательна; уже заказанное — предупреждаем, что решать будет запчастист
+    document.querySelectorAll('.refuse-form').forEach(f => f.addEventListener('submit', e => {
+      const sent = f.dataset.sent === '1';
+      const r = prompt(`Клиент отказался от «${f.dataset.name}». Причина (останется в наряде):` +
+        (sent ? '\n\nДеталь уже заказана у поставщика — запчастист отменит заказ или она приедет на склад.' : ''), '');
+      if (r === null || !r.trim()) { e.preventDefault(); return; }
+      f.elements.reason.value = r.trim();
+    }));
+  </script>
 </div>
 {% endmacro %}
 
@@ -139,6 +156,9 @@
         <select class="field" name="option_group">
           <option value="">новая деталь (первый вариант)</option>
           {% for g, nm in open_groups.items() %}<option value="{{ g }}">ещё вариант к: {{ nm }}</option>{% endfor %}
+          {# 19.11.2026 (брат): деталь, уже взятую со склада (или «заказать»), тоже можно сделать вариантом — клиент выберет одну #}
+          {% if wo.status in ("created", "diag", "approve") %}{% for p in plain_parts if p.status in ("reserved", "need") %}{% set c_ = cats.get(p.catalog_id) %}
+          <option value="part:{{ p.id }}">вариант к: {{ p.name }}{% if c_ and c_.brand %} {{ c_.brand }}{% endif %} — {{ "на складе" if p.status == "reserved" else "заказать" }}</option>{% endfor %}{% endif %}
         </select></label>
       <p class="hint" style="margin:0">«Вариант на выбор» — одна деталь разных фирм: добавьте 2–3 варианта в одну группу, клиент выберет один, остальные не пойдут в счёт.</p>
       {% if can_pick %}<label>Купить всего, шт — излишек на склад<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>{% endif %}
@@ -161,6 +181,14 @@
       Пока составьте работы и цены.</p>
     {% endif %}
     <form method="post" action="/orders/{{ wo.id }}/approval-done">
+      {# 19.11.2026 (брат): одна деталь несколько раз — спросить, берёт ли клиент все #}
+      {% if dup_names %}
+      <div class="hint warn dup-warn">
+        {% for d in dup_names %}<b>«{{ d.name }}» — {{ d["items"]|length }} позиции:</b> {{ d["items"]|join(", ") }}.<br>{% endfor %}
+        Клиент берёт все? Если нет — уберите лишнее («Убрать»).
+        <label class="dup-ok"><input type="checkbox" name="dups_ok" value="1"> Да, клиент берёт все</label>
+      </div>
+      {% endif %}
       <button class="btn btn-block">Согласовал с клиентом</button>
       <p class="hint" style="margin:6px 0 0">Проблемы «Да» — работы, «Нет» — рекомендации в карте клиента. Запчасти со склада — в резерве,
         остальные уйдут запчастисту в заказ.</p>
@@ -175,10 +203,11 @@
   {% if archived %}
   <details class="parts-arch" id="parts-arch">
     <summary class="caption">Архив наряда · {{ archived|length }} — убранные позиции</summary>
-    {% for p in archived %}{% set cat = cats.get(p.catalog_id) %}
+    {% for p in archived %}{% set cat = cats.get(p.catalog_id) %}{% set lo = leftover_map.get(p.id) %}
     <div class="kv"><span>{{ p.name }}{% if cat and cat.brand %} <span class="tag">{{ cat.brand }}</span>{% endif %}
       <span class="caption" style="display:block">{{ p.qty|num }} шт{% if show_price and p.price %} · {{ p.price|money }} ₴{% endif %}
-        {% set ab = people.get(p.archived_by) %}{% if p.archived_at %} · убрал{% if ab %} {{ ab.short_name }}{% endif %} {{ p.archived_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}</span></span>
+        {% set ab = people.get(p.archived_by) %}{% if p.archived_at %} · {{ "отказ клиента" if p.refuse_reason else "убрал" }}{% if ab %} {{ ab.short_name }}{% endif %} {{ p.archived_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}</span>
+      {% if p.refuse_reason %}<span class="caption part-refused">Причина: {{ p.refuse_reason }}{% if lo %} · <a href="/stock/leftovers">{{ LEFT_STATUS[lo.status][0] }}</a>{% endif %}</span>{% endif %}</span>
       {% if can_archive %}<form method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/restore"><button class="btn btn-sm btn-tinted">Вернуть</button></form>{% endif %}</div>
     {% endfor %}
   </details>
@@ -205,4 +234,14 @@
   <p class="caption" style="margin:4px 0 0">Ещё нет на складе: {{ parts_coming|map(attribute="name")|join(", ") }}.
     {% if open_issue %}Пока работайте с выданным — последнюю работу закрыть нельзя, пока их не выдадут.{% else %}Пришедшее можно запросить, когда оно будет на складе.{% endif %}</p>
   {% endif %}
+  <script>
+    // 19.11.2026: «Клиент отказался» — причина обязательна; уже заказанное — предупреждаем, что решать будет запчастист
+    document.querySelectorAll('.refuse-form').forEach(f => f.addEventListener('submit', e => {
+      const sent = f.dataset.sent === '1';
+      const r = prompt(`Клиент отказался от «${f.dataset.name}». Причина (останется в наряде):` +
+        (sent ? '\n\nДеталь уже заказана у поставщика — запчастист отменит заказ или она приедет на склад.' : ''), '');
+      if (r === null || !r.trim()) { e.preventDefault(); return; }
+      f.elements.reason.value = r.trim();
+    }));
+  </script>
 </div>

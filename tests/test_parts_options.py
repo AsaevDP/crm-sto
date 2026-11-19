@@ -165,9 +165,14 @@ def test_options_block_approval_until_client_chooses(client):
     assert _wo(url).status == "approve"
     client.post(f"{url}/parts", data={"name": "Амортизатор (тест)", "brand": "Kayaba", "cost": "1000", "markup_pct": "30",
                                       "action": "option"})
+    client.post(f"{url}/picking-done")   # 19.11.2026: вариант без пары — «Подбор завершён» не проходит
+    assert _wo(url).picked_at is None
+    grp = next(iter(_parts(url).values())).option_group
+    client.post(f"{url}/parts", data={"name": "Амортизатор (тест)", "brand": "Sachs", "cost": "1200", "markup_pct": "30",
+                                      "action": "option", "option_group": grp})
     client.post(f"{url}/picking-done")
     assert _wo(url).picked_at is not None
-    p = next(iter(_parts(url).values()))
+    p = next(x for x in _parts(url).values() if x.price == Decimal("1300.00"))
     assert p.price == Decimal("1300.00") and p.status == "option"
     client.post("/logout")
     login(client, "irina", "irina123")

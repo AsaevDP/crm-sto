@@ -240,6 +240,17 @@ def compute(ctx) -> dict:
             Purchase.branch_id == bid, Purchase.status == "draft", Purchase.created_by == me.id)) or 0,
              "ваши черновики — нажмите «Заказан»", "/purchases?tab=draft")
 
+    # ---------- 19.11.2026 (брат): клиент отказался после согласования — «Лишнее после отказов» ----------
+    if ctx.can("parts.pick", "stock.manage"):
+        from ..models import PartLeftover
+        lq = select(func.count()).select_from(PartLeftover).where(PartLeftover.branch_id == bid)
+        mine_href = "/my-orders" if ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman") else "/stock"
+        if ctx.can("parts.pick"):   # 🔴 заказано у поставщика — отменить или пусть приедет (решает запчастист)
+            _add(out, mine_href, "red", db.scalar(lq.where(PartLeftover.status == "decide")) or 0,
+                 "клиент отказался — решите с заказом у поставщика", "/stock/leftovers")
+        _add(out, mine_href, "orange", db.scalar(lq.where(PartLeftover.status == "stock")) or 0,
+             "лишнее после отказа на складе — оставить, вернуть или продать", "/stock/leftovers")
+
     # ---------- Мои заказы (запчастист) ----------
     if ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman"):
         from . import stock as ssvc
