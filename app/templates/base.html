@@ -58,11 +58,14 @@
 
 {# ---- Нижняя панель (iPhone): первые 4 раздела + «Ещё» ---- #}
 <nav class="tabbar">
+  {# 19.11.2026 (брат): подсвечиваем тот же самый точный пункт, что в боковом меню — на «Запросах на выдачу»
+     (/stock/issues) раньше горел «Склад»; раздел не в первых четырёх — горит «Ещё» #}
+  {% set tab_hrefs = menu[:4]|map(attribute="href")|list %}
   {% for m in menu[:4] %}
   {# короткие подписи для нижней панели телефона — длинное название встаёт в две строки (12.11.2026) #}
-  <a href="{{ m.href }}" {% if active.startswith(m.href) %}aria-current="page"{% endif %}>{{ icon(m.icon) }}<span>{{ {"/my-requests": "Мои запросы", "/stock/issues": "Выдача", "/ready": "Выдача"}.get(m.href, m.title) }}</span></a>
+  <a href="{{ m.href }}" {% if m.href == nav.cur %}aria-current="page"{% endif %}>{{ icon(m.icon) }}<span>{{ {"/my-requests": "Мои запросы", "/stock/issues": "Выдача", "/ready": "Выдача"}.get(m.href, m.title) }}</span></a>
   {% endfor %}
-  <a href="/more" {% if active == "/more" %}aria-current="page"{% endif %}>{{ icon("more") }}<span>Ещё</span></a>
+  <a href="/more" {% if active == "/more" or (nav.cur and nav.cur not in tab_hrefs) %}aria-current="page"{% endif %}>{{ icon("more") }}<span>Ещё</span></a>
 </nav>
 <script src="{{ asset('/static/js/app.js') }}"></script>
 <script>

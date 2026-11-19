@@ -2264,3 +2264,5 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .rzc-one:hover { background: var(--fill); }
 /* 19.11.2026: «Мои заказы» — по нарядам / по накладным */
 .mo-view { margin: 0 0 10px; max-width: 360px; }
+/* 19.11.2026: «Запросы на выдачу» менеджера — плитки не обрезаются на телефоне */
+.rd-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)) !important; }

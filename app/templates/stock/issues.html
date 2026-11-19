@@ -2,7 +2,8 @@
 {# Выдача (11.11.2026): вкладки «Запчасти» и «Инструмент». Кладовщик видит, что выдать, что сдают, что на руках. #}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Запросы на выдачу</h1></div>
+  {# 19.11.2026 (брат): это отдельный раздел меню; со вкладки «Инструмент» назад — в «Инструмент» #}
+  <div>{% if tab == "tools" and ctx.can("tools.view", "tools.manage") %}<a class="back" href="/tools">{{ icon("back") }}Инструмент</a>{% endif %}<h1 class="large-title">Запросы на выдачу</h1></div>
   {% if can_tools or can_chem %}
   {# 14.11.2026 (брат): вкладки — цветные плитки, как на складе и в наряде, чтобы бросались в глаза #}
   <nav class="pult-tiles iss-tiles" aria-label="Что выдаём">
