@@ -2003,7 +2003,12 @@ def ready_page(ctx: Ctx = Depends(get_ctx)):
     rows = _requests(ctx, "ready")
     rows.sort(key=lambda x: x["r"].ready_at or x["r"].created_at, reverse=True)   # 18.11.2026: свежие сверху
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    return ctx.render("stock/ready.html", title="Запросы на выдачу", mine=[x for x in rows if _ready_mine(ctx, x)],
+    # 19.11.2026 (брат, наряд 60): инструмент, который мастера просят по моим нарядам (ждёт кладовщика / подготовлен)
+    from ..services import tools as tsvc
+    tools_mine = [x for st_ in ("new", "ready") for x in tsvc.requests_list(ctx.db, ctx.branch.id, st_)
+                  if x["r"].kind == "issue" and x["wo"] and x["wo"].manager_id == ctx.user.id]
+    return ctx.render("stock/ready.html", title="Запросы на выдачу", tools_mine=tools_mine,
+                      mine=[x for x in rows if _ready_mine(ctx, x)],
                       others=[x for x in rows if not _ready_mine(ctx, x)], people=people, fmt_plate=osvc.fmt_plate,
                       waiting=[x for x in _requests(ctx, "new") if _ready_mine(ctx, x)],
                       done=[x for x in _requests(ctx, "issued")[:30] if _ready_mine(ctx, x)][:10])

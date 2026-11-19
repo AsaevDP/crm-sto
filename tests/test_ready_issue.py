@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import ChemRequest, Notification, PartCatalog, Purchase, PurchaseLine, StockItem, Tool, ToolRequest, User
+from app.models import ChemRequest, Notification, PartCatalog, Purchase, PurchaseLine, StockItem, Tool, ToolRequest, User, WorkOrder
 from app.services import stock as ssvc
 
 from .conftest import login
@@ -163,4 +163,40 @@ def test_tool_ready_then_issued(client):
     client.post(f"/tool-requests/{rr}/done")
     with SessionLocal() as db:
         assert db.get(Tool, tool.id).holder_id is None
+    client.post("/logout")
+
+
+def test_manager_sees_tool_requests_by_his_orders(client):
+    """19.11.2026 (брат, наряд 60): слесарь попросил инструмент — у менеджера наряда горит у «Запросов на выдачу» и
+    у «Инструмента» (🟠 ждёт кладовщика → 🟢 подготовлен), в «Запросах на выдачу» — блок «Инструмент по моим нарядам»."""
+    tool = _new_shared_tool(client, "Съёмник (менеджер видит)")
+    login(client, "irina", "irina123")
+    url = _create(client, scenario="A", photos=1, plate="КА 6060 КА", phone="0506060000").json()["url"]
+    client.post("/logout")
+    with SessionLocal() as db:
+        from app.db import current_branch_id
+        wo = db.get(WorkOrder, uuid.UUID(url.rsplit("/", 1)[1]))
+        current_branch_id.set(wo.branch_id)
+        wo.mechanic_id, wo.manager_id = db.scalar(select(User.id).where(User.login == "andrey")), db.scalar(select(User.id).where(User.login == "irina"))
+        db.commit()
+    login(client, "andrey", "andrey123")
+    client.post(f"{url}/tool-requests", data={"tool_id": str(tool.id)})
+    client.post("/logout")
+    login(client, "irina", "irina123")
+    b = client.get("/api/notify").json()["badges"]
+    for href in ("/ready", "/tools"):
+        assert any(x["c"] == "orange" and "инструмент" in x["t"] for x in b.get(href, [])), href
+    assert "Съёмник (менеджер видит)" in client.get("/ready").text
+    client.post("/logout")
+    with SessionLocal() as db:
+        rid = db.scalar(select(ToolRequest.id).where(ToolRequest.tool_id == tool.id))
+    login(client, "pavel", "pavel123")
+    client.post(f"/tool-requests/{rid}/ready")
+    client.post("/logout")
+    login(client, "irina", "irina123")
+    b = client.get("/api/notify").json()["badges"]
+    assert any(x["c"] == "green" and "инструмент" in x["t"] for x in b.get("/tools", []))
+    client.post("/logout")
+    login(client, "pavel", "pavel123")
+    client.post(f"/tool-requests/{rid}/cancel")
     client.post("/logout")

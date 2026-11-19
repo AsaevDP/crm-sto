@@ -38,6 +38,15 @@
         <b class="nowrap">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% else %}<p class="footnote" style="margin:0">Нет — всё собрано</p>{% endfor %}
     </div>
+    {# 19.11.2026 (брат, наряд 60): инструмент по моим нарядам — выдаёт кладовщик мастеру, менеджер видит, что с ним #}
+    <div class="group-title" id="tools">Инструмент по моим нарядам · {{ tools_mine|length }}</div>
+    <div class="card compact">
+      {% for x in tools_mine %}
+      <div class="kv"><span>{{ x.tool.name if x.tool else "" }}{% if x.tool and x.tool.place %} <span class="caption">· {{ x.tool.place }}</span>{% endif %}
+        <span class="caption" style="display:block"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }}{% endif %} · просит {{ x.who.full_name if x.who else "" }}</span></span>
+        <span class="chip" data-s="{{ 'ready' if x.r.status == 'ready' else 'waiting' }}">{{ "подготовлен — мастер заберёт" if x.r.status == "ready" else "ждёт кладовщика" }}</span></div>
+      {% else %}<p class="footnote" style="margin:0">Мастера инструмент не просят</p>{% endfor %}
+    </div>
     <div class="group-title">Недавно выдано</div>
     <div class="card compact">
       {% for x in done %}

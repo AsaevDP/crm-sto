@@ -149,6 +149,20 @@ def compute(ctx) -> dict:
             if wo.manager_id == me.id or r.created_by == me.id:
                 n += 1
         _add(out, "/ready", "green", n, "кладовщик подготовил")
+        # 19.11.2026 (брат, наряд 60): по моим нарядам мастер попросил у кладовщика — менеджер видит и запчасти, и
+        # инструмент: 🟠 ждёт кладовщика (проследить), 🟢 инструмент подготовлен — мастер заберёт
+        from ..models import ToolRequest
+        _add(out, "/ready", "orange", db.scalar(select(func.count()).select_from(IssueRequest).join(
+            WorkOrder, WorkOrder.id == IssueRequest.work_order_id).where(
+            IssueRequest.branch_id == bid, IssueRequest.status == "new", WorkOrder.manager_id == me.id)) or 0,
+             "запчасти — ждут кладовщика", "/ready")
+        tq = select(func.count()).select_from(ToolRequest).join(WorkOrder, WorkOrder.id == ToolRequest.work_order_id).where(
+            ToolRequest.branch_id == bid, ToolRequest.kind == "issue", WorkOrder.manager_id == me.id)
+        t_new = db.scalar(tq.where(ToolRequest.status == "new")) or 0
+        t_ready = db.scalar(tq.where(ToolRequest.status == "ready")) or 0
+        for href in ("/ready", "/tools"):
+            _add(out, href, "orange", t_new, "мастер просит инструмент — ждёт кладовщика", "/ready#tools")
+            _add(out, href, "green", t_ready, "инструмент подготовлен — мастер заберёт", "/ready#tools")
 
     # ---------- Мои запросы на выдачу (мастер, 12.11.2026) ----------
     if role in MASTERS:
