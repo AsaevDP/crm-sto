@@ -166,9 +166,10 @@ def test_tool_ready_then_issued(client):
     client.post("/logout")
 
 
-def test_manager_sees_tool_requests_by_his_orders(client):
-    """19.11.2026 (брат, наряд 60): слесарь попросил инструмент — у менеджера наряда горит у «Запросов на выдачу» и
-    у «Инструмента» (🟠 ждёт кладовщика → 🟢 подготовлен), в «Запросах на выдачу» — блок «Инструмент по моим нарядам»."""
+def test_manager_picks_up_tool_for_master(client):
+    """19.11.2026 (брат): инструмент — как запчасти. Слесарь попросил → у кладовщика 🔴 у «Инструмента», у менеджера
+    наряда 🟠 у «Запросов на выдачу». Кладовщик «Готово» → у кладовщика 🟠 (не выдано), у менеджера 🟢 и карточка
+    с «Выдано» → менеджер забрал и отдал → инструмент на руках у слесаря, цифры погасли. У «Инструмента» менеджера цифр нет."""
     tool = _new_shared_tool(client, "Съёмник (менеджер видит)")
     login(client, "irina", "irina123")
     url = _create(client, scenario="A", photos=1, plate="КА 6060 КА", phone="0506060000").json()["url"]
@@ -182,21 +183,50 @@ def test_manager_sees_tool_requests_by_his_orders(client):
     login(client, "andrey", "andrey123")
     client.post(f"{url}/tool-requests", data={"tool_id": str(tool.id)})
     client.post("/logout")
-    login(client, "irina", "irina123")
-    b = client.get("/api/notify").json()["badges"]
-    for href in ("/ready", "/tools"):
-        assert any(x["c"] == "orange" and "инструмент" in x["t"] for x in b.get(href, [])), href
-    assert "Съёмник (менеджер видит)" in client.get("/ready").text
-    client.post("/logout")
     with SessionLocal() as db:
         rid = db.scalar(select(ToolRequest.id).where(ToolRequest.tool_id == tool.id))
-    login(client, "pavel", "pavel123")
-    client.post(f"/tool-requests/{rid}/ready")
-    client.post("/logout")
+
     login(client, "irina", "irina123")
     b = client.get("/api/notify").json()["badges"]
-    assert any(x["c"] == "green" and "инструмент" in x["t"] for x in b.get("/tools", []))
+    assert any(x["c"] == "orange" and "инструмент" in x["t"] for x in b.get("/ready", []))
+    assert not b.get("/tools")   # сиреневую «для сведения» убрали
+    page = client.get("/ready").text
+    assert "Съёмник (менеджер видит)" in page and f"/tool-requests/{rid}/pickup" not in page
+    client.post(f"/tool-requests/{rid}/pickup")   # пока не подготовлено — нельзя
+    with SessionLocal() as db:
+        assert db.get(ToolRequest, rid).status == "new"
+    client.post("/logout")
+
+    login(client, "pavel", "pavel123")
+    assert any(x["c"] == "red" for x in client.get("/api/notify").json()["badges"].get("/tools", []))
+    client.post(f"/tool-requests/{rid}/ready")
+    b = client.get("/api/notify").json()["badges"].get("/tools", [])
+    assert any(x["c"] == "orange" and "подготовлен" in x["t"] for x in b)
+    assert "готово — не выдано" in client.get("/stock/issues?tab=tools").text
+    client.post("/logout")
+
+    login(client, "irina", "irina123")
+    b = client.get("/api/notify").json()["badges"]
+    assert any(x["c"] == "green" and "инструмент" in x["t"] for x in b.get("/ready", []))
+    assert not b.get("/tools")
+    page = client.get("/ready").text
+    assert f"/tool-requests/{rid}/pickup" in page and "Отнести мастеру" in page
+    client.post(f"/tool-requests/{rid}/pickup")
+    with SessionLocal() as db:
+        andrey = db.scalar(select(User).where(User.login == "andrey"))
+        assert db.get(ToolRequest, rid).status == "done" and db.get(Tool, tool.id).holder_id == andrey.id
+    assert not any("инструмент" in x["t"] for x in client.get("/api/notify").json()["badges"].get("/ready", []))
+    assert "Недавно выдано" in client.get("/ready").text
+    client.post("/logout")
+
+    login(client, "pavel", "pavel123")
+    assert not any("подготовлен" in x["t"] for x in client.get("/api/notify").json()["badges"].get("/tools", []))
+    client.post("/logout")
+    login(client, "andrey", "andrey123")   # вернуть в шкаф — база в тестах общая
+    client.post(f"/tools/{tool.id}/return-request")
     client.post("/logout")
     login(client, "pavel", "pavel123")
-    client.post(f"/tool-requests/{rid}/cancel")
+    with SessionLocal() as db:
+        rr = db.scalar(select(ToolRequest.id).where(ToolRequest.tool_id == tool.id, ToolRequest.status == "new"))
+    client.post(f"/tool-requests/{rr}/done")
     client.post("/logout")

@@ -201,7 +201,7 @@ def request_return(db: Session, tool: Tool, user: User, comment: str = "") -> st
     return ""
 
 
-def complete_request(db: Session, req, by: User, result: str = "ok", note: str = "") -> str:
+def complete_request(db: Session, req, by: User, result: str = "ok", note: str = "", pickup: bool = False) -> str:
     """Кладовщик: выдал (issue) или принял (return, ok / broken с комментарием)."""
     from ..models import WorkOrder, WoWork
     tool = db.get(Tool, req.tool_id)
@@ -213,7 +213,9 @@ def complete_request(db: Session, req, by: User, result: str = "ok", note: str =
             return f"«{tool.name}» уже на руках — сначала его должны сдать"
         wo = db.get(WorkOrder, req.work_order_id) if req.work_order_id else None
         work = db.get(WoWork, req.wo_work_id) if req.wo_work_id else None
-        move(db, tool, who, f"По запросу слесаря{' · наряд ' + wo.number if wo else ''}", wo=wo, work=work)
+        # 19.11.2026 (брат): подготовленное может забрать у окошка менеджер и отнести мастеру — на руках у мастера
+        via = f" · забрал у окошка {by.full_name}" if pickup else ""
+        move(db, tool, who, f"По запросу слесаря{' · наряд ' + wo.number if wo else ''}{via}", wo=wo, work=work)
     else:
         move(db, tool, None, "Сдал в шкаф" + (f" · поломка: {note.strip()}" if result == "broken" else ""))
         if result == "broken":

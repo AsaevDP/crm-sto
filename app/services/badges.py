@@ -162,13 +162,12 @@ def compute(ctx) -> dict:
              "запчасти — ждут кладовщика", "/ready#waiting")
         tq = select(func.count()).select_from(ToolRequest).join(WorkOrder, WorkOrder.id == ToolRequest.work_order_id).where(
             ToolRequest.branch_id == bid, ToolRequest.kind == "issue", WorkOrder.manager_id == me.id)
-        t_new = db.scalar(tq.where(ToolRequest.status == "new")) or 0
-        t_ready = db.scalar(tq.where(ToolRequest.status == "ready")) or 0
-        for href in ("/ready", "/tools"):
-            # 19.11.2026 (брат): у «Инструмента» — для сведения (сиреневая обводка); у «Запросов на выдачу» — обычные
-            info = href == "/tools"
-            _add(out, href, "orange", t_new, "мастер просит инструмент — ждёт кладовщика", "/ready#tools", info=info)
-            _add(out, href, "green", t_ready, "инструмент подготовлен — мастер заберёт", "/ready#tools", info=info)
+        # 19.11.2026 (брат): инструмент — как запчасти, только у «Запросов на выдачу» (там же «Выдано»);
+        # у «Инструмента» цифр нет (сиреневую «для сведения» убрали)
+        _add(out, "/ready", "orange", db.scalar(tq.where(ToolRequest.status == "new")) or 0,
+             "инструмент — ждёт кладовщика", "/ready#waiting")
+        _add(out, "/ready", "green", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
+             "инструмент подготовлен — забрать у окошка и отнести мастеру", "/ready#tools")
 
     # ---------- Мои запросы на выдачу (мастер, 12.11.2026) ----------
     if role in MASTERS:
@@ -205,6 +204,13 @@ def compute(ctx) -> dict:
             from ..models import ChemRequest   # 12.11.2026: мойщик / детейлер просит химию
             _add(out, "/stock/issues", "red", db.scalar(select(func.count()).select_from(ChemRequest).where(
                 ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "просят химию для мойки", "/stock/issues?tab=chem")
+            # 🟠 19.11.2026 (брат): подготовил — ещё не выдано (горит, пока не нажато «Выдано»)
+            _add(out, "/stock/issues", "orange", db.scalar(select(func.count()).select_from(IssueRequest).where(
+                IssueRequest.branch_id == bid, IssueRequest.status == "ready")) or 0,
+                 "запчасти подготовлены — ещё не выданы", "/stock/issues")
+            _add(out, "/stock/issues", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
+                ChemRequest.branch_id == bid, ChemRequest.status == "ready")) or 0,
+                 "химия подготовлена — ещё не выдана", "/stock/issues?tab=chem")
         if ctx.can("tools.manage"):
             # 18.11.2026 (брат): инструмент — цифра у «Инструмента» (раньше пряталась в «Запросах на выдачу»).
             # Ссылка — та же вкладка «Инструмент» в выдаче, где кнопки «Выдать» / «Принял».
@@ -214,7 +220,10 @@ def compute(ctx) -> dict:
                  "/stock/issues?tab=tools")
             _add(out, "/tools", "orange", db.scalar(tq.where(ToolRequest.kind == "return")) or 0, "сдают инструмент — принять",
                  "/stock/issues?tab=tools")
-        # «готово — ждут, когда заберут» — от кладовщика действия не нужно, цифру убрали (18.11.2026)
+            _add(out, "/tools", "orange", db.scalar(select(func.count()).select_from(ToolRequest).where(
+                ToolRequest.branch_id == bid, ToolRequest.status == "ready", ToolRequest.kind == "issue")) or 0,
+                 "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools")
+        # 19.11.2026 (брат): «готово — ещё не выдано» снова горит оранжевым (18.11 убирали) — пока не нажато «Выдано»
 
     # ---------- Мойка (18.11.2026, брат) ----------
     if ctx.can("wash.view"):

@@ -12,10 +12,12 @@
        aria-current="{{ 'page' if tab == key else 'false' }}" style="--tc:{{ color_css(color) }}">
       <span class="ptile-t">{{ title }}</span><b>{{ n or 0 }}</b><span class="ptile-s">{{ sub }}</span></a>
     {% endmacro %}
-    {# 18.11.2026: просят выдать — красная, как цифра в меню; пусто — серая #}
-    {{ itile("parts", "Запчасти", n_parts, "red" if n_parts else "gray", "ждут выдачи") }}
-    {% if can_tools %}{{ itile("tools", "Инструмент", n_tools, "red" if n_tools else "gray", "просят и сдают") }}{% endif %}
-    {% if can_chem %}{{ itile("chem", "Химия", n_chem, "red" if n_chem else "gray", "для мойки") }}{% endif %}
+    {# 18.11.2026: просят выдать — красная, как цифра в меню; 19.11.2026: подготовлено, но не выдано — оранжевая;
+       всё выдано — серая 0. Цифра — просят + подготовлено. #}
+    {% macro sub(n, r, label) %}{% if n and r %}просят: {{ n }} · готово: {{ r }}{% elif r %}готово — не выдано{% else %}{{ label }}{% endif %}{% endmacro %}
+    {{ itile("parts", "Запчасти", n_parts + r_parts, "red" if n_parts else "orange" if r_parts else "gray", sub(n_parts, r_parts, "ждут выдачи")) }}
+    {% if can_tools %}{{ itile("tools", "Инструмент", n_tools + r_tools, "red" if n_tools else "orange" if r_tools else "gray", sub(n_tools, r_tools, "просят и сдают")) }}{% endif %}
+    {% if can_chem %}{{ itile("chem", "Химия", n_chem + r_chem, "red" if n_chem else "orange" if r_chem else "gray", sub(n_chem, r_chem, "для мойки")) }}{% endif %}
   </nav>
   {% endif %}
 </header>

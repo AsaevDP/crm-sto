@@ -1,16 +1,29 @@
 {% extends "base.html" %}
 {# Готово к выдаче (12.11.2026): кладовщик собрал запчасти у окошка и нажал «Готово к выдаче».
-   Менеджер приходит, забирает и нажимает «Выдано» (или это делает кладовщик — кто первый). #}
+   Менеджер приходит, забирает и нажимает «Выдано» (или это делает кладовщик — кто первый).
+   19.11.2026 (брат): так же с инструментом — забрал у окошка, отнёс мастеру, «Выдано» (на руках у мастера). #}
 {% macro req_card(x) %}
 <div class="card compact issue ready">
   <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
     <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
   <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
-  <div class="caption">📦 у окошка кладовщика{% set rb = people.get(x.r.ready_by) %}{% if rb %} · подготовил {{ rb.full_name }}{% endif %}
+  <div class="caption">📦 запчасти у окошка кладовщика{% set rb = people.get(x.r.ready_by) %}{% if rb %} · подготовил {{ rb.full_name }}{% endif %}
     · просил {{ x.who.full_name if x.who else "" }}</div>
   {% for l in x.lines %}<div class="kv"><span>{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт</b></div>{% endfor %}
   <form method="post" action="/stock/issues/{{ x.r.id }}/issue" onsubmit="return confirm('Запчасти забрали? Отметить «Выдано».')">
     <input type="hidden" name="back" value="/ready"><button class="btn btn-block">✓ Выдано</button></form>
+</div>
+{% endmacro %}
+{% macro tool_card(x) %}
+<div class="card compact issue ready">
+  <div class="card-h"><span class="headline">🔧 {{ x.tool.name if x.tool else "" }}</span>
+    <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
+  {% if x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}{% endif %}</div>{% endif %}
+  <div class="caption">📦 инструмент у окошка кладовщика{% set rb = people.get(x.r.ready_by) %}{% if rb %} · подготовил {{ rb.full_name }}{% endif %}</div>
+  <div class="kv"><span>Отнести мастеру</span><b>{{ x.who.full_name if x.who else "" }}</b></div>
+  <form method="post" action="/tool-requests/{{ x.r.id }}/pickup"
+        onsubmit="return confirm('Инструмент отдали мастеру? Отметить «Выдано» — инструмент будет числиться за мастером.')">
+    <button class="btn btn-block">✓ Выдано</button></form>
 </div>
 {% endmacro %}
 {% block content %}
@@ -18,49 +31,55 @@
   <div><h1 class="large-title">Запросы на выдачу</h1></div>
 </header>
 {# 19.11.2026 (брат): плитки — те же цифры, что в меню; нажал — переход к своему списку #}
-{% set t_wait = tools_mine|selectattr("r.status", "equalto", "new")|list|length %}
-{% set t_ready = tools_mine|selectattr("r.status", "equalto", "ready")|list|length %}
+{% set n_take = mine|length + t_ready_mine|length %}
+{% set n_wait = waiting|length + t_wait|length %}
 <nav class="pult-tiles iss-tiles rd-tiles" aria-label="Что по моим нарядам">
-  <a class="ptile {{ 'zero' if not mine }}" href="#mine" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Забрать у окошка</span><b>{{ mine|length }}</b><span class="ptile-s">запчасти готовы</span></a>
-  <a class="ptile {{ 'zero' if not waiting }}" href="#waiting" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Ждут кладовщика</span><b>{{ waiting|length }}</b><span class="ptile-s">запчасти</span></a>
-  <a class="ptile {{ 'zero' if not tools_mine }}" href="#tools" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Инструмент</span><b>{{ tools_mine|length }}</b><span class="ptile-s">ждёт: {{ t_wait }} · готов: {{ t_ready }}</span></a>
+  <a class="ptile {{ 'zero' if not n_take }}" href="#mine" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Забрать у окошка</span><b>{{ n_take }}</b><span class="ptile-s">запчасти: {{ mine|length }} · инструмент: {{ t_ready_mine|length }}</span></a>
+  <a class="ptile {{ 'zero' if not n_wait }}" href="#waiting" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Ждут кладовщика</span><b>{{ n_wait }}</b><span class="ptile-s">запчасти: {{ waiting|length }} · инструмент: {{ t_wait|length }}</span></a>
 </nav>
-<p class="footnote" style="margin:0 4px">Запросы по вашим нарядам. Кладовщик собрал запчасти у окошка — заберите и нажмите «Выдано»:
-  запчасти уйдут в наряд, мастер может работать. Закрыть выдачу может и кладовщик.</p>
+<p class="footnote" style="margin:0 4px">Запросы по вашим нарядам. Кладовщик подготовил у окошка запчасти или инструмент — заберите,
+  отнесите мастеру и нажмите «Выдано». Закрыть выдачу может и кладовщик.</p>
 <div class="cl-grid">
   <section class="ov-col on">
-    <div class="group-title" id="mine">Готово — забрать у окошка · {{ mine|length }}</div>
-    {% for x in mine %}{{ req_card(x) }}{% else %}<div class="card compact"><p class="footnote" style="margin:0">Сейчас ничего не готово</p></div>{% endfor %}
-    {% if others %}
-    <div class="group-title">По другим нарядам · {{ others|length }}</div>
+    <div class="group-title" id="mine">Готово — забрать у окошка · {{ n_take }}</div>
+    {% for x in mine %}{{ req_card(x) }}{% endfor %}
+    <span id="tools"></span>
+    {% for x in t_ready_mine %}{{ tool_card(x) }}{% endfor %}
+    {% if not n_take %}<div class="card compact"><p class="footnote" style="margin:0">Сейчас ничего не готово</p></div>{% endif %}
+    {% if others or t_ready_others %}
+    <div class="group-title">По другим нарядам · {{ others|length + t_ready_others|length }}</div>
     {% for x in others %}{{ req_card(x) }}{% endfor %}
+    {% for x in t_ready_others %}{{ tool_card(x) }}{% endfor %}
     {% endif %}
   </section>
   <section class="ov-col on">
-    {# 12.11.2026: что ещё у кладовщика — просили, он пока не собрал #}
-    <div class="group-title" id="waiting">Ждут кладовщика · {{ waiting|length }}</div>
+    {# 12.11.2026: что ещё у кладовщика — просили, он пока не собрал; 19.11.2026 — и инструмент #}
+    <div class="group-title" id="waiting">Ждут кладовщика · {{ n_wait }}</div>
     <div class="card compact">
       {% for x in waiting %}
       <div class="kv"><span><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number[-6:] }}</a> · {{ x.v.make }} {{ x.v.model }}
         <span class="caption" style="display:block">{{ x.lines|map(attribute="name")|join(", ") }} · просил {{ x.who.full_name if x.who else "" }}</span></span>
         <b class="nowrap">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
-      {% else %}<p class="footnote" style="margin:0">Нет — всё собрано</p>{% endfor %}
-    </div>
-    {# 19.11.2026 (брат, наряд 60): инструмент по моим нарядам — выдаёт кладовщик мастеру, менеджер видит, что с ним #}
-    <div class="group-title" id="tools">Инструмент по моим нарядам · {{ tools_mine|length }}</div>
-    <div class="card compact">
-      {% for x in tools_mine %}
-      <div class="kv"><span>{{ x.tool.name if x.tool else "" }}{% if x.tool and x.tool.place %} <span class="caption">· {{ x.tool.place }}</span>{% endif %}
-        <span class="caption" style="display:block"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }}{% endif %} · просит {{ x.who.full_name if x.who else "" }}</span></span>
-        <span class="chip" data-s="{{ 'ready' if x.r.status == 'ready' else 'waiting' }}">{{ "подготовлен — мастер заберёт" if x.r.status == "ready" else "ждёт кладовщика" }}</span></div>
-      {% else %}<p class="footnote" style="margin:0">Мастера инструмент не просят</p>{% endfor %}
+      {% endfor %}
+      {% for x in t_wait %}
+      <div class="kv"><span>🔧 {{ x.tool.name if x.tool else "" }}
+        <span class="caption" style="display:block"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }}{% endif %} · просит {{ x.who.full_name if x.who else "" }}</span></span>
+        <b class="nowrap">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      {% endfor %}
+      {% if not n_wait %}<p class="footnote" style="margin:0">Нет — всё собрано</p>{% endif %}
     </div>
     <div class="group-title">Недавно выдано</div>
     <div class="card compact">
-      {% for x in done %}
+      {% for d in done %}{% set x = d.x %}
+      {% if d.kind == "tool" %}
+      <div class="kv"><span>🔧 {{ x.tool.name if x.tool else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% endif %}
+        <span class="caption" style="display:block">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}</span></span>
+        <b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      {% else %}
       <div class="kv"><span><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
         {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption" style="display:block">выдано · {{ ib.full_name }}</span>{% endif %}</span>
-        <b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b></div>
+        <b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      {% endif %}
       {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
     </div>
   </section>

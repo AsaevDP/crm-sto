@@ -1931,8 +1931,15 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
     chem_new = csvc.requests(ctx.db, ctx.branch.id, "new", days=0) if can_chem else []
     if tab not in ("parts", "tools", "chem") or (tab == "tools" and not can_tools) or (tab == "chem" and not can_chem):
         tab = "parts"
+    # 19.11.2026 (брат): подготовлено, но не выдано — плитка оранжевая (просят — красная, всё выдано — серая)
+    from ..models import ChemRequest, ToolRequest
+    def _cnt(model, *conds):
+        return ctx.db.scalar(select(func.count()).select_from(model).where(model.branch_id == ctx.branch.id, *conds)) or 0
     data = dict(tab=tab, new=new, n_parts=len(new), can_tools=can_tools, n_tools=len(tool_new),
-                can_chem=can_chem, n_chem=len(chem_new), fmt_plate=osvc.fmt_plate)
+                can_chem=can_chem, n_chem=len(chem_new), fmt_plate=osvc.fmt_plate,
+                r_parts=_cnt(IssueRequest, IssueRequest.status == "ready"),
+                r_tools=_cnt(ToolRequest, ToolRequest.status == "ready", ToolRequest.kind == "issue") if can_tools else 0,
+                r_chem=_cnt(ChemRequest, ChemRequest.status == "ready") if can_chem else 0)
     if tab == "chem":
         free = {x["c"].id: x for x in csvc.items(ctx.db, ctx.branch.id)}
         data.update(chem_new=chem_new, chem_free=free, chem_done=csvc.requests(ctx.db, ctx.branch.id, ("issued", "declined"), days=7)[:20],
@@ -2005,13 +2012,21 @@ def ready_page(ctx: Ctx = Depends(get_ctx)):
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     # 19.11.2026 (брат, наряд 60): инструмент, который мастера просят по моим нарядам (ждёт кладовщика / подготовлен)
     from ..services import tools as tsvc
-    tools_mine = [x for st_ in ("new", "ready") for x in tsvc.requests_list(ctx.db, ctx.branch.id, st_)
-                  if x["r"].kind == "issue" and x["wo"] and x["wo"].manager_id == ctx.user.id]
-    return ctx.render("stock/ready.html", title="Запросы на выдачу", tools_mine=tools_mine,
+    # 19.11.2026 (брат): подготовленный инструмент менеджер забирает у окошка и относит мастеру — как запчасти
+    def t_mine(x):
+        return bool(x["wo"] and x["wo"].manager_id == ctx.user.id)
+    t_ready = [x for x in tsvc.requests_list(ctx.db, ctx.branch.id, "ready") if x["r"].kind == "issue"]
+    t_wait = [x for x in tsvc.requests_list(ctx.db, ctx.branch.id, "new") if x["r"].kind == "issue" and t_mine(x)]
+    t_done = [x for x in tsvc.requests_list(ctx.db, ctx.branch.id, "done", 30) if x["r"].kind == "issue" and t_mine(x)]
+    done = [{"kind": "parts", "x": x, "at": x["r"].issued_at or x["r"].updated_at}
+            for x in _requests(ctx, "issued")[:30] if _ready_mine(ctx, x)]
+    done += [{"kind": "tool", "x": x, "at": x["r"].done_at or x["r"].updated_at} for x in t_done]
+    done.sort(key=lambda d: d["at"], reverse=True)
+    return ctx.render("stock/ready.html", title="Запросы на выдачу",
                       mine=[x for x in rows if _ready_mine(ctx, x)],
                       others=[x for x in rows if not _ready_mine(ctx, x)], people=people, fmt_plate=osvc.fmt_plate,
-                      waiting=[x for x in _requests(ctx, "new") if _ready_mine(ctx, x)],
-                      done=[x for x in _requests(ctx, "issued")[:30] if _ready_mine(ctx, x)][:10])
+                      t_ready_mine=[x for x in t_ready if t_mine(x)], t_ready_others=[x for x in t_ready if not t_mine(x)],
+                      t_wait=t_wait, waiting=[x for x in _requests(ctx, "new") if _ready_mine(ctx, x)], done=done[:10])
 
 
 def my_requests_data(ctx: Ctx) -> dict:

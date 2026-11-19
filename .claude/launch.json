@@ -14,6 +14,13 @@
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8830"],
       "port": 8830,
       "autoPort": false
+    },
+    {
+      "name": "crmsto-3",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8840"],
+      "port": 8840,
+      "autoPort": false
     }
   ]
 }

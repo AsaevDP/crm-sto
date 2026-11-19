@@ -633,6 +633,29 @@ def tool_request_ready(rid: str, ctx: Ctx = Depends(get_ctx)):
     return _back(ctx, "/stock/issues?tab=tools")
 
 
+@router.post("/tool-requests/{rid}/pickup")
+def tool_request_pickup(rid: str, ctx: Ctx = Depends(get_ctx)):
+    """Менеджер забрал подготовленный инструмент у окошка и отнёс мастеру — «Выдано» (19.11.2026, брат).
+    Как с запчастями: только то, что кладовщик уже подготовил; инструмент числится за мастером, который просил."""
+    ctx.need("stock.pickup")
+    from ..models import ToolRequest
+    r = ctx.db.get(ToolRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id or r.kind != "issue":
+        raise Forbidden()
+    if r.status != "ready":
+        flash(ctx.request, "Кладовщик ещё не подготовил инструмент" if r.status == "new" else "Запрос уже закрыт", "error")
+        return _to("/ready#tools")
+    err = svc.complete_request(ctx.db, r, ctx.user, pickup=True)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        t = ctx.db.get(Tool, r.tool_id)
+        ctx.db.commit()
+        flash(ctx.request, f"«{t.name}» — выдан")
+    return _to("/ready")
+
+
 @router.post("/tool-requests/{rid}/cancel")
 def tool_request_cancel(rid: str, ctx: Ctx = Depends(get_ctx)):
     from ..models import ToolRequest
