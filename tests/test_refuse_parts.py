@@ -138,7 +138,7 @@ def test_refuse_after_approval_ordered_and_arrived(client):
 
     # запчастист: красная цифра, «Лишнее после отказов»
     login(client, "oleg", "oleg123")
-    b = client.get("/api/notify").json()["badges"].get("/my-orders", [])
+    b = client.get("/api/notify").json()["badges"].get("/stock", [])
     assert any(x["c"] == "red" and "клиент отказался" in x["t"] for x in b)
     page = client.get("/stock/leftovers").text
     assert "Рычаг (отказ — отменят)" in page and "Отменил у поставщика" in page
