@@ -1549,6 +1549,33 @@ def leave_for_today(day):
                     and o.wo().status == "waiting", "часть пришла — слесарь запросил выдачу, наряд «Ждём запчасти»",
                     o.wo().number)
         o.step = "wait_parts_today"
+    # 2б) 19.11.2026 (брат): подбор готов — колодки TRW со склада и Jurid под заказ ОДНОЙ группой (клиент выбирает одно);
+    #     у менеджера — «Выбрать», затем «Согласовал с клиентом»
+    o = fresh_mech("13:55")
+    pads = cat_id("Колодки тормозные передние")
+    if o and pads:
+        with at(day, "15:10"):
+            post("oleg", f"{o.url}/parts", {"catalog_id": str(pads), "name": "Колодки тормозные передние", "qty": "1",
+                                            "cost": "", "markup_pct": "40", "action": "auto"}, what="Со склада: колодки")
+            base = next((p for p in parts_of(o) if p.status == "reserved"), None)
+            if base:
+                post("oleg", f"{o.url}/parts", {"name": "Колодки тормозные передние", "brand": "Jurid", "qty": "1",
+                                                "cost": "1050", "markup_pct": "35", "action": "option",
+                                                "option_group": f"part:{base.id}"}, what="Вариант к колодкам со склада")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+        R.check(len({p.option_group for p in parts_of(o) if p.status == "option"}) == 1 and o.wo().picked_at,
+                "колодки со склада и под заказ — одна группа на выбор клиенту", o.wo().number)
+        o.step = "approve_wait"
+    # 2в) 19.11.2026: одна деталь дважды (масло под две работы) — у менеджера предупреждение «клиент берёт все?»
+    o = fresh_mech("14:25")
+    oil = cat_id("Масло моторное 5W-30, 4 л")
+    if o and oil:
+        with at(day, "15:15"):
+            for _ in range(2):
+                post("oleg", f"{o.url}/parts", {"catalog_id": str(oil), "name": "Масло моторное 5W-30, 4 л", "qty": "1",
+                                                "cost": "", "markup_pct": "40", "action": "auto"}, what="Со склада: масло")
+            post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+        o.step = "approve_wait"
     # 6б) 19.11.2026 (брат): клиент отказался ПОСЛЕ согласования. Заказано у поставщика: одна деталь — ждёт решения
     #     запчастиста (🔴), вторая — «пусть приедет на склад», приехала (🟠 оставить / вернуть / продать)
     o = fresh_mech("10:20")
