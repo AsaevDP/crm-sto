@@ -159,8 +159,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         from ..models import OrderAccess
         from ..services import decisions as dsvc
         pend = ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.user_id == ctx.user.id, OrderAccess.status == "pending"))
-        acc = {"until": svc.access_until(ctx.db, ctx.user.id), "pending": pend,
-               "self_ok": bool(pend) and dsvc.can_self_decide(ctx.db, ctx.branch.id)}
+        acc = {"until": svc.access_until(ctx.db, ctx.user.id), "pending": pend}
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
@@ -1194,22 +1193,14 @@ def access_requests(ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/access-requests/{aid}/self")
 def access_self(aid: str, ctx: Ctx = Depends(get_ctx)):
-    """Директора и зама нет в здании (по табелю) — менеджер разрешает себе сам доступ ко всем нарядам, только на 1 час."""
-    from datetime import timedelta
-    from ..db import now
+    """20.11.2026 (брат): «Директора нет — решаю сам» для доступа ко всем нарядам (и всей базе клиентов) убрано.
+    Даже если директора и зама нет в здании — доступ ко всем только с их разрешения; без них — поиск по точным данным."""
     from ..models import OrderAccess
-    from ..services import decisions as dsvc
     a = ctx.db.get(OrderAccess, _uuid(aid))
-    if not a or a.branch_id != ctx.branch.id or a.user_id != ctx.user.id or a.status != "pending":
+    if not a or a.branch_id != ctx.branch.id or a.user_id != ctx.user.id:
         raise Forbidden()
-    if not dsvc.can_self_decide(ctx.db, ctx.branch.id):
-        flash(ctx.request, "Директор или зам на месте (по табелю) — найдите их, решают они", "error")
-        return _to("/orders")
-    a.status, a.hours, a.until = "approved", dsvc.SELF_HOURS, now() + timedelta(hours=dsvc.SELF_HOURS)
-    a.decided_by, a.decided_at, a.self_decided = ctx.user.id, now(), True
-    dsvc.tell_deciders(ctx.db, ctx, "доступ ко всем нарядам на 1 час", f"Причина: {a.reason}", "/access-requests")
-    ctx.db.commit()
-    flash(ctx.request, "Доступ ко всем нарядам — на 1 час (директора и зама нет на месте). Им отправлено сообщение")
+    flash(ctx.request, "Доступ ко всем нарядам даёт только директор или зам. Нужен клиент — найдите его по полному "
+                       "госномеру, телефону, VIN или номеру наряда", "error")
     return _to("/orders")
 
 

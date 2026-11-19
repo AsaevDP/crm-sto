@@ -97,28 +97,19 @@ def test_warranty_not_covered(client):
     assert o.status == "closed" and o.warranty == "rejected"
 
 
-def test_self_decide_only_when_bosses_away(client):
+def test_no_self_access_to_all_even_when_bosses_away(client):
+    """20.11.2026 (брат): доступ ко всем нарядам (= ко всей базе клиентов) сам себе менеджер НЕ даёт — даже если директора
+    и зама нет в здании. Без них — только поиск по точным данным (на 1 час, конкретный клиент)."""
     from app.models import OrderAccess
     _as(client, "irina")
     client.post("/orders/access-request", data={"reason": "Ищу наряд по звонку клиента"})
     with SessionLocal() as db:
         a = db.scalar(select(OrderAccess).where(OrderAccess.user_id == _uid("irina"), OrderAccess.status == "pending"))
-    _presence("director", "in")                          # директор в здании — сам нельзя
-    assert "решаю сам" not in client.get("/orders").text
-    r = client.post(f"/access-requests/{a.id}/self")
-    assert "найдите их" in r.text
-    _presence("director", "out")                         # ушёл; зам не приходил
+    _presence("director", "out")                         # директор ушёл; зам не приходил
     _presence("deputy", "out")
-    assert "решаю сам" in client.get("/orders").text
-    client.post(f"/access-requests/{a.id}/self")
+    page = client.get("/orders").text
+    assert "решаю сам" not in page and "по полному госномеру" in page
+    r = client.post(f"/access-requests/{a.id}/self")
+    assert "только директор или зам" in r.text
     with SessionLocal() as db:
-        a = db.get(OrderAccess, a.id)
-        assert a.status == "approved" and a.self_decided and a.hours == 1
-        until = a.until if a.until.tzinfo else a.until.replace(tzinfo=now().tzinfo)
-        assert until - now() <= timedelta(hours=1, minutes=1)
-    _as(client, "director")
-    page = client.get("/access-requests").text
-    assert "решил(а) сам(а)" in page
-    with SessionLocal() as db:
-        from app.models import Notification
-        assert db.scalar(select(Notification).where(Notification.user_id == _uid("director"), Notification.kind == "self_decided"))
+        assert db.get(OrderAccess, a.id).status == "pending"
