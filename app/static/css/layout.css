@@ -1987,6 +1987,17 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .wq-next .grow { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; }
 .wq-next .btn { min-height: 52px; font-size: 18px; padding: 0 24px; }
 @media (max-width: 600px) { .wq-next form, .wq-next .btn { width: 100%; } }
+/* 19.11.2026: одна очередь — серые (мыть пока нельзя), красная строка — мойщик просит помыть раньше, «Вам передали» */
+.wq-card.wq-blocked { border-left-color: var(--gray); background: var(--fill-2); }
+.wq-card.wq-blocked .wq-car b, .wq-card.wq-blocked .wq-plate { color: var(--text-2); }
+.wq-card.wq-asked { border-left-color: var(--red); }
+.wq-card.wq-handed { border-left-color: var(--red); }
+.wq-why { color: var(--text-2); }
+.wq-ask { display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--text); }
+.wq-ask b { color: var(--red); }
+.wq-hint { margin: -2px 0 8px; }
+.wq-narrow { grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
 
 .wash-form-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 @media (min-width: 1000px) { .wash-form-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }

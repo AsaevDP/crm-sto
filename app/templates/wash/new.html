@@ -80,6 +80,15 @@
               {% for b in boxes %}<option value="{{ b.id }}">{{ b.name or ("Бокс " ~ b.number) }}</option>{% endfor %}</select>
           </label>{% endif %}
         </div>
+        {# 19.11.2026 (брат): быструю мойку менеджер может поставить вне очереди — перед машинами с ремонта #}
+        {% if ctx.can("orders.approve") %}
+        <label>Место в очереди
+          <select class="field" name="queue_place">
+            <option value="">В конец очереди{% if brd.queue %} ({{ brd.queue|length + 1 }}-я){% endif %}</option>
+            <option value="first">Первой — вне очереди</option>
+          </select>
+        </label>
+        {% endif %}
         <div class="headline wf-sub">Топливо</div>
         <div class="segmented seg-wide" id="fuel">
           {% for v, t in FUEL_LEVELS.items() %}<button type="button" data-v="{{ v }}" aria-pressed="false" title="{{ t }}">{{ {0: "0", 100: "100%"}.get(v, t) }}</button>{% endfor %}

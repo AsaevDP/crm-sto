@@ -77,8 +77,9 @@ def compute(ctx) -> dict:
             _add(out, "/orders", "red", n_lead + n_extra, "новые — посмотреть", "/orders?tab=intake")
         # 🔴 13.11.2026: мне передали наряд (менеджеру, мастеру, запчастисту) — горит, пока не нажал «✓ Принял»
         from .handover import pending_orders
+        # 19.11.2026: у мойщика «Наряды» = очередь мойки — там блок «Вам передали»
         _add(out, "/orders", "red", len(pending_orders(db, bid, me.id)), "вам передали наряд — нажмите «Принял»",
-             "/orders?tab=handed")
+             "/wash/queue#handed" if role in ("washer", "detailer") else "/orders?tab=handed")
         if ctx.can("orders.approve"):
             _add(out, "/orders", "orange", n_status("approve", field=None if see_all else WorkOrder.manager_id),
                  "согласовать с клиентом", "/orders?tab=approve")
@@ -101,7 +102,13 @@ def compute(ctx) -> dict:
             arrived = arrived_waiting(db, bid, me.id)
             _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
                  alone=True)
-        if role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
+        if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
+            from . import wash as wash_svc
+            brd_ = wash_svc.board(db, bid)
+            n_w = sum(1 for c in brd_["doing"] if wash_svc.started_by(c, me) and any(w.status != "done" for w in c.works))
+            n_w += 1 if wash_svc.next_for(db, bid, me, brd_) else 0
+            _add(out, "/orders", "orange", n_w, "ваша машина — можно мыть", "/wash/queue")
+        elif role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
             from ..models import WoWork
             from .orders import can_start_work
             n_w = 0
@@ -196,10 +203,19 @@ def compute(ctx) -> dict:
             _add(out, "/wash", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
                 ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "мойщик просит химию — ждёт кладовщика",
                  "/wash?tab=asks")
-    if role in ("washer", "detailer"):   # машины в очереди мойки, которые никто не взял
+        # 🔴 19.11.2026: мойщик просит изменить очередь — ждёт ответа менеджера
+        if ctx.can("orders.approve"):
+            from ..models import WashQueueRequest
+            if db.scalar(select(WashQueueRequest.id).where(WashQueueRequest.branch_id == bid,
+                                                           WashQueueRequest.status == "new").limit(1)):
+                from . import wash as wash_svc
+                _add(out, "/wash", "red", len(wash_svc.open_asks(db, bid)), "мойщик просит изменить очередь",
+                     "/wash?tab=asksq")
+    if role in ("washer", "detailer"):   # машины в очереди мойки, которые никто не взял (и мыть уже можно)
         from . import wash as wash_svc
         brd = wash_svc.board(db, bid)
-        _add(out, "/orders", "red", sum(1 for c in brd["queue"] if not c.who), "в очереди — никто не взял", "/wash/queue")
+        _add(out, "/orders", "red", sum(1 for c in brd["queue"] if not c.who and not c.blocked), "в очереди — никто не взял",
+             "/wash/queue")
 
     # ---------- Склад, Закупки (кладовщик) ----------
     if ctx.can("stock.receive") and role != "content":   # кладовщик разбора обычные поставки не принимает

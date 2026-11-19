@@ -188,6 +188,16 @@ def test_second_master_works_while_parts_wait(client):
     client.post(f"{url}/works", data={"name": "Мойка кузова", "pricing": "fixed", "rate": "350", "mechanic_id": str(_uid("moyka"))})
     with SessionLocal() as db:
         works = {w.name: w for w in db.scalars(select(WoWork).where(WoWork.work_order_id == _wo(url).id))}
+    # 19.11.2026 (брат): машину с ремонта моют после слесарей — раньше только если менеджер разрешил
+    # («Можно мыть сейчас»); мойщик берёт машины по очереди — менеджер ставит её первой
+    oid = _wo(url).id
+    client.post("/logout")
+    login(client, "moyka", "moyka123")
+    assert "Начал" not in client.get(url).text.split("<main", 1)[1]
+    client.post("/logout")
+    _as(client, "irina")
+    client.post(f"/wash/{oid}/wash-now")
+    client.post(f"/wash/{oid}/move", data={"where": "first"})
     client.post("/logout")
     login(client, "moyka", "moyka123")
     assert "Начал" in client.get(url).text

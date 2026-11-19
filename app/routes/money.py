@@ -133,6 +133,14 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
     # 12.11.2026 (брат): отмечает только исполнитель этой работы (без исполнителя — ведущий мастер); «вернуть» — менеджер
     if not undo_ok and ctx.user.id != osvc.work_owner(wo, w):
         raise Forbidden()
+    # 19.11.2026 (брат): мойщик / детейлер берёт машины только по очереди — «Начал» на чужой по порядку машине нельзя
+    from ..permissions import WASHERS
+    if ctx.user.role.code in WASHERS and action in ("start", "done") and w.status == "todo":
+        from ..services import wash as wsvc
+        err = wsvc.start_error(ctx.db, ctx.branch.id, wo, ctx.user)
+        if err:
+            flash(ctx.request, err, "error")
+            return _to(f"/orders/{order_id}")
     db, t = ctx.db, now()
     mech = ctx.user.id if is_master(ctx.user) else (w.mechanic_id or wo.mechanic_id)
 

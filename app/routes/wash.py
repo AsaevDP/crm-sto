@@ -73,17 +73,18 @@ def wash(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     ctx.need("wash.view")
     db, bid = ctx.db, ctx.branch.id
     # 18.11.2026: «С ремонта» — мойка как работа в обычном наряде; быстрые наряды мойки — в очереди
-    cars = [x for x in on_wash(db, bid) if not wsvc.is_wash_order(x["o"])]
+    # 19.11.2026: машины с ремонта — в общей очереди; отдельным блоком только помытые (ждут ремонта / выдачи)
+    cars = [x for x in on_wash(db, bid) if not wsvc.is_wash_order(x["o"]) and x["st"] == "done"]
     brd = wsvc.board(db, bid)
     items = csvc.items(db, bid)
     asks = csvc.requests(db, bid, "new")
     chem_p = db.scalars(select(Purchase).where(Purchase.branch_id == bid, Purchase.kind == "chem")
                         .order_by(Purchase.created_at.desc()).limit(100)).all()
-    if tab not in ("now", "chem", "buy", "asks"):
+    if tab not in ("now", "chem", "buy", "asks", "asksq"):
         tab = "now"
     low = [x for x in items if x["free"] <= LOW]
     data = dict(tab=tab, cars=cars, items=items, asks=asks, low=low, WASH_ST=WASH_ST, fmt_plate=osvc.fmt_plate,
-                brd=brd, fmt_min=wsvc.fmt_min, CLASSES=wsvc.CLASSES, now=now(),
+                brd=brd, fmt_min=wsvc.fmt_min, CLASSES=wsvc.CLASSES, now=now(), qasks=wsvc.open_asks(db, bid, brd),
                 n_open=sum(1 for p in chem_p if p.status != "arrived"),
                 supplier_list=db.scalars(select(Supplier).where(Supplier.branch_id == bid).order_by(Supplier.name)).all())
     if tab == "chem":
@@ -277,6 +278,11 @@ async def wash_create(request: Request, ctx: Ctx = Depends(get_ctx)):
         osvc.save_photo(db, wo, await p.read(), thumb)
     names = ", ".join(s.name for s in chosen)
     osvc.set_status(db, wo, "work", f"Мойка: {names}" + (f" · бокс {box.name or box.number}" if box else ""))
+    # 19.11.2026 (брат): менеджер может поставить быструю мойку вне очереди — первой (иначе — в конец)
+    if g("queue_place") == "first" and ctx.can("orders.approve"):
+        db.flush()
+        if wsvc.move(db, bid, wo, "first"):
+            osvc.event(db, wo, "status", "Мойка: поставлена первой — вне очереди")
     from sqlalchemy.exc import IntegrityError
     try:
         db.commit()
@@ -299,47 +305,113 @@ def _uuid_or_none(v):
         return None
 
 
+def _queue_order(ctx: Ctx, order_id: str) -> WorkOrder:
+    wo = ctx.db.get(WorkOrder, _uuid(order_id))
+    if not wo or wo.branch_id != ctx.branch.id or wo.status not in WO_ACTIVE:
+        raise Forbidden()
+    return wo
+
+
+@router.post("/wash/{order_id}/move")
+def wash_move(order_id: str, ctx: Ctx = Depends(get_ctx), where: str = Form("up")):
+    """Менеджер двигает машину в очереди мойки (19.11.2026, брат): ↑ / ↓ / «Первой» / «В конец»."""
+    ctx.need("orders.approve")
+    wo = _queue_order(ctx, order_id)
+    if wsvc.move(ctx.db, ctx.branch.id, wo, where):
+        osvc.event(ctx.db, wo, "status", f"Мойка: машину поставили {wsvc.MOVES[where]} в очереди")
+        ctx.db.commit()
+    return _to(f"/wash?tab=now#q{wo.id}")
+
+
 @router.post("/wash/{order_id}/up")
 def wash_up(order_id: str, ctx: Ctx = Depends(get_ctx)):
-    """«↑» — поднять машину в очереди (менеджер)."""
+    """«↑» — поднять машину в очереди (менеджер). Старый адрес — то же, что «move?where=up»."""
+    return wash_move(order_id, ctx, "up")
+
+
+@router.post("/wash/{order_id}/wash-now")
+def wash_now(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Машина с ремонта: менеджер разрешает мыть, не дожидаясь слесарей («Можно мыть сейчас») — или снимает разрешение.
+    Несогласованную машину и ту, что ждёт запчасти под мойку, разрешить нельзя (работа ещё не согласована)."""
     ctx.need("orders.approve")
-    wo = ctx.db.get(WorkOrder, _uuid(order_id))
-    if not wo or wo.branch_id != ctx.branch.id or not wsvc.is_wash_order(wo):
+    wo = _queue_order(ctx, order_id)
+    if wsvc.is_wash_order(wo):
         raise Forbidden()
-    if wsvc.raise_up(ctx.db, ctx.branch.id, wo):
-        osvc.event(ctx.db, wo, "status", "Мойка: машину подняли в очереди")
+    wo.wash_now = not wo.wash_now
+    if wo.wash_now:
+        ctx.db.flush()
+        wsvc.place_after_ready(ctx.db, ctx.branch.id, wo)
+    osvc.event(ctx.db, wo, "status", "Мойка: " + ("менеджер разрешил мыть, не дожидаясь слесарей" if wo.wash_now
+                                                  else "мыть — после слесарей"))
+    ctx.db.commit()
+    flash(ctx.request, "Можно мыть — машина в очереди наравне со всеми" if wo.wash_now else "Мыть — после слесарей")
+    return _to(f"/wash?tab=now#q{wo.id}")
+
+
+@router.post("/wash/{order_id}/ask")
+def wash_ask_queue(order_id: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    """Мойщик: «Попросить первой» — запрос менеджеру изменить очередь (взять вне очереди сам не может)."""
+    ctx.need("chem.ask")
+    if ctx.user.role.code not in WASHERS:
+        raise Forbidden()
+    wo = _queue_order(ctx, order_id)
+    err = wsvc.ask(ctx.db, wo, ctx.user, reason)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
         ctx.db.commit()
-    return _to("/wash?tab=now#queue")
+        flash(ctx.request, "Запрос отправлен менеджеру — ответ придёт сообщением")
+    return _to(f"/wash/queue#q{wo.id}")
+
+
+@router.post("/wash/asks/{rid}")
+def wash_ask_decide(rid: str, ctx: Ctx = Depends(get_ctx), ok: str = Form(""), answer: str = Form(""),
+                    back: str = Form("/wash?tab=asksq")):
+    """Менеджер отвечает на запрос мойщика: «Согласен» (машина первая) или «Отказать» с причиной."""
+    ctx.need("orders.approve")
+    from ..models import WashQueueRequest
+    r = ctx.db.get(WashQueueRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = wsvc.decide(ctx.db, r, ctx.user, ok == "1", answer)
+    ctx.db.commit()
+    flash(ctx.request, err or ("Машина первая в очереди — мойщику пришёл ответ" if ok == "1" else "Отказано — мойщик получил ответ"),
+          "error" if err and r.status == "new" else "ok")
+    return _to(back if back.startswith("/wash") else "/wash?tab=asksq")
 
 
 # ---------- Очередь у мойщика ----------
 @router.get("/wash/queue")
 def wash_queue(ctx: Ctx = Depends(get_ctx)):
-    """Экран мойщика / детейлера: моя машина сейчас, очередь с «Взять следующую», готовые; машины с ремонта."""
+    """Экран мойщика / детейлера (в меню — «Наряды»): мне передали, моя машина сейчас, «Взять следующую», ОДНА очередь —
+    быстрая мойка и машины с ремонта (серые — мыть пока нельзя), «Попросить первой», готовые."""
     ctx.need("chem.ask", "wash.view")
     db, bid, me = ctx.db, ctx.branch.id, ctx.user
     brd = wsvc.board(db, bid)
     mine_now = [c for c in brd["doing"] if any(u.id == me.id for u in c.who)]
-    nxt = wsvc.next_for(db, bid, me)
-    repair = [x for x in on_wash(db, bid) if not wsvc.is_wash_order(x["o"]) and x["st"] != "done"
-              and any(u.id == me.id for u in x["who"])]
-    return ctx.render("wash/queue.html", title="Мойка · очередь", brd=brd, mine_now=mine_now, nxt=nxt, repair=repair,
+    nxt = wsvc.next_for(db, bid, me, brd)
+    from ..services.handover import pending_orders
+    handed = [db.get(WorkOrder, i) for i in pending_orders(db, bid, me.id)]
+    handed_v = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in handed])))} if handed else {}
+    return ctx.render("wash/queue.html", title="Мойка · очередь", brd=brd, mine_now=mine_now, nxt=nxt,
+                      handed=handed, handed_v=handed_v, me=me,
                       can_take=lambda c: wsvc.can_take(me, c), fmt_min=wsvc.fmt_min, fmt_plate=osvc.fmt_plate,
                       CLASSES=wsvc.CLASSES, now=now(), WASH_ST=WASH_ST)
 
 
 @router.post("/wash/take")
 def wash_take(ctx: Ctx = Depends(get_ctx), order_id: str = Form("")):
-    """«Взять следующую» (или конкретную машину из очереди) — мойщик становится исполнителем, первая услуга «Начал»."""
+    """«Взять следующую» — мойщик становится исполнителем, первая услуга «Начал». Брать можно только первую машину
+    очереди, которую ему можно мыть (19.11.2026, брат); другую — через «Попросить первой»."""
     ctx.need("chem.ask")
     if ctx.user.role.code not in WASHERS:
         raise Forbidden()
     db, bid = ctx.db, ctx.branch.id
-    if order_id:
-        c = next((c for c in wsvc.board(db, bid)["queue"] if str(c.o.id) == order_id), None)
-        wo = c.o if c and wsvc.can_take(ctx.user, c) else None
-    else:
-        wo = wsvc.next_for(db, bid, ctx.user)
+    wo = wsvc.next_for(db, bid, ctx.user)
+    if order_id and wo and str(wo.id) != order_id:
+        flash(ctx.request, "Эта машина не первая в очереди — попросите менеджера изменить очередь", "error")
+        return _to("/wash/queue")
     if not wo:
         flash(ctx.request, "Очередь пуста — или машину уже взял другой мойщик", "error")
         return _to("/wash/queue")
@@ -465,14 +537,21 @@ def washer_order_view(ctx: Ctx, wo: WorkOrder):
                                               WoPhoto.stage == "intake").order_by(WoPhoto.created_at)).all()
     pauses = {s.wo_work_id: s for s in db.scalars(select(WoWorkSession).where(
         WoWorkSession.work_order_id == wo.id, WoWorkSession.kind == "pause", WoWorkSession.ended_at.is_(None)))}
-    take_c = None
-    if is_wash and wo.status == "work":
-        take_c = next((c for c in wsvc.board(db, ctx.branch.id)["queue"] if c.o.id == wo.id and wsvc.can_take(me, c)), None)
+    # 19.11.2026: «Взять машину» — только если она первая для меня в очереди (и с ремонта тоже); иначе — почему нельзя
+    brd = wsvc.board(db, ctx.branch.id)
+    qc = next((c for c in brd["queue"] if c.o.id == wo.id), None)
+    nxt = wsvc.next_for(db, ctx.branch.id, me, brd) if qc else None
+    take_c = qc if qc and nxt and nxt.id == wo.id else None
+    start_err = wsvc.start_error(db, ctx.branch.id, wo, me) if me.role.code in WASHERS else ""
+    from ..services import handover as hsvc
+    handed = bool(hsvc.pending(db, wo, me.id))
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     box = db.get(WashBox, wo.wash_box_id) if wo.wash_box_id else None
     c = db.get(Client, wo.client_id)
     return ctx.render("wash/order.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), client=c,
                       works=mine, others=others, photos=photos, pauses=pauses, is_wash=is_wash, take_c=take_c,
-                      own_ok={w.id for w in mine if osvc.work_owner(wo, w) == me.id and osvc.can_start_work(db, wo, w)},
+                      qc=qc, start_err=start_err, handed=handed,
+                      own_ok={w.id for w in mine if osvc.work_owner(wo, w) == me.id and osvc.can_start_work(db, wo, w)
+                              and not start_err},
                       people=people, box=box, CLASSES=wsvc.CLASSES, fmt_plate=osvc.fmt_plate, fmt_min=wsvc.fmt_min,
                       order_msgs=_order_msgs(ctx, wo), FUEL_LEVELS=FUEL_LEVELS)

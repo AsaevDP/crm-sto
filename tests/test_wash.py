@@ -106,9 +106,15 @@ def test_quick_intake_queue_and_washer_flow(client):
     r = client.get("/orders", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/wash/queue"
     assert "Взять следующую" in client.get("/wash/queue").text
-    # пока никто не взял — мойщик видит машину и кнопку «Взять машину»
+    # 19.11.2026: «Взять машину» — только у первой для мойщика машины; A стоит после B — взять нельзя, видно место
     page = _main(client.get(f"/orders/{a.id}").text)
-    assert "Взять машину" in page
+    assert "Взять машину" not in page and "В очереди" in page
+    with SessionLocal() as db:
+        first = wsvc.next_for(db, a.branch_id, db.scalar(select(User).where(User.login == "moyka")))
+    assert "Взять машину" in _main(client.get(f"/orders/{first.id}").text)
+    # чужую по порядку машину не взять и через адрес
+    r = client.post("/wash/take", data={"order_id": str(a.id)}, follow_redirects=False)
+    assert r.headers["location"] == "/wash/queue"
     for word in ("Проблемы", "Диагностика", "Согласование", "Запчасти", "₴"):
         assert word not in page, word
     while True:   # берём по очереди, пока не дойдём до машины A (база в тестах общая)

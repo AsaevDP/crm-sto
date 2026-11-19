@@ -1,16 +1,20 @@
 {% from "orders/_card.html" import key_tag %}
-{# Карточка машины в очереди мойки (18.11.2026). c — wash.Car; mode: queue / doing / done #}
+{# Карточка машины в очереди мойки (18.11.2026). c — wash.Car; mode: queue / doing / done.
+   19.11.2026: в очереди и машины с ремонта («🔧 с ремонта»); серая — мыть пока нельзя (c.blocked — почему);
+   красная строка — мойщик просит поставить машину первой (c.asked). #}
 {% macro qcard(c, mode) -%}
-<div class="card compact wq-card" data-st="{{ mode }}" id="q{{ c.o.id }}">
+<div class="card compact wq-card{{ ' wq-blocked' if c.blocked }}{{ ' wq-asked' if c.asked }}" data-st="{{ mode }}" id="q{{ c.o.id }}">
   <div class="wq-top">
     {% if mode == "queue" %}<span class="wq-pos" title="Место в очереди">{{ c.pos }}</span>{% endif %}
     <a class="wq-car" href="/orders/{{ c.o.id }}">
       <b>{{ c.v.make if c.v else "" }} {{ c.v.model if c.v else "" }} {{ key_tag(c.o) }}</b>
       <span class="mono wq-plate">{{ fmt_plate(c.v.plate) if c.v else "" }}</span>
-      <span class="caption">{{ CLASSES.get(c.o.car_class, "") }}{% if c.box %} · {{ c.box.name or ("бокс " ~ c.box.number) }}{% endif %} · приехал {{ c.o.created_at.astimezone().strftime("%H:%M") }}</span>
+      <span class="caption">{% if c.repair %}🔧 с ремонта · наряд {{ c.o.number }}{% else %}🫧 мойка{% if c.o.car_class %} · {{ CLASSES.get(c.o.car_class, "") }}{% endif %}{% endif %}{% if c.box %} · {{ c.box.name or ("бокс " ~ c.box.number) }}{% endif %}{% if not c.repair %} · приехал {{ c.o.created_at.astimezone().strftime("%H:%M") }}{% endif %}</span>
     </a>
     <div class="wq-eta">
-      {% if mode == "queue" and c.eta_start %}
+      {% if mode == "queue" and c.blocked %}
+        <span class="chip" data-s="created">мыть пока нельзя</span>
+      {% elif mode == "queue" and c.eta_start %}
         <span class="caption">начнут</span><b>{{ "сейчас" if (c.eta_start - now).total_seconds() < 60 else "≈ " ~ c.eta_start.astimezone().strftime("%H:%M") }}</b>
         <span class="caption">готово ≈ {{ c.eta_end.astimezone().strftime("%H:%M") }}</span>
       {% elif mode == "doing" and c.eta_end %}
@@ -22,9 +26,11 @@
   </div>
   <div class="wq-works">
     {% for w in c.works %}<span class="wq-w" data-ws="{{ w.status }}">{{ "✓ " if w.status == "done" }}{{ w.name }}</span>{% endfor %}
-    <span class="caption nowrap">≈ {{ fmt_min(c.minutes) }}</span>
+    {% if c.minutes %}<span class="caption nowrap">≈ {{ fmt_min(c.minutes) }}</span>{% endif %}
   </div>
-  {% if c.o.complaint %}<div class="caption wq-note">💬 {{ c.o.complaint }}</div>{% endif %}
+  {% if c.blocked %}<div class="caption wq-why">⏸ {{ c.blocked }}</div>{% endif %}
+  {% if c.o.complaint and not c.repair %}<div class="caption wq-note">💬 {{ c.o.complaint }}</div>{% endif %}
+  {% if c.asked %}<div class="wq-ask"><b>Просят помыть раньше</b>{% if c.asked.reason %}<span>💬 {{ c.asked.reason }}</span>{% endif %}</div>{% endif %}
   <div class="wq-foot">
     <span class="caption">{% if c.who %}{% for u in c.who %}{{ u.short_name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}мойщик не назначен{% endif %}</span>
     {% if c.act %}<span class="caption wq-act">{{ c.act }}</span>{% endif %}

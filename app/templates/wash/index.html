@@ -14,8 +14,30 @@
   </div>
 </header>
 
+{# 19.11.2026 (брат): менеджер расставляет очередь (↑ ↓ «Первой» «В конец»), машины с ремонта — в той же очереди;
+   мойщик просит поставить машину первой → красная плитка «Изменить очередь», «Согласен» / «Отказать». #}
+{% macro mgr_acts(c, n) %}
+  {% if c.asked %}
+  <form method="post" action="/wash/asks/{{ c.asked.id }}" class="one-shot"><input type="hidden" name="ok" value="1"><input type="hidden" name="back" value="/wash?tab={{ tab }}#q{{ c.o.id }}"><button class="btn btn-sm">✓ Согласен — первой</button></form>
+  <form method="post" action="/wash/asks/{{ c.asked.id }}" class="ask-no"><input type="hidden" name="answer"><input type="hidden" name="back" value="/wash?tab={{ tab }}#q{{ c.o.id }}"><button class="btn btn-sm btn-gray">Отказать</button></form>
+  {% endif %}
+  {% if c.pos > 1 %}
+  <form method="post" action="/wash/{{ c.o.id }}/move" class="one-shot"><input type="hidden" name="where" value="up"><button class="btn btn-sm btn-gray" title="Выше на одно место">↑</button></form>
+  {% endif %}
+  {% if c.pos < n %}
+  <form method="post" action="/wash/{{ c.o.id }}/move" class="one-shot"><input type="hidden" name="where" value="down"><button class="btn btn-sm btn-gray" title="Ниже на одно место">↓</button></form>
+  {% endif %}
+  {% if c.pos > 1 and not c.asked %}
+  <form method="post" action="/wash/{{ c.o.id }}/move" class="one-shot"><input type="hidden" name="where" value="first"><button class="btn btn-sm btn-gray" title="Вне очереди — следующей">Первой</button></form>
+  {% endif %}
+  {% if c.repair and (c.o.wash_now or c.blocked.startswith("идёт ремонт")) %}
+  <form method="post" action="/wash/{{ c.o.id }}/wash-now" class="one-shot"><button class="btn btn-sm btn-gray" title="{{ 'Ждать, пока слесари закончат' if c.o.wash_now else 'Мыть, не дожидаясь слесарей' }}">{{ "Мыть после ремонта" if c.o.wash_now else "Можно мыть сейчас" }}</button></form>
+  {% endif %}
+{% endmacro %}
+
 {{ tiles_m([
   {"t": "Очередь", "n": brd.queue|length, "c": "blue", "s": "моют: " ~ brd.doing|length ~ " · готовы: " ~ brd.done|length, "href": "/wash?tab=now", "on": tab == "now"},
+  {"t": "Изменить очередь", "n": qasks|length, "c": "red" if qasks else "gray", "s": "просит мойщик", "href": "/wash?tab=asksq", "on": tab == "asksq", "zero": not qasks},
   {"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"},
   {"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=asks", "on": tab == "asks", "zero": not asks},
   {"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low},
@@ -27,9 +49,10 @@
 <div class="wq-cols">
   <section>
     <div class="group-title" id="queue">Очередь · {{ brd.queue|length }}{% if brd.n_lanes > 1 %} <span class="caption">· боксов: {{ brd.n_lanes }}</span>{% endif %}</div>
+    {% if manage and brd.queue|length > 1 %}<p class="footnote wq-hint">Мойщик берёт машины строго по порядку. Кого забирают раньше — поставьте выше.</p>{% endif %}
     <div class="wq-list">
       {% for c in brd.queue %}
-      {% if manage and not loop.first %}{% call qcard(c, "queue") %}<form method="post" action="/wash/{{ c.o.id }}/up" class="one-shot"><button class="btn btn-sm btn-gray" title="Поднять в очереди — клиент спешит или постоянный">↑ Выше</button></form>{% endcall %}
+      {% if manage %}{% call qcard(c, "queue") %}{{ mgr_acts(c, brd.queue|length) }}{% endcall %}
       {% else %}{{ qcard(c, "queue") }}{% endif %}
       {% else %}<div class="card compact"><p class="footnote" style="margin:0">Очередь пуста.{% if ctx.can("orders.create") %} <a href="/wash/new">Принять машину на мойку →</a>{% endif %}</p></div>{% endfor %}
     </div>
@@ -43,7 +66,7 @@
 </div>
 
 {% if cars %}
-<div class="group-title">С ремонта — мойка как работа в наряде · {{ cars|length }}</div>
+<div class="group-title">С ремонта — помыли, ждут ремонта или выдачи · {{ cars|length }}</div>
 <div class="wash-cars">
   {% for x in cars %}{% set s = WASH_ST[x.st] %}
   <a class="card compact wash-car" href="/orders/{{ x.o.id }}#works" data-st="{{ x.st }}">
@@ -55,6 +78,14 @@
   {% endfor %}
 </div>
 {% endif %}
+{% elif tab == "asksq" %}
+{# 19.11.2026: мойщик просит поставить машину первой — «Согласен» / «Отказать» (с причиной) #}
+<div class="group-title">Мойщик просит изменить очередь · {{ qasks|length }}</div>
+<div class="wq-list wq-narrow">
+  {% set manage = ctx.can("orders.approve") %}
+  {% for c in qasks %}{% if manage %}{% call qcard(c, "queue") %}{{ mgr_acts(c, brd.queue|length) }}{% endcall %}{% else %}{{ qcard(c, "queue") }}{% endif %}
+  {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов нет. <a href="/wash?tab=now">К очереди →</a></p></div>{% endfor %}
+</div>
 {% elif tab == "asks" %}
 {# 18.11.2026 (брат): «Просят» — мойщик / детейлер просит химию, кладовщик ещё не выдал #}
 <div class="tablewrap">
@@ -135,6 +166,13 @@
 <p class="footnote">Закупка химии — как обычная: строки (можно вставить списком из Excel), «✓ Заказал», кладовщик принимает на полку «Химия».</p>
 {% endif %}
 
+<script>
+  document.querySelectorAll('.ask-no').forEach(f => f.addEventListener('submit', e => {
+    const r = prompt('Почему очередь не меняем? Мойщик увидит ответ', '');
+    if (r === null || !r.trim()) { e.preventDefault(); return; }
+    f.elements.answer.value = r;
+  }));
+</script>
 {% if ctx.can("wash.buy") %}
 <dialog id="wnew" class="sheet">
   <form method="post" action="/wash/purchases/new" class="form">

@@ -131,6 +131,9 @@ class WorkOrder(Entity):
     car_class: Mapped[str | None] = mapped_column(String(10), default="", server_default="", nullable=True)
     wash_box_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wash_boxes.id"), nullable=True)
     queue_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 19.11.2026 (брат): одна очередь мойки — и быстрая мойка, и машины с ремонта. Машина с ремонта ждёт, пока слесари
+    # закончат; менеджер может разрешить мыть раньше («Можно мыть сейчас») — wash_now.
+    wash_now: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     # Ячейка ключей (18.11.2026): номер крючка 1…N в шкафу у каждого рабочего места; 0 — «Без ячейки» (все были заняты),
     # пусто — наряд из времени до ячеек. Вручную не меняется (services/keys.py)
     key_slot: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

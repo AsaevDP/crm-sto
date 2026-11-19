@@ -98,6 +98,10 @@ class Car:
     eta_end: datetime | None = None
     pos: int = 0                     # место в очереди (1 — следующая)
     act: str = ""                    # «изм. 14:32 · Литвиненко» — последнее действие
+    repair: bool = False             # машина с ремонта (мойка — работа в большом наряде)
+    blocked: str = ""                # мыть пока нельзя — почему (серая в очереди)
+    since: datetime | None = None    # с какого времени ждёт мойки (порядок, если менеджер не расставил)
+    asked: object = None             # запрос мойщика «Изменить очередь», ждёт менеджера
 
 
 def _stage(o: WorkOrder, works) -> str:
@@ -108,18 +112,65 @@ def _stage(o: WorkOrder, works) -> str:
     return "queue"
 
 
-def _sort_key(o: WorkOrder):
-    return (o.queue_rank if o.queue_rank is not None else 10 ** 9, o.created_at)
+def _sort_key(c: "Car"):
+    """Порядок очереди: как расставил менеджер (queue_rank); остальные — сначала те, что можно мыть, по времени
+    ожидания; машины, которые мыть пока нельзя, — в конце."""
+    o = c.o
+    return (o.queue_rank if o.queue_rank is not None else 10 ** 9, 1 if c.blocked else 0, c.since or o.created_at)
+
+
+# Почему машину с ремонта мыть пока нельзя (19.11.2026, брат: серая в очереди, мойщик её не берёт)
+BLOCK_STATUS = {"created": "ещё не начали — приёмка", "diag": "идёт диагностика", "approve": "не согласовано с клиентом",
+                "picking": "подбирают запчасти", "waiting": "ждёт запчасти", "instock": "запчасти пришли — ремонт не начат"}
+
+
+def washer_ids(db: Session, branch_id) -> set:
+    """Все мойщики и детейлеры (и уволенные — их работы в старых нарядах тоже мойка)."""
+    from ..models import Role
+    from ..permissions import WASHERS
+    return set(db.scalars(select(User.id).join(Role, User.role_id == Role.id).where(
+        User.branch_id == branch_id, Role.code.in_(list(WASHERS)))))
+
+
+def _blocked(db: Session, o: WorkOrder, mine: list, others: list) -> str:
+    """Машина с ремонта: можно ли её уже мыть. '' — можно, иначе причина."""
+    from .orders import can_start_work
+    if all(can_start_work(db, o, w) for w in mine):
+        if o.wash_now or all(w.status == "done" for w in others):
+            return ""
+        return "идёт ремонт — мыть после слесарей"
+    return BLOCK_STATUS.get(o.status, "идёт ремонт")
 
 
 def board(db: Session, branch_id) -> dict:
-    """Всё для экрана очереди: queue — ждут (по порядку, с «≈ начнут / ≈ готово»), doing — моют, done — готовы."""
-    orders = db.scalars(select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.kind == "wash",
-                                                WorkOrder.status.in_(WO_ACTIVE))).all()
+    """Всё для экрана очереди (19.11.2026: ОДНА очередь — быстрая мойка и машины с ремонта, где есть работа мойщика /
+    детейлера): queue — ждут (по порядку, с «≈ начнут / ≈ готово»; серые — мыть пока нельзя), doing — моют,
+    done — готовы (только быстрая мойка: машину с ремонта после мойки выдаёт менеджер вместе с ремонтом)."""
+    wids = washer_ids(db, branch_id)
+    from sqlalchemy import or_
+    orders = db.scalars(select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.status.in_(WO_ACTIVE), or_(
+        WorkOrder.kind == "wash",
+        WorkOrder.mechanic_id.in_(wids),
+        WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id.in_(wids)))))).all() if wids else \
+        db.scalars(select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.status.in_(WO_ACTIVE),
+                                           WorkOrder.kind == "wash")).all()
     ids = [o.id for o in orders]
-    works = {}
+    all_works = {}
     for w in db.scalars(select(WoWork).where(WoWork.work_order_id.in_(ids)).order_by(WoWork.created_at)) if ids else []:
-        works.setdefault(w.work_order_id, []).append(w)
+        all_works.setdefault(w.work_order_id, []).append(w)
+    works, others, repair = {}, {}, set()
+    for o in orders:
+        ws = all_works.get(o.id, [])
+        if is_wash_order(o):
+            works[o.id] = ws
+        else:   # с ремонта: в очереди — только работы мойщика / детейлера
+            repair.add(o.id)
+            works[o.id] = [w for w in ws if (w.mechanic_id or o.mechanic_id) in wids]
+            others[o.id] = [w for w in ws if (w.mechanic_id or o.mechanic_id) not in wids]
+    from ..models import WashQueueRequest
+    asks = {r.work_order_id: r for r in db.scalars(select(WashQueueRequest).where(
+        WashQueueRequest.branch_id == branch_id, WashQueueRequest.status == "new").order_by(WashQueueRequest.created_at))} \
+        if ids else {}
     vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))} if ids else {}
     all_boxes = {b.id: b for b in boxes(db, branch_id, active_only=False)}
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == branch_id))}
@@ -142,11 +193,25 @@ def board(db: Session, branch_id) -> dict:
                 from .attendance import _aware
                 m = max(m - int((t - _aware(s.started_at)).total_seconds() // 60), 5 if m else 0)
             left += m
-        who_ids = list(dict.fromkeys(i for i in [*(w.mechanic_id for w in ws), o.mechanic_id] if i))
-        cars.append(Car(o=o, v=vehicles.get(o.vehicle_id), works=ws, stage=_stage(o, ws), minutes=total, left=left,
-                        box=all_boxes.get(o.wash_box_id), who=[people[i] for i in who_ids if i in people],
-                        act=activity_label(o, people.get(o.activity_by))))
-    queue = sorted([c for c in cars if c.stage == "queue"], key=lambda c: _sort_key(c.o))
+        rep = o.id in repair
+        if rep and not ws:
+            continue
+        who_ids = list(dict.fromkeys(i for i in [*(w.mechanic_id or (o.mechanic_id if rep else None) for w in ws),
+                                                  None if rep else o.mechanic_id] if i))
+        stage = _stage(o, ws)
+        if rep and stage == "done":
+            continue   # помыли — дальше машина у слесарей / менеджера, в очереди мойки её больше нет
+        c = Car(o=o, v=vehicles.get(o.vehicle_id), works=ws, stage=stage, minutes=total, left=left,
+                box=all_boxes.get(o.wash_box_id), who=[people[i] for i in who_ids if i in people],
+                act=activity_label(o, people.get(o.activity_by)), repair=rep, asked=asks.get(o.id))
+        if rep:
+            oth = others.get(o.id, [])
+            c.blocked = _blocked(db, o, ws, oth) if stage == "queue" else ""
+            c.since = max([w.done_at for w in oth if w.done_at] + [min(w.created_at for w in ws)])
+        else:
+            c.since = o.created_at
+        cars.append(c)
+    queue = sorted([c for c in cars if c.stage == "queue"], key=_sort_key)
     # 18.11.2026: «Моют» и «Готовы» — свежие сверху (последнее действие); очередь — по приезду (дата приёмки)
     from .orders import fresh_key
     doing = sorted([c for c in cars if c.stage == "doing"], key=lambda c: fresh_key(c.o), reverse=True)
@@ -164,8 +229,10 @@ def board(db: Session, branch_id) -> dict:
         c.eta_end = t + timedelta(minutes=c.left)
         lanes[k] = max(lanes[k], c.eta_end)
     for i, c in enumerate(queue, 1):
-        k = lane_for(c)
         c.pos = i
+        if c.blocked:
+            continue   # мыть пока нельзя — время не считаем, дорожку не занимает
+        k = lane_for(c)
         c.eta_start = max(lanes[k], t)
         c.eta_end = c.eta_start + timedelta(minutes=c.minutes)
         lanes[k] = c.eta_end
@@ -173,34 +240,64 @@ def board(db: Session, branch_id) -> dict:
             "n_lanes": len(lanes)}
 
 
-def raise_up(db: Session, branch_id, wo: WorkOrder) -> bool:
-    """«↑» — поднять машину на одно место в очереди (клиент спешит, постоянный)."""
-    q = board(db, branch_id)["queue"]
-    order = [c.o for c in q]
-    if wo not in order:
+MOVES = {"up": "выше", "down": "ниже", "first": "первой", "last": "в конец"}
+
+
+def move(db: Session, branch_id, wo: WorkOrder, where: str) -> bool:
+    """Менеджер двигает машину в очереди (19.11.2026, брат): up / down — на одно место, first — первой (вне очереди),
+    last — в конец. Порядок всей очереди запоминается (queue_rank 1…N): новые машины встают в конец."""
+    order = [c.o for c in board(db, branch_id)["queue"]]
+    if wo not in order or where not in MOVES:
         return False
     i = order.index(wo)
-    if i == 0:
+    j = {"up": i - 1, "down": i + 1, "first": 0, "last": len(order) - 1}[where]
+    if j < 0 or j >= len(order) or j == i:
         return False
-    order[i - 1], order[i] = order[i], order[i - 1]
+    order.insert(j, order.pop(i))
     for n, o in enumerate(order, 1):
         o.queue_rank = n
     return True
 
 
+def place_after_ready(db: Session, branch_id, wo: WorkOrder) -> None:
+    """«Можно мыть сейчас»: машина встаёт за теми, кого уже можно мыть (перед серыми), — а не вперёд всех по времени
+    ожидания. Дальше менеджер двигает как обычно."""
+    q = board(db, branch_id)["queue"]
+    order = [c.o for c in q if c.o.id != wo.id]
+    if len(order) == len(q):
+        return
+    ready = [i for i, c in enumerate(c for c in q if c.o.id != wo.id) if not c.blocked]
+    order.insert(ready[-1] + 1 if ready else 0, wo)
+    for n, o in enumerate(order, 1):
+        o.queue_rank = n
+
+
+def raise_up(db: Session, branch_id, wo: WorkOrder) -> bool:
+    """«↑» — поднять машину на одно место в очереди (клиент спешит, постоянный)."""
+    return move(db, branch_id, wo, "up")
+
+
 def can_take(user: User, c: Car) -> bool:
-    """Мойщик может взять машину: на неё никто не назначен или назначен он сам."""
-    ids = {w.mechanic_id for w in c.works if w.mechanic_id} | ({c.o.mechanic_id} if c.o.mechanic_id else set())
+    """Мойщик может взять машину: мыть уже можно и на неё никто не назначен или назначен он сам."""
+    if c.blocked:
+        return False
+    ids = {w.mechanic_id for w in c.works if w.mechanic_id}
+    if not c.repair and c.o.mechanic_id:
+        ids.add(c.o.mechanic_id)
+    if c.repair and not ids and c.o.mechanic_id:
+        ids.add(c.o.mechanic_id)
     return not ids or user.id in ids
 
 
 def take(db: Session, wo: WorkOrder, user: User) -> WoWork | None:
-    """Мойщик взял машину: он — исполнитель (своих несделанных работ без исполнителя), первая работа — «Начал»."""
+    """Мойщик взял машину: он — исполнитель (своих несделанных работ без исполнителя), первая работа — «Начал».
+    Машина с ремонта — только его работы мойки (работы слесарей не трогаем)."""
+    rep = not is_wash_order(wo)
     if not wo.mechanic_id:
         wo.mechanic_id = user.id
     first = None
     for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)):
-        if w.status != "done" and not w.mechanic_id:
+        if w.status != "done" and not w.mechanic_id and not rep:
             w.mechanic_id = user.id
         if first is None and w.status in ("todo", "paused") and (w.mechanic_id or wo.mechanic_id) == user.id:
             first = w
@@ -211,17 +308,106 @@ def take(db: Session, wo: WorkOrder, user: User) -> WoWork | None:
         db.add(WoWorkSession(work_order_id=wo.id, wo_work_id=first.id, mechanic_id=user.id, lift_id=None, started_at=t))
         first.status = "doing"
     wo.queue_rank = None
+    close_asks(db, wo)
     from .orders import event
     event(db, wo, "status", f"Мойка: взял {user.full_name}")
     return first
 
 
-def next_for(db: Session, branch_id, user: User) -> WorkOrder | None:
-    """Следующая машина для мойщика: первая в очереди, которую он может взять."""
-    for c in board(db, branch_id)["queue"]:
+def next_for(db: Session, branch_id, user: User, brd: dict | None = None) -> WorkOrder | None:
+    """Следующая машина для мойщика: первая в очереди, которую он может взять (серые и чужие пропускаем).
+    Брать можно ТОЛЬКО её (19.11.2026, брат); другую — через запрос менеджеру «Изменить очередь»."""
+    for c in (brd or board(db, branch_id))["queue"]:
         if can_take(user, c):
             return c.o
     return None
+
+
+def started_by(c: Car, user: User) -> bool:
+    """Мойщик уже моет эту машину (взял её — есть начатая / сделанная его услуга)."""
+    return any(w.status in ("doing", "paused", "done") and (w.mechanic_id or c.o.mechanic_id) == user.id for w in c.works)
+
+
+def start_error(db: Session, branch_id, wo: WorkOrder, user: User) -> str:
+    """Мойщик жмёт «Начал» в наряде: можно, если машину он уже моет или она первая для него в очереди. Иначе — почему."""
+    brd = board(db, branch_id)
+    c = next((c for c in brd["doing"] + brd["queue"] if c.o.id == wo.id), None)
+    if not c or c.stage == "doing" and started_by(c, user):
+        return ""
+    if c.blocked:
+        return f"Мыть пока нельзя: {c.blocked}"
+    nxt = next_for(db, branch_id, user, brd)
+    if nxt and nxt.id != wo.id:
+        return "Эта машина не первая в очереди. Возьмите первую или попросите менеджера изменить очередь"
+    return ""
+
+
+# ---------- Запрос мойщика «Изменить очередь» (19.11.2026, брат) ----------
+def open_asks(db: Session, branch_id, brd: dict | None = None) -> list[Car]:
+    """Машины очереди, по которым мойщик просит изменить очередь и менеджер ещё не ответил (c.asked — сам запрос)."""
+    return sorted([c for c in (brd or board(db, branch_id))["queue"] if c.asked], key=lambda c: c.asked.created_at)
+
+
+def ask(db: Session, wo: WorkOrder, user: User, reason: str) -> str:
+    """Мойщик просит поставить машину первой. Ошибка или ''. Менеджеру наряда — сообщение (менеджерам, если не назначен)."""
+    from ..models import WashQueueRequest
+    from . import notify
+    c = next((c for c in board(db, wo.branch_id)["queue"] if c.o.id == wo.id), None)
+    if not c:
+        return "Машины уже нет в очереди"
+    if c.blocked:
+        return f"Мыть пока нельзя: {c.blocked}"
+    if c.asked:
+        return "Запрос по этой машине уже отправлен — ждёт менеджера"
+    if not reason.strip():
+        return "Напишите, почему эту машину нужно помыть раньше"
+    db.add(WashQueueRequest(work_order_id=wo.id, reason=reason.strip()[:500]))
+    to = [wo.manager_id] if wo.manager_id else [u.id for u in _managers(db, wo.branch_id)]
+    notify.send(db, to, "wash_queue", "Мойщик просит изменить очередь",
+                f"{notify.car(db, wo)} — помыть раньше · {user.short_name}: {reason.strip()[:200]}", "/wash?tab=asksq", wo,
+                skip=user.id)
+    from .orders import event
+    event(db, wo, "status", f"Мойка: {user.full_name} просит поставить машину первой — {reason.strip()[:200]}")
+    return ""
+
+
+def _managers(db: Session, branch_id) -> list:
+    from .orders import staff_by_role
+    return staff_by_role(db, branch_id, "manager")
+
+
+def decide(db: Session, r, user: User, ok: bool, answer: str = "") -> str:
+    """Менеджер: «Согласен» — машина встаёт первой; «Отказать» — с причиной. Мойщику — ответ сообщением."""
+    from . import notify
+    if r.status != "new":
+        return "Запрос уже решён"
+    wo = db.get(WorkOrder, r.work_order_id)
+    if not ok and not answer.strip():
+        return "Напишите причину отказа — мойщик её увидит"
+    if ok and not move(db, wo.branch_id, wo, "first"):
+        c = next((c for c in board(db, wo.branch_id)["queue"] if c.o.id == wo.id), None)
+        if not c:
+            r.status = "cancelled"
+            return "Машины уже нет в очереди — запрос снят"
+    r.status, r.decided_by, r.decided_at, r.answer = ("ok" if ok else "declined"), user.id, now(), answer.strip()[:500]
+    if ok:
+        notify.send(db, [r.created_by], "wash_queue_ok", "Очередь изменена — машина первая",
+                    f"{notify.car(db, wo)} · согласовал {user.short_name}", "/wash/queue", wo)
+    else:
+        notify.send(db, [r.created_by], "wash_queue_no", "Отказано: очередь не меняем",
+                    f"{notify.car(db, wo)} · {user.short_name}: {answer.strip()[:200]}", "/wash/queue", wo)
+    from .orders import event
+    event(db, wo, "status", "Мойка: " + ("машину поставили первой по запросу мойщика" if ok
+                                         else f"отказано в изменении очереди — {answer.strip()[:200]}"))
+    return ""
+
+
+def close_asks(db: Session, wo: WorkOrder):
+    """Машину взяли / выдали — открытые запросы по ней больше не нужны."""
+    from ..models import WashQueueRequest
+    for r in db.scalars(select(WashQueueRequest).where(WashQueueRequest.work_order_id == wo.id,
+                                                       WashQueueRequest.status == "new")):
+        r.status = "cancelled"
 
 
 def is_wash_order(wo: WorkOrder) -> bool:
