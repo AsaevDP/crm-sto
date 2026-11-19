@@ -1,4 +1,6 @@
-{# Химия для мойки (12.11.2026): мойщик / детейлер просит — кладовщик «Выдать» (списание как расход СТО) или «Отказать». #}
+{# Химия для мойки (12.11.2026): мойщик / детейлер просит — кладовщик выдаёт (списание как расход СТО) или отказывает.
+   19.11.2026 (брат): как с запчастями — «📦 Готово к выдаче» (химия откладывается, у сотрудника зелёная цифра) →
+   «Выдано», когда пришли; человек стоит рядом — «Выдано сразу». #}
 <div class="cl-grid">
   <section class="ov-col on">
     <div class="group-title">Просят химию · {{ chem_new|length }}</div>
@@ -11,18 +13,32 @@
         <b class="nowrap">{{ x.r.qty|num }} шт · {{ locs.get(st.loc, "—") if st and st.loc else "—" }}</b></div>
       <div class="caption">На складе свободно: <b class="{{ 'late' if not st or st.free < x.r.qty }}">{{ st.free|num if st else 0 }}</b></div>
       {% if x.r.note %}<p class="ov-text" style="margin:0">«{{ x.r.note }}»</p>{% endif %}
-      <div class="iss-acts">
-        <form method="post" action="/chem/{{ x.r.id }}/issue" class="form-row">
-          <input class="field mini" name="qty" value="{{ x.r.qty|num }}" inputmode="decimal" aria-label="Сколько выдать">
-          <button class="btn btn-sm">✓ Выдать</button></form>
-        <details><summary class="btn btn-sm btn-gray">Отказать</summary>
-          <form method="post" action="/chem/{{ x.r.id }}/decline" class="form-row" style="margin-top:6px">
-            <input class="field" name="reason" placeholder="Причина (нет, закончилась…)"><button class="btn btn-sm btn-gray">Отказать</button></form></details>
-      </div>
+      <form method="post" class="chem-acts">
+        <label class="caption">Сколько <input class="field mini" name="qty" value="{{ x.r.qty|num }}" inputmode="decimal" aria-label="Сколько"></label>
+        <button class="btn btn-sm" formaction="/chem/{{ x.r.id }}/ready">📦 Готово к выдаче</button>
+        <button class="btn btn-sm btn-gray" formaction="/chem/{{ x.r.id }}/issue">Выдано сразу</button>
+      </form>
+      <details><summary class="btn btn-sm btn-plain">Отказать</summary>
+        <form method="post" action="/chem/{{ x.r.id }}/decline" class="form-row" style="margin-top:6px">
+          <input class="field" name="reason" placeholder="Причина (нет, закончилась…)"><button class="btn btn-sm btn-gray">Отказать</button></form></details>
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов химии нет.</p></div>{% endfor %}
   </section>
   <section class="ov-col on">
+    <div class="group-title">Готово — ждут, когда заберут · {{ chem_ready|length }}</div>
+    {% for x in chem_ready %}
+    <div class="card compact issue ready">
+      <div class="card-h"><span class="headline">{{ x.c.name if x.c else "" }}</span>
+        <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span></div>
+      <div class="kv"><span>для {{ x.who.full_name if x.who else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}</span><b class="nowrap">{{ x.r.issued_qty|num }} шт · отложено</b></div>
+      <div class="chem-acts">
+        <form method="post" action="/chem/{{ x.r.id }}/issue"><button class="btn btn-sm">Выдано</button></form>
+        <details><summary class="btn btn-sm btn-plain">Отказать</summary>
+          <form method="post" action="/chem/{{ x.r.id }}/decline" class="form-row" style="margin-top:6px">
+            <input class="field" name="reason" placeholder="Причина — отложенное вернётся на полку"><button class="btn btn-sm btn-gray">Отказать</button></form></details>
+      </div>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Подготовленного нет</p></div>{% endfor %}
     <div class="group-title">Недавно · 7 дней</div>
     <div class="card compact">
       {% for d in chem_done %}<div class="kv"><span>{{ d.r.decided_at.astimezone().strftime("%d.%m %H:%M") if d.r.decided_at else "" }} · {{ d.who.short_name if d.who else "" }} · {{ d.c.name if d.c else "" }}{% if d.r.status == "declined" %} <span class="caption">— отказ</span>{% endif %}</span>

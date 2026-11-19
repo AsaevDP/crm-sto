@@ -11,8 +11,8 @@
   {% if tabs|length > 1 %}
   <nav class="segmented iss-tabs" aria-label="Что просил">
     {% for k, t in tabs %}{% set n = {"parts": parts|selectattr("r.status", "in", ["new", "ready"])|list|length,
-        "tools": tools|selectattr("r.status", "equalto", "new")|list|length,
-        "chem": chem|selectattr("r.status", "equalto", "new")|list|length}[k] %}
+        "tools": tools|selectattr("r.status", "in", ["new", "ready"])|list|length,
+        "chem": chem|selectattr("r.status", "in", ["new", "ready"])|list|length}[k] %}
     <a href="/my-requests?tab={{ k }}" aria-pressed="{{ (tab == k)|lower }}">{{ t }}{% if n %} · {{ n }}{% endif %}</a>{% endfor %}
   </nav>
   {% endif %}
@@ -53,8 +53,8 @@
 <p class="footnote" style="margin:0 4px">Общий инструмент из шкафа: попросить — в наряде, «Попросить инструмент»; сдать — в «Инструменте».</p>
 <div class="cl-grid"><section class="ov-col on">
   {% for x in tools %}{% set r = x.r %}
-  {% set s = ("ждёт кладовщика", "waiting") if r.status == "new" else ((("выдан", "ready") if r.kind == "issue" else ("принят в шкаф", "closed")) if r.status == "done" else ("отменён", "cancel")) %}
-  <div class="card compact">
+  {% set s = ("ждёт кладовщика", "waiting") if r.status == "new" else (("готово — у окошка кладовщика", "ready") if r.status == "ready" else ((("выдан", "closed") if r.kind == "issue" else ("принят в шкаф", "closed")) if r.status == "done" else ("отменён", "cancel"))) %}
+  <div class="card compact{% if r.status == 'ready' %} issue ready{% endif %}">
     <div class="card-h"><span class="headline">{{ x.tool.name if x.tool else "Инструмент" }}</span><span class="chip" data-s="{{ s[1] }}">{{ s[0] }}</span></div>
     <div class="caption">{{ "Прошу выдать" if r.kind == "issue" else "Сдаю" }} · {{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}
       {% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}{% if x.tool and x.tool.place %} · {{ x.tool.place }}{% endif %}</div>
@@ -67,10 +67,11 @@
 <p class="footnote" style="margin:0 4px">Химия для мойки и детейлинга. Попросить — в разделе <a href="/wash/my">«Химия»</a>.</p>
 <div class="cl-grid"><section class="ov-col on">
   {% for x in chem %}{% set r = x.r %}
-  <div class="card compact">
+  <div class="card compact{% if r.status == 'ready' %} issue ready{% endif %}">
     <div class="card-h"><span class="headline">{{ x.c.name if x.c else "Химия" }}</span>
-      <span class="chip" data-s="{{ {'new': 'waiting', 'issued': 'ready', 'declined': 'cancel'}.get(r.status, 'closed') }}">{{ CHEM_STATUS.get(r.status, r.status) }}</span></div>
-    <div class="caption">{{ r.qty|num }} шт · {{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}</div>
+      <span class="chip" data-s="{{ {'new': 'waiting', 'ready': 'ready', 'issued': 'closed', 'declined': 'cancel'}.get(r.status, 'closed') }}">{{ CHEM_STATUS.get(r.status, r.status) }}</span></div>
+    <div class="caption">{{ (r.issued_qty if r.status in ("ready", "issued") and r.issued_qty else r.qty)|num }} шт · {{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}
+      {% if r.status == "ready" and r.ready_at %} · готово {{ r.ready_at.astimezone().strftime("%H:%M") }} — подойдите к кладовщику{% endif %}</div>
     {% if r.status == "declined" and r.reason %}<div class="hint warn" style="margin:0">Причина: {{ r.reason }}</div>{% endif %}
   </div>
   {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов химии пока нет</p></div>{% endfor %}

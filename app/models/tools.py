@@ -93,7 +93,10 @@ class ToolRequest(Entity):
     tool_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tools.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)   # кто просит / сдаёт
     kind: Mapped[str] = mapped_column(String(8), default="issue")                          # issue / return
-    status: Mapped[str] = mapped_column(String(8), default="new", index=True)              # new / done / cancel
+    # new / ready (19.11.2026: кладовщик подготовил — «Готово к выдаче», ждём, когда заберут) / done / cancel
+    status: Mapped[str] = mapped_column(String(8), default="new", index=True)
+    ready_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    ready_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
     wo_work_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_works.id"), nullable=True)
     comment: Mapped[str] = mapped_column(String(300), default="")

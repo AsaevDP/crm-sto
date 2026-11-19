@@ -613,11 +613,31 @@ async def tool_request_done(rid: str, ctx: Ctx = Depends(get_ctx)):
     return _back(ctx, "/stock/issues?tab=tools")
 
 
+@router.post("/tool-requests/{rid}/ready")
+def tool_request_ready(rid: str, ctx: Ctx = Depends(get_ctx)):
+    """Кладовщик: «📦 Готово к выдаче» — инструмент достал, ждёт, когда за ним придут (19.11.2026)."""
+    ctx.need("tools.manage")
+    from ..models import ToolRequest
+    r = ctx.db.get(ToolRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = svc.mark_ready(ctx.db, r, ctx.user)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Готово к выдаче — сотрудник получил сообщение")
+    if ctx.request.headers.get("x-requested-with") == "fetch":
+        return {"ok": not err, "error": err}
+    return _back(ctx, "/stock/issues?tab=tools")
+
+
 @router.post("/tool-requests/{rid}/cancel")
 def tool_request_cancel(rid: str, ctx: Ctx = Depends(get_ctx)):
     from ..models import ToolRequest
     r = ctx.db.get(ToolRequest, _uuid(rid))
-    if not r or r.branch_id != ctx.branch.id or r.status != "new" or not (r.user_id == ctx.user.id or ctx.can("tools.manage")):
+    if not r or r.branch_id != ctx.branch.id or r.status not in svc.OPEN or not (r.user_id == ctx.user.id or ctx.can("tools.manage")):
         raise Forbidden()
     r.status = "cancel"
     ctx.db.commit()

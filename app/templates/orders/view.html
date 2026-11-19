@@ -230,7 +230,7 @@
       <div class="kv tool-kv tool-wait">
         <span>{{ t.name if t else "" }} <span class="caption mono">{{ t.inv_no if t else "" }}</span>
           <div class="caption">попросил {{ tool_holders[r.user_id].full_name if tool_holders.get(r.user_id) else "" }} · {{ r.created_at.astimezone().strftime("%H:%M") }}</div></span>
-        <span class="chip" data-s="waiting">ждёт кладовщика</span>
+        {% if r.status == "ready" %}<span class="chip" data-s="ready">готово — у кладовщика</span>{% else %}<span class="chip" data-s="waiting">ждёт кладовщика</span>{% endif %}
       </div>
       {% endfor %}
       {% if can_request_tool %}

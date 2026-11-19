@@ -173,20 +173,40 @@ def wash_ask(ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(...), qty: str 
 def wash_cancel(rid: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("chem.ask")
     r = ctx.db.get(ChemRequest, _uuid(rid))
-    if not r or r.branch_id != ctx.branch.id or r.created_by != ctx.user.id or r.status != "new":
+    if not r or r.branch_id != ctx.branch.id or r.created_by != ctx.user.id or r.status not in csvc.OPEN:
         raise Forbidden()
-    r.status = "cancelled"
+    csvc.cancel(ctx.db, r)
     ctx.db.commit()
     flash(ctx.request, "Запрос отменён")
     return _to("/wash/my")
 
 
 # ---------- Кладовщик ----------
-@router.post("/chem/{rid}/issue")
-def chem_issue(rid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("")):
+@router.post("/chem/{rid}/ready")
+def chem_ready(rid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("")):
+    """«📦 Готово к выдаче» (19.11.2026): химия у окошка и отложена — мойщику зелёная цифра и сообщение."""
     ctx.need("stock.issue")
     r = ctx.db.get(ChemRequest, _uuid(rid))
-    if not r or r.branch_id != ctx.branch.id or r.status != "new":
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = csvc.mark_ready(ctx.db, r, ctx.user, _dec(qty, str(r.qty)) if qty else None)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Готово к выдаче — химия отложена, сотрудник получил сообщение")
+    if ctx.request.headers.get("x-requested-with") == "fetch":
+        return JSONResponse({"ok": not err, "error": err})
+    return _to("/stock/issues?tab=chem")
+
+
+@router.post("/chem/{rid}/issue")
+def chem_issue(rid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("")):
+    """«Выдано сразу» (человек стоит у окошка) или «Выдано» после «Готово к выдаче»."""
+    ctx.need("stock.issue")
+    r = ctx.db.get(ChemRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id or r.status not in csvc.OPEN:
         raise Forbidden()
     err = csvc.issue(ctx.db, r, ctx.user, _dec(qty, str(r.qty)) if qty else None)
     if err:
@@ -195,6 +215,8 @@ def chem_issue(rid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("")):
     else:
         ctx.db.commit()
         flash(ctx.request, "Химия выдана — списана со склада как расход мойки")
+    if ctx.request.headers.get("x-requested-with") == "fetch":
+        return JSONResponse({"ok": not err, "error": err})
     return _to("/stock/issues?tab=chem")
 
 
@@ -202,7 +224,7 @@ def chem_issue(rid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("")):
 def chem_decline(rid: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
     ctx.need("stock.issue")
     r = ctx.db.get(ChemRequest, _uuid(rid))
-    if not r or r.branch_id != ctx.branch.id or r.status != "new":
+    if not r or r.branch_id != ctx.branch.id or r.status not in csvc.OPEN:
         raise Forbidden()
     csvc.decline(ctx.db, r, ctx.user, reason)
     ctx.db.commit()

@@ -1812,6 +1812,12 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .iss-acts .field.mini { width: 80px; flex: none; }
 .iss-acts details > summary { list-style: none; display: inline-flex; }
 .iss-acts details > summary::-webkit-details-marker { display: none; }
+/* 19.11.2026: химия у кладовщика — «Сколько» + «Готово к выдаче» / «Выдано сразу» */
+.chem-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0; }
+.chem-acts form { margin: 0; }
+.chem-acts .field.mini { width: 70px; margin-left: 4px; }
+.chem-acts details > summary, .issue > details > summary { list-style: none; display: inline-flex; }
+.chem-acts details > summary::-webkit-details-marker, .issue > details > summary::-webkit-details-marker { display: none; }
 @media (min-width: 900px) { .cl-grid.wash-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) !important; } }
 /* Гарантия и «решил сам» (12.11.2026) */
 .self-mark { color: var(--orange); font-weight: 600; }

@@ -451,10 +451,10 @@ def _order_tools(ctx: Ctx, wo, works) -> dict:
     from ..models import ToolRequest
     # 12.11.2026: попросить может и второй мастер этой машины (своя работа в наряде), не только ведущий
     can_req = wo.status in WO_ACTIVE and tsvc.can_request_for_order(ctx.db, ctx.user, wo)
-    pending = ctx.db.scalars(select(ToolRequest).where(ToolRequest.work_order_id == wo.id, ToolRequest.status == "new")
+    pending = ctx.db.scalars(select(ToolRequest).where(ToolRequest.work_order_id == wo.id, ToolRequest.status.in_(tsvc.OPEN))
                              .order_by(ToolRequest.created_at)).all()
     asked = {r.tool_id for r in ctx.db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id,
-                                                                         ToolRequest.status == "new"))}
+                                                                         ToolRequest.status.in_(tsvc.OPEN)))}
     free = tsvc.available_shared(ctx.db, ctx.branch.id) if (can_issue or can_req) else []
     return {"wo_tools": tsvc.for_order(ctx.db, wo.id), "can_issue_tool": can_issue, "can_request_tool": can_req,
             "tool_pending": pending, "tool_pending_ids": {r.tool_id: r for r in pending},

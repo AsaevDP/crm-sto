@@ -1833,9 +1833,12 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
     if tab == "chem":
         free = {x["c"].id: x for x in csvc.items(ctx.db, ctx.branch.id)}
         data.update(chem_new=chem_new, chem_free=free, chem_done=csvc.requests(ctx.db, ctx.branch.id, ("issued", "declined"), days=7)[:20],
+                    chem_ready=csvc.requests(ctx.db, ctx.branch.id, "ready", days=0),   # 19.11.2026: подготовлено — ждут
                     locs={l.id: svc.location_label(l) for l in ctx.db.scalars(select(Location).where(Location.branch_id == ctx.branch.id))})
     elif tab == "tools":
         data.update(t_issue=[x for x in tool_new if x["r"].kind == "issue"], t_return=[x for x in tool_new if x["r"].kind == "return"],
+                    t_ready=tsvc.requests_list(ctx.db, ctx.branch.id, "ready"),   # 19.11.2026: подготовлено — ждут
+
                     t_out=tsvc.out_on_orders(ctx.db, ctx.branch.id), t_done=tsvc.requests_list(ctx.db, ctx.branch.id, "done", 15),
                     can_manage=ctx.can("tools.manage"))
     else:

@@ -1120,7 +1120,12 @@ def chem_desk(day):
                 post("pavel", f"/chem/{r.id}/decline", {"reason": "Закончилась — заказали"}, what="Отказать в химии")
             else:
                 before = free_qty(r.catalog_id)
-                post("pavel", f"/chem/{r.id}/issue", {"qty": str(r.qty)}, what="Выдать химию")
+                if rnd.random() < 0.5:   # 19.11.2026: «📦 Готово к выдаче» — отложили, мойщик пришёл → «Выдано»
+                    post("pavel", f"/chem/{r.id}/ready", {"qty": str(r.qty)}, what="Химия: готово к выдаче")
+                    R.check(free_qty(r.catalog_id) == before - r.qty, "химия «готово к выдаче» отложена (резерв)", str(r.catalog_id))
+                    post("pavel", f"/chem/{r.id}/issue", {}, what="Химия: выдано (пришли)")
+                else:
+                    post("pavel", f"/chem/{r.id}/issue", {"qty": str(r.qty)}, what="Выдать химию сразу")
                 R.check(free_qty(r.catalog_id) == before - r.qty, "выданная химия уменьшила остаток", str(r.catalog_id))
 
 
@@ -1132,6 +1137,8 @@ def tool_flow(login, o):
     post(login, f"{o.url}/tool-requests", {"tool_id": str(t.id), "comment": "под эту машину"}, what=f"Попросить инструмент «{t.name}»")
     r = one(M.ToolRequest, M.ToolRequest.tool_id == t.id, M.ToolRequest.status == "new")
     if r:
+        if rnd.random() < 0.5:   # 19.11.2026: «📦 Готово к выдаче» → слесарь пришёл → «Выдано»
+            post("pavel", f"/tool-requests/{r.id}/ready", what="Инструмент: готово к выдаче")
         post("pavel", f"/tool-requests/{r.id}/done", {"result": "ok"}, what="Выдать инструмент")
         post(login, f"/tools/{t.id}/return-request", what="Сдаю инструмент")
         r2 = one(M.ToolRequest, M.ToolRequest.tool_id == t.id, M.ToolRequest.status == "new")
@@ -1586,6 +1593,13 @@ def leave_for_today(day):
             with at(day, "17:15"):
                 post(o.lead, f"{o.url}/tool-requests", {"tool_id": str(tools[0].id), "comment": "под эту машину"},
                      what="Попросить инструмент (выдать — руками)")
+            if len(tools) > 1:   # 19.11.2026: второй — кладовщик уже подготовил («готово — забрать», зелёная у слесаря)
+                with at(day, "17:18"):
+                    post(o.lead, f"{o.url}/tool-requests", {"tool_id": str(tools[1].id), "comment": "ещё нужен"},
+                         what="Попросить ещё инструмент")
+                    r = one(M.ToolRequest, M.ToolRequest.tool_id == tools[1].id, M.ToolRequest.status == "new")
+                    if r:
+                        post("pavel", f"/tool-requests/{r.id}/ready", what="Инструмент: готово к выдаче (забрать — руками)")
         it = next((i for i in q(M.StockItem) if i.catalog_id == cat_id("Очиститель тормозов, 500 мл")), None)
         if it:
             with at(day, "17:20"):
@@ -1598,6 +1612,13 @@ def leave_for_today(day):
     with at(day, "17:30"):
         chem_ask("moyka")
         chem_ask("detail")
+    # 19.11.2026: одну химию мойщику кладовщик подготовил (зелёная «готово — забрать»), детейлеру — ещё ждёт (оранжевая)
+    with at(day, "17:35"):
+        chem_ask("moyka")
+    r = one(M.ChemRequest, M.ChemRequest.status == "new", M.ChemRequest.created_by == uid("moyka"))
+    if r and free_qty(r.catalog_id) >= r.qty:
+        with at(day, "17:40"):
+            post("pavel", f"/chem/{r.id}/ready", {"qty": str(r.qty)}, what="Химия: готово к выдаче (забрать — руками)")
     # 18.11.2026 (брат): кладовщику — «Всегда в наличии»: одну позицию дозаказал, но «Заказан» ещё не нажал (черновик
     # «Заказ на склад» ждёт поставщика), а вторая — ниже нормы и не заказана (красная строка, сиреневая цифра)
     keep_names = [n for n, *_ in STOCK[3:10] if cat_id(n)]

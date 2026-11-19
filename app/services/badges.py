@@ -165,11 +165,16 @@ def compute(ctx) -> dict:
                 OrderMessage.branch_id == bid, OrderMessage.kind == "part", OrderMessage.status == "pending",
                 OrderMessage.created_by == me.id)) or 0)
         _add(out, "/my-requests", "orange", wait, "ждут кладовщика или менеджера", "/my-requests?tab=parts")
-        _add(out, "/my-requests", "orange", db.scalar(select(func.count()).select_from(ToolRequest).where(
-            ToolRequest.branch_id == bid, ToolRequest.status == "new", ToolRequest.user_id == me.id)) or 0,
+        tq = select(func.count()).select_from(ToolRequest).where(ToolRequest.branch_id == bid, ToolRequest.user_id == me.id)
+        cq = select(func.count()).select_from(ChemRequest).where(ChemRequest.branch_id == bid, ChemRequest.created_by == me.id)
+        # 🟢 19.11.2026 (брат): кладовщик подготовил инструмент / химию — «готово, подойдите», как с запчастями
+        _add(out, "/my-requests", "green", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
+             "инструмент готов — забрать у кладовщика", "/my-requests?tab=tools")
+        _add(out, "/my-requests", "green", db.scalar(cq.where(ChemRequest.status == "ready")) or 0,
+             "химия готова — забрать у кладовщика", "/my-requests?tab=chem")
+        _add(out, "/my-requests", "orange", db.scalar(tq.where(ToolRequest.status == "new")) or 0,
              "инструмент — ждёт кладовщика", "/my-requests?tab=tools")
-        _add(out, "/my-requests", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
-            ChemRequest.branch_id == bid, ChemRequest.status == "new", ChemRequest.created_by == me.id)) or 0,
+        _add(out, "/my-requests", "orange", db.scalar(cq.where(ChemRequest.status == "new")) or 0,
              "химия — ждёт кладовщика", "/my-requests?tab=chem")
 
     # ---------- Запросы на выдачу (кладовщик) ----------

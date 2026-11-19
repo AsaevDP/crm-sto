@@ -243,6 +243,7 @@ class StockMovement(Entity):
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
     wo_part_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wo_parts.id"), nullable=True)
     purchase_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("purchases.id"), nullable=True)
+    chem_request_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)   # 19.11.2026: резерв химии под запрос
     comment: Mapped[str] = mapped_column(Text, default="")
     # 17.11.2026 (брат): приход — по какой накладной и какой строке закупки (вкладка «Приняты» по накладным)
     invoice: Mapped[str] = mapped_column(String(80), default="", server_default="")
@@ -277,8 +278,11 @@ class ChemRequest(Entity):
     qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)  # для какой машины
     note: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(10), default="new")   # new / issued / declined / cancelled
-    issued_qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    # new / ready (19.11.2026: «Готово к выдаче» — химия отложена в резерв, ждём, когда заберут) / issued / declined / cancelled
+    status: Mapped[str] = mapped_column(String(10), default="new")
+    issued_qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)   # при «Готово» — сколько подготовлено
+    ready_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    ready_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     reason: Mapped[str] = mapped_column(String(200), default="")

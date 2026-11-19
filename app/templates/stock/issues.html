@@ -88,12 +88,27 @@
     <div class="card compact tool-req">
       {{ tool_line(x) }}
       {% if can_manage %}
+      {# 19.11.2026: как с запчастями — достал из шкафа → «Готово к выдаче» (у сотрудника загорится); стоит рядом → «Выдано сразу» #}
       <div class="tool-req-acts">
-        <form method="post" action="/tool-requests/{{ x.r.id }}/done?back=/stock/issues%3Ftab%3Dtools"><button class="btn btn-sm">Выдать</button></form>
+        <form method="post" action="/tool-requests/{{ x.r.id }}/ready?back=/stock/issues%3Ftab%3Dtools"><button class="btn btn-sm">📦 Готово к выдаче</button></form>
+        <form method="post" action="/tool-requests/{{ x.r.id }}/done?back=/stock/issues%3Ftab%3Dtools"><button class="btn btn-sm btn-gray">Выдано сразу</button></form>
         <form method="post" action="/tool-requests/{{ x.r.id }}/cancel?back=/stock/issues%3Ftab%3Dtools" onsubmit="return confirm('Отменить запрос?')"><button class="btn btn-plain btn-sm">Отменить</button></form>
       </div>{% endif %}
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Никто ничего не просит</p></div>{% endfor %}
+
+    <div class="group-title">Готово — ждут, когда заберут · {{ t_ready|length }}</div>
+    {% for x in t_ready %}
+    <div class="card compact tool-req ready">
+      {{ tool_line(x) }}
+      <span class="caption">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span>
+      {% if can_manage %}
+      <div class="tool-req-acts">
+        <form method="post" action="/tool-requests/{{ x.r.id }}/done?back=/stock/issues%3Ftab%3Dtools"><button class="btn btn-sm">Выдано</button></form>
+        <form method="post" action="/tool-requests/{{ x.r.id }}/cancel?back=/stock/issues%3Ftab%3Dtools" onsubmit="return confirm('Отменить запрос? Инструмент остаётся в шкафу')"><button class="btn btn-plain btn-sm">Отменить</button></form>
+      </div>{% endif %}
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Подготовленного нет</p></div>{% endfor %}
 
     <div class="group-title">Сдают — принять в шкаф · {{ t_return|length }}</div>
     {% for x in t_return %}

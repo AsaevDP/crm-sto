@@ -18,7 +18,64 @@ from . import stock as ssvc
 from . import notify as nsvc
 
 D0 = Decimal(0)
-STATUS = {"new": "ждёт кладовщика", "issued": "выдано", "declined": "отказ", "cancelled": "отменён"}
+STATUS = {"new": "ждёт кладовщика", "ready": "готово — у окошка кладовщика", "issued": "выдано", "declined": "отказ",
+          "cancelled": "отменён"}
+OPEN = ("new", "ready")
+
+
+def _stock(db: Session, branch_id, catalog_id):
+    stock = db.scalars(select(StockItem).where(StockItem.branch_id == branch_id, StockItem.catalog_id == catalog_id)
+                       .order_by(StockItem.created_at)).all()
+    return stock, ssvc.balances(db, branch_id, [i.id for i in stock])
+
+
+def _reserved(db: Session, r: ChemRequest) -> dict:
+    """Сколько химии отложено под этот запрос по каждой ячейке (19.11.2026: «Готово к выдаче»)."""
+    out = {}
+    for sid, typ, qty in db.execute(select(StockMovement.stock_item_id, StockMovement.type, StockMovement.qty)
+                                    .where(StockMovement.chem_request_id == r.id)):
+        out[sid] = out.get(sid, D0) + (Decimal(qty) if typ == "reserve" else -Decimal(qty) if typ == "unreserve" else D0)
+    return {k: v for k, v in out.items() if v > 0}
+
+
+def unreserve(db: Session, r: ChemRequest):
+    """Снять отложенное под запрос (выдали, отказали, отменили)."""
+    for sid, qty in _reserved(db, r).items():
+        db.add(StockMovement(type="unreserve", stock_item_id=sid, qty=qty, chem_request_id=r.id,
+                             comment="Химия: снят резерв под запрос"))
+    db.flush()
+
+
+def mark_ready(db: Session, r: ChemRequest, user: User, qty: Decimal | None = None) -> str:
+    """«📦 Готово к выдаче» (19.11.2026, брат): кладовщик поставил химию у окошка — она откладывается (резерв), чтобы
+    её не отдали другому. Не хватает на складе — нельзя (подготовьте меньше или откажите). Тому, кто просил, —
+    сообщение и зелёная цифра у «Моих запросов». Ошибка или ''."""
+    if r.status != "new":
+        return "Запрос уже закрыт"
+    qty = Decimal(qty if qty is not None else r.qty)
+    if qty <= 0:
+        return "Сколько подготовили?"
+    stock, bal = _stock(db, r.branch_id, r.catalog_id)
+    free = sum((bal[i.id]["free"] for i in stock if i.id in bal), D0)
+    if free < qty:
+        return (f"На складе свободно только {free.normalize():f} — подготовьте столько или откажите"
+                if free > 0 else "На складе этой химии нет — откажите с причиной (например, «закончилась — заказали»)")
+    left = qty
+    for i in stock:
+        take = min(bal[i.id]["free"] if i.id in bal else D0, left)
+        if take <= 0:
+            continue
+        db.add(StockMovement(type="reserve", stock_item_id=i.id, qty=take, chem_request_id=r.id,
+                             work_order_id=r.work_order_id, comment="Химия: готово к выдаче"))
+        left -= take
+        if left <= 0:
+            break
+    r.status, r.issued_qty, r.ready_at, r.ready_by = "ready", qty, now(), user.id
+    c = db.get(PartCatalog, r.catalog_id)
+    if r.created_by:
+        nsvc.send(db, [r.created_by], "chem_ready", f"Химия готова к выдаче: {c.name if c else ''}",
+                  f"{qty.normalize():f} шт · подойдите к кладовщику", "/my-requests?tab=chem", skip=user.id)
+    return ""
 
 
 def items(db: Session, branch_id) -> list[dict]:
@@ -54,13 +111,18 @@ def ask(db: Session, user: User, catalog_id, qty: Decimal, work_order_id=None, n
 
 
 def issue(db: Session, r: ChemRequest, user: User, qty: Decimal | None = None) -> str:
-    """Выдать со склада. Берём из ячеек, где есть свободное. Возвращает текст ошибки или ""."""
+    """Выдать со склада — сразу или после «Готово к выдаче» (тогда отложенное снимается с резерва и выдаётся).
+    Берём из ячеек, где есть свободное. Возвращает текст ошибки или ""."""
+    if r.status not in OPEN:
+        return "Запрос уже закрыт"
+    if r.status == "ready" and qty is None:
+        qty = r.issued_qty
     qty = Decimal(qty if qty is not None else r.qty)
     if qty <= 0:
         return "Сколько выдаёте?"
-    stock = db.scalars(select(StockItem).where(StockItem.branch_id == user.branch_id, StockItem.catalog_id == r.catalog_id)
-                       .order_by(StockItem.created_at)).all()
-    bal = ssvc.balances(db, user.branch_id, [i.id for i in stock])
+    if r.status == "ready":
+        unreserve(db, r)
+    stock, bal = _stock(db, user.branch_id, r.catalog_id)
     free = sum((bal[i.id]["free"] for i in stock if i.id in bal), D0)
     if free < qty:
         return f"На складе свободно только {free.normalize():f} — выдать {qty.normalize():f} нельзя"
@@ -76,15 +138,30 @@ def issue(db: Session, r: ChemRequest, user: User, qty: Decimal | None = None) -
         left -= take
         if left <= 0:
             break
+    was_ready = r.status == "ready"
     r.status, r.issued_qty, r.decided_at, r.decided_by = "issued", qty, now(), user.id
     c = db.get(PartCatalog, r.catalog_id)
-    if who:
-        nsvc.send(db, [who.id], "chem_ok", f"Химия выдана: {c.name if c else ''}", f"{qty.normalize():f} шт · подойдите к складу",
-                  "/wash/my", skip=user.id)
+    from ..models import Notification
+    for n in db.scalars(select(Notification).where(Notification.user_id == r.created_by, Notification.kind == "chem_ready",
+                                                   Notification.read_at.is_(None),
+                                                   Notification.title.endswith(c.name if c else ""))):
+        n.read_at = now()   # выдали — «готово, подойдите» больше не нужно
+    if who and not was_ready:   # выдали сразу (человек стоял рядом) — сообщение для истории
+        nsvc.send(db, [who.id], "chem_ok", f"Химия выдана: {c.name if c else ''}", f"{qty.normalize():f} шт",
+                  "/my-requests?tab=chem", skip=user.id)
     return ""
 
 
+def cancel(db: Session, r: ChemRequest):
+    """Мойщик отменил запрос — отложенное (если кладовщик уже подготовил) возвращается в свободное."""
+    if r.status == "ready":
+        unreserve(db, r)
+    r.status = "cancelled"
+
+
 def decline(db: Session, r: ChemRequest, user: User, reason: str):
+    if r.status == "ready":
+        unreserve(db, r)
     r.status, r.decided_at, r.decided_by, r.reason = "declined", now(), user.id, (reason or "").strip()[:200]
     c = db.get(PartCatalog, r.catalog_id)
     if r.created_by:

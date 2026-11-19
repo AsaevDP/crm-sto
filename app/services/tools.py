@@ -136,9 +136,30 @@ def available_shared(db: Session, branch_id) -> list[Tool]:
 
 
 # ---------- Запросы слесаря (11.11.2026): «Попросить инструмент» / «Сдаю» → окошко у кладовщика ----------
+OPEN = ("new", "ready")   # 19.11.2026: «Готово к выдаче» — запрос ещё открыт, инструмент отложен под него
+
+
 def open_request(db: Session, tool_id):
     from ..models import ToolRequest
-    return db.scalar(select(ToolRequest).where(ToolRequest.tool_id == tool_id, ToolRequest.status == "new"))
+    return db.scalar(select(ToolRequest).where(ToolRequest.tool_id == tool_id, ToolRequest.status.in_(OPEN)))
+
+
+def mark_ready(db: Session, req, by: User) -> str:
+    """Кладовщик достал инструмент из шкафа — «📦 Готово к выдаче» (19.11.2026, брат). Тому, кто просил, — сообщение
+    и зелёная цифра у «Моих запросов»; «Выдано» — когда за ним пришли. Ошибка или ''."""
+    from . import notify as nsvc
+    tool = db.get(Tool, req.tool_id)
+    if req.kind != "issue" or req.status != "new" or not tool:
+        return "Запрос уже закрыт"
+    if tool.holder_id:
+        return f"«{tool.name}» сейчас на руках — сначала его должны сдать"
+    req.status, req.ready_at, req.ready_by = "ready", now(), by.id
+    from ..models import WorkOrder
+    wo = db.get(WorkOrder, req.work_order_id) if req.work_order_id else None
+    nsvc.send(db, [req.user_id], "tool_ready", "Инструмент готов к выдаче — подойдите к кладовщику",
+              tool.name + (f" · {tool.place}" if tool.place else "") + (f" · наряд {wo.number}" if wo else ""),
+              "/my-requests?tab=tools", wo, skip=by.id)
+    return ""
 
 
 def can_request_for_order(db: Session, user: User, wo) -> bool:
@@ -185,7 +206,7 @@ def complete_request(db: Session, req, by: User, result: str = "ok", note: str =
     from ..models import WorkOrder, WoWork
     tool = db.get(Tool, req.tool_id)
     who = db.get(User, req.user_id)
-    if req.status != "new" or not tool or not who:
+    if req.status not in OPEN or not tool or not who:
         return "Запрос уже закрыт"
     if req.kind == "issue":
         if tool.holder_id:
@@ -199,6 +220,10 @@ def complete_request(db: Session, req, by: User, result: str = "ok", note: str =
             tool.status = "broken"
         req.result, req.result_note = ("broken" if result == "broken" else "ok"), note.strip()[:300]
     req.status, req.done_by, req.done_at = "done", by.id, now()
+    from ..models import Notification
+    for n in db.scalars(select(Notification).where(Notification.user_id == req.user_id, Notification.kind == "tool_ready",
+                                                   Notification.read_at.is_(None), Notification.text.startswith(tool.name))):
+        n.read_at = now()   # выдали — «готово, подойдите» по этому инструменту больше не нужно
     return ""
 
 
@@ -206,7 +231,8 @@ def requests_list(db: Session, branch_id, status: str = "new", limit: int = 50) 
     """Запросы для экрана «Выдача → Инструмент»: инструмент, кто, наряд, машина, место в шкафу."""
     from ..models import ToolRequest, Vehicle, WorkOrder
     q = select(ToolRequest).where(ToolRequest.branch_id == branch_id, ToolRequest.status == status)
-    q = q.order_by(ToolRequest.created_at if status == "new" else ToolRequest.done_at.desc()).limit(limit)
+    q = q.order_by(ToolRequest.created_at if status == "new" else ToolRequest.ready_at.desc() if status == "ready"
+                   else ToolRequest.done_at.desc()).limit(limit)
     out = []
     for r in db.scalars(q):
         wo = db.get(WorkOrder, r.work_order_id) if r.work_order_id else None
