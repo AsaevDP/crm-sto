@@ -35,17 +35,17 @@
 {% set n_take = mine|length + t_ready_mine|length %}
 {% set n_wait = waiting|length + t_wait|length %}
 <nav class="pult-tiles iss-tiles rd-tiles" aria-label="Что по моим нарядам">
-  {% if asks %}<a class="ptile" href="#asks" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Согласовать</span><b>{{ asks|length }}</b><span class="ptile-s">мастер просит со склада</span></a>{% endif %}
+  {# 20.11.2026 (брат): плитка стоит всегда, как соседние; нечего согласовывать — серая 0 #}
+  <a class="ptile {{ 'zero' if not asks }}" href="#asks" style="--tc:{{ color_css('red' if asks else 'gray') }}"><span class="ptile-t">Согласовать</span><b>{{ asks|length }}</b><span class="ptile-s">мастер просит со склада</span></a>
   <a class="ptile {{ 'zero' if not n_take }}" href="#mine" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Забрать у окошка</span><b>{{ n_take }}</b><span class="ptile-s">запчасти: {{ mine|length }} · инструмент: {{ t_ready_mine|length }}</span></a>
   <a class="ptile {{ 'zero' if not n_wait }}" href="#waiting" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Ждут кладовщика</span><b>{{ n_wait }}</b><span class="ptile-s">запчасти: {{ waiting|length }} · инструмент: {{ t_wait|length }}</span></a>
 </nav>
 <p class="footnote" style="margin:0 4px">Запросы по вашим нарядам. Кладовщик подготовил у окошка запчасти или инструмент — заберите,
   отнесите мастеру и нажмите «Выдано». Закрыть выдачу может и кладовщик.</p>
-{% if asks %}
 {# 20.11.2026 (брат, наряд 60): раньше это было только в «Сообщениях» — окошко закрыли, и запрос терялся #}
 <div class="group-title" id="asks">Мастер просит со склада — согласуйте · {{ asks|length }}</div>
-<div class="mr-grid" style="margin-bottom:12px">{% for x in asks %}{{ ask_card(x, "/ready#asks") }}{% endfor %}</div>
-{% endif %}
+<div class="mr-grid" style="margin-bottom:12px">{% for x in asks %}{{ ask_card(x, "/ready#asks") }}{% else %}
+  <div class="card compact"><p class="footnote" style="margin:0">Сейчас никто не просит. Мастер попросит запчасть со склада — появится здесь.</p></div>{% endfor %}</div>
 <div class="cl-grid">
   <section class="ov-col on">
     <div class="group-title" id="mine">Готово — забрать у окошка · {{ n_take }}</div>
