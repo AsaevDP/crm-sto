@@ -419,6 +419,14 @@ def setup():
         for login, amount in (("irina", 700), ("pavel", 600), ("dmitro", 550), ("buh", 650)):
             post("admin", f"/settings/payroll/{uid(login)}/lines", {"kind": "salary", "base": "fixed", "rate": str(amount),
                                                                      "salary_period": "day"}, what=f"Оклад {login}")
+    with at(d0, "11:00"):   # прайс мойки заводится при первом открытии (18.11.2026)
+        get("irina", "/wash/prices", what="Прайс мойки")
+        s = one(M.WashService, M.WashService.name == "Мойка кузова ручная")
+        if s:   # менеджер правит цену в прайсе (сохраняется сама)
+            post("irina", f"/wash/prices/{s.id}", {"name": s.name, "kind": s.kind, "price_car": "380", "price_suv": "430",
+                                                   "price_bus": "550", "minutes": "30"}, what="Прайс мойки: новая цена", fetch=True)
+        for name in ("Мойка 1", "Детейлинг"):
+            post("irina", "/wash/boxes", {"name": name}, what=f"Бокс мойки «{name}»")
 
 
 def first_stock():
@@ -782,14 +790,19 @@ def step_issue(o, day, hhmm):
 def step_work(o, day, hhmm):
     """Каждый мастер — свои работы: Начал → (Пауза с причиной → Продолжить) → Выполнено."""
     t = hhmm
-    for w in works_of(o):
+    lead = o.wo().mechanic_id
+    owner = lambda w: one(M.User, M.User.id == (w.mechanic_id or lead))   # noqa: E731
+    # 19.11.2026: мойка — после ремонта (сначала работы слесарей, потом мойщика / детейлера)
+    for w in sorted(works_of(o), key=lambda w: (owner(w).login in WASHERS_L) if owner(w) else False):
         if w.status == "done":
             continue
-        who = one(M.User, M.User.id == (w.mechanic_id or o.wo().mechanic_id))
+        who = owner(w)
         if not who:
             R.check(False, "у работы есть исполнитель", f"{o.wo().number}: {w.name}")
             continue
         login = who.login
+        if login in WASHERS_L and one(M.WoWork, M.WoWork.id == w.id).status == "todo" and not wash_ready(login, o, day, t):
+            continue
         with at(day, t):
             post(login, f"{o.url}/works/{w.id}/state", {"action": "start"}, what=f"Начал: {w.name}")
             if login in ("moyka", "detail") and rnd.random() < 0.6:
@@ -894,6 +907,9 @@ def side_works(o, day, hhmm):
         who = one(M.User, M.User.id == w.mechanic_id)
         if not who or rnd.random() < 0.5:
             continue
+        # 19.11.2026: мойщик / детейлер — после слесарей; раньше — только если менеджер разрешил («Можно мыть сейчас»)
+        if who.login in WASHERS_L and (rnd.random() < 0.6 or not wash_ready(who.login, o, day, hhmm)):
+            continue
         with at(day, hhmm):
             r = post(who.login, f"{o.url}/works/{w.id}/state", {"action": "start"}, what=f"Пока ждём запчасти — начал: {w.name}")
             post(who.login, f"{o.url}/works/{w.id}/state", {"action": "done"}, what=f"Пока ждём запчасти — выполнено: {w.name}")
@@ -929,6 +945,168 @@ def chem_ask(login, o=None):
     c = rnd.choice(items)
     post(login, "/wash/ask", {"catalog_id": str(c.id), "qty": "1", "order_id": str(o.id) if o else "",
                               "note": rnd.choice(("", "закончилась", "для салона"))}, what=f"Химия: прошу {c.name}")
+
+
+# ---------------------------------------------------------------- 19.11.2026: одна очередь мойки
+WASHERS_L = ("moyka", "detail")
+QW_SETS = [  # быстрая мойка: (услуги, кто моет — None = любой мойщик)
+    (["Экспресс-мойка (поверхностная)"], None), (["Мойка кузова (бесконтактная)", "Чернение шин"], None),
+    (["Комплексная мойка (кузов + салон)"], None), (["Мойка кузова ручная", "Пылесос салона"], None),
+    (["Мойка кузова (бесконтактная)", "Мойка дисков", "Мойка ковриков"], None),
+    (["Химчистка салона"], "detail"), (["Полировка кузова"], "detail"), (["Озонирование салона"], "detail"),
+]
+
+
+def wash_err(login, o):
+    """Что видит мойщик: можно ли ему сейчас начать эту машину (по очереди), или почему нельзя."""
+    from app.services import wash as wsvc
+    with SessionLocal() as db:
+        u = db.scalar(select(M.User).where(M.User.login == login))
+        wo = db.get(M.WorkOrder, o.id)
+        return wsvc.start_error(db, wo.branch_id, wo, u)
+
+
+def wash_ready(login, o, day, hh):
+    """Мойщик берёт машины строго по очереди. Не первая — менеджер ставит её первой (так и в жизни: машину ждут);
+    машина с ремонта, где слесари ещё работают, — «Можно мыть сейчас»."""
+    err = wash_err(login, o)
+    if not err:
+        return True
+    with at(day, hh):
+        if "идёт ремонт" in err:
+            post(o.mgr, f"/wash/{o.id}/wash-now", what="Мойка: можно мыть сейчас")
+        if wash_err(login, o):
+            post(o.mgr, f"/wash/{o.id}/move", {"where": "first"}, what="Мойка: поставить машину первой")
+    err = wash_err(login, o)
+    R.check(not err, "мойщик может начать машину, когда она первая для него", f"{o.wo().number}: {err}")
+    return not err
+
+
+def quick_wash(day, hh, first=False, services=None, washer=None):
+    """Быстрая приёмка на мойку (менеджер): услуги из прайса, класс машины; «первой» — вне очереди."""
+    c = rnd.choice(CLIENTS)
+    if services is None:
+        services, washer = rnd.choice(QW_SETS)
+    ids = [s.id for s in q(M.WashService, M.WashService.name.in_(services))]
+    if not ids:
+        R.check(False, "услуги мойки есть в прайсе", ", ".join(services))
+        return None
+    token = f"sim-qw-{rnd.random()}"
+    data = {"phone": c["phone"], "name": c["name"], "plate": c["plate"], "make": c["make"], "model": c["model"],
+            "car_class": rnd.choices(("car", "suv", "bus"), weights=(6, 4, 1))[0], "washer_id": str(uid(washer)) if washer else "",
+            "fuel_level": rnd.choice(("25", "50", "75")), "intake_token": token, "queue_place": "first" if first else "",
+            "note": rnd.choice(("", "", "Коврики не мыть", "Позвонить, когда будет готово"))}
+    with at(day, hh):
+        r = post("irina", "/wash/new", data, files=[("service_id", (None, str(i))) for i in ids] + photo(1),
+                 what="Приёмка на мойку" + (" — первой" if first else ""), fetch=True)
+    wo = one(M.WorkOrder, M.WorkOrder.intake_token == token)
+    if r is None or wo is None:
+        return None
+    o = Order(c, "irina", "quick", [], "A", washer or "moyka", [])
+    o.id, o.step, o.last, o.born = wo.id, "qwash", (day, hh), day
+    ACTIVE.append(o)
+    if first:
+        from app.services import wash as wsvc
+        with SessionLocal() as db:
+            qq = wsvc.board(db, wo.branch_id)["queue"]
+        R.check(qq and qq[0].o.id == wo.id, "быстрая мойка «первой» — первая в очереди", wo.number)
+    return o
+
+
+def wash_today(day, skip=()):
+    """19.11.2026: на сегодня в очереди мойки есть всё, что проверить руками: мойщик моет машину; в очереди быстрая
+    мойка (одна поставлена «первой»); полировка детейлера; машина с ремонта — слесарь закончил, ждёт мойки; запросы
+    мойщика «Попросить первой» — один согласован, один отказан, один ждёт менеджера (красная плитка)."""
+    from app.services import wash as wsvc
+    o1 = quick_wash(day, "13:20", services=["Комплексная мойка (кузов + салон)"])
+    if o1:
+        step_qwash(o1, day, "13:40", finish=False)   # моет сейчас — «Выполнено» руками
+    a = quick_wash(day, "14:30", services=["Мойка кузова (бесконтактная)", "Чернение шин"])
+    d = quick_wash(day, "14:50", services=["Полировка кузова"], washer="detail")
+    b = quick_wash(day, "15:10", services=["Экспресс-мойка (поверхностная)"])
+    # машина с ремонта: слесарь всё сделал, осталась мойка — в очереди наравне со всеми
+    rep = next((o for o in ACTIVE if o.id not in skip and o.kind == "mechanic" and o.wo() and o.wo().status == "work"
+                and o.step != "work_wait"), None)
+    if rep:
+        with at(day, "15:20"):
+            post(rep.mgr, f"{rep.url}/masters", {"user_id": str(uid("moyka")), "work": "Комплексная мойка после ремонта"},
+                 what="Добавить мастера: мойщик (после ремонта)")
+        t = "15:30"
+        for w in works_of(rep):
+            who = one(M.User, M.User.id == (w.mechanic_id or rep.wo().mechanic_id))
+            if w.status == "done" or not who or who.login in WASHERS_L:
+                continue
+            with at(day, t):
+                if w.status != "doing":
+                    post(who.login, f"{rep.url}/works/{w.id}/state", {"action": "start"}, what=f"Начал: {w.name}")
+                post(who.login, f"{rep.url}/works/{w.id}/state", {"action": "done"}, what=f"Выполнено: {w.name}")
+            t = _later(t, 20)
+        rep.step = "wash_wait"
+        with SessionLocal() as db:
+            c = next((c for c in wsvc.board(db, rep.wo().branch_id)["queue"] if c.o.id == rep.id), None)
+        R.check(c is not None and not c.blocked, "машина с ремонта: слесарь закончил — в очереди мойки, мыть можно",
+                rep.wo().number)
+    c = quick_wash(day, "15:45", services=["Мойка кузова ручная", "Пылесос салона"], first=True)
+    # запросы мойщика «Попросить первой»
+    asks = [(a, "Клиент уже приехал, ждёт в зале", "ok"), (b, "Экспресс — 15 минут, клиент спешит", "no"),
+            (rep or b, "Клиент заберёт через час — просит помыть", "")]
+    for i, (o, reason, answer) in enumerate(asks):
+        if not o:
+            continue
+        hh = ("15:50", "16:05", "16:30")[i]
+        with at(day, hh):
+            post("moyka", f"/wash/{o.id}/ask", {"reason": reason}, what="Мойщик: попросить первой")
+        r = one(M.WashQueueRequest, M.WashQueueRequest.work_order_id == o.id, M.WashQueueRequest.status == "new")
+        R.check(r is not None, "запрос мойщика «изменить очередь» дошёл до менеджера", o.wo().number)
+        if r and answer:
+            with at(day, _later(hh, 5)):
+                post("irina", f"/wash/asks/{r.id}", {"ok": "1" if answer == "ok" else "",
+                                                     "answer": "" if answer == "ok" else "Клиент заберёт только вечером"},
+                     what="Менеджер: " + ("согласен — первой" if answer == "ok" else "отказать"))
+            R.check(one(M.WashQueueRequest, M.WashQueueRequest.id == r.id).status == ("ok" if answer == "ok" else "declined"),
+                    "менеджер ответил на запрос мойщика", answer)
+    for o in (a, b, c, d):
+        if o:
+            o.step = "qwash_today"   # мыть — руками
+
+
+def check_badges():
+    """19.11.2026 (брат): у КАЖДОГО сотрудника на сегодня есть дело — горит хотя бы одна цифра в меню."""
+    for login in NAMES:
+        r = get(login, "/api/notify", what="Цифры меню")
+        b = r.json().get("badges", {}) if r is not None and r.status_code == 200 else {}
+        R.check(bool(b), "у каждого сотрудника на сегодня горит цифра (есть что сделать)", login)
+        BADGES[login] = {k: [f"{x['c']} {x['n']} — {x['t']}" for x in v] for k, v in b.items()}
+
+
+BADGES = {}
+
+
+def step_qwash(o, day, hhmm, finish=True):
+    """Мойщик: «Взять следующую» (машина первая для него) → услуги «Выполнено» → наряд «Готово»."""
+    login = o.lead
+    if not wash_ready(login, o, day, hhmm):
+        return
+    with at(day, hhmm):
+        r = post(login, "/wash/take", {"order_id": str(o.id)}, what="🫧 Взять следующую")
+    R.check(r is not None and str(r.url).endswith(str(o.id)), "мойщик взял свою машину по очереди", o.wo().number)
+    if rnd.random() < 0.4:
+        with at(day, _later(hhmm, 5)):
+            chem_ask(login, o)
+    if not finish:
+        o.step = "qwash_doing"
+        return
+    t = _later(hhmm, rnd.randint(15, 60))
+    for w in works_of(o):
+        if w.status == "done":
+            continue
+        with at(day, t):
+            if w.status == "todo":
+                post(login, f"{o.url}/works/{w.id}/state", {"action": "start"}, what=f"Начал: {w.name}")
+            post(login, f"{o.url}/works/{w.id}/state", {"action": "done"}, what=f"Выполнено: {w.name}")
+        t = _later(t, rnd.randint(10, 40))
+    R.check(o.wo().status == "ready", "помыли — наряд мойки «Готово»", f"{o.wo().number}: {o.wo().status}")
+    o.step = "pay"
 
 
 def chem_desk(day):
@@ -976,18 +1154,114 @@ def tool_check(day):
         post("admin", f"/tools/checks/{c.id}/approve", {"approve": [str(l.id) for l in lines[:1]]}, what="Утвердить удержание")
 
 
+DONORS = [  # 19.11.2026: три машины на разборе — детали списком (категория угадывается сама) и по одной (с категорией)
+    ("Toyota", "Camry XV50", "2014", "JTNBF3HK103004521", "241000", "95000",
+     ("Фара левая; 4200", "Фара правая; 4200", "Дверь передняя левая; 6500", "Капот; 5200", "Блок ABS; 3800",
+      "Генератор; 2600", "Стартер; 1900", "Зеркало правое; 1500", "Коробка АКПП U760E; 28000", "Двигатель 2AR-FE в сборе; 52000")),
+    ("Volkswagen", "Passat B7", "2012", "WVWZZZ3CZCE104455", "268000", "82000",
+     ("Бампер передний; 3900", "Крыло переднее правое; 2400", "Фонарь задний левый; 1800", "Радиатор охлаждения; 2200",
+      "Компрессор кондиционера; 5400", "Турбина; 9800", "Блок управления двигателем; 4600", "Сиденье водителя; 3500")),
+    ("Skoda", "Octavia A7", "2016", "TMBJJ7NE8G0123987", "198000", "105000",
+     ("Руль с подушкой; 5200", "Панель приборов; 3300", "Стеклоподъёмник передний левый; 1200", "Амортизатор передний; 1400",
+      "Рычаг передний правый; 1100", "Суппорт передний левый; 1500", "Дверь задняя правая; 5800")),
+]
+
+
+def razbor_add_donor(day, hh, spec):
+    make, model, year, vin, km, cost, lines = spec
+    with at(day, hh):
+        post("dmitro", "/razbor/donors", {"make": make, "model": model, "year": year, "vin": vin, "mileage": km,
+                                          "purchase_price": cost}, files=photo(1), what=f"Донор {make} {model}")
+    d = one(M.Donor, M.Donor.vin == vin)
+    if not d:
+        return None
+    with at(day, _later(hh, 30)):
+        post("dmitro", f"/razbor/donors/{d.id}/parts/bulk", {"lines": "\n".join(lines), "condition": "good", "catsub": ""},
+             what="Детали донора списком (категория — сама)")
+        # одна деталь — формой «＋ Деталь»: подсказка категории по названию, фото
+        g = get("dmitro", "/api/razbor/guess?name=Фара противотуманная левая", what="Подсказка категории")
+        cs = g.json().get("catsub", "") if g is not None and g.status_code == 200 else ""
+        R.check(bool(cs), "категория детали угадывается по названию", "Фара противотуманная левая")
+        post("dmitro", f"/razbor/donors/{d.id}/parts", {"name": "Фара противотуманная левая", "price": "650", "qty": "1",
+                                                        "condition": "good", "catsub": cs, "publish": "1"},
+             files=photo(1), what="＋ Деталь (с категорией)")
+    items = q(M.StockItem, M.StockItem.donor_id == d.id)
+    cats = {i.id: one(M.PartCatalog, M.PartCatalog.id == i.catalog_id) for i in items}
+    other = [c.name for c in cats.values() if not c.category or c.category == "Прочее"]
+    R.check(len(other) <= 2, "детали разбора разложены по категориям (почти без «Прочее»)", ", ".join(other[:5]))
+    R.check(all(i.price_state == "pending" for i in items), "новые детали разбора — «Не утверждено»", d.code)
+    return d
+
+
+def razbor_decide(day, hh, d, decline=1, edit=1):
+    """Директор: «Цены разбора» → по машине: одну цену поправил, одну отказал (с причиной), остальные утвердил."""
+    reqs = [r for r in q(M.RazborPrice, M.RazborPrice.status == "pending", M.RazborPrice.kind == "new")
+            if one(M.StockItem, M.StockItem.id == r.stock_item_id).donor_id == d.id]
+    with at(day, hh):
+        get("director", f"/razbor/prices?donor={d.id}", what="Цены разбора по машине")
+        for i, r in enumerate(reqs):
+            if i < decline:
+                post("director", f"/razbor/prices/{r.id}/decline", {"answer": "Дорого — на OLX такие по 70 %"},
+                     what="Отказать в цене")
+            elif i < decline + edit:
+                post("director", f"/razbor/prices/{r.id}/approve", {"price": str((r.price * Decimal("0.9")).quantize(Decimal("1")))},
+                     what="Утвердить с правкой цены")
+        if len(reqs) > decline + edit:
+            post("director", f"/razbor/prices/donor/{d.id}/approve-all", {}, what="Утвердить все по машине")
+    return reqs[:decline]
+
+
 def razbor_start(day):
-    with at(day, "11:00"):
-        post("dmitro", "/razbor/donors", {"make": "Toyota", "model": "Camry XV50", "year": "2014", "vin": "JTNBF3HK103004521",
-                                          "mileage": "241000", "purchase_price": "95000"}, what="Донор Toyota Camry")
-        d = one(M.Donor, M.Donor.make == "Toyota")
+    # 18–19.11.2026: детали разбора с категориями, цены утверждает директор — до этого их не продать
+    for n, spec in enumerate(DONORS[:2]):
+        d = razbor_add_donor(day, f"1{n}:00", spec)
         if d:
-            lines = "\n".join(("Фара левая; 4200", "Фара правая; 4200", "Дверь передняя левая; 6500", "Капот; 5200",
-                               "Блок ABS; 3800", "Генератор; 2600", "Стартер; 1900", "Зеркало правое; 1500",
-                               "Коробка АКПП U760E; 28000", "Двигатель 2AR-FE в сборе; 52000"))
-            post("dmitro", f"/razbor/donors/{d.id}/parts/bulk", {"lines": lines, "condition": "good"}, what="Детали донора списком")
-            # 18.11.2026: цены новых деталей утверждает директор — до этого их не продать
-            post("director", f"/razbor/prices/donor/{d.id}/approve-all", {}, what="Директор утвердил цены разбора")
+            declined = razbor_decide(day, f"1{n + 2}:00", d)
+            for r in declined:   # кладовщик поправил цену и отправил ещё раз → утвердили
+                with at(day, f"1{n + 3}:00"):
+                    it_ = one(M.StockItem, M.StockItem.id == r.stock_item_id)
+                    post("dmitro", f"/razbor/parts/{it_.id}", {"price": str((r.price * Decimal("0.75")).quantize(Decimal("1"))),
+                                                               "condition": it_.condition or "good", "publish": "1",
+                                                               "description": it_.description or "",
+                                                               "location_id": str(it_.location_id or "")}, what="Новая цена после отказа")
+                    post("dmitro", f"/razbor/parts/{r.stock_item_id}/resubmit", {"note": "Снизил до рынка"}, what="Отправить ещё раз")
+                r2 = one(M.RazborPrice, M.RazborPrice.stock_item_id == r.stock_item_id, M.RazborPrice.status == "pending")
+                R.check(r2 is not None and r2.repeat, "после отказа — «Отправить ещё раз» снова у директора", str(r.stock_item_id))
+                if r2:
+                    with at(day, f"1{n + 4}:00"):
+                        post("deputy", f"/razbor/prices/{r2.id}/approve", {}, what="Зам утвердил повторную")
+    # Запрос изменения утверждённой цены → зам утвердил
+    it = next((i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None)) if not (i.price_state or "")), None)
+    if it:
+        with at(day, "16:30"):
+            post("dmitro", f"/razbor/parts/{it.id}/price-request", {"price": str((it.sale_price * Decimal("1.15")).quantize(Decimal("1"))),
+                                                                   "note": "Спрашивают часто — поднять"}, what="Запросить изменение цены")
+            r = one(M.RazborPrice, M.RazborPrice.stock_item_id == it.id, M.RazborPrice.kind == "change", M.RazborPrice.status == "pending")
+            if r:
+                post("deputy", f"/razbor/prices/{r.id}/approve", {}, what="Изменение цены утверждено")
+        R.check(one(M.StockItem, M.StockItem.id == it.id).sale_price > it.sale_price, "изменение цены разбора применилось", it.code)
+    for v in ("cars", "parts"):
+        r = get("dmitro", f"/razbor?v={v}", what=f"Разбор: вкладка {v}")
+        R.check(r is not None and r.status_code == 200, "разбор открывается (машины / все детали)", v)
+
+
+def razbor_today(day):
+    """На сегодня: новая машина — цены ждут директора (🔴 у директора и зама), одна деталь отказана (🔴 у кладовщика
+    разбора), запрос изменения цены ждёт решения."""
+    d = razbor_add_donor(day, "10:30", DONORS[2])
+    if d:
+        reqs = [r for r in q(M.RazborPrice, M.RazborPrice.status == "pending", M.RazborPrice.kind == "new")
+                if one(M.StockItem, M.StockItem.id == r.stock_item_id).donor_id == d.id]
+        if reqs:
+            with at(day, "12:00"):
+                post("director", f"/razbor/prices/{reqs[0].id}/decline", {"answer": "Руль с подушкой — только после проверки подушки"},
+                     what="Отказать в цене (кладовщику — посмотреть причину)")
+    it = next((i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None)) if not (i.price_state or "")
+               and not one(M.UsedSale, M.UsedSale.stock_item_id == i.id)), None)
+    if it:
+        with at(day, "12:30"):
+            post("dmitro", f"/razbor/parts/{it.id}/price-request", {"price": str((it.sale_price * Decimal("0.85")).quantize(Decimal("1"))),
+                                                                   "note": "Лежит 2 недели — снизить"}, what="Запросить изменение цены (решить руками)")
 
 
 def razbor_sale(day, stop=""):
@@ -995,7 +1269,7 @@ def razbor_sale(day, stop=""):
     "ship" — отправлено, ждём, что получат. Пусто — до конца."""
     items = [i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None))]
     sold = {s.stock_item_id for s in q(M.UsedSale)}
-    left = [i for i in items if i.id not in sold]
+    left = [i for i in items if i.id not in sold and not (i.price_state or "")]   # продать можно только утверждённую цену
     if not left:
         return
     i = rnd.choice(left)
@@ -1285,6 +1559,8 @@ def leave_for_today(day):
         with at(day, "17:35"):
             post("irina", f"{o.url}/masters", {"user_id": str(uid("moyka")), "work": "Мойка кузова после ремонта"},
                  what="Добавить мастера: мойщик")
+    # 10) 19.11.2026 — одна очередь мойки на сегодня (руками: менеджер, мойщик, детейлер)
+    wash_today(day, skip={o.id} if o else set())
     # Кладовщик: накладная ждёт — принять на склад руками
     p = next(iter(q(M.Purchase, M.Purchase.status == "ordered", M.Purchase.kind != "chem")), None)
     if p is None:
@@ -1344,9 +1620,10 @@ def leave_for_today(day):
             post("pavel", "/stock/receive", {"line_id": str(sl.id), f"qty_{sl.id}": "1", f"inv_{sl.id}": "ТТН-30117"},
                  what="Неполная поставка: привезли 1 (остальное ждём)")
         R.check(one(M.Purchase, M.Purchase.id == sp.id).status == "partial", "заказ на склад — неполная поставка", str(sp.id))
-    # Разбор: подготовить, упаковано, отправлено
+    # Разбор: подготовить, упаковано, отправлено; новая машина — цены ждут директора, отказ, запрос изменения цены
     for stop in ("reserve", "reserve", "pack", "ship"):
         razbor_sale(day, stop=stop)
+    razbor_today(day)
     # Директору и заму: открыть закрытый наряд, гарантия, доступ ко всем нарядам, доступ к клиенту
     # недавно выданные (менеджер видит выданное за 3 дня), сначала самые свежие
     closed = sorted([o for o in DONE if o.wo() and o.wo().status == "closed" and o.wo().closed_at
@@ -1412,6 +1689,9 @@ def run():
         # Машин больше среднего: 5–7 в будни, 3 в субботу
         for _ in range(rnd.choice((4, 4, 5)) if day.weekday() < 5 else 2):   # 13.11.2026: чуть меньше машин
             new_order(day, rnd.choice(MANAGERS), f"{rnd.randint(8, 14):02d}:{rnd.randint(0, 59):02d}")
+        if day < TODAY:   # 19.11.2026: быстрая мойка — 1–3 машины в день (сегодняшние — в leave_for_today)
+            for _ in range(rnd.choice((1, 2, 2, 3))):
+                quick_wash(day, f"{rnd.randint(9, 15):02d}:{rnd.randint(0, 59):02d}")
         # Двигаем наряды по шагам
         approve_left = [0]
         for o in list(ACTIVE):
@@ -1454,6 +1734,7 @@ def run():
         appts += schedule_tomorrow(day)
         if day == TODAY:
             leave_for_today(day)
+            check_badges()
             break
         end_of_day(day)
     print()
@@ -1482,6 +1763,8 @@ def advance(o, day, hh):
         step_issue(o, day, hh)
     elif s == "work":
         step_work(o, day, hh)
+    elif s == "qwash":
+        step_qwash(o, day, hh)
     elif s == "pay":
         step_pay(o, day, hh)
     elif s == "reopen":
@@ -1613,6 +1896,10 @@ def write_report(sec):
         ex = "; ".join(h[1] for h in hits[:3])
         out.append(f"- **{what}** — раз: {len(hits)}. Примеры: {ex}")
     out += ["", "## Кто сколько нажал", "", " · ".join(f"{k} {v}" for k, v in R.ok.most_common())]
+    out += ["", "## Цифры в меню на сегодня (что ждёт каждого)", ""]
+    for login, b in BADGES.items():
+        items = [f"{href}: " + "; ".join(v) for href, v in b.items()]
+        out.append(f"- **{NAMES.get(login, login)}** (`{login}`): " + (" · ".join(items) if items else "— ничего"))
     (SIM / "report.md").write_text("\n".join(out), encoding="utf-8")
     print("\n".join(out[:12]))
     print(f"Отчёт: {SIM / 'report.md'}")
