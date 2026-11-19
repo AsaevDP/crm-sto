@@ -2101,7 +2101,10 @@ a.key-cell:hover { outline: 2px solid var(--accent); }
 /* 18.11.2026: последнее действие на плитке наряда — мелко */
 .ocard-act { font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .wq-act { font-size: 11px; color: var(--text-3); white-space: nowrap; }
-.nbadge.nb-orange { background: var(--orange); color: #fff; }   /* 18.11.2026: «нужно ваше действие» — оранжевый (раньше жёлтый) */
+.nbadge.nb-orange { background: var(--orange); color: #fff; }
+/* 19.11.2026 (брат): «для сведения» — следите, делает другой: цифра своего цвета с сиреневой обводкой */
+.nbadge.nb-info { box-shadow: 0 0 0 2px var(--purple); }
+.tabbar .nbadges .nbadge.nb-info { box-shadow: 0 0 0 1.5px var(--purple); }   /* 18.11.2026: «нужно ваше действие» — оранжевый (раньше жёлтый) */
 .rsv-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
 .rsv-card { display: grid; gap: 4px; border-left: 4px solid var(--orange); }
 .rsv-car { color: var(--text); text-decoration: none; min-width: 0; }

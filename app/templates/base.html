@@ -88,7 +88,7 @@
       box.innerHTML = '';
       list.forEach(x => {
         const b = document.createElement('span');
-        b.className = 'nbadge nb-' + x.c; b.textContent = x.n; b.title = x.t;
+        b.className = 'nbadge nb-' + x.c + (x.info ? ' nb-info' : ''); b.textContent = x.n; b.title = x.t;
         b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); location.href = x.href; });
         box.appendChild(b);
       });

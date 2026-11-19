@@ -18,17 +18,21 @@ from ..permissions import MASTERS
 ALL_ROLES = ("admin", "director", "deputy")
 
 
-def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False):
-    """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды)."""
+def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False, info: bool = False):
+    """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды).
+    info — 19.11.2026 (брат): «для сведения» (вы следите, делает другой) — цифра с сиреневой обводкой; с цифрами
+    «действие ваше» того же цвета не складывается."""
     if not n:
         return
     lst = out.setdefault(href, [])
-    same = None if alone else next((x for x in lst if x["c"] == color and not x.get("alone")), None)
+    same = None if alone else next((x for x in lst if x["c"] == color and not x.get("alone")
+                                    and bool(x.get("info")) == info), None)
     if same:   # одного цвета — одной цифрой, подсказка перечисляет всё
         same["n"] += int(n)
         same["t"] += f" · {title}"
     else:
-        lst.append({"c": color, "n": int(n), "t": title, "href": link or href, "alone": alone})
+        lst.append({"c": color, "n": int(n), "t": title + (" (для сведения)" if info else ""), "href": link or href,
+                    "alone": alone, "info": info})
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
@@ -161,8 +165,10 @@ def compute(ctx) -> dict:
         t_new = db.scalar(tq.where(ToolRequest.status == "new")) or 0
         t_ready = db.scalar(tq.where(ToolRequest.status == "ready")) or 0
         for href in ("/ready", "/tools"):
-            _add(out, href, "orange", t_new, "мастер просит инструмент — ждёт кладовщика", "/ready#tools")
-            _add(out, href, "green", t_ready, "инструмент подготовлен — мастер заберёт", "/ready#tools")
+            # 19.11.2026 (брат): у «Инструмента» — для сведения (сиреневая обводка); у «Запросов на выдачу» — обычные
+            info = href == "/tools"
+            _add(out, href, "orange", t_new, "мастер просит инструмент — ждёт кладовщика", "/ready#tools", info=info)
+            _add(out, href, "green", t_ready, "инструмент подготовлен — мастер заберёт", "/ready#tools", info=info)
 
     # ---------- Мои запросы на выдачу (мастер, 12.11.2026) ----------
     if role in MASTERS:
