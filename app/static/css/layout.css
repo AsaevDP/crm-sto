@@ -1709,6 +1709,19 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .mr-h { flex-wrap: wrap; row-gap: 4px; }
 .mr-h .headline { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 760px) { .mr-grid { grid-template-columns: 1fr; } }
+/* 20.11.2026: «Запросы на выдачу» менеджера — блоки друг под другом на всю ширину */
+.rd-stack { display: flex; flex-direction: column; gap: 14px; }
+.rd-sec { scroll-margin-top: 16px; }
+.rd-sec > .group-title { margin-top: 0; }
+.rd-sec .mr-grid + .group-title { margin-top: 12px; }
+.mr-grid > .rd-empty { grid-column: 1 / -1; }
+.rd-list { display: flex; flex-direction: column; gap: 0; }
+.rd-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start;
+          padding: 8px 0; border-bottom: 0.5px solid var(--separator); }
+.rd-row:last-child { border-bottom: 0; }
+.rd-what { min-width: 0; overflow-wrap: anywhere; }
+.rd-what .caption { display: block; }
+.rd-when { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .nt-row[data-kind="urgent_in"], .nt-row[data-kind="urgent_ask"] { border-left-color: var(--red); }
 .nt-row[data-kind="handover"] { border-left-color: var(--blue); }
 /* Обычные ссылки в тексте — цветом акцента, без подчёркивания (подчёркивание — при наведении) */

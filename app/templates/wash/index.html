@@ -7,10 +7,11 @@
 <header class="page-head">
   <div><h1 class="large-title">Мойка</h1></div>
   <div class="ov-actions">
-    {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/wash/new">🫧 Принять на мойку</a>{% endif %}
-    <a class="btn btn-sm btn-gray" href="/wash/prices">Прайс</a>
+    {# 20.11.2026 (брат): запчастисту — только химия и закупки; менеджеру — без «Заказать химию» #}
+    {% if q_ok and ctx.can("orders.create") %}<a class="btn btn-sm" href="/wash/new">🫧 Принять на мойку</a>{% endif %}
+    {% if q_ok %}<a class="btn btn-sm btn-gray" href="/wash/prices">Прайс</a>{% endif %}
     <a class="btn btn-sm btn-gray" href="/stock?sec=chem">Химия на складе</a>
-    {% if ctx.can("wash.buy") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('wnew').showModal()">{{ icon("plus") }}Заказать химию</button>{% endif %}
+    {% if buy_ok %}<button class="btn btn-sm" type="button" onclick="document.getElementById('wnew').showModal()">{{ icon("plus") }}Заказать химию</button>{% endif %}
   </div>
 </header>
 
@@ -35,14 +36,18 @@
   {% endif %}
 {% endmacro %}
 
-{{ tiles_m([
-  {"t": "Очередь", "n": brd.queue|length, "c": "blue", "s": "моют: " ~ brd.doing|length ~ " · готовы: " ~ brd.done|length, "href": "/wash?tab=now", "on": tab == "now"},
-  {"t": "Изменить очередь", "n": qasks|length, "c": "red" if qasks else "gray", "s": "просит мойщик", "href": "/wash?tab=asksq", "on": tab == "asksq", "zero": not qasks},
-  {"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"},
-  {"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=asks", "on": tab == "asks", "zero": not asks},
-  {"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low},
-  {"t": "Закупка для мойки", "n": n_open, "c": "teal", "s": "заказы химии в работе", "href": "/wash?tab=buy", "on": tab == "buy", "zero": not n_open},
-], "wash-tiles") }}
+{% set T = [] %}
+{% if q_ok %}
+{% set _ = T.append({"t": "Очередь", "n": brd.queue|length, "c": "blue", "s": "моют: " ~ brd.doing|length ~ " · готовы: " ~ brd.done|length, "href": "/wash?tab=now", "on": tab == "now"}) %}
+{% set _ = T.append({"t": "Изменить очередь", "n": qasks|length, "c": "red" if qasks else "gray", "s": "просит мойщик", "href": "/wash?tab=asksq", "on": tab == "asksq", "zero": not qasks}) %}
+{% endif %}
+{% set _ = T.append({"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"}) %}
+{% set _ = T.append({"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=asks", "on": tab == "asks", "zero": not asks}) %}
+{% if buy_ok %}
+{% set _ = T.append({"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low}) %}
+{% set _ = T.append({"t": "Закупка для мойки", "n": n_open, "c": "teal", "s": "заказы химии в работе", "href": "/wash?tab=buy", "on": tab == "buy", "zero": not n_open}) %}
+{% endif %}
+{{ tiles_m(T, "wash-tiles") }}
 
 {% if tab == "now" %}
 {% set manage = ctx.can("orders.approve") %}
@@ -119,7 +124,7 @@
         <tr class="{{ 'low' if x.free <= 2 }}"><td><b>{{ x.c.name }}</b><div class="caption">{{ x.c.category }}{% if x.c.brand %} · {{ x.c.brand }}{% endif %}</div></td>
           <td class="caption nowrap">{{ locs.get(x.loc, "—") if x.loc else "—" }}</td>
           <td class="num nowrap"><b class="{{ 'late' if x.free <= 2 }}">{{ x.free|num }}</b></td></tr>
-        {% else %}<tr><td colspan="3" class="footnote">Химии на складе пока нет — оформите «Заказать химию», кладовщик примет на полку «Химия».</td></tr>{% endfor %}</tbody>
+        {% else %}<tr><td colspan="3" class="footnote">Химии на складе пока нет — {{ "оформите «Заказать химию»" if buy_ok else "заказывает запчастист" }}, кладовщик примет на полку «Химия».</td></tr>{% endfor %}</tbody>
       </table></div>
     </div>
   </section>

@@ -42,53 +42,74 @@
 </nav>
 <p class="footnote" style="margin:0 4px">Запросы по вашим нарядам. Кладовщик подготовил у окошка запчасти или инструмент — заберите,
   отнесите мастеру и нажмите «Выдано». Закрыть выдачу может и кладовщик.</p>
-{# 20.11.2026 (брат, наряд 60): раньше это было только в «Сообщениях» — окошко закрыли, и запрос терялся #}
-<div class="group-title" id="asks">Мастер просит со склада — согласуйте · {{ asks|length }}</div>
-<div class="mr-grid" style="margin-bottom:12px">{% for x in asks %}{{ ask_card(x, "/ready#asks") }}{% else %}
-  <div class="card compact"><p class="footnote" style="margin:0">Сейчас никто не просит. Мастер попросит запчасть со склада — появится здесь.</p></div>{% endfor %}</div>
-<div class="cl-grid">
-  <section class="ov-col on">
-    <div class="group-title" id="mine">Готово — забрать у окошка · {{ n_take }}</div>
-    {% for x in mine %}{{ req_card(x) }}{% endfor %}
-    <span id="tools"></span>
-    {% for x in t_ready_mine %}{{ tool_card(x) }}{% endfor %}
-    {% if not n_take %}<div class="card compact"><p class="footnote" style="margin:0">Сейчас ничего не готово</p></div>{% endif %}
+{# 20.11.2026 (брат): блоки друг под другом, каждый на всю ширину; плитка сверху — прокрутка к своему блоку (по центру) #}
+<div class="rd-stack">
+  {# 20.11.2026 (брат, наряд 60): раньше это было только в «Сообщениях» — окошко закрыли, и запрос терялся #}
+  <section class="rd-sec" id="asks">
+    <div class="group-title">Мастер просит со склада — согласуйте · {{ asks|length }}</div>
+    <div class="mr-grid">{% for x in asks %}{{ ask_card(x, "/ready#asks") }}{% else %}
+      <div class="card compact rd-empty"><p class="footnote" style="margin:0">Сейчас никто не просит. Мастер попросит запчасть со склада — появится здесь.</p></div>{% endfor %}</div>
+  </section>
+
+  <section class="rd-sec" id="mine">
+    <div class="group-title">Готово — забрать у окошка · {{ n_take }}</div>
+    <div class="mr-grid" id="tools">
+      {% for x in mine %}{{ req_card(x) }}{% endfor %}
+      {% for x in t_ready_mine %}{{ tool_card(x) }}{% endfor %}
+      {% if not n_take %}<div class="card compact rd-empty"><p class="footnote" style="margin:0">Сейчас ничего не готово</p></div>{% endif %}
+    </div>
     {% if others or t_ready_others %}
     <div class="group-title">По другим нарядам · {{ others|length + t_ready_others|length }}</div>
-    {% for x in others %}{{ req_card(x) }}{% endfor %}
-    {% for x in t_ready_others %}{{ tool_card(x) }}{% endfor %}
+    <div class="mr-grid">{% for x in others %}{{ req_card(x) }}{% endfor %}{% for x in t_ready_others %}{{ tool_card(x) }}{% endfor %}</div>
     {% endif %}
   </section>
-  <section class="ov-col on">
-    {# 12.11.2026: что ещё у кладовщика — просили, он пока не собрал; 19.11.2026 — и инструмент #}
-    <div class="group-title" id="waiting">Ждут кладовщика · {{ n_wait }}</div>
-    <div class="card compact">
+
+  {# 12.11.2026: что ещё у кладовщика — просили, он пока не собрал; 19.11.2026 — и инструмент #}
+  <section class="rd-sec" id="waiting">
+    <div class="group-title">Ждут кладовщика · {{ n_wait }}</div>
+    <div class="card compact rd-list">
       {% for x in waiting %}
-      <div class="kv"><span><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number[-6:] }}</a> · {{ x.v.make }} {{ x.v.model }}
-        <span class="caption" style="display:block">{{ x.lines|map(attribute="name")|join(", ") }} · просил {{ x.who.full_name if x.who else "" }}</span></span>
-        <b class="nowrap">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="rd-row"><span class="rd-what"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number[-6:] }}</a> · {{ x.v.make }} {{ x.v.model }}
+        <span class="caption">{{ x.lines|map(attribute="name")|join(", ") }} · просил {{ x.who.full_name if x.who else "" }}</span></span>
+        <b class="rd-when">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% endfor %}
       {% for x in t_wait %}
-      <div class="kv"><span>🔧 {{ x.tool.name if x.tool else "" }}
-        <span class="caption" style="display:block"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }}{% endif %} · просит {{ x.who.full_name if x.who else "" }}</span></span>
-        <b class="nowrap">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="rd-row"><span class="rd-what">🔧 {{ x.tool.name if x.tool else "" }}
+        <span class="caption"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }}{% endif %} · просит {{ x.who.full_name if x.who else "" }}</span></span>
+        <b class="rd-when">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% endfor %}
       {% if not n_wait %}<p class="footnote" style="margin:0">Нет — всё собрано</p>{% endif %}
     </div>
+  </section>
+
+  <section class="rd-sec" id="done">
     <div class="group-title">Недавно выдано</div>
-    <div class="card compact">
+    <div class="card compact rd-list">
       {% for d in done %}{% set x = d.x %}
       {% if d.kind == "tool" %}
-      <div class="kv"><span>🔧 {{ x.tool.name if x.tool else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% endif %}
-        <span class="caption" style="display:block">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}</span></span>
-        <b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="rd-row"><span class="rd-what">🔧 {{ x.tool.name if x.tool else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% endif %}
+        <span class="caption">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}</span></span>
+        <b class="rd-when">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% else %}
-      <div class="kv"><span><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
-        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption" style="display:block">выдано · {{ ib.full_name }}</span>{% endif %}</span>
-        <b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="rd-row"><span class="rd-what"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
+        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption">выдано · {{ ib.full_name }}</span>{% endif %}</span>
+        <b class="rd-when">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% endif %}
       {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
     </div>
   </section>
 </div>
+<script>
+(function () {   // плитка → прокрутка к своему блоку: блок по центру экрана (длинный — с начала)
+  function go(id, smooth) {
+    const el = document.getElementById(id); if (!el) return;
+    const tall = el.getBoundingClientRect().height > window.innerHeight * 0.8;
+    el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: tall ? 'start' : 'center' });
+  }
+  document.querySelectorAll('.rd-tiles a[href^="#"]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault(); const id = a.getAttribute('href').slice(1); history.replaceState(null, '', '#' + id); go(id, true);
+  }));
+  if (location.hash.length > 1) requestAnimationFrame(() => go(decodeURIComponent(location.hash.slice(1)), false));
+})();
+</script>
 {% endblock %}

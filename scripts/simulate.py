@@ -442,11 +442,12 @@ def first_stock():
     with at(d + timedelta(days=1), "11:00"):
         receive(pid, partial=False)
     with at(d, "11:00"):
-        r = post("deputy", "/wash/purchases/new", {"supplier_new": "Химтрейд"}, what="Закупка химии (зам)")
+        # 20.11.2026 (брат): химию для мойки заказывает запчастист («Мойка» → «Заказать химию»)
+        r = post("oleg", "/wash/purchases/new", {"supplier_new": "Химтрейд"}, what="Закупка химии (запчастист)")
         cpid = r.url.path.rsplit("/", 1)[1] if r is not None else None
         paste = "\n".join(f"{n}; {a}; {b}; {qty}; {c}" for n, a, b, qty, c in CHEM)
-        post("deputy", f"/purchases/{cpid}/lines", {"paste": paste}, what="Химия списком")
-        post("deputy", f"/purchases/{cpid}/ordered", {}, what="✓ Заказал химию")
+        post("oleg", f"/purchases/{cpid}/lines", {"paste": paste}, what="Химия списком")
+        post("oleg", f"/purchases/{cpid}/ordered", {}, what="✓ Заказал химию")
     with at(d + timedelta(days=1), "12:00"):
         receive(cpid, partial=False, rack="Х")
     # Проверка: химия ушла в раздел «Химия», запчасти — нет

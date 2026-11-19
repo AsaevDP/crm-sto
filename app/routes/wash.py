@@ -68,10 +68,17 @@ def on_wash(db, branch_id) -> list[dict]:
 WASH_ST = {"todo": ("ждёт мойки", "created"), "doing": ("моют", "work"), "paused": ("пауза", "waiting"), "done": ("готово", "ready")}
 
 
+def queue_ok(ctx: Ctx) -> bool:
+    """20.11.2026 (брат): очередь, машины, приёмка, прайс — у тех, кто ведёт машины (менеджер, директор, зам, админ).
+    Запчастисту «Мойка» — только химия и закупки для мойки."""
+    return ctx.can("orders.create", "orders.approve", "orders.view_all")
+
+
 @router.get("/wash")
 def wash(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     ctx.need("wash.view")
     db, bid = ctx.db, ctx.branch.id
+    q_ok, buy_ok = queue_ok(ctx), ctx.can("wash.buy")
     # 18.11.2026: «С ремонта» — мойка как работа в обычном наряде; быстрые наряды мойки — в очереди
     # 19.11.2026: машины с ремонта — в общей очереди; отдельным блоком только помытые (ждут ремонта / выдачи)
     cars = [x for x in on_wash(db, bid) if not wsvc.is_wash_order(x["o"]) and x["st"] == "done"]
@@ -80,10 +87,11 @@ def wash(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     asks = csvc.requests(db, bid, "new")
     chem_p = db.scalars(select(Purchase).where(Purchase.branch_id == bid, Purchase.kind == "chem")
                         .order_by(Purchase.created_at.desc()).limit(100)).all()
-    if tab not in ("now", "chem", "buy", "asks", "asksq"):
-        tab = "now"
+    tabs = (("now", "asksq") if q_ok else ()) + ("chem", "asks") + (("buy",) if buy_ok else ())
+    if tab not in tabs:
+        tab = tabs[0]
     low = [x for x in items if x["free"] <= LOW]
-    data = dict(tab=tab, cars=cars, items=items, asks=asks, low=low, WASH_ST=WASH_ST, fmt_plate=osvc.fmt_plate,
+    data = dict(tab=tab, q_ok=q_ok, buy_ok=buy_ok, cars=cars, items=items, asks=asks, low=low, WASH_ST=WASH_ST, fmt_plate=osvc.fmt_plate,
                 brd=brd, fmt_min=wsvc.fmt_min, CLASSES=wsvc.CLASSES, now=now(), qasks=wsvc.open_asks(db, bid, brd),
                 n_open=sum(1 for p in chem_p if p.status != "arrived"),
                 supplier_list=db.scalars(select(Supplier).where(Supplier.branch_id == bid).order_by(Supplier.name)).all())
@@ -409,6 +417,8 @@ def wash_queue(ctx: Ctx = Depends(get_ctx)):
     """Экран мойщика / детейлера (в меню — «Наряды»): мне передали, моя машина сейчас, «Взять следующую», ОДНА очередь —
     быстрая мойка и машины с ремонта (серые — мыть пока нельзя), «Попросить первой», готовые."""
     ctx.need("chem.ask", "wash.view")
+    if not ctx.can("chem.ask") and not queue_ok(ctx):   # 20.11.2026: запчастисту очередь машин ни к чему
+        raise Forbidden()
     db, bid, me = ctx.db, ctx.branch.id, ctx.user
     brd = wsvc.board(db, bid)
     mine_now = [c for c in brd["doing"] if wsvc.busy_with(c, me)]   # начал и не закончил свои услуги
@@ -452,6 +462,8 @@ def _money(v) -> Decimal:
 @router.get("/wash/prices")
 def wash_prices(ctx: Ctx = Depends(get_ctx), hidden: str = ""):
     ctx.need("wash.view", "chem.ask", "wash.prices")
+    if not ctx.can("chem.ask", "wash.prices") and not queue_ok(ctx):   # 20.11.2026: запчастисту прайс не нужен
+        raise Forbidden()
     rows = wsvc.services(ctx.db, ctx.branch.id)
     ctx.db.commit()   # прайс по умолчанию заводится при первом открытии
     return ctx.render("wash/prices.html", title="Прайс мойки", rows=rows, can_edit=ctx.can("wash.prices"),

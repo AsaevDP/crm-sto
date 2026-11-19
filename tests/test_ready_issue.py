@@ -22,7 +22,7 @@ def _badges(client):
 
 
 def _chem_in_stock(client, name, qty):
-    login(client, "irina", "irina123")
+    login(client, "oleg", "oleg123")   # 20.11.2026: химию заказывает запчастист
     r = client.post("/wash/purchases/new", data={"supplier_new": "Химия (готово)"})
     pid = uuid.UUID(r.url.path.rsplit("/", 1)[1])
     client.post(f"/purchases/{pid}/lines", data={"name": name, "qty": str(qty), "price": "150"})

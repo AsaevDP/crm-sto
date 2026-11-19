@@ -236,7 +236,17 @@ def compute(ctx) -> dict:
         # 19.11.2026 (брат): «готово — ещё не выдано» снова горит оранжевым (18.11 убирали) — пока не нажато «Выдано»
 
     # ---------- Мойка (18.11.2026, брат) ----------
-    if ctx.can("wash.view"):
+    wash_queue = ctx.can("orders.create", "orders.approve", "orders.view_all")   # 20.11.2026: запчастисту — только химия
+    if ctx.can("wash.view") and not wash_queue and ctx.can("wash.buy"):
+        # 🟠 20.11.2026 (брат): химию для мойки заказывает запчастист — заканчивается / черновик закупки химии
+        from . import chem as chem_svc
+        from ..models import Purchase as _P
+        _add(out, "/wash", "orange", sum(1 for x in chem_svc.items(db, bid) if x["free"] <= 2),
+             "химия заканчивается — заказать", "/wash?tab=chem")
+        _add(out, "/wash", "orange", db.scalar(select(func.count()).select_from(_P).where(
+            _P.branch_id == bid, _P.kind == "chem", _P.status == "draft", _P.created_by == me.id)) or 0,
+             "черновик закупки химии — нажмите «✓ Заказал»", "/wash?tab=buy")
+    if ctx.can("wash.view") and wash_queue:
         from ..models import ChemRequest
         wq = select(func.count()).select_from(WorkOrder).where(WorkOrder.branch_id == bid, WorkOrder.kind == "wash",
                                                                WorkOrder.status.in_(("ready", "paid")))

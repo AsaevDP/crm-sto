@@ -60,7 +60,12 @@ def sync_permissions(db: Session):
 
 # Право, которое уже было в программе, но позже добавлено роли по умолчанию: выдаём один раз (ключ — чтобы, если
 # Стас потом снимет его руками, оно не возвращалось при каждом запуске).
-GRANTS_ONCE = [("grant.manager.by_partsman", "manager", "purchases.by_partsman")]   # 19.11.2026 (брат)
+GRANTS_ONCE = [("grant.manager.by_partsman", "manager", "purchases.by_partsman"),   # 19.11.2026 (брат)
+               # 20.11.2026 (брат): химию для мойки заказывает запчастист — у него «Мойка» (химия и закупки)
+               ("grant.partsman.wash_view", "partsman", "wash.view"),
+               ("grant.partsman.wash_buy", "partsman", "wash.buy")]
+# Право, которое у роли по умолчанию было, а теперь его быть не должно: снимаем один раз (вернуть руками можно)
+REVOKES_ONCE = [("revoke.manager.wash_buy", "manager", "wash.buy")]   # 20.11.2026 (брат): менеджер химию не заказывает
 
 
 def _grant_once(db: Session):
@@ -76,6 +81,15 @@ def _grant_once(db: Session):
                 if not db.scalar(select(RolePermission.id).where(RolePermission.role_id == role.id,
                                                                  RolePermission.permission == perm)):
                     db.add(RolePermission(role_id=role.id, permission=perm, branch_id=br.id))
+            st.put(db, br.id, "grants_once", {key: True})
+        for key, role_code, perm in REVOKES_ONCE:
+            if done.get(key):
+                continue
+            current_branch_id.set(br.id)
+            for role in db.scalars(select(Role).where(Role.code == role_code, Role.branch_id == br.id)):
+                for rp in db.scalars(select(RolePermission).where(RolePermission.role_id == role.id,
+                                                                  RolePermission.permission == perm)):
+                    db.delete(rp)
             st.put(db, br.id, "grants_once", {key: True})
     db.flush()
 

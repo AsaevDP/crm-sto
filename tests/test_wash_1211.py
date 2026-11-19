@@ -37,8 +37,8 @@ def test_new_roles_and_menus(client):
     _as(client, "irina")
     page = _menu(client)
     assert 'href="/wash"' in page and 'href="/wash/my"' not in page
-    _as(client, "oleg")
-    assert 'href="/wash"' not in _menu(client)
+    _as(client, "oleg")   # 20.11.2026 (брат): у запчастиста «Мойка» — химия и закупки для мойки
+    assert 'href="/wash"' in _menu(client)
 
 
 def test_work_per_master_and_act(client):
@@ -70,8 +70,11 @@ def test_work_per_master_and_act(client):
 
 
 def test_chem_purchase_ask_issue(client):
-    # Менеджер заказывает химию (закупка kind=chem) — только такую он может править
+    # 20.11.2026 (брат): химию заказывает запчастист; менеджер — нет (ни кнопки, ни адреса)
     _as(client, "irina")
+    assert "Заказать химию" not in client.get("/wash?tab=chem").text
+    assert client.post("/wash/purchases/new", data={"supplier_new": "Химия (тест)"}).status_code == 403
+    _as(client, "oleg")
     r = client.post("/wash/purchases/new", data={"supplier_new": "Химия (тест)"})
     pid = uuid.UUID(r.url.path.rsplit("/", 1)[1])
     client.post(f"/purchases/{pid}/lines", data={"name": "Шампунь для мойки (тест)", "qty": "5", "price": "200"})
@@ -82,8 +85,6 @@ def test_chem_purchase_ask_issue(client):
         cat = db.get(PartCatalog, line.catalog_id)
         assert p.kind == "chem" and p.status == "ordered" and cat.section == "chem" and cat.category == "Шампуни"
         other = db.scalar(select(Purchase).where(Purchase.kind != "chem"))
-    if other:   # обычную закупку менеджер не правит
-        assert client.post(f"/purchases/{other.id}", data={"action": "save"}).status_code == 403
     # Кладовщик принимает
     _as(client, "pavel")
     client.post(f"/purchases/{pid}/delivered", data={})

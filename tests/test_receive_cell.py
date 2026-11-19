@@ -38,6 +38,7 @@ def test_receive_requires_cell(client):
     client.post("/logout")
     login(client, "irina", "irina123")
     nav = client.get("/stock").text.split("<main", 1)[0]
-    assert "Мои закупки" in nav and "Заказы запчастистов" in nav
+    # 20.11.2026 (брат): у менеджера своих закупок нет (химию заказывает запчастист) — «Мои закупки» убрано
+    assert "Мои закупки" not in nav and "Заказы запчастистов" in nav
     assert "Принять" not in client.get("/purchases/by-partsman").text.split("<main", 1)[1]
     client.post("/logout")

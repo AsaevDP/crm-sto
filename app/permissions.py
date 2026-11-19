@@ -104,10 +104,13 @@ DEFAULT_ROLES = {
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
         "purchases.by_partsman",   # 19.11.2026 (брат): «Заказы запчастистов» — только посмотреть, когда приедут детали
-        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.buy", "wash.prices", *_OWN]),
+        # 20.11.2026 (брат): менеджер химию не заказывает (wash.buy — у запчастиста), в «Мойке» — очередь и прайс
+        "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.prices", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "purchases.mine", "stock.view",
-        "razbor.view", "prices.view_purchase", "prices.view_sale", *_OWN]),
+        "razbor.view", "prices.view_purchase", "prices.view_sale",
+        "wash.view", "wash.buy",   # 20.11.2026 (брат): «Мойка» у запчастиста — только химия и закупки для мойки
+        *_OWN]),
     "storekeeper": ("Кладовщик", "orange", [
         "orders.view_all", "purchases.view", "purchases.by_partsman", "stock.view", "stock.manage", "stock.issue",
         "stock.receive", "purchases.stock", "stock.keep", "razbor.view", "tools.view", "tools.manage", *_OWN]),
@@ -209,6 +212,8 @@ def menu_for(perms: set[str]) -> list[dict]:
         if any(p in perms for p in need)
         # 19.11.2026 (брат): у запчастиста закупки — в «Моих заказах» (переключатель «По нарядам | По накладным»)
         and not (href == "/purchases" and "purchases.mine" in perms and "purchases.by_partsman" not in perms)
+        # 20.11.2026 (брат): у кого своих закупок нет (менеджер — химию больше не заказывает) — пункта нет
+        and not (href == "/purchases" and not perms & {"purchases.all", "purchases.stock", "purchases.mine", "wash.buy"})
         # «Мои заказы» — только у запчастиста; кто видит заказы всех (админ, директор, кладовщик) — смотрит там
         and not (href == "/my-orders" and "purchases.by_partsman" in perms)
         and not (href == "/ready" and "stock.issue" in perms)   # кладовщик и админ видят это в «Запросах на выдачу»
