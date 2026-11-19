@@ -103,6 +103,7 @@ DEFAULT_ROLES = {
         # 13.11.2026 (брат): менеджер запчасти не добавляет (только выбирает варианты и убирает в архив) — без parts.offer
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
         "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
+        "purchases.by_partsman",   # 19.11.2026 (брат): «Заказы запчастистов» — только посмотреть, когда приедут детали
         "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.buy", "wash.prices", *_OWN]),
     "partsman": ("Запчастист", "indigo", [
         "orders.view_own", "parts.pick", "purchases.view", "purchases.manage", "purchases.mine", "stock.view",
@@ -193,11 +194,21 @@ def effective_permissions(db: Session, user: User) -> set[str]:
     return perms
 
 
+def menu_title(href: str, title: str, perms: set[str]) -> str:
+    """19.11.2026 (брат): кто видит в «Закупках» только свои (кладовщик — на склад, менеджер — химию) — «Мои закупки»;
+    директор, зам, админ (видят всех) — «Закупки»."""
+    if href == "/purchases" and "purchases.all" not in perms:
+        return "Мои закупки"
+    return title
+
+
 def menu_for(perms: set[str]) -> list[dict]:
     return [
-        {"href": href, "title": title, "icon": icon}
+        {"href": href, "title": menu_title(href, title, perms), "icon": icon}
         for href, title, icon, need in MENU
         if any(p in perms for p in need)
+        # 19.11.2026 (брат): у запчастиста закупки — в «Моих заказах» (переключатель «По нарядам | По накладным»)
+        and not (href == "/purchases" and "purchases.mine" in perms and "purchases.by_partsman" not in perms)
         # «Мои заказы» — только у запчастиста; кто видит заказы всех (админ, директор, кладовщик) — смотрит там
         and not (href == "/my-orders" and "purchases.by_partsman" in perms)
         and not (href == "/ready" and "stock.issue" in perms)   # кладовщик и админ видят это в «Запросах на выдачу»

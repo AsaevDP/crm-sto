@@ -552,7 +552,7 @@ def purchases(ctx: Ctx = Depends(get_ctx), tab: str = "", sup: str = "", who: st
     p_orders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_([p.work_order_id for p in rows if p.work_order_id])))}
     p_veh = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in p_orders.values()])))}
     from datetime import date as _d
-    return ctx.render("stock/purchases.html", title="Закупки", rows=rows, stats=stats,
+    return ctx.render("stock/purchases.html", title=("Закупки" if ctx.can("purchases.all") else "Мои закупки"), rows=rows, stats=stats,
                       people=people, buyers=[people[i] for i in buyers], who=who, p_orders=p_orders, p_veh=p_veh,
                       suppliers={s.id: s for s in suppliers}, supplier_list=suppliers, tab=tab, sup=sup,
                       counts=counts, TABS=PURCHASE_TABS, PURCHASE_STATUS=PURCHASE_STATUS, CHIP=PURCHASE_CHIP, today=_d.today())
@@ -1164,9 +1164,10 @@ async def purchase_receive(pid: str, ctx: Ctx = Depends(get_ctx)):
     flash(ctx.request, (f"Принято строк: {n}" if n else "Ничего не принято — впишите, сколько привезли" if not np_ else "Ничего не принято")
           + (". Неполная поставка — остальное ждём" if n and left else "")
           + (f". Без № накладной не принято: {', '.join(ni_[:5])}" if ni_ else "")
+          + (f". Без ячейки не принято: {', '.join(ctx.request.state.no_loc[:5])} — выберите ячейку" if ctx.request.state.no_loc else "")
           + (f". Все запчасти на складе: {', '.join(ready)}" if ready else "")
           + (f". Без цены не принято: {', '.join(np_[:5])} — впишите «₴ за шт» из накладной" if np_ else ""),
-          "ok" if n and not np_ else "error")
+          "ok" if n and not np_ and not ctx.request.state.no_loc else "error")
     return _to(_safe_back(str(form.get("back", "")), f"/purchases/{pid}#lines"))
 
 
@@ -1213,6 +1214,7 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
     got_parts, before = [], {}   # 12.11.2026: что пришло под наряды — одно сообщение на приёмку (svc.arrived_notify)
     no_price = ctx.request.state.no_price = []   # 13.11.2026: без цены из накладной — не принято
     no_inv = ctx.request.state.no_inv = []       # 14.11.2026: без № накладной — не принято
+    no_loc = ctx.request.state.no_loc = []       # 19.11.2026: без ячейки — не принято
     for l in lines:
         p = db.get(Purchase, l.purchase_id) if l else None
         if not l or l.received or not p or p.id not in ids or p.status not in svc.OPEN:
@@ -1241,9 +1243,17 @@ def _receive(ctx: Ctx, form, purchases) -> tuple[int, list]:
             continue
         raw = str(form.get(f"loc_{l.id}", "") or form.get("location_id", ""))
         loc = db.get(Location, _uuid(raw)) if raw else None
+        if (not loc or loc.branch_id != ctx.branch.id) and not raw:
+            # «Принять всё» без выбора в строке — привычная ячейка детали (где она уже лежит)
+            dflt = svc.default_location(db, l.catalog_id)
+            loc = db.get(Location, dflt) if dflt else None
+        if not loc or loc.branch_id != ctx.branch.id:
+            # 19.11.2026 (брат): без ячейки на склад не принимаем — иначе деталь «есть», а где лежит, никто не знает
+            cat = db.get(PartCatalog, l.catalog_id)
+            no_loc.append(cat.name if cat else "позиция")
+            continue
         q = str(form.get(f"qty_{l.id}", "")).strip()
-        took = svc.receive_line(db, ctx.branch.id, l, loc.id if loc and loc.branch_id == ctx.branch.id else None,
-                                _dec(q) if q else None, invoice=inv)
+        took = svc.receive_line(db, ctx.branch.id, l, loc.id, _dec(q) if q else None, invoice=inv)
         if took <= 0:
             continue
         have = [x.strip() for x in (l.invoice or "").split(",") if x.strip()]
@@ -2404,11 +2414,12 @@ async def receive_do(ctx: Ctx = Depends(get_ctx)):
     purchases = ctx.db.scalars(select(Purchase).where(Purchase.branch_id == ctx.branch.id,
                                                       Purchase.status.in_(svc.OPEN))).all()
     done, ready = _receive(ctx, form, purchases)
-    np_, ni_ = ctx.request.state.no_price, ctx.request.state.no_inv
+    np_, ni_, nl_ = ctx.request.state.no_price, ctx.request.state.no_inv, ctx.request.state.no_loc
     flash(ctx.request, f"Принято: {done}" + (f". Все запчасти на складе: {', '.join(ready)} — менеджер и слесарь получили сообщение" if ready else "")
           + (f". Без цены не принято: {', '.join(np_[:5])} — впишите «₴ за шт» из накладной" if np_ else "")
-          + (f". Без № накладной не принято: {', '.join(ni_[:5])} — впишите номер" if ni_ else ""),
-          "error" if np_ or ni_ else "ok")
+          + (f". Без № накладной не принято: {', '.join(ni_[:5])} — впишите номер" if ni_ else "")
+          + (f". Без ячейки не принято: {', '.join(nl_[:5])} — выберите ячейку" if nl_ else ""),
+          "error" if np_ or ni_ or nl_ else "ok")
     back = str(form.get("back", ""))
     if back.startswith("/purchases/by-partsman"):
         return _to(back)

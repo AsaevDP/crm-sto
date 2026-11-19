@@ -5,13 +5,16 @@
 {% block content %}
 {% set cost_ok = ctx.can("prices.view_purchase") %}
 {# 17.11.2026: приёмки в «Закупках» нет — принимают в «Приходе» и «Заказах запчастистов» #}
+{# 19.11.2026 (брат): кто видит только свои — «Мои закупки»; у запчастиста это «Мои заказы → По накладным» #}
+{% set pm_view = ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman") %}
 <header class="page-head">
-  <div><h1 class="large-title">Закупки</h1></div>
+  <div><h1 class="large-title">{{ "Мои заказы" if pm_view else ("Закупки" if ctx.can("purchases.all") else "Мои закупки") }}</h1></div>
   <div class="ov-actions">
     {% if ctx.can("stock.receive") %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход</a>{% endif %}
     {% if ctx.can("purchases.manage", "purchases.stock") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('pnew').showModal()">{{ icon("plus") }}Новая закупка</button>{% endif %}
   </div>
 </header>
+{% if pm_view %}<nav class="segmented mo-view" aria-label="Как показать"><a href="/my-orders" aria-pressed="false">По нарядам</a><a href="/purchases" aria-pressed="true">По накладным</a></nav>{% endif %}
 
 <div class="pult-tiles pu-tiles">
   {% for key, (title, color, sub) in TABS.items() %}

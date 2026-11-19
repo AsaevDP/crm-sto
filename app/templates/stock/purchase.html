@@ -114,7 +114,7 @@
             {# 13.11.2026: цена из накладной обязательна #}
             <input class="mini rc-price{{ ' need' if not l.price }}" form="rf-{{ l.id }}" name="price_{{ l.id }}" value="{{ '%.2f'|format(l.price) if l.price else '' }}"
                    inputmode="decimal" size="6" placeholder="₴ за шт" aria-label="Цена за штуку из накладной">
-            <select class="mini" form="rf-{{ l.id }}" name="loc_{{ l.id }}" aria-label="Ячейка"><option value="">без ячейки</option>
+            <select class="mini" form="rf-{{ l.id }}" name="loc_{{ l.id }}" aria-label="Ячейка"><option value="">— ячейка —</option>
               {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == cells.get(l.id) %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select>
             {# 14.11.2026 (брат): № накладной — в строке, справа; без него «Пришло» не примет #}
             <input class="mini pu-inv" form="rf-{{ l.id }}" name="inv_{{ l.id }}" required size="10" placeholder="№ накладной"

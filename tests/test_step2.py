@@ -32,12 +32,13 @@ def test_roles_see_different_menus(client):
         menus[lg] = _menu(client.get("/more").text)
         client.post("/logout")
     assert "/pult" in menus["irina"] and "/settings" not in menus["irina"]
-    assert "/purchases" in menus["oleg"] and "/money" not in menus["oleg"]
+    # 19.11.2026 (брат): у запчастиста закупки — в «Моих заказах» («По накладным»), отдельного пункта нет
+    assert "/purchases" not in menus["oleg"] and "/money" not in menus["oleg"] and "/purchases" in menus["pavel"]
     assert "/stock" in menus["pavel"] and "/pult" not in menus["pavel"]
     assert menus["andrey"] == ["/orders", "/schedule", "/stock", "/timesheet", "/payroll", "/tools"]
     assert "/settings" in menus["admin"] and "/audit" in menus["admin"]
     # У запчастиста и кладовщика разделы одни и те же (различаются права внутри), остальные — разные
-    assert len({tuple(m) for m in menus.values()}) == 4
+    assert len({tuple(m) for m in menus.values()}) == 5   # 19.11.2026: у запчастиста нет «Закупок», у кладовщика есть
 
 
 def test_role_color_on_page(client):

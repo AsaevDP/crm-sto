@@ -13,9 +13,37 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 
 
+def _test_cell_id():
+    """19.11.2026 (брат): без ячейки на склад не принимают. Старые тесты принимают «как попало» — им кладовщик
+    выбирает общую тестовую ячейку «ТЕСТ» (новые тесты на ячейку передают её сами)."""
+    from sqlalchemy import select
+    from app.db import SessionLocal, current_branch_id
+    from app.models import Branch, Location
+    with SessionLocal() as db:
+        loc = db.scalar(select(Location).where(Location.rack == "ТЕСТ"))
+        if not loc:
+            bid = db.scalar(select(Branch.id))
+            current_branch_id.set(bid)
+            loc = Location(rack="ТЕСТ", shelf="1", place="1", label="ТЕСТ / 1 / 1", branch_id=bid)
+            db.add(loc)
+            db.commit()
+        return str(loc.id)
+
+
 @pytest.fixture()
 def client():
     with TestClient(app) as c:
+        post = c.post
+
+        def post_with_cell(url, *a, **kw):
+            data = kw.get("data")
+            if str(url).endswith("/receive") and isinstance(data, dict) and not any(
+                    k.startswith("loc_") or k == "location_id" for k in data) and not data.get("no_cell"):
+                kw["data"] = {**data, "location_id": _test_cell_id()}
+            elif str(url).endswith("/receive") and isinstance(data, dict) and data.get("no_cell"):
+                kw["data"] = {k: v for k, v in data.items() if k != "no_cell"}
+            return post(url, *a, **kw)
+        c.post = post_with_cell
         yield c
 
 

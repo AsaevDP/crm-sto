@@ -2259,3 +2259,5 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .rzc-x { padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--on-accent, #fff); font-size: 13px; font-weight: 700; }
 .rzc-one { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--fill-2); color: var(--text); text-decoration: none; }
 .rzc-one:hover { background: var(--fill); }
+/* 19.11.2026: «Мои заказы» — по нарядам / по накладным */
+.mo-view { margin: 0 0 10px; max-width: 360px; }

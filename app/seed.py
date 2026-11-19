@@ -44,6 +44,7 @@ def sync_permissions(db: Session):
             db.add(Permission(code=code, name=name, group=group))
             new_codes.append(code)
     db.flush()
+    _grant_once(db)
     if first_run or not new_codes:
         return
     # Появилось новое право (новая версия программы) — выдаём его ролям, у которых оно
@@ -54,6 +55,28 @@ def sync_permissions(db: Session):
             if code in defaults:
                 current_branch_id.set(role.branch_id)
                 db.add(RolePermission(role_id=role.id, permission=code, branch_id=role.branch_id))
+    db.flush()
+
+
+# Право, которое уже было в программе, но позже добавлено роли по умолчанию: выдаём один раз (ключ — чтобы, если
+# Стас потом снимет его руками, оно не возвращалось при каждом запуске).
+GRANTS_ONCE = [("grant.manager.by_partsman", "manager", "purchases.by_partsman")]   # 19.11.2026 (брат)
+
+
+def _grant_once(db: Session):
+    from .models import Branch
+    from .services import settings as st
+    for br in db.scalars(select(Branch)):
+        done = st.get(db, br.id, "grants_once")
+        for key, role_code, perm in GRANTS_ONCE:
+            if done.get(key):
+                continue
+            current_branch_id.set(br.id)
+            for role in db.scalars(select(Role).where(Role.code == role_code, Role.branch_id == br.id)):
+                if not db.scalar(select(RolePermission.id).where(RolePermission.role_id == role.id,
+                                                                 RolePermission.permission == perm)):
+                    db.add(RolePermission(role_id=role.id, permission=perm, branch_id=br.id))
+            st.put(db, br.id, "grants_once", {key: True})
     db.flush()
 
 

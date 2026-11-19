@@ -12,11 +12,15 @@
   <div><h1 class="large-title">{{ title }}</h1></div>
   <div class="ov-actions">
     {% if can_recv %}<a class="btn btn-sm btn-gray" href="/stock/receive">Приход · по поставщикам</a>{% endif %}
-    {% if mode == "mine" %}<a class="btn btn-sm btn-gray" href="/purchases">Закупки</a>{% endif %}
     {# 19.11.2026 (брат): клиент отказался от уже заказанной детали — решает запчастист #}
     <a class="btn btn-sm btn-gray" href="/stock/leftovers">Лишнее после отказов</a>
+    {% if mode == "mine" and ctx.can("purchases.manage", "purchases.stock") %}<button class="btn btn-sm" type="button" onclick="document.getElementById('pnew').showModal()">{{ icon("plus") }}Новая закупка</button>{% endif %}
   </div>
 </header>
+{% if mode == "mine" %}
+{# 19.11.2026 (брат): «Закупки» у запчастиста — внутри «Моих заказов»: по нарядам или списком по накладным #}
+<nav class="segmented mo-view" aria-label="Как показать"><a href="/my-orders" aria-pressed="true">По нарядам</a><a href="/purchases" aria-pressed="false">По накладным</a></nav>
+{% endif %}
 
 {% if mode == "all" %}
 {% set qs = "&st=" ~ st if st != "wait" else "" %}
@@ -34,7 +38,7 @@
 </div>
 {% endif %}
 
-<div class="pult-tiles st-mini">
+<div class="pult-tiles {{ 'pu-tiles' if mode == 'mine' else 'st-mini' }}">
   {% for k, (title_, color, sub) in TABS.items() %}
   <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="{{ base }}?st={{ k }}{{ uq }}" style="--tc:{{ color_css(color) }}">
     <span class="ptile-t">{{ title_ }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
@@ -123,5 +127,18 @@ document.querySelectorAll("[data-sup-pick]").forEach(function (s) {
   });
 });
 </script>
+{% endif %}
+{% if mode == "mine" and ctx.can("purchases.manage", "purchases.stock") %}
+<dialog id="pnew" class="sheet">
+  <form method="post" action="/purchases/new" class="form">
+    <h2 class="title-2">Новая закупка на склад</h2>
+    <label class="caption">Поставщик
+      <select class="field" name="supplier_id"><option value="">— выбрать —</option>
+        {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}</select></label>
+    <input class="field" name="supplier_new" placeholder="или новый поставщик — название">
+    <p class="footnote" style="margin:0">Заказ без наряда — на склад. Дальше откроется закупка: строки по одной или весь список из Excel.</p>
+    <div class="form-row"><button class="btn">Создать</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
 {% endif %}
 {% endblock %}

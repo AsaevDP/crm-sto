@@ -35,7 +35,7 @@
   {% if can %}<td></td>{% endif %}
   {% else %}
   <td>{% if can %}<select class="field rc-cell" name="loc_{{ l.id }}" aria-label="Ячейка">
-      <option value="">— без ячейки —</option>
+      <option value="">— выберите ячейку —</option>
       {% for loc in locations %}<option value="{{ loc.id }}" {% if loc.id == r.cell %}selected{% endif %}>{{ loc_label(loc) }}</option>{% endfor %}</select>{% endif %}</td>
   <td>{% if can %}<input class="field rc-inv" name="inv_{{ l.id }}" placeholder="№ накладной" aria-label="Номер накладной">{% elif l.invoice %}{{ l.invoice }}{% endif %}</td>
   {% if can %}<td><button class="btn btn-sm btn-tinted nowrap" name="line_id" value="{{ l.id }}">Пришло</button></td>{% endif %}
