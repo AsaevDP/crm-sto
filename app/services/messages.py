@@ -89,7 +89,7 @@ def ask_part(db: Session, ctx, wo: WorkOrder, item: StockItem, qty: Decimal, tex
     db.flush()
     what = f"{cat.name} × {qty.normalize():f}"
     nsvc.send(db, [wo.manager_id], "part_ask", f"{ctx.user.short_name} просит: {what} — согласуйте",
-              label(db, wo) + (f" · «{m.text[:80]}»" if m.text else ""), f"/notifications#m-{m.id}", wo, skip=ctx.user.id)
+              label(db, wo) + (f" · «{m.text[:80]}»" if m.text else ""), f"/ready#ask-{m.id}", wo, skip=ctx.user.id)
     nsvc.send(db, storekeepers(db, ctx.branch.id), "part_ask_info", f"Слесарь просит: {what} — ждёт согласования менеджера",
               label(db, wo), "/stock/issues", wo, skip=ctx.user.id)
     return ""
@@ -164,7 +164,7 @@ def _close_notes(db: Session, m: OrderMessage):
     for n in db.scalars(select(Notification).where(Notification.work_order_id == m.work_order_id,
                                                    Notification.kind.in_(("part_ask", "part_ask_info")),
                                                    Notification.read_at.is_(None))):
-        if n.url.endswith(f"m-{m.id}") or n.kind == "part_ask_info":
+        if n.url.endswith(f"m-{m.id}") or n.url.endswith(f"ask-{m.id}") or n.kind == "part_ask_info":
             n.read_at = now()
 
 
@@ -184,6 +184,32 @@ def issue_one(db: Session, wo: WorkOrder, part: WoPart, comment: str, asked_by=N
 def pending_parts(db: Session, branch_id) -> list[OrderMessage]:
     return list(db.scalars(select(OrderMessage).where(OrderMessage.branch_id == branch_id, OrderMessage.kind == "part",
                                                       OrderMessage.status == "pending").order_by(OrderMessage.created_at)))
+
+
+def pending_for_order(db: Session, wo_id) -> list[OrderMessage]:
+    return list(db.scalars(select(OrderMessage).where(OrderMessage.work_order_id == wo_id, OrderMessage.kind == "part",
+                                                      OrderMessage.status == "pending").order_by(OrderMessage.created_at)))
+
+
+def ask_cards(ctx, rows: list[OrderMessage]) -> list[dict]:
+    """20.11.2026 (брат, наряд 60): карточки «мастер просит со склада» — для «Запросов на выдачу» менеджера и наряда.
+    stuck — наряд уже не в ремонте (готов / закрыт): согласовать нельзя, только «Отказать»."""
+    from ..models import Vehicle
+    db, out = ctx.db, []
+    for m in rows:
+        wo = db.get(WorkOrder, m.work_order_id)
+        item = db.get(StockItem, m.stock_item_id) if m.stock_item_id else None
+        out.append({"m": m, "wo": wo, "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
+                    "cat": db.get(PartCatalog, m.catalog_id) if m.catalog_id else None, "who": db.get(User, m.created_by),
+                    "price": client_price(db, ctx.branch.id, item) if item else Decimal(0),
+                    "can": bool(wo and can_decide(ctx, wo)), "stuck": bool(wo and wo.status not in ASK_STATUSES)})
+    return out
+
+
+def my_pending(ctx) -> list[OrderMessage]:
+    """Ждут решения именно этого менеджера: запросы по нарядам, которые он ведёт."""
+    return [m for m in pending_parts(ctx.db, ctx.branch.id)
+            if (wo := ctx.db.get(WorkOrder, m.work_order_id)) and wo.manager_id == ctx.user.id]
 
 
 def visible(ctx, limit: int = 100) -> list[OrderMessage]:

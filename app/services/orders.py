@@ -258,6 +258,12 @@ def last_work_block(db: Session, wo: WorkOrder, w: WoWork) -> str:
     left = [x for x in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)) if x.status != "done" and x.id != w.id]
     if left:
         return ""
+    from . import messages as msg   # 20.11.2026 (брат, наряд 60): мастер просит со склада — ждём решения менеджера
+    asks = msg.pending_for_order(db, wo.id)
+    if asks:
+        from ..models import PartCatalog
+        names = ", ".join(c.name for m in asks[:3] if (c := db.get(PartCatalog, m.catalog_id)))
+        return f"Это последняя работа, а менеджер ещё не решил по запросу со склада ({names}). Завершить наряд можно после его ответа"
     pend = pending_parts(db, wo)
     if not pend:
         from . import receipt as rsvc   # 20.11.2026: выдали, но мастер не подтвердил «Получил»

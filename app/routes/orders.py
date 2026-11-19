@@ -409,6 +409,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         own_work_ok={w.id for w in works if svc.work_owner(wo, w) == ctx.user.id and svc.can_start_work(db, wo, w)},
         # 20.11.2026 (брат): выдали запчасти — мастер подтверждает «✓ Получил»; до этого «Начал» серая
         recv_cards=rcpt_svc.cards(db, wo, ctx.user),
+        # 20.11.2026 (брат, наряд 60): мастер просит со склада — видно у «Запчастей», менеджер решает здесь же
+        ask_cards=_ask_cards(ctx, wo),
         recv_block={w.id for w in works if rcpt_svc.start_blocked(db, wo, w)},
         is_admin=ctx.user.role.code == "admin", pauses=pauses,
         all_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters"),
@@ -423,6 +425,11 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         CLASSES=_wash_classes(), wash_box=_wash_box(db, wo),
         **_order_tools(ctx, wo, works),
     )
+
+
+def _ask_cards(ctx, wo):
+    from ..services import messages as msg
+    return msg.ask_cards(ctx, msg.pending_for_order(ctx.db, wo.id))
 
 
 def _wash_classes():

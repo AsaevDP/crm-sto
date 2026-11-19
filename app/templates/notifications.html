@@ -9,8 +9,8 @@
 </header>
 {% set k = rows|map(attribute="kind")|list %}
 {% set n_pend = pend_ids|length %}
+{# 20.11.2026 (брат): «Ждут согласования» перенесено в «Запросы на выдачу» (красная плитка «Согласовать») #}
 {{ tiles([
-  {"t": "Ждут согласования", "n": n_pend, "c": "red" if n_pend else "gray", "s": "запчасти по просьбе слесаря", "zero": not n_pend},
   {"t": "Переписка", "n": msgs|length, "c": "blue", "s": "по моим машинам"},
   {"t": "Уведомления", "n": rows|length, "c": "gray", "s": "последние"},
   {"t": "Запчасти на складе", "n": k|select("equalto", "parts_ready")|list|length, "c": "green", "s": "можно начинать ремонт"}]) }}
@@ -51,14 +51,11 @@
       {% if m.text %}<p class="ov-text" style="margin:0">{{ m.text }}</p>{% endif %}
       {% if m.kind == "part" %}
         {% if m.status == "pending" and m.id in pend_ids %}
-        <form class="form dense one-shot msg-decide" method="post" action="/messages/{{ m.id }}/decide">
-          {% if show_price %}<label>Цена для клиента, ₴ за шт<input class="field" name="price" inputmode="decimal" value="{{ '%.2f'|format(prices.get(m.id, 0)) }}"></label>{% endif %}
-          <input class="field" name="answer" placeholder="Комментарий (для отказа — обязательно)">
-          <div class="form-row">
-            <button class="btn btn-sm" name="action" value="approve">✓ Согласовать</button>
-            <button class="btn btn-sm btn-gray" name="action" value="decline">Отказать</button></div>
-          <p class="hint" style="margin:0">Согласуете — запчасть встанет в наряд (в счёт клиента) и уйдёт кладовщику на выдачу.</p>
-        </form>
+        {# 20.11.2026 (брат): решение — в «Запросах на выдачу» (или в наряде у «Запчастей»), здесь только запись #}
+        <p class="caption msg-st" data-st="pending" style="margin:0">Ждёт вашего решения{% if m.id in stuck_ids %} · наряд уже не в ремонте — только отказать{% endif %}</p>
+        {% if ctx.can('stock.pickup') and not ctx.can('stock.issue') %}
+        <a class="btn btn-sm" href="/ready#ask-{{ m.id }}">Согласовать в «Запросах на выдачу» →</a>
+        {% else %}<a class="btn btn-sm" href="/orders/{{ m.work_order_id }}#ask-{{ m.id }}">Согласовать в наряде →</a>{% endif %}
         {% else %}
         <p class="caption msg-st" data-st="{{ m.status }}" style="margin:0">{{ {"pending": "Ждёт согласования менеджера", "approved": "✓ Согласовано — кладовщик выдаст", "declined": "Отказано"}.get(m.status, "") }}{% if m.decided_by and people.get(m.decided_by) %} · {{ people[m.decided_by].short_name }}{% endif %}{% if m.answer %} · «{{ m.answer }}»{% endif %}</p>
         {% endif %}

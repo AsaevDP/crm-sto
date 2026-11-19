@@ -2041,7 +2041,10 @@ def ready_page(ctx: Ctx = Depends(get_ctx)):
             for x in _requests(ctx, "issued")[:30] if _ready_mine(ctx, x)]
     done += [{"kind": "tool", "x": x, "at": x["r"].done_at or x["r"].updated_at} for x in t_done]
     done.sort(key=lambda d: d["at"], reverse=True)
-    return ctx.render("stock/ready.html", title="Запросы на выдачу",
+    # 20.11.2026 (брат, наряд 60): мастер просит со склада под мой наряд — согласовать прямо здесь
+    from ..services import messages as msg
+    asks = msg.ask_cards(ctx, msg.my_pending(ctx))
+    return ctx.render("stock/ready.html", title="Запросы на выдачу", asks=asks,
                       mine=[x for x in rows if _ready_mine(ctx, x)],
                       others=[x for x in rows if not _ready_mine(ctx, x)], people=people, fmt_plate=osvc.fmt_plate,
                       t_ready_mine=[x for x in t_ready if t_mine(x)], t_ready_others=[x for x in t_ready if not t_mine(x)],
@@ -2202,7 +2205,9 @@ def notifications(ctx: Ctx = Depends(get_ctx), order: str = ""):
             if u:
                 out.append(u.short_name)
         return ", ".join(out)
+    stuck_ids = {m.id for m in pend if orders.get(m.work_order_id) and orders[m.work_order_id].status not in msg.ASK_STATUSES}
     return ctx.render("notifications.html", title="Сообщения", rows=rows, msgs=mine, pend_ids={m.id for m in pend},
+                      stuck_ids=stuck_ids,
                       to_names={m.id: _names(m) for m in mine},
                       orders=orders, people=people, cats=cats, prices=prices, write_orders=write_orders,
                       teams={o.id: {k: (u if u and u.id != ctx.user.id else None) for k, u in msg.team(ctx.db, o).items()}
@@ -2270,7 +2275,7 @@ def message_ask(ctx: Ctx = Depends(get_ctx), item_id: str = Form(...), order_id:
 
 @router.post("/messages/{mid}/decide")
 def message_decide(mid: str, ctx: Ctx = Depends(get_ctx), action: str = Form(""), price: str = Form(""),
-                   answer: str = Form("")):
+                   answer: str = Form(""), back: str = Form("")):
     """Менеджер: «Согласовать» (запчасть в наряд, кладовщику на выдачу) или «Отказать» (с причиной)."""
     from ..models import OrderMessage
     from ..services import messages as msg
@@ -2286,7 +2291,7 @@ def message_decide(mid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("")
             pr = _dec(price, "-1")
             if pr < 0:
                 flash(ctx.request, "Цена не может быть меньше нуля", "error")
-                return _to(f"/notifications#m-{m.id}")
+                return _to(_safe_back(back, f"/notifications#m-{m.id}"))
         err = msg.approve(ctx.db, ctx, m, pr, answer)
     else:
         err = msg.decline(ctx.db, ctx, m, answer)
@@ -2296,7 +2301,7 @@ def message_decide(mid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("")
     else:
         ctx.db.commit()
         flash(ctx.request, "Согласовано — кладовщик получил запрос на выдачу" if action == "approve" else "Отказано — слесарь получил ответ")
-    return _to(f"/notifications#m-{m.id}")
+    return _to(_safe_back(back, f"/notifications#m-{m.id}"))
 
 
 # ======================= Срочная деталь (11.11.2026) =======================

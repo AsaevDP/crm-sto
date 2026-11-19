@@ -228,6 +228,9 @@
       <input type="hidden" name="back" value="/orders/{{ wo.id }}#parts"><button class="btn btn-sm">✓ Выдано</button></form>
     {% endif %}</div>
   {% elif open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
+  {# 20.11.2026 (брат, наряд 60): мастер просит со склада — раньше было видно только внизу, в «Сообщениях» #}
+  {% if ask_cards %}{% from "stock/_ask_card.html" import ask_card with context %}
+  {% for x in ask_cards %}{{ ask_card(x, "/orders/" ~ wo.id ~ "#parts", compact=True) }}{% endfor %}{% endif %}
   {# 20.11.2026 (брат): выдали — мастер подтверждает «✓ Получил»; пока нет, «Начал» не нажимается #}
   {% for c in recv_cards %}
   <div class="hint recv-bar"><b>✋ Запчасти выданы — {{ "подтвердите получение" if c.can else "мастер ещё не подтвердил получение" }}</b>

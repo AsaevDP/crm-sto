@@ -1699,6 +1699,10 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .iss-ready-bar { border-left: 4px solid var(--teal); }
 /* 20.11.2026: выдали — мастер подтверждает «Получил» */
 .recv-bar { border-left: 4px solid var(--green); }
+/* 20.11.2026: мастер просит со склада — ждёт решения менеджера */
+.ask-card { border-left: 4px solid var(--red); }
+.ask-card.stuck { border-left-color: var(--orange); }
+#parts .ask-card { box-shadow: none; background: var(--fill-2); margin: 8px 0; }
 /* «Мои запросы» мастера: карточки сеткой; название не сжимается рядом с пометкой — пометка переносится вниз */
 .mr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
 .mr-grid > .card { margin: 0; }

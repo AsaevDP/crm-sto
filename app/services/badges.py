@@ -154,6 +154,9 @@ def compute(ctx) -> dict:
             if wo.manager_id == me.id or r.created_by == me.id:
                 n += 1
         _add(out, "/ready", "green", n, "кладовщик подготовил", "/ready#mine")
+        # 🔴 20.11.2026 (брат, наряд 60): мастер просит со склада под мой наряд — согласовать / отказать
+        from . import messages as msg_svc
+        _add(out, "/ready", "red", len(msg_svc.my_pending(ctx)), "мастер просит со склада — согласуйте", "/ready#asks")
         # 19.11.2026 (брат, наряд 60): по моим нарядам мастер попросил у кладовщика — менеджер видит и запчасти, и
         # инструмент: 🟠 ждёт кладовщика (проследить), 🟢 инструмент подготовлен — мастер заберёт
         from ..models import ToolRequest

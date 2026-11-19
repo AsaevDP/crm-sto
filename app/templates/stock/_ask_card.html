@@ -1,0 +1,28 @@
+{# 20.11.2026 (брат, наряд 60): мастер просит запчасть со склада под наряд — решение менеджера прямо здесь.
+   x — из messages.ask_cards; back — куда вернуться; compact — внутри наряда (без номера машины). #}
+{% macro ask_card(x, back, compact=False) %}{% set m = x.m %}
+<div class="card compact issue ask-card {{ 'stuck' if x.stuck }}" id="ask-{{ m.id }}">
+  <div class="card-h"><span class="headline">🙋 {{ x.who.short_name if x.who else "Мастер" }} просит со склада</span>
+    <span class="caption nowrap">{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+  {% if not compact and x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}{% endif %}</div>{% endif %}
+  <div class="kv"><span>{{ x.cat.name if x.cat else "" }}{% if x.cat and x.cat.brand %} <span class="caption">· {{ x.cat.brand }}</span>{% endif %}</span><b class="nowrap">{{ m.qty|num }} шт</b></div>
+  {% if m.text %}<p class="ov-text" style="margin:0">«{{ m.text }}»</p>{% endif %}
+  {% if x.can %}
+  <form class="form dense one-shot" method="post" action="/messages/{{ m.id }}/decide">
+    <input type="hidden" name="back" value="{{ back }}">
+    {% if x.stuck %}
+    <p class="hint warn" style="margin:0">Наряд уже {{ "готов" if x.wo.status in ("ready", "paid") else "закрыт" }} — запчасть сюда не добавить.
+      Откажите с причиной, мастер получит ответ.</p>
+    <input class="field" name="answer" placeholder="Причина отказа (обязательно)" required>
+    <button class="btn btn-sm btn-gray" name="action" value="decline">Отказать</button>
+    {% else %}
+    {% if ctx.can("prices.view_sale") %}<label class="caption">Цена для клиента, ₴ за шт<input class="field" name="price" inputmode="decimal" value="{{ '%.2f'|format(x.price) }}"></label>{% endif %}
+    <input class="field" name="answer" placeholder="Комментарий (для отказа — обязательно)">
+    <div class="form-row">
+      <button class="btn btn-sm" name="action" value="approve">✓ Согласовать</button>
+      <button class="btn btn-sm btn-gray" name="action" value="decline">Отказать</button></div>
+    {% endif %}
+  </form>
+  {% else %}<p class="caption" style="margin:0">Ждёт решения менеджера</p>{% endif %}
+</div>
+{% endmacro %}

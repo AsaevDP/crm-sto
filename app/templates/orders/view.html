@@ -357,7 +357,7 @@
         <span class="caption nowrap">{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
       {% else %}<p class="footnote" style="margin:0">Пока нет. Нужно что-то докупить или уточнить — напишите здесь.</p>{% endfor %}
       {% if om.rows|selectattr("status", "equalto", "pending")|list and ctx.can("orders.approve") %}
-      <a class="btn btn-sm" href="/notifications">Согласовать запросы →</a>{% endif %}
+      <a class="btn btn-sm" href="#parts">Согласовать — в блоке «Запчасти» ↑</a>{% endif %}
       {% if om.can_write %}
       <form class="form dense" method="post" action="/messages">
         <input type="hidden" name="order_id" value="{{ wo.id }}"><input type="hidden" name="back" value="/orders/{{ wo.id }}#msgs">
