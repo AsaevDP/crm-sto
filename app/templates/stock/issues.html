@@ -40,7 +40,8 @@
     {% for x in new %}
     <div class="card compact issue">
       <div class="card-h"><span class="headline">{{ x.who.full_name if x.who else "" }} просит</span>
-        <span class="caption">{{ x.r.created_at.astimezone().strftime("%H:%M") }}</span></div>
+        {# 19.11.2026: состояние — плашкой; кнопки ниже — действия кладовщика #}
+        <span class="chip" data-s="waiting">ждёт вас · с {{ x.r.created_at.astimezone().strftime("%H:%M") }}</span></div>
       <div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
       {% if x.r.comment %}<p class="ov-text">«{{ x.r.comment }}»</p>{% endif %}
       {% for l in x.lines %}

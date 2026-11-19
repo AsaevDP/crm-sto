@@ -1823,6 +1823,12 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .lo-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .lo-acts form { margin: 0; }
 .part-refused { display: block; overflow-wrap: anywhere; }
+.refuse-box { width: 100%; }
+.refuse-box > summary { list-style: none; display: inline-flex; cursor: pointer; }
+.refuse-box > summary::-webkit-details-marker { display: none; }
+.refuse-box[open] > summary { margin-bottom: 6px; }
+.refuse-box .refuse-form { padding: 10px; border-radius: 12px; background: var(--fill-2); display: grid; gap: 6px; }
+.refuse-what { margin: 0; overflow-wrap: anywhere; }
 /* 19.11.2026: химия у кладовщика — «Сколько» + «Готово к выдаче» / «Выдано сразу» */
 .chem-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0; }
 .chem-acts form { margin: 0; }

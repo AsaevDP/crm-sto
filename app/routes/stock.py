@@ -310,6 +310,9 @@ def part_delete(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), reason
         raise Forbidden()
     from ..services import leftovers as lsvc
     if lsvc.after_approval(wo) and part.status not in ("option", "declined"):
+        if not ctx.can("orders.approve"):   # 19.11.2026: отказ клиента оформляет менеджер — он говорит с клиентом
+            flash(ctx.request, "Отказ клиента оформляет менеджер", "error")
+            return _to(f"/orders/{order_id}#parts")
         err = lsvc.refuse(ctx.db, wo, part, ctx.user, reason)
         if not err:
             from ..services import money as msvc

@@ -43,6 +43,10 @@ def refuse(db: Session, wo: WorkOrder, part: WoPart, user: User, reason: str) ->
         return "Запчасть уже выдана мастеру — сначала «Вернуть на склад»"
     if part.status in ("archived", "returned", "declined", "option"):
         return "Эта позиция уже не в наряде"
+    from ..models import IssueRequest, IssueRequestLine
+    was_reserved = part.status == "reserved"
+    asked = db.scalar(select(IssueRequest).join(IssueRequestLine, IssueRequestLine.request_id == IssueRequest.id).where(
+        IssueRequestLine.wo_part_id == part.id, IssueRequest.status.in_(("new", "ready"))))
     sent = ssvc.sent_lines(db, part)
     # что уже приехало под эту деталь и лежит в резерве. Взятое с полки (source="from_stock") просто вернётся на
     # полку свободным — это не «лишнее», его не заказывали специально
@@ -66,6 +70,19 @@ def refuse(db: Session, wo: WorkOrder, part: WoPart, user: User, reason: str) ->
         nsvc.send(db, [wo.partsman_id], "refused", f"Клиент отказался: {part.name} — лежит на складе",
                   f"{nsvc.car(db, wo)} · наряд {wo.number} · {reason[:150]}. Оставить, вернуть поставщику или продать",
                   "/stock/leftovers", wo, skip=user.id)
+    # 19.11.2026 (брат): у каждого по цепочке — что делать. Мастерам наряда: не ставить. Кладовщику: не выдавать
+    # (деталь уже ушла из запроса на выдачу; запрос без деталей закрываем).
+    nsvc.send(db, nsvc.masters(db, wo), "refused_info", f"Клиент отказался: {part.name} — не ставить",
+              f"{nsvc.car(db, wo)} · наряд {wo.number} · {reason[:150]}", f"/orders/{wo.id}#parts", wo, skip=user.id)
+    if asked or was_reserved:
+        from .messages import storekeepers
+        nsvc.send(db, storekeepers(db, wo.branch_id), "refused_info", f"Клиент отказался: {part.name} — не выдавать",
+                  f"{nsvc.car(db, wo)} · наряд {wo.number}" + (" · убрана из запроса на выдачу" if asked else "")
+                  + " · деталь остаётся на складе свободной", "/stock/issues", wo, skip=user.id)
+    if asked:
+        db.flush()
+        if not db.scalar(select(IssueRequestLine.id).where(IssueRequestLine.request_id == asked.id).limit(1)):
+            asked.status = "cancelled"   # в запросе больше нечего выдавать
     from .orders import event
     event(db, wo, "status", f"Клиент отказался от «{part.name}»: {reason[:200]}")
     db.flush()

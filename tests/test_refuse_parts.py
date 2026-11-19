@@ -122,7 +122,7 @@ def test_refuse_after_approval_ordered_and_arrived(client):
 
     # менеджер: после согласования — только «Клиент отказался» с причиной
     login(client, "irina", "irina123")
-    assert "Клиент отказался" in client.get(url).text
+    assert "Оформить отказ клиента" in client.get(url).text
     client.post(f"{url}/parts/{lever.id}/delete")
     assert next(p for p in _parts(url) if p.id == lever.id).status == "ordered"
     for p in (lever, ball, boot):
@@ -195,3 +195,41 @@ def test_refuse_reserved_from_shelf_just_returns_to_shelf(client):
     assert _free(cat.id) == 2
     with SessionLocal() as db:
         assert db.scalar(select(PartLeftover).where(PartLeftover.wo_part_id == p.id)) is None   # не «лишнее» — своя полка
+
+
+def test_refuse_part_in_issue_request_tells_mechanic_and_storekeeper(client):
+    """19.11.2026 (брат, наряд 61): слесарь попросил выдать рычаг, клиент отказался — деталь уходит из запроса
+    (пустой запрос закрывается), слесарю «не ставить», кладовщику «не выдавать»; запчастист отказ не оформляет."""
+    from app.db import current_branch_id
+    from app.models import IssueRequest, Notification, User
+    url = _new_order(client, "КА 6161 КА", "0506161000")
+    login(client, "oleg", "oleg123")
+    client.post(f"{url}/parts", data={"name": "Рычаг (наряд 61)", "qty": "1", "cost": "500", "markup_pct": "30", "action": "order"})
+    agree(client, url, then=None)
+    oid = _wo(url).id
+    with SessionLocal() as db:   # деталь приехала под машину, наряд «Запчасти на складе», слесарь — Андрей
+        wo = db.get(WorkOrder, oid)
+        current_branch_id.set(wo.branch_id)
+        wo.mechanic_id = db.scalar(select(User.id).where(User.login == "andrey"))
+        p = db.scalars(select(WoPart).where(WoPart.work_order_id == oid)).first()
+        p.status, p.source, wo.status = "reserved", "purchased", "instock"
+        db.commit()
+        pid = p.id
+    login(client, "andrey", "andrey123")
+    client.post(f"{url}/issue-request", data={})
+    client.post("/logout")
+    with SessionLocal() as db:
+        req = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == oid))
+    assert req.status == "new"
+    login(client, "oleg", "oleg123")   # запчастист — нельзя
+    client.post(f"{url}/parts/{pid}/delete", data={"reason": "купил сам"})
+    client.post("/logout")
+    assert next(x for x in _parts(url) if x.id == pid).status == "reserved"
+    login(client, "irina", "irina123")
+    client.post(f"{url}/parts/{pid}/delete", data={"reason": "купил сам"})
+    client.post("/logout")
+    with SessionLocal() as db:
+        assert db.get(WoPart, pid).status == "archived" and db.get(IssueRequest, req.id).status == "cancelled"
+        who = {db.get(User, n.user_id).login for n in db.scalars(select(Notification).where(
+            Notification.work_order_id == oid, Notification.kind == "refused_info"))}
+    assert "andrey" in who and "pavel" in who

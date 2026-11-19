@@ -215,7 +215,10 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     client.post(f"/purchases/{pid}/receive", data={"invoice": "ТН-1"})
     assert _parts(url2)[0].status == "reserved"
     _as(client, "oleg")
-    # 19.11.2026: после согласования — «Клиент отказался» с причиной; без причины не убирается
+    # 19.11.2026: после согласования — отказ клиента оформляет менеджер, с причиной; запчастист — нельзя
+    client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", data={"reason": "x"}, follow_redirects=False)
+    assert _parts(url2)[0].status == "reserved"
+    _as(client, "irina")
     client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", follow_redirects=False)
     assert _parts(url2)[0].status == "reserved"
     r = client.post(f"{url2}/parts/{_parts(url2)[0].id}/delete", data={"reason": "Клиент купил сам"}, follow_redirects=False)
