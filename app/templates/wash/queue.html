@@ -37,9 +37,10 @@
 {% endif %}
 
 <div class="wq-next card compact">
-  {% if nxt %}{% set c = brd.queue|selectattr("o.id", "equalto", nxt.id)|first %}
+  {% if nxt %}{% set c = (brd.doing + brd.queue)|selectattr("o.id", "equalto", nxt.id)|first %}
+  {% set ws = c.works|selectattr("status", "ne", "done")|list %}
   <div class="grow"><b>Следующая: {{ c.v.make }} {{ c.v.model }} · <span class="mono">{{ fmt_plate(c.v.plate) }}</span></b>
-    <span class="caption">{% for w in c.works %}{{ w.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if c.minutes %} · ≈ {{ fmt_min(c.minutes) }}{% endif %}</span></div>
+    <span class="caption">{% if c.stage == "doing" %}уже на мойке · ваша услуга: {% endif %}{% for w in ws %}{{ w.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if c.minutes and c.stage != "doing" %} · ≈ {{ fmt_min(c.minutes) }}{% endif %}</span></div>
   <form method="post" action="/wash/take" class="one-shot"><button class="btn btn-lg">🫧 Взять следующую</button></form>
   {% else %}
   <div class="grow"><b>Сейчас брать нечего</b><span class="caption">{% if brd.queue %}Машины в очереди мыть пока нельзя или их уже взяли.{% else %}Новые машины появятся здесь, как только менеджер примет их на мойку.{% endif %}</span></div>

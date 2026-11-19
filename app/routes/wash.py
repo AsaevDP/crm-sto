@@ -389,7 +389,7 @@ def wash_queue(ctx: Ctx = Depends(get_ctx)):
     ctx.need("chem.ask", "wash.view")
     db, bid, me = ctx.db, ctx.branch.id, ctx.user
     brd = wsvc.board(db, bid)
-    mine_now = [c for c in brd["doing"] if any(u.id == me.id for u in c.who)]
+    mine_now = [c for c in brd["doing"] if wsvc.busy_with(c, me)]   # начал и не закончил свои услуги
     nxt = wsvc.next_for(db, bid, me, brd)
     from ..services.handover import pending_orders
     handed = [db.get(WorkOrder, i) for i in pending_orders(db, bid, me.id)]

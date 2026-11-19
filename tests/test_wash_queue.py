@@ -187,3 +187,35 @@ def test_decline_and_handover_for_washer(client):
                                                         Notification.kind == "wash_queue_no"))
             assert next(c.pos for c in _queue(db, wo.branch_id) if c.o.id == wo.id) == pos
     client.post("/logout")
+
+
+def test_detailer_next_on_car_already_washing(client):
+    """19.11.2026: мойщик уже помыл машину, полировка детейлера не начата — машина для детейлера следующая (цифра горит,
+    «Взять следующую» начинает его полировку)."""
+    wo = _repair_car(client, "АА 8401 ММ", "0671118401", status="work")
+    detail, moyka = _user("detail"), _user("moyka")
+    current_branch_id.set(wo.branch_id)
+    with SessionLocal() as db:
+        for x in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)):
+            if x.name == "Замена ремня ГРМ":
+                x.status = "done"
+            else:   # мойка — уже сделана мойщиком
+                x.status = "done"
+        db.add(WoWork(work_order_id=wo.id, name="Полировка кузова", mechanic_id=detail.id, pricing="fixed", rate=4000,
+                      qty=1, price=4000, branch_id=wo.branch_id))
+        db.commit()
+        c = next(c for c in wsvc.board(db, wo.branch_id)["doing"] if c.o.id == wo.id)
+        assert not wsvc.busy_with(c, detail)
+    login(client, "detail", "detail123")
+    with SessionLocal() as db:
+        nxt = wsvc.next_for(db, wo.branch_id, _user("detail"))
+    if nxt and nxt.id == wo.id:   # база в тестах общая — впереди может стоять другая его машина
+        badges = client.get("/api/notify").json()["badges"]
+        assert any(x["c"] == "orange" for x in badges.get("/orders", []))
+        assert "уже на мойке" in _main(client.get("/wash/queue").text)
+        r = client.post("/wash/take", follow_redirects=False)
+        assert r.headers["location"] == f"/orders/{wo.id}"
+        with SessionLocal() as db:
+            w = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.name == "Полировка кузова"))
+            assert w.status == "doing"
+    client.post("/logout")

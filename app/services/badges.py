@@ -105,7 +105,7 @@ def compute(ctx) -> dict:
         if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
             from . import wash as wash_svc
             brd_ = wash_svc.board(db, bid)
-            n_w = sum(1 for c in brd_["doing"] if wash_svc.started_by(c, me) and any(w.status != "done" for w in c.works))
+            n_w = sum(1 for c in brd_["doing"] if wash_svc.busy_with(c, me))
             n_w += 1 if wash_svc.next_for(db, bid, me, brd_) else 0
             _add(out, "/orders", "orange", n_w, "ваша машина — можно мыть", "/wash/queue")
         elif role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)

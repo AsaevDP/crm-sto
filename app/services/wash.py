@@ -317,15 +317,30 @@ def take(db: Session, wo: WorkOrder, user: User) -> WoWork | None:
 def next_for(db: Session, branch_id, user: User, brd: dict | None = None) -> WorkOrder | None:
     """Следующая машина для мойщика: первая в очереди, которую он может взять (серые и чужие пропускаем).
     Брать можно ТОЛЬКО её (19.11.2026, брат); другую — через запрос менеджеру «Изменить очередь»."""
-    for c in (brd or board(db, branch_id))["queue"]:
+    brd = brd or board(db, branch_id)
+    # 19.11.2026: машину уже моют, а моя услуга (полировка у детейлера) ещё не начата — она для меня следующая
+    for c in brd["doing"]:
+        if not c.blocked and not started_by(c, user) and any(w.status == "todo" for w in own_works(c, user)):
+            return c.o
+    for c in brd["queue"]:
         if can_take(user, c):
             return c.o
     return None
 
 
+def own_works(c: Car, user: User) -> list:
+    """Услуги этого мойщика / детейлера в машине (у быстрой мойки без исполнителя — того, кто взял машину)."""
+    return [w for w in c.works if (w.mechanic_id or c.o.mechanic_id) == user.id]
+
+
 def started_by(c: Car, user: User) -> bool:
     """Мойщик уже моет эту машину (взял её — есть начатая / сделанная его услуга)."""
-    return any(w.status in ("doing", "paused", "done") and (w.mechanic_id or c.o.mechanic_id) == user.id for w in c.works)
+    return any(w.status in ("doing", "paused", "done") for w in own_works(c, user))
+
+
+def busy_with(c: Car, user: User) -> bool:
+    """«Я мою сейчас»: начал и ещё не закончил свои услуги в этой машине."""
+    return started_by(c, user) and any(w.status != "done" for w in own_works(c, user))
 
 
 def start_error(db: Session, branch_id, wo: WorkOrder, user: User) -> str:
