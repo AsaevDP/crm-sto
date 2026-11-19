@@ -194,9 +194,15 @@
     {% endif %}</div>
   {% elif open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
   {% if can_request_issue %}
+  {# 19.11.2026 (брат): то, что уже на складе, можно взять и начать работу, пока остальное едет #}
+  {% if parts_coming %}<p class="hint" style="margin:0">Можно взять то, что уже на складе, и начать. Ещё нет на складе:
+    {{ parts_coming|map(attribute="name")|join(", ") }} — последнюю работу закрыть нельзя, пока их не выдадут.</p>{% endif %}
   <form class="note-form" method="post" action="/orders/{{ wo.id }}/issue-request">
     <input class="field" name="comment" placeholder="Комментарий кладовщику (необязательно)">
-    <button class="btn btn-sm">Запросить выдачу</button>
+    <button class="btn btn-sm">Запросить выдачу{% if parts_coming %} того, что есть{% endif %}</button>
   </form>
+  {% elif parts_coming and wo.status in ("waiting", "instock", "work") %}
+  <p class="caption" style="margin:4px 0 0">Ещё нет на складе: {{ parts_coming|map(attribute="name")|join(", ") }}.
+    {% if open_issue %}Пока работайте с выданным — последнюю работу закрыть нельзя, пока их не выдадут.{% else %}Пришедшее можно запросить, когда оно будет на складе.{% endif %}</p>
   {% endif %}
 </div>

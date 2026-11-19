@@ -1530,6 +1530,13 @@ def leave_for_today(day):
                 loc = (q(M.Location, M.Location.rack == "B") or q(M.Location))[0]
                 post("pavel", "/stock/receive", {"line_id": str(lines[0].id), f"loc_{lines[0].id}": str(loc.id), f"inv_{lines[0].id}": "ТТН-55120"},
                      what="Принять одну строку — пришла часть")
+            # 19.11.2026 (брат): слесарь берёт то, что пришло, пока остальное едет (выдать — кладовщик руками)
+            with at(day, "17:05"):
+                post(o.lead, f"{o.url}/issue-request", {"comment": "начну с того, что пришло"},
+                     what="Запросить выдачу пришедшего (остальное едет)")
+            R.check(one(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "new") is not None
+                    and o.wo().status == "waiting", "часть пришла — слесарь запросил выдачу, наряд «Ждём запчасти»",
+                    o.wo().number)
         o.step = "wait_parts_today"
     # 7) 13.11.2026: машина на диагностике у двух мастеров — слесарь закончил, электрик ещё нет
     c = rnd.choice(CLIENTS)

@@ -158,6 +158,10 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
                              kind="pause", pause_reason=(reason.strip() or "Без причины")[:200]))
         w.status = "paused"
     elif action == "done" and w.status in ("todo", "doing", "paused"):
+        block = osvc.last_work_block(db, wo, w)
+        if block:   # 19.11.2026: запчасти ещё едут — последнюю работу не закрываем
+            flash(ctx.request, block, "error")
+            return _to(f"/orders/{order_id}")
         close_open()
         w.status, w.done_at, w.done_by = "done", t, ctx.user.id
         if is_master(ctx.user):   # зарплата — тому, кто сделал (наряд могли передать другому)

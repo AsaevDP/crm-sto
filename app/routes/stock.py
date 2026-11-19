@@ -1964,7 +1964,7 @@ def notify(ctx: Ctx = Depends(get_ctx)):
     notes = []
     for n in nsvc.unread(ctx.db, ctx.user.id):
         wo = ctx.db.get(WorkOrder, n.work_order_id) if n.work_order_id else None
-        can_req = bool(wo and wo.status in ("instock", "work") and ctx.can("stock.request_issue")
+        can_req = bool(wo and wo.status in ("waiting", "instock", "work") and ctx.can("stock.request_issue")
                        and ctx.user.id in nsvc.masters(ctx.db, wo)   # любой мастер наряда (12.11.2026)
                        and not ctx.db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == wo.id,
                                                                             IssueRequest.status == "new"))

@@ -194,16 +194,13 @@ def test_delete_reserved_part_no_500_and_part_added_during_work(client):
     _as(client, "irina")
     w = _works(url)[0]
     client.post(f"{url}/works/{w.id}", data={"name": w.name, "pricing": "fixed", "rate": "100", "qty": "1"})
+    # 19.11.2026 (брат): пока «Свеча» едет, последнюю работу не закрыть — наряд не станет «Готово», машину не выдать
     _as(client, "andrey")
     client.post(f"{url}/works/{w.id}/state", data={"action": "done"})
+    assert _works(url)[0].status != "done" and _wo(url).status == "work"
     _as(client, "irina")
-    from app.services import money as msvc
-    with SessionLocal() as db:
-        due = msvc.totals(db, _wo(url)).due
-    client.post(f"{url}/payments", data={"amount": str(due), "method": "cash", "purpose": "full"})
-    assert _wo(url).status == "paid"
     client.post(f"{url}/close", data={"state": "ok"})
-    assert _wo(url).status == "paid"   # «Свеча» не выдана со склада
+    assert _wo(url).status == "work"
 
     # Деталь «в резерве» убирается без ошибки сервера, резерв снимается
     _as(client, "irina")

@@ -374,9 +374,14 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,   # cats — и для архива (собраны до отбора)
         show_cost=ctx.can("prices.view_purchase"), show_price=ctx.can("prices.view_sale") or ctx.can("prices.view_purchase"),
         default_markup=st_.get(db, ctx.branch.id, "pricing")["default_markup"], open_issue=open_issue,
-        can_request_issue=(ctx.can("stock.request_issue") and not open_issue and wo.status in ("instock", "work")
+        # 19.11.2026 (брат): запросить выдачу того, что уже на складе, можно и пока остальное едет («Ждём запчасти»);
+        # любой мастер с работой в этом наряде, не только ведущий
+        can_request_issue=(ctx.can("stock.request_issue") and not (open_issue and open_issue.status == "new")
+                           and wo.status in ("waiting", "instock", "work")
                            and any(p.status == "reserved" for p in parts)
-                           and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id)),
+                           and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id
+                                or any(w.mechanic_id == ctx.user.id for w in works))),
+        parts_coming=[p for p in parts if p.status in ("need", "ordered", "arrived")],
         parts_total=sum((p.price * p.qty for p in counted), 0), n_counted=len(counted),
         t=money_svc.totals(db, wo), payments=payments, PAY_METHODS=PAY_METHODS, PAY_PURPOSES=PAY_PURPOSES, PAY_IN=PAY_IN,
         pay_token=uuid.uuid4().hex,

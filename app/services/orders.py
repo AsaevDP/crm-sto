@@ -231,10 +231,38 @@ def can_start_work(db: Session, wo: WorkOrder, w: WoWork) -> bool:
     from ..models import WoPart
     if wo.status == "work":
         return True
-    if wo.status not in ("picking", "waiting", "instock") or not w.mechanic_id or w.mechanic_id == wo.mechanic_id:
+    if wo.status not in ("picking", "waiting", "instock"):
         return False
+    lead = not w.mechanic_id or w.mechanic_id == wo.mechanic_id
+    if lead:
+        # 19.11.2026 (брат): часть запчастей пришла и выдана — ведущий мастер начинает с тем, что есть (запчасти ещё
+        # едут). Только после согласования (не «Подбор»), и если что-то уже выдано. Последнюю работу не завершить,
+        # пока не выдано всё (`unfinished_parts_block`).
+        if wo.status == "picking" or db.scalar(select(WoPart.id).where(
+                WoPart.work_order_id == wo.id, WoPart.status.in_(("issued", "installed"))).limit(1)) is None:
+            return False
     return db.scalar(select(WoPart.id).where(WoPart.wo_work_id == w.id, WoPart.status.in_(
         ("need", "ordered", "arrived", "reserved", "option"))).limit(1)) is None
+
+
+def pending_parts(db: Session, wo: WorkOrder) -> list:
+    """Запчасти наряда, которых у мастера ещё нет: едут, не приняты или лежат на складе невыданными."""
+    from ..models import WoPart
+    return db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id,
+                                           WoPart.status.in_(("need", "ordered", "arrived", "reserved")))).all()
+
+
+def last_work_block(db: Session, wo: WorkOrder, w: WoWork) -> str:
+    """19.11.2026 (брат): пока не все запчасти выданы, последнюю невыполненную работу закрыть нельзя — у менеджера не
+    должно выглядеть «всё сделано», пока детали едут. Отдельные работы закрывать можно. Ошибка или ''."""
+    left = [x for x in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)) if x.status != "done" and x.id != w.id]
+    if left:
+        return ""
+    pend = pending_parts(db, wo)
+    if not pend:
+        return ""
+    names = ", ".join(p.name for p in pend[:3]) + (" …" if len(pend) > 3 else "")
+    return f"Это последняя работа, а запчасти ещё не все у вас ({names}). Завершить наряд можно, когда их выдадут"
 
 
 def history_order(ctx, wo: WorkOrder) -> bool:
