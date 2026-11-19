@@ -955,6 +955,11 @@ def issue(db: Session, req: IssueRequest, user_id):
         n.read_at = now()
     db.flush()
     wo = db.get(WorkOrder, req.work_order_id)
+    # 20.11.2026 (брат): мастеру — «выдано, подтвердите «Получил»» (пока не подтвердит, «Начал» не нажимается)
+    from . import notify as nsvc
+    from . import receipt as rsvc
+    nsvc.send(db, list(rsvc.owners(db, wo, req)), "issued", "Запчасти выданы — подтвердите «Получил»",
+              f"{nsvc.car(db, wo)} · наряд {wo.number}", f"/orders/{wo.id}#parts", wo, skip=user_id)
     left = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.in_(("need", "ordered", "reserved")))).all()
     if wo.status == "instock" and not left:
         osvc.set_status(db, wo, "work", "Запчасти выданы слесарю")

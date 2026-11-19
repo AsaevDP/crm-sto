@@ -260,6 +260,9 @@ def last_work_block(db: Session, wo: WorkOrder, w: WoWork) -> str:
         return ""
     pend = pending_parts(db, wo)
     if not pend:
+        from . import receipt as rsvc   # 20.11.2026: выдали, но мастер не подтвердил «Получил»
+        if rsvc.unreceived(db, wo.id):
+            return "Это последняя работа, а получение запчастей не подтверждено — нажмите «✓ Получил» у блока «Запчасти»"
         return ""
     names = ", ".join(p.name for p in pend[:3]) + (" …" if len(pend) > 3 else "")
     return f"Это последняя работа, а запчасти ещё не все у вас ({names}). Завершить наряд можно, когда их выдадут"

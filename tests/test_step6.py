@@ -47,6 +47,8 @@ def _order_to_work(c, plate, phone, part_name):
         rid = db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == _wo(url).id))
     c.post(f"/stock/issues/{rid}/issue")
     assert _wo(url).status == "work"
+    _as(c, "andrey")   # 20.11.2026: мастер подтверждает «✓ Получил» — без этого «Начал» не нажимается
+    c.post(f"/stock/issues/{rid}/received")
     return url
 
 

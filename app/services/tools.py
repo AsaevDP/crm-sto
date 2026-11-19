@@ -216,6 +216,9 @@ def complete_request(db: Session, req, by: User, result: str = "ok", note: str =
         # 19.11.2026 (брат): подготовленное может забрать у окошка менеджер и отнести мастеру — на руках у мастера
         via = f" · забрал у окошка {by.full_name}" if pickup else ""
         move(db, tool, who, f"По запросу слесаря{' · наряд ' + wo.number if wo else ''}{via}", wo=wo, work=work)
+        from . import notify as nsvc   # 20.11.2026: мастер подтверждает «✓ Получил»
+        nsvc.send(db, [who.id], "tool_issued", "Инструмент выдан — подтвердите «Получил»",
+                  tool.name + (f" · наряд {wo.number}" if wo else ""), "/my-requests?tab=tools", wo, skip=by.id)
     else:
         move(db, tool, None, "Сдал в шкаф" + (f" · поломка: {note.strip()}" if result == "broken" else ""))
         if result == "broken":
@@ -226,6 +229,30 @@ def complete_request(db: Session, req, by: User, result: str = "ok", note: str =
     for n in db.scalars(select(Notification).where(Notification.user_id == req.user_id, Notification.kind == "tool_ready",
                                                    Notification.read_at.is_(None), Notification.text.startswith(tool.name))):
         n.read_at = now()   # выдали — «готово, подойдите» по этому инструменту больше не нужно
+    return ""
+
+
+def return_by_keeper(db: Session, tool: Tool, by: User, broken: bool = False, note: str = "") -> str:
+    """Кладовщик: «Вернул» (20.11.2026, брат) — принесли к окошку без «Сдаю» в CRM (мастер или менеджер).
+    Инструмент — в шкаф. Если мастер уже нажал «Сдаю» — тот запрос закрывается; «Получил», если не нажимал, не нужен."""
+    from ..models import ToolRequest
+    if tool.is_personal:
+        return "Личный инструмент так не возвращают — только общий под наряд"
+    if not tool.holder_id:
+        return f"«{tool.name}» уже в шкафу"
+    who = db.get(User, tool.holder_id)
+    move(db, tool, None, f"Вернул кладовщик {by.full_name}" + (f" · у {who.full_name}" if who else "")
+         + (f" · поломка: {note.strip()}" if broken else ""))
+    if broken:
+        tool.status = "broken"
+    t_now = now()
+    for r in db.scalars(select(ToolRequest).where(ToolRequest.tool_id == tool.id, ToolRequest.kind == "return",
+                                                  ToolRequest.status.in_(OPEN))):
+        r.status, r.done_by, r.done_at = "done", by.id, t_now
+        r.result, r.result_note = ("broken" if broken else "ok"), note.strip()[:300]
+    for r in db.scalars(select(ToolRequest).where(ToolRequest.tool_id == tool.id, ToolRequest.kind == "issue",
+                                                  ToolRequest.status == "done", ToolRequest.received_at.is_(None))):
+        r.received_at, r.received_by = t_now, r.user_id
     return ""
 
 

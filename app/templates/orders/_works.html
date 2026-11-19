@@ -39,15 +39,23 @@
     {# второй слесарь, назначенный на отдельную работу, отмечает свою работу сам (отчёт тестировщика 11.11.2026) #}
     {% if w.id in own_work_ok and w.status != "done" %}
     <div class="work-btns">
-      {% if w.status in ("todo", "paused") %}
+      {% if w.id in recv_block %}
+      {# 20.11.2026 (брат): запчасти выданы — сначала «✓ Получил» у блока «Запчасти» #}
+      <button class="btn btn-sm" disabled title="Сначала подтвердите получение запчастей">{{ "Продолжить" if w.status == "paused" else "Начал" }}</button>
+      {% elif w.status in ("todo", "paused") %}
       <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="start"><button class="btn btn-sm">{{ "Продолжить" if w.status == "paused" else "Начал" }}</button></form>
       {% endif %}
       {% if w.status == "doing" %}
       <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state" class="pause-form"><input type="hidden" name="action" value="pause">
         <input type="hidden" name="reason"><button class="btn btn-sm btn-gray">Пауза</button></form>
       {% endif %}
+      {% if w.id in recv_block and w.status == "todo" %}
+      <button class="btn btn-sm btn-tinted" disabled>✓ Выполнено</button>
+      {% else %}
       <form method="post" action="/orders/{{ wo.id }}/works/{{ w.id }}/state"><input type="hidden" name="action" value="done"><button class="btn btn-sm btn-tinted">✓ Выполнено</button></form>
+      {% endif %}
     </div>
+    {% if w.id in recv_block %}<p class="hint warn" style="margin:0">Сначала подтвердите, что получили запчасти, — «✓ Получил» у блока «Запчасти»</p>{% endif %}
     {% endif %}
 
     {% if can_edit_works and w.status != "done" %}

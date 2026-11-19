@@ -121,6 +121,9 @@ def _tool_overview(ctx: Ctx, all_rows):
         "spare_in": sum(1 for t in live if t.is_spare and not t.holder_id),
         "bad": sum(1 for t in live if t.status in ("broken", "worn")),
         "reqs": len(reqs),
+        # 20.11.2026 (брат): подготовлен у окошка, ещё не выдан — плитка оранжевая
+        "ready": db.scalar(select(func.count()).select_from(ToolRequest).where(
+            ToolRequest.branch_id == ctx.branch.id, ToolRequest.status == "ready", ToolRequest.kind == "issue")) or 0,
         "no_place": sum(1 for t in live if not t.holder_id and not t.shelf_id and not t.is_personal),
     }
     return {"per": per, "cards": cards, "wo_nums": wo_nums, "tiles": tiles, "last_check": last_check,
@@ -654,6 +657,41 @@ def tool_request_pickup(rid: str, ctx: Ctx = Depends(get_ctx)):
         ctx.db.commit()
         flash(ctx.request, f"«{t.name}» — выдан")
     return _to("/ready")
+
+
+@router.post("/tools/{tid}/returned")
+def tool_returned(tid: str, ctx: Ctx = Depends(get_ctx)):
+    """Кладовщик: «Вернул» — инструмент принесли к окошку (20.11.2026, брат). Второй способ возврата, без «Сдаю»."""
+    ctx.need("tools.manage")
+    t = _tool(ctx, tid)
+    err = svc.return_by_keeper(ctx.db, t, ctx.user)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"«{t.name}» — вернули в шкаф")
+    back = str(ctx.request.query_params.get("back") or "")
+    return _to(back if back.startswith("/") and not back.startswith("//") else "/tools?view=list&cat=shared&holder=out")
+
+
+@router.post("/tool-requests/{rid}/received")
+def tool_request_received(rid: str, ctx: Ctx = Depends(get_ctx)):
+    """Мастер: «✓ Получил» выданный инструмент (20.11.2026, брат)."""
+    from ..models import ToolRequest
+    from ..services import receipt as rsvc
+    r = ctx.db.get(ToolRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = rsvc.receive_tool(ctx.db, r, ctx.user)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Получение инструмента подтверждено")
+    back = str(ctx.request.query_params.get("back") or "")
+    return _to(back if back.startswith("/") and not back.startswith("//") else "/my-requests?tab=tools")
 
 
 @router.post("/tool-requests/{rid}/cancel")

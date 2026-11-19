@@ -39,6 +39,8 @@ async def lifespan(_app):
         keys_svc.fill_open(db)  # 18.11.2026: машинам на станции без номера — ячейка ключей по порядку приезда
         from .services.orders import fill_activity
         fill_activity(db)       # 18.11.2026: время последнего действия по наряду — из журнала (плитки: свежие сверху)
+        from .services import receipt as receipt_svc
+        receipt_svc.fill_old(db)  # 20.11.2026: выданное раньше — «получено» (один раз), чтобы «Начал» не встал
         from sqlalchemy import select
         from .models import Branch
         from .services import brands

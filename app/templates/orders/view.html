@@ -217,12 +217,18 @@
       <div class="kv tool-kv">
         <span><a href="/tools/{{ t.id }}">{{ t.name }}</a> <span class="caption mono">{{ t.inv_no }}</span>
           <div class="caption">{{ h.full_name if h else "" }}{% if w %} · {{ w.name }}{% endif %}</div></span>
+        {% set ur = tool_unrecv.get(t.id) if tool_unrecv else none %}
         {% if pr %}<span class="chip" data-s="waiting">сдаёт · ждёт кладовщика</span>
+        {% elif ur and t.holder_id == user.id %}
+        {# 20.11.2026 (брат): выдали — сначала подтвердить «Получил», потом можно «Сдаю» #}
+        <form method="post" action="/tool-requests/{{ ur.id }}/received?back=/orders/{{ wo.id }}%23tools"><button class="btn btn-sm">✓ Получил</button></form>
+        {% elif ur and not ctx.can("tools.manage") %}<span class="chip" data-s="waiting">выдан · мастер не подтвердил</span>
         {% elif t.holder_id == user.id %}
         <form method="post" action="/tools/{{ t.id }}/return-request?back=/orders/{{ wo.id }}%23tools"><button class="btn btn-sm btn-tinted">Сдаю</button></form>
         {% elif ctx.can("tools.manage") %}
-        <form method="post" action="/tools/{{ t.id }}"><input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/orders/{{ wo.id }}">
-          <button class="btn btn-plain btn-sm">Вернуть</button></form>
+        <form method="post" action="/tools/{{ t.id }}/returned?back=/orders/{{ wo.id }}%23tools"
+              onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')">
+          <button class="btn btn-plain btn-sm">Вернул</button></form>
         {% endif %}
       </div>
       {% else %}<p class="footnote" style="margin:0">Общий инструмент под этот наряд не выдавался.</p>{% endfor %}

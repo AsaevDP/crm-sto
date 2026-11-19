@@ -1985,6 +1985,25 @@ def issue_do(rid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
     return _to(_safe_back(back, "/stock/issues" if ctx.can("stock.issue") else "/ready"))
 
 
+@router.post("/stock/issues/{rid}/received")
+def issue_received(rid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """Мастер: «✓ Получил» выданные запчасти (20.11.2026, брат) — после этого «Начал» снова нажимается."""
+    from ..services import receipt as rsvc
+    r = ctx.db.get(IssueRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    wo = ctx.db.get(WorkOrder, r.work_order_id)
+    if r.status == "issued" and r.received_at:
+        flash(ctx.request, "Уже подтверждено")
+    elif not rsvc.can_receive(ctx.db, ctx.user, wo, r):
+        raise Forbidden()
+    else:
+        rsvc.receive(ctx.db, r, ctx.user)
+        ctx.db.commit()
+        flash(ctx.request, "Получение подтверждено — можно начинать")
+    return _to(_safe_back(back, f"/orders/{wo.id}#parts"))
+
+
 @router.post("/stock/issues/{rid}/ready")
 def issue_ready(rid: str, ctx: Ctx = Depends(get_ctx)):
     """Кладовщик собрал запчасти у окошка — «Готово к выдаче». У менеджера загорается."""
@@ -2062,6 +2081,18 @@ def my_requests_data(ctx: Ctx) -> dict:
     if ctx.can("chem.ask"):
         from ..services import chem as csvc
         out["chem"] = csvc.requests(db, ctx.branch.id, who=me, days=14)
+    # 20.11.2026 (брат): выдано, но не подтверждено — «✓ Получил» (сверху списка)
+    from ..services import receipt as rsvc
+    out["recv_ok"] = {x["r"].id for x in out["parts"] if rsvc.can_receive(db, ctx.user, x["wo"], x["r"])}
+    def p_rank(x):
+        r = x["r"]
+        return (0 if r.id in out["recv_ok"] else 1 if r.status == "ready" else 2 if r.status == "new" else 3)
+    out["parts"].sort(key=p_rank)
+    def t_rank(x):
+        r = x["r"]
+        return (0 if r.kind == "issue" and r.status == "done" and not r.received_at else 1 if r.status == "ready"
+                else 2 if r.status == "new" else 3)
+    out["tools"].sort(key=t_rank)
     return out
 
 

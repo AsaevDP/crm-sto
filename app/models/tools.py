@@ -104,6 +104,9 @@ class ToolRequest(Entity):
     done_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     result: Mapped[str] = mapped_column(String(8), default="")       # при возврате: ok / broken
     result_note: Mapped[str] = mapped_column(String(300), default="")
+    # 20.11.2026 (брат): мастер подтвердил «✓ Получил» выданный инструмент (работу не блокирует)
+    received_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    received_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class ToolCheck(Entity):

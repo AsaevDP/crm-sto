@@ -35,8 +35,9 @@
             {% if o.status in ("closed", "cancel") %}<div class="caption" style="color:var(--orange)">наряд закрыт, инструмент не сдан</div>{% endif %}
             {% if t.wo_work_id in work_names %}<div class="caption">{{ work_names[t.wo_work_id] }}</div>{% endif %}{% else %}—{% endif %}</td>
           <td class="num">{% if ctx.can("tools.manage") %}
-            <form method="post" action="/tools/{{ t.id }}"><input type="hidden" name="action" value="move"><input type="hidden" name="back" value="/tools/staff/{{ u.id }}">
-              <button class="btn btn-sm btn-tinted">Вернуть</button></form>
+            <form method="post" action="/tools/{{ t.id }}/returned?back=/tools/staff/{{ u.id }}"
+                  onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')">
+              <button class="btn btn-sm btn-tinted">Вернул</button></form>
             {% else %}{{ (t.cost)|money }}{% endif %}</td></tr>
         {% else %}<tr><td colspan="4" class="footnote">Временно выданного нет</td></tr>{% endfor %}
         </tbody>

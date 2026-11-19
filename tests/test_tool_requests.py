@@ -57,6 +57,12 @@ def test_mechanic_asks_storekeeper_issues_and_takes_back(client):
 
     # Слесарь сдаёт → кладовщик «Принял — сломан»
     login(client, "andrey", "andrey123")
+    # 20.11.2026: сначала «✓ Получил», потом можно «Сдаю»
+    page = client.get(url).text
+    assert "✓ Получил" in page and "Сдаю" not in page
+    with SessionLocal() as db:
+        ir = db.scalar(select(ToolRequest.id).where(ToolRequest.tool_id == tool.id, ToolRequest.kind == "issue"))
+    client.post(f"/tool-requests/{ir}/received")
     assert "Сдаю" in client.get(url).text
     client.post(f"/tools/{tool.id}/return-request")
     assert "сдаёт · ждёт кладовщика" in client.get(url).text

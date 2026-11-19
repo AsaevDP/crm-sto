@@ -1697,6 +1697,14 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 .iss-acts form { margin: 0; }
 .issue.ready { border-left: 4px solid var(--teal); }
 .iss-ready-bar { border-left: 4px solid var(--teal); }
+/* 20.11.2026: выдали — мастер подтверждает «Получил» */
+.recv-bar { border-left: 4px solid var(--green); }
+/* «Мои запросы» мастера: карточки сеткой; название не сжимается рядом с пометкой — пометка переносится вниз */
+.mr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.mr-grid > .card { margin: 0; }
+.mr-h { flex-wrap: wrap; row-gap: 4px; }
+.mr-h .headline { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 760px) { .mr-grid { grid-template-columns: 1fr; } }
 .nt-row[data-kind="urgent_in"], .nt-row[data-kind="urgent_ask"] { border-left-color: var(--red); }
 .nt-row[data-kind="handover"] { border-left-color: var(--blue); }
 /* Обычные ссылки в тексте — цветом акцента, без подчёркивания (подчёркивание — при наведении) */

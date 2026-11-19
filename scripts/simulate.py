@@ -795,7 +795,53 @@ def step_issue(o, day, hhmm):
                 post("pavel", f"/stock/issues/{r.id}/issue", {"back": "/stock/issues"}, what="Выдано сразу")
     st = o.wo().status
     R.check(st == "work", "после выдачи запчастей → «В работе»", f"{o.wo().number}: {st}")
+    if day == TODAY and not LEFT_RECV:
+        # 20.11.2026: на сегодня — выдали, слесарь ещё не нажал «✓ Получил» (🟢 у него, «Начал» серая)
+        LEFT_RECV.append(o.id)
+        page = get(o.lead, o.url)
+        R.check(page is not None and "Сначала подтвердите" in page.text, "не подтвердил «Получил» — «Начал» серая",
+                o.wo().number)
+        o.step = "recv_wait"
+        return
+    with at(day, _later(hhmm, 25)):
+        confirm_parts(o)
     o.step = "work"
+
+
+LEFT_RECV: list = []
+
+
+def _one_per_lead(orders, n=3):
+    """По одному наряду на мастера (слесарь, моторист, электрик), чтобы инструмент был у разных людей."""
+    out, seen = [], set()
+    for o in orders:
+        if o.lead not in seen and o.lead in MECHS + ["elektro", "motor"]:
+            seen.add(o.lead)
+            out.append(o)
+    return out[:n]
+
+
+def parts_owners(o, r):
+    """Кто подтверждает «Получил» (как в CRM, services/receipt.owners): мастер работы детали, иначе ведущий."""
+    lead = o.wo().mechanic_id
+    out = set()
+    for line in q(M.IssueRequestLine, M.IssueRequestLine.request_id == r.id):
+        p = one(M.WoPart, M.WoPart.id == line.wo_part_id)
+        w = one(M.WoWork, M.WoWork.id == p.wo_work_id) if p and p.wo_work_id else None
+        out.add((w.mechanic_id if w and w.mechanic_id else None) or lead)
+    return {one(M.User, M.User.id == u).login for u in out if u} or {o.lead}
+
+
+def confirm_parts(o):
+    """20.11.2026 (брат): выдали — мастер нажимает «✓ Получил» (до этого «Начал» серая)."""
+    for r in q(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "issued",
+               M.IssueRequest.received_at.is_(None)):
+        for login in sorted(parts_owners(o, r)):
+            if one(M.IssueRequest, M.IssueRequest.id == r.id).received_at:
+                break
+            page = get(login, o.url)
+            R.check(page is not None and "✓ Получил" in page.text, "выдали — у мастера кнопка «✓ Получил»", o.wo().number)
+            post(login, f"/stock/issues/{r.id}/received", {"back": o.url}, what="✓ Получил запчасти")
 
 
 def step_work(o, day, hhmm):
@@ -1151,6 +1197,11 @@ def tool_flow(login, o):
         if rnd.random() < 0.5:   # 19.11.2026: «📦 Готово к выдаче» → слесарь пришёл → «Выдано»
             post("pavel", f"/tool-requests/{r.id}/ready", what="Инструмент: готово к выдаче")
         post("pavel", f"/tool-requests/{r.id}/done", {"result": "ok"}, what="Выдать инструмент")
+        post(login, f"/tool-requests/{r.id}/received", what="✓ Получил инструмент")   # 20.11.2026
+        if rnd.random() < 0.35:   # 20.11.2026: второй способ — принесли к окошку, кладовщик «Вернул»
+            post("pavel", f"/tools/{t.id}/returned", what="Инструмент принесли — «Вернул»")
+            R.check(one(M.Tool, M.Tool.id == t.id).holder_id is None, "«Вернул» — инструмент в шкафу", t.name)
+            return
         post(login, f"/tools/{t.id}/return-request", what="Сдаю инструмент")
         r2 = one(M.ToolRequest, M.ToolRequest.tool_id == t.id, M.ToolRequest.status == "new")
         if r2:
@@ -1658,10 +1709,34 @@ def leave_for_today(day):
     for i, o in enumerate(issue[:2]):
         with at(day, "17:10"):
             post(o.lead, f"{o.url}/issue-request", {"comment": "к 18:00"}, what="Запросить выдачу (выдать — руками)")
-            if i == 1:
-                r = one(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "new")
-                if r:
-                    post("pavel", f"/stock/issues/{r.id}/ready", what="📦 Готово к выдаче (забрать — руками)")
+            r = one(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "new")
+            if i == 1 and r:
+                post("pavel", f"/stock/issues/{r.id}/ready", what="📦 Готово к выдаче (забрать — руками)")
+    # 20.11.2026: общий инструмент на руках у мастеров («Выдан под наряды» не пустой); один ещё не подтверждён
+    held = [o for o in ACTIVE if o.wo() and o.wo().status in ("diag", "approve", "picking", "waiting", "instock", "work")]
+    free_t = [t for t in q(M.Tool, M.Tool.category.notin_(("personal", "spare"))) if not t.holder_id and t.status in ("ok", "worn")]
+    for k, (o, t) in enumerate(zip(_one_per_lead(held), free_t[2:5])):
+        with at(day, f"16:{10 + k * 5}"):
+            post(o.lead, f"{o.url}/tool-requests", {"tool_id": str(t.id), "comment": "под эту машину"}, what="Попросить инструмент")
+            r = one(M.ToolRequest, M.ToolRequest.tool_id == t.id, M.ToolRequest.status == "new")
+            if r:
+                post("pavel", f"/tool-requests/{r.id}/done", {"result": "ok"}, what="Выдать инструмент (на руках)")
+                if k:   # первый — «✓ Получил» ещё не нажат (зелёная цифра у мастера)
+                    post(o.lead, f"/tool-requests/{r.id}/received", what="✓ Получил инструмент")
+    # 20.11.2026: второй способ возврата — принесли к окошку без «Сдаю», кладовщик в «Выдан под наряды» жмёт «Вернул»
+    extra = [t for t in q(M.Tool, M.Tool.category.notin_(("personal", "spare"))) if not t.holder_id and t.status in ("ok", "worn")]
+    tool_masters = [o for o in held if o.lead in MECHS + ["elektro", "motor"]]
+    if tool_masters and extra:
+        o, t = tool_masters[-1], extra[-1]
+        with at(day, "16:40"):
+            post(o.lead, f"{o.url}/tool-requests", {"tool_id": str(t.id)}, what="Попросить инструмент")
+            r = one(M.ToolRequest, M.ToolRequest.tool_id == t.id, M.ToolRequest.status == "new")
+            if r:
+                post("pavel", f"/tool-requests/{r.id}/done", {"result": "ok"}, what="Выдать инструмент")
+                post(o.lead, f"/tool-requests/{r.id}/received", what="✓ Получил инструмент")
+        with at(day, "16:55"):
+            post("pavel", f"/tools/{t.id}/returned", what="Принесли к окошку — «Вернул»")
+            R.check(one(M.Tool, M.Tool.id == t.id).holder_id is None, "«Вернул» — инструмент снова в шкафу", t.name)
     # Слесарь просит инструмент из шкафа; мойщик — химию; слесарь — запчасть со склада под наряд (согласует менеджер)
     work = sorted([o for o in ACTIVE if o.wo() and o.wo().status in ("work", "instock") and o.lead == "andrey"],
                   key=lambda o: o.wo().status != "work")   # «попросить под наряд» — только машина в ремонте

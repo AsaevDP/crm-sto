@@ -228,6 +228,17 @@
       <input type="hidden" name="back" value="/orders/{{ wo.id }}#parts"><button class="btn btn-sm">✓ Выдано</button></form>
     {% endif %}</div>
   {% elif open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
+  {# 20.11.2026 (брат): выдали — мастер подтверждает «✓ Получил»; пока нет, «Начал» не нажимается #}
+  {% for c in recv_cards %}
+  <div class="hint recv-bar"><b>✋ Запчасти выданы — {{ "подтвердите получение" if c.can else "мастер ещё не подтвердил получение" }}</b>
+    <span class="caption" style="display:block">{{ c.lines|map(attribute="name")|join(", ") }}
+      · выдал {{ c.by.short_name if c.by else "" }}{% if c.r.issued_at %} {{ c.r.issued_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}
+      {% if not c.can and c.who %} · подтверждает {{ c.who|map(attribute="short_name")|join(", ") }}{% endif %}</span>
+    {% if c.can %}
+    <form method="post" action="/stock/issues/{{ c.r.id }}/received" style="margin-top:6px">
+      <input type="hidden" name="back" value="/orders/{{ wo.id }}#parts"><button class="btn btn-sm">✓ Получил</button></form>
+    {% endif %}</div>
+  {% endfor %}
   {% if can_request_issue %}
   {# 19.11.2026 (брат): то, что уже на складе, можно взять и начать работу, пока остальное едет #}
   {% if parts_coming %}<p class="hint" style="margin:0">Можно взять то, что уже на складе, и начать. Ещё нет на складе:

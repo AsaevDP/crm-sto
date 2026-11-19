@@ -260,6 +260,9 @@ class IssueRequest(Entity):
     ready_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     ready_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     issued_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 20.11.2026 (брат): мастер подтверждает «✓ Получил» — пока не подтвердил, «Начал» по его работам не нажимается
+    received_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    received_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class IssueRequestLine(Entity):

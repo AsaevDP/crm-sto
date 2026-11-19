@@ -9,6 +9,7 @@ from ..models import Client, ClientEvent, Lift, User, Vehicle, WoFinding, WoPhot
 from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, URGENCY, WO_ACTIVE, WO_STATUSES
 from ..services import orders as svc
 from ..services import leftovers as lsvc
+from ..services import receipt as rcpt_svc
 from ..web import Ctx, Forbidden, flash, get_ctx
 from ..permissions import MASTERS, is_master
 
@@ -406,6 +407,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         # Менеджер и админ этих кнопок не видят: менеджер может только «вернуть» и ждать мастера.
         # Второй мастер делает свою работу, не дожидаясь запчастей ведущего (мойка не ждёт колодки).
         own_work_ok={w.id for w in works if svc.work_owner(wo, w) == ctx.user.id and svc.can_start_work(db, wo, w)},
+        # 20.11.2026 (брат): выдали запчасти — мастер подтверждает «✓ Получил»; до этого «Начал» серая
+        recv_cards=rcpt_svc.cards(db, wo, ctx.user),
+        recv_block={w.id for w in works if rcpt_svc.start_blocked(db, wo, w)},
         is_admin=ctx.user.role.code == "admin", pauses=pauses,
         all_mechanics=svc.staff_by_role(db, ctx.branch.id, "masters"),
         hour_rate=st_.get(db, ctx.branch.id, "pricing")["hour_rate"],
@@ -472,7 +476,11 @@ def _order_tools(ctx: Ctx, wo, works) -> dict:
             "tool_names": {t.id: t for t in ctx.db.scalars(select(Tool).where(Tool.id.in_([r.tool_id for r in pending])))} if pending else {},
             "free_tools": free if can_issue else [],
             "tool_staff": staff, "tool_holders": holders, "TOOL_CATEGORIES": TOOL_CATEGORIES,
-            "works_by_id": {w.id: w for w in works}}
+            "works_by_id": {w.id: w for w in works},
+            # 20.11.2026 (брат): выдан, а мастер ещё не подтвердил «Получил»
+            "tool_unrecv": {r.tool_id: r for r in ctx.db.scalars(select(ToolRequest).where(
+                ToolRequest.work_order_id == wo.id, ToolRequest.kind == "issue", ToolRequest.status == "done",
+                ToolRequest.received_at.is_(None)))}}
 
 
 @router.post("/orders/{order_id}/tools")

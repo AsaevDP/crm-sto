@@ -115,11 +115,12 @@ def compute(ctx) -> dict:
         elif role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
             from ..models import WoWork
             from .orders import can_start_work
+            from .receipt import start_blocked
             n_w = 0
             for w, wo_ in db.execute(select(WoWork, WorkOrder).join(WorkOrder, WorkOrder.id == WoWork.work_order_id).where(
                     WorkOrder.branch_id == bid, WoWork.mechanic_id == me.id, WoWork.status != "done",
                     WorkOrder.status.in_(("picking", "waiting", "instock", "work")))):
-                if can_start_work(db, wo_, w):
+                if can_start_work(db, wo_, w) and not start_blocked(db, wo_, w):   # 20.11: сначала «Получил»
                     n_w += 1
             _add(out, "/orders", "orange", n_w, "ваши работы — можно делать", "/orders?tab=active")
         if role in MASTERS:   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
@@ -195,6 +196,12 @@ def compute(ctx) -> dict:
              "инструмент — ждёт кладовщика", "/my-requests?tab=tools")
         _add(out, "/my-requests", "orange", db.scalar(cq.where(ChemRequest.status == "new")) or 0,
              "химия — ждёт кладовщика", "/my-requests?tab=chem")
+        # 🟢 20.11.2026 (брат): выдали — подтвердите «✓ Получил» (запчасти: до этого «Начал» не нажимается)
+        from . import receipt as rsvc
+        _add(out, "/my-requests", "green", len(rsvc.for_master(db, bid, me.id)),
+             "запчасти выданы — подтвердите «Получил»", "/my-requests?tab=parts")
+        _add(out, "/my-requests", "green", len(rsvc.tools_for_master(db, bid, me.id)),
+             "инструмент выдан — подтвердите «Получил»", "/my-requests?tab=tools")
 
     # ---------- Запросы на выдачу (кладовщик) ----------
     if ctx.can("stock.issue", "tools.manage"):

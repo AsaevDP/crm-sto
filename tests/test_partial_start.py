@@ -60,6 +60,13 @@ def test_start_with_part_of_parts_but_not_finish_all(client):
 
     # слесарь работает с тем, что есть: первую работу начал и закрыл
     login(client, "andrey", "andrey123")
+    # 20.11.2026: выдали — но пока не нажал «Получил», «Начал» серая и не срабатывает
+    page = client.get(url).text
+    assert "✓ Получил" in page and "Сначала подтвердите" in page
+    client.post(f"{url}/works/{w1_id}/state", data={"action": "start"})
+    assert _st(w1_id) == "todo"
+    client.post(f"/stock/issues/{req.id}/received")
+    assert "Сначала подтвердите" not in client.get(url).text
     client.post(f"{url}/works/{w1_id}/state", data={"action": "start"})
     client.post(f"{url}/works/{w1_id}/state", data={"action": "done"})
     assert _st(w1_id) == "done"
@@ -85,6 +92,9 @@ def test_start_with_part_of_parts_but_not_finish_all(client):
     client.post("/logout")
     assert _wo(oid).status == "work"
     login(client, "andrey", "andrey123")
+    r = client.post(f"{url}/works/{w2_id}/state", data={"action": "done"})   # шаровую выдали, но не подтвердил
+    assert _st(w2_id) == "doing" and "Получил" in r.text
+    client.post(f"/stock/issues/{req2.id}/received")
     client.post(f"{url}/works/{w2_id}/state", data={"action": "done"})
     client.post("/logout")
     assert _st(w2_id) == "done" and _wo(oid).status == "ready"

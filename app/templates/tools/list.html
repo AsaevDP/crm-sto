@@ -24,7 +24,9 @@
       ("Выдан под наряды", T.shared_out, "на руках сейчас", "orange", "/tools?view=list&cat=shared&holder=out"),
       ("Запасные наборы", T.spare_in, "лежат в шкафу", "teal", "/tools?view=spare"),
       ("Сломан / износ", T.bad, "проверить, починить", "red", "/tools?view=list&st=bad"),
-      ("Просят / сдают", T.reqs, "ждут кладовщика", "purple", "/stock/issues?tab=tools"),
+      ("Просят / сдают", T.reqs + T.ready, ("просят: " ~ T.reqs ~ " · готово: " ~ T.ready) if T.reqs and T.ready
+        else "готово — не выдано" if T.ready else "ждут кладовщика",
+        "red" if T.reqs else "orange" if T.ready else "purple", "/stock/issues?tab=tools"),
       ("Проверки", pending|length, "идут сейчас", "gray", "/tools?view=staff#checks")] %}
   <a class="ptile {{ 'zero' if not n }}" href="{{ href }}" style="--tc:{{ color_css(color) }}"><span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
   {% endfor %}
@@ -179,7 +181,9 @@
 </form>
 <div class="tablewrap">
   <table class="table">
-    <thead><tr><th>Инв. №</th><th>Инструмент</th><th>Где лежит</th><th>У кого</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
+    {# 20.11.2026 (брат): «Вернул» — принесли к окошку без «Сдаю» в CRM; колонка только у кладовщика #}
+    {% set ret_col = manage and rows|selectattr("holder_id")|rejectattr("is_personal")|list %}
+    <thead><tr><th>Инв. №</th><th>Инструмент</th><th>Где лежит</th><th>У кого</th><th>Состояние</th><th class="num">Стоимость</th>{% if ret_col %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for t in rows %}
     <tr class="row-link" onclick="location.href='/tools/{{ t.id }}'">
@@ -190,6 +194,10 @@
         {% if t.work_order_id in wo_nums %}<div class="caption">под наряд {{ wo_nums[t.work_order_id] }}</div>{% endif %}</td>
       <td><span class="chip" data-ts="{{ t.status }}">{{ TOOL_STATUS[t.status] }}</span></td>
       <td class="num nowrap">{{ t.cost|money }}</td>
+      {% if ret_col %}<td class="num" onclick="event.stopPropagation()">{% if t.holder_id and not t.is_personal %}
+        <form method="post" action="/tools/{{ t.id }}/returned?back={{ (ctx.request.url.path ~ ('?' ~ ctx.request.url.query if ctx.request.url.query else ''))|urlencode }}"
+              onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')">
+          <button class="btn btn-sm btn-tinted nowrap">Вернул</button></form>{% endif %}</td>{% endif %}
     </tr>
     {% else %}<tr><td colspan="6" class="footnote">Инструмента нет{% if q or cat %} по запросу{% endif %}</td></tr>{% endfor %}
     </tbody>
