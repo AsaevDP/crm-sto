@@ -29,6 +29,13 @@
     {% if summary.arrived %}<span class="chip" data-st="arrived">Приехали: {{ summary.arrived }}</span>{% endif %}
     {% if summary.noshow %}<span class="chip" data-st="noshow">Не приехали: {{ summary.noshow }}</span>{% endif %}
   </span>
+  {# 20.11.2026 (брат): «Напомнить о записи» — кнопкой справа (раньше — плитка «Позвонить: завтра» внизу).
+     🔴 сегодня не приехали, 🟠 завтра — позвонить сегодня #}
+  {% if remind is defined and remind %}
+  <a class="btn btn-sm btn-gray sc-remind" href="/schedule/remind">🔔 Напомнить о записи
+    {% if remind.late %}<span class="rm-n" style="--c:var(--red)" title="сегодня не приехали">{{ remind.late|length }}</span>{% endif %}
+    {% if remind.call %}<span class="rm-n" style="--c:var(--orange)" title="завтра — позвонить сегодня">{{ remind.call|length }}</span>{% endif %}</a>
+  {% endif %}
 </div>
 
 <div class="cl-grid fill sched-wrap {{ 'no-form' if not can_manage and not pl is defined }} {{ 'wide' if by == 'mech' and view in ('week', 'month', 'custom') }}">
@@ -228,15 +235,6 @@
       {% elif not e.work_order_id %}
       <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="booked"><input type="hidden" name="view" value="{{ view }}"><button class="btn btn-sm btn-gray">Вернуть «Записан»</button></form>
       {% endif %}
-    </div>
-    {% endif %}
-    {% if tomorrow and not e %}
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Позвонить: завтра · {{ tomorrow|length }}</span><span class="caption">напомнить о записи</span></div>
-      {% for a in tomorrow %}
-      <div class="kv"><span><b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or "—" }} <span class="caption">{{ a.car }}</span></span>
-        {% if a.phone %}<a class="nowrap" href="tel:+{{ a.phone }}">{{ fmt_phone(a.phone) }}</a>{% endif %}</div>
-      {% endfor %}
     </div>
     {% endif %}
   </section>

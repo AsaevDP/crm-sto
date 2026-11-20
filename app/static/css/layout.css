@@ -2311,6 +2311,28 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .mr-cols.one .mr-col { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
 .mr-cols.one .mr-col > .group-title { grid-column: 1 / -1; }
 @media (max-width: 760px) { .mr-cols.one .mr-col { grid-template-columns: minmax(0, 1fr); } }
+/* 20.11.2026 (брат): «Запись» — кнопка «Напомнить о записи» справа, цифры как в меню */
+.sc-remind { gap: 6px; flex: none; }
+.rm-n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+        background: var(--c); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rm-phone { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: clip;
+            color: var(--accent); text-decoration: none; font-variant-numeric: tabular-nums; }
+.rm-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.rm-acts form { margin: 0; flex: 1 1 160px; }
+.rm-acts .btn { width: 100%; }
+/* 20.11.2026 (брат): «Запросы на выдачу» — заголовки блоков заметнее (крупнее, жирнее, тёмным), но без крика */
+.iss-page .group-title, .rd-stack > .rd-sec > .group-title { font-size: 15px; font-weight: 700; color: var(--text);
+  letter-spacing: .02em; margin-bottom: 8px; }
+/* кладовщик: заголовок страницы — вровень с плитками справа (плитки не трогаем) */
+.iss-page-head { align-items: flex-end; margin-bottom: 18px; }
+.iss-page-head h1 { margin-bottom: 0; line-height: 1.1; }
+/* 20.11.2026: доступ к клиенту — найти клиента и дать срок прямо в запросе */
+.ac-find { margin: 0; }
+.ac-find .field { flex: 1 1 220px; min-width: 0; }
+.ac-client { display: grid; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--fill-2); }
+.ac-client > span { min-width: 0; overflow-wrap: anywhere; }
+.ac-hours { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0; }
 /* четыре плитки на телефоне: «Инструмент» не обрезается */
 @media (max-width: 480px) { .iss-tiles { gap: 6px; } .iss-tiles .ptile { padding: 8px 8px 9px; } .iss-tiles .ptile-t { font-size: 12px; } }
+@media (max-width: 360px) { .iss-tiles { gap: 4px; } .iss-tiles .ptile { padding: 7px 5px 8px; } .iss-tiles .ptile-t { font-size: 10.5px; } }
 @media (max-width: 1100px) { .mr-cols { grid-template-columns: minmax(0, 1fr); } }

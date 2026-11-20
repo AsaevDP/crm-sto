@@ -21,6 +21,13 @@
 {% set items_t = [] %}
 {% for k, v in tabs.items() if k in CL %}{% set _ = items_t.append({"t": v, "n": counts[k], "c": CL[k][0], "s": CL[k][1],
     "href": link(tab=k), "on": tab == k, "zero": not counts[k]}) %}{% endfor %}
+{# 20.11.2026 (брат): директору / заму — «Просят доступ»: к одному клиенту и ко всем нарядам (= ко всей базе клиентов).
+   Открывает те же запросы, что красная цифра и «Настройки → Доступ ко всем нарядам» #}
+{% if asks is not none %}{% set na = asks.client + asks.all %}
+{% set _ = items_t.append({"t": "Просят доступ", "n": na, "c": "red" if na else "gray",
+    "s": ("к клиенту: " ~ asks.client ~ " · ко всем: " ~ asks.all) if na else "запросов нет",
+    "href": "/access-requests" ~ ("#clients" if asks.client and not asks.all else ""), "on": false, "zero": not na}) %}
+{% endif %}
 {{ tiles(items_t, "cl-tiles") }}
 {# 12.11.2026: менеджер видит только своих клиентов. Чужой нужен срочно — запрос директору / заму #}
 {% if limited %}

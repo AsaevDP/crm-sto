@@ -14,7 +14,7 @@
   {% for x in mine %}
   <div class="kv chem-mine"><span>{{ x.c.name if x.c else "" }} · {{ x.r.qty|num }} шт{% if x.wo %} <span class="caption">· {{ x.wo.number }}</span>{% endif %}
       <span class="caption">· {{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% if x.r.reason %} <span class="caption">— {{ x.r.reason }}</span>{% endif %}</span>
-    <b class="nowrap"><span class="chip" data-s="{{ {'new': 'waiting', 'ready': 'ready', 'issued': 'closed', 'declined': 'cancel', 'cancelled': 'closed'}.get(x.r.status, 'closed') }}">{{ STATUS.get(x.r.status, x.r.status) }}</span>
+    <b class="nowrap"><span class="chip" data-s="{{ {'new': 'waiting', 'ready': 'ready', 'issued': 'closed', 'declined': 'cancel', 'cancelled': 'closed'}.get(x.r.status, 'closed') }}">{{ 'готово — забрать' if x.r.status == 'ready' else STATUS.get(x.r.status, x.r.status) }}</span>
       {% if x.r.status in ("new", "ready") %}<form method="post" action="/wash/requests/{{ x.r.id }}/cancel" style="display:inline"><button class="btn btn-plain btn-sm">Отменить</button></form>{% endif %}</b></div>
   {% endfor %}
 </div>

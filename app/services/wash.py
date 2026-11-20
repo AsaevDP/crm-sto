@@ -102,6 +102,38 @@ class Car:
     blocked: str = ""                # мыть пока нельзя — почему (серая в очереди)
     since: datetime | None = None    # с какого времени ждёт мойки (порядок, если менеджер не расставил)
     asked: object = None             # запрос мойщика «Изменить очередь», ждёт менеджера
+    kinds: dict = field(default_factory=dict)    # id работы → "wash" / "detail" (по услуге прайса), 20.11.2026
+    owner_role: str = ""             # должность того, кто взял машину (o.mechanic_id)
+
+
+# 20.11.2026 (брат): мойщик и детейлер — разные рабочие места. Услуга без исполнителя достаётся тому, чей это вид:
+# мойка — мойщику, детейлинг — детейлеру. Раньше любой брал любую, и цифры «никто не взял» у обоих были общие.
+ROLE_KIND = {"washer": "wash", "detailer": "detail"}
+
+
+def _role(user) -> str:
+    return user.role.code if getattr(user, "role", None) else ""
+
+
+def fits(user, kind: str) -> bool:
+    """Подходит ли услуга этого вида человеку (вид не известен — подходит всем мойщикам)."""
+    uk = ROLE_KIND.get(_role(user))
+    return not kind or not uk or kind == uk
+
+
+def _free_for(user, c: "Car", w) -> bool:
+    """Несделанная услуга без исполнителя, которую может взять этот человек."""
+    if w.status == "done" or w.mechanic_id or not fits(user, c.kinds.get(w.id, "")):
+        return False
+    owner = None if c.repair else c.o.mechanic_id
+    if owner in (None, user.id):
+        return True
+    # машину взял человек другого рабочего места (мойщик) — услуга детейлера свободна для детейлера
+    return ROLE_KIND.get(c.owner_role) != ROLE_KIND.get(_role(user))
+
+
+def free_works(c: "Car", user) -> list:
+    return [w for w in c.works if _free_for(user, c, w)]
 
 
 def _stage(o: WorkOrder, works) -> str:
@@ -179,6 +211,7 @@ def board(db: Session, branch_id) -> dict:
                                                     WoWorkSession.kind != "pause")) if ids else []:
         open_s[s.wo_work_id] = s
     t = now()
+    svc_kind = {s.id: s.kind for s in db.scalars(select(WashService).where(WashService.branch_id == branch_id))}
     cars = []
     for o in orders:
         ws = works.get(o.id, [])
@@ -203,7 +236,9 @@ def board(db: Session, branch_id) -> dict:
             continue   # помыли — дальше машина у слесарей / менеджера, в очереди мойки её больше нет
         c = Car(o=o, v=vehicles.get(o.vehicle_id), works=ws, stage=stage, minutes=total, left=left,
                 box=all_boxes.get(o.wash_box_id), who=[people[i] for i in who_ids if i in people],
-                act=activity_label(o, people.get(o.activity_by)), repair=rep, asked=asks.get(o.id))
+                act=activity_label(o, people.get(o.activity_by)), repair=rep, asked=asks.get(o.id),
+                kinds={w.id: svc_kind.get(w.wash_service_id, "") for w in ws},
+                owner_role=_role(people.get(o.mechanic_id)) if o.mechanic_id in people else "")
         if rep:
             oth = others.get(o.id, [])
             c.blocked = _blocked(db, o, ws, oth) if stage == "queue" else ""
@@ -281,12 +316,8 @@ def can_take(user: User, c: Car) -> bool:
     """Мойщик может взять машину: мыть уже можно и на неё никто не назначен или назначен он сам."""
     if c.blocked:
         return False
-    ids = {w.mechanic_id for w in c.works if w.mechanic_id}
-    if not c.repair and c.o.mechanic_id:
-        ids.add(c.o.mechanic_id)
-    if c.repair and not ids and c.o.mechanic_id:
-        ids.add(c.o.mechanic_id)
-    return not ids or user.id in ids
+    # 20.11.2026: своя несделанная услуга или свободная услуга своего вида (мойка — мойщику, детейлинг — детейлеру)
+    return any(w.status != "done" and w in own_works(c, user) for w in c.works) or bool(free_works(c, user))
 
 
 def take(db: Session, wo: WorkOrder, user: User) -> WoWork | None:
@@ -296,10 +327,13 @@ def take(db: Session, wo: WorkOrder, user: User) -> WoWork | None:
     if not wo.mechanic_id:
         wo.mechanic_id = user.id
     first = None
+    kinds = {s.id: s.kind for s in db.scalars(select(WashService).where(WashService.branch_id == wo.branch_id))}
     for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)):
-        if w.status != "done" and not w.mechanic_id and not rep:
+        mine_kind = fits(user, kinds.get(w.wash_service_id, ""))   # 20.11.2026: полировку мойщику не записываем
+        if w.status != "done" and not w.mechanic_id and not rep and mine_kind:
             w.mechanic_id = user.id
-        if first is None and w.status in ("todo", "paused") and (w.mechanic_id or wo.mechanic_id) == user.id:
+        if first is None and w.status in ("todo", "paused") and (
+                w.mechanic_id == user.id or (not w.mechanic_id and wo.mechanic_id == user.id and mine_kind)):
             first = w
     if first:
         t = now()
@@ -320,7 +354,8 @@ def next_for(db: Session, branch_id, user: User, brd: dict | None = None) -> Wor
     brd = brd or board(db, branch_id)
     # 19.11.2026: машину уже моют, а моя услуга (полировка у детейлера) ещё не начата — она для меня следующая
     for c in brd["doing"]:
-        if not c.blocked and not started_by(c, user) and any(w.status == "todo" for w in own_works(c, user)):
+        if not c.blocked and not started_by(c, user) and (any(w.status == "todo" for w in own_works(c, user))
+                                                          or free_works(c, user)):
             return c.o
     for c in brd["queue"]:
         if can_take(user, c):
@@ -330,7 +365,8 @@ def next_for(db: Session, branch_id, user: User, brd: dict | None = None) -> Wor
 
 def own_works(c: Car, user: User) -> list:
     """Услуги этого мойщика / детейлера в машине (у быстрой мойки без исполнителя — того, кто взял машину)."""
-    return [w for w in c.works if (w.mechanic_id or c.o.mechanic_id) == user.id]
+    return [w for w in c.works if w.mechanic_id == user.id
+            or (not w.mechanic_id and c.o.mechanic_id == user.id and fits(user, c.kinds.get(w.id, "")))]
 
 
 def started_by(c: Car, user: User) -> bool:

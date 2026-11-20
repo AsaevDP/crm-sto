@@ -19,6 +19,19 @@ def test_free_windows_and_call_tomorrow(client):
     page = client.get(f"/schedule?d={day}").text
     assert "Свободные окна" in page and "08:00–10:00" in page and "11:00–19:00" in page
     assert "Записей: " in page and "sg-load" in page
-    assert "Позвонить: завтра" in client.get("/schedule").text      # сегодня видно, кому звонить на завтра
+    # 20.11.2026 (брат): вместо плитки внизу — кнопка «Напомнить о записи» с оранжевой цифрой, в меню — тоже 🟠
+    assert "Напомнить о записи" in client.get("/schedule").text
+    rem = client.get("/schedule/remind").text
+    assert "Окна Тестовый" in rem and "Позвонил — подтвердил" in rem
+    def orange():
+        return sum(b["n"] for b in client.get("/api/notify").json()["badges"].get("/schedule", []) if b["c"] == "orange")
+    before = orange()
+    assert before >= 1
+    from app.models import Appointment
+    with SessionLocal() as db:
+        aid = db.scalar(select(Appointment.id).where(Appointment.client_name == "Окна Тестовый"))
+    client.post(f"/schedule/{aid}/called")
+    assert orange() == before - 1   # позвонили — из счёта ушла
+    assert "Уже позвонили" in client.get("/schedule/remind").text
     week = client.get(f"/schedule?d={day}&view=week").text
     assert "Окна Тестовый" in week and "loadbar" in week

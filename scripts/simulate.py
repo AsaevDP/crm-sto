@@ -102,6 +102,9 @@ R = Report()
 
 
 # ================================================================ время
+KEEP_TIME = {("appointments", "start_at")}
+
+
 def _shift(mark: datetime, target: datetime):
     """Всё, что создано или изменено после mark, — на время target (сохраняя порядок действий)."""
     delta = mark - target
@@ -112,7 +115,9 @@ def _shift(mark: datetime, target: datetime):
         for t in Base.metadata.sorted_tables:
             if "id" not in t.c:
                 continue
-            dts = [c for c in t.c if isinstance(c.type, UTCDateTime)]
+            # 20.11.2026: время записи клиента человек вписал сам («завтра 09:00») — его не двигаем (раньше записи
+            # на завтра оказывались на 02:45, 04:07…)
+            dts = [c for c in t.c if isinstance(c.type, UTCDateTime) and (t.name, c.name) not in KEEP_TIME]
             ds = [c for c in t.c if isinstance(c.type, Date) and not isinstance(c.type, UTCDateTime)]
             key = t.c.get("updated_at") if "updated_at" in t.c else (t.c.get("created_at") if "created_at" in t.c else None)
             if key is None or not dts:
@@ -1551,6 +1556,43 @@ def end_of_day(day):
             get(lg, "/notifications")
 
 
+def remind_appts(day):
+    """Записи под «Напомнить о записи» (20.11.2026, брат): сегодня 09:00 / 10:30 / 12:00 — не приехали (🔴),
+    завтра 4 записи (🟠); одному из завтрашних позвонили — подтвердил, одну отменили (клиент не приедет)."""
+    # время — вне 09–15 (там записи schedule_tomorrow), чтобы не было пересечений у мастера
+    plan = [(day, "08:00", "andrey", "ТО, масло и фильтры"), (day, "16:00", "elektro", "Не заводится, проверить АКБ"),
+            (day, "17:00", "andrey", "Стук спереди справа"),
+            (day + timedelta(days=1), "08:00", "andrey", "Замена колодок"), (day + timedelta(days=1), "16:00", "motor", "Течь масла"),
+            (day + timedelta(days=1), "17:00", "elektro", "Горит Check Engine"), (day + timedelta(days=1), "18:00", "andrey", "Развал-схождение")]
+    made = []
+    from app.services.orders import norm_phone
+    used = set()
+    for i, (d, hh, mech, work) in enumerate(plan):
+        # клиент без машины у нас сейчас (иначе «не приехал» про машину, которая стоит в ремонте) и без повторов
+        busy = {o.c["plate"] for o in ACTIVE if o.wo() is not None and o.wo().status not in ("closed", "cancelled")}
+        pool = [x for x in CLIENTS if x["plate"] not in busy and x["plate"] not in used] or CLIENTS
+        c = rnd.choice(pool)
+        used.add(c["plate"])
+        with at(day - timedelta(days=1) if d == day else day, f"{15 + i % 3}:{10 * (i % 5):02d}"):
+            post("irina", "/schedule", {"day": str(d), "time": hh, "duration": "60", "mechanic_id": str(uid(mech)),
+                                        "client_name": c["name"], "phone": c["phone"], "car": f"{c['make']} {c['model']}",
+                                        "plate": c["plate"], "work": work, "note": "", "view": "day"}, what="Запись (напомнить)")
+        a = q(M.Appointment, M.Appointment.phone == norm_phone(c["phone"]), M.Appointment.status == "booked",
+              order=M.Appointment.created_at.desc())
+        if a:
+            made.append(a[0])
+    tmr = [a for a in made if a.start_at.astimezone(LOCAL).date() > day]
+    if len(tmr) >= 3:
+        with at(day, "17:30"):
+            post("irina", f"/schedule/{tmr[0].id}/called", what="Напомнить: позвонил — подтвердил")
+            post("irina", f"/schedule/{tmr[1].id}/status", {"status": "cancel", "back": "/schedule/remind"},
+                 what="Напомнить: клиент не приедет — отменить")
+    from app.services import schedule as sch
+    with SessionLocal() as db:
+        r = sch.reminders(db, one(M.Branch).id)
+    R.check(len(r["call"]) >= 1, "«Напомнить о записи»: завтрашние — позвонить", str(len(r["call"])))
+
+
 def leave_for_today(day):
     """Сегодня у каждого — своё незаконченное дело, чтобы зайти под ним и пройти путь дальше руками."""
     # Мастерам — свои машины: электрику и мотористу — на диагностику, детейлеру — сразу в работу
@@ -1877,6 +1919,9 @@ def leave_for_today(day):
             post("pavel", "/stock/receive", {"line_id": str(sl.id), f"qty_{sl.id}": "1", f"inv_{sl.id}": "ТТН-30117"},
                  what="Неполная поставка: привезли 1 (остальное ждём)")
         R.check(one(M.Purchase, M.Purchase.id == sp.id).status == "partial", "заказ на склад — неполная поставка", str(sp.id))
+    # 20.11.2026 (брат): «Напомнить о записи» — записанные на сегодня (время прошло, не приехали — 🔴) и на завтра
+    # (позвонить сегодня — 🟠); одному уже позвонили (подтвердил), одну завтрашнюю отменили после звонка
+    remind_appts(day)
     # Разбор: подготовить, упаковано, отправлено; новая машина — цены ждут директора, отказ, запрос изменения цены
     for stop in ("reserve", "reserve", "pack", "ship"):
         razbor_sale(day, stop=stop)

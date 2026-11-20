@@ -156,3 +156,24 @@ def day_load(db: Session, branch_id, d: date, columns: list, appts: list[Appoint
         out[c["id"]] = {"n": len([a for a in mine if a.status != "cancel"]), "booked": booked,
                         "pct": min(100, round(booked * 100 / work)), "free": free}
     return out
+
+
+def reminders(db: Session, branch_id) -> dict:
+    """«Напомнить о записи» (20.11.2026, брат).
+    late  — 🔴 сегодня: время прошло, «Приехал» не отмечен (позвонить: едет ли);
+    call  — 🟠 завтра: позвонить сегодня, напомнить;
+    done  — уже позвонили (подтвердил), для сведения.
+    Позвонил и клиент подтвердил — запись из счёта уходит (called_at сегодня)."""
+    now = datetime.now(timezone.utc)
+    today = date.today()
+    start_today, _ = day_range(today, today)
+    out = {"late": [], "call": [], "done": []}
+    for a in between(db, branch_id, today, today + timedelta(days=1)):
+        if a.status != "booked":
+            continue
+        called = a.called_at is not None and _aware(a.called_at) >= start_today
+        is_today = local(a.start_at).date() == today
+        if is_today and _aware(a.start_at) > now:
+            continue   # сегодня, время ещё не пришло — ждём
+        (out["done"] if called else out["late"] if is_today else out["call"]).append(a)
+    return out

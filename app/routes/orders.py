@@ -880,7 +880,15 @@ def clients_list(ctx: Ctx = Depends(get_ctx), q: str = "", tab: str = "all", sor
         d = {"q": q, "tab": tab, "sort": sort, "make": make, **over}
         return "/clients?" + urlencode({k: v for k, v in d.items() if v and not (k == "tab" and v == "all")
                                         and not (k == "sort" and v == "last")})
-    return ctx.render("clients/list.html", title="Клиенты", items=items, q=q, tab=tab, sort=sort, make=make,
+    # 20.11.2026 (брат): директору / заму — плитка «Просят доступ» (те же запросы, что в «Настройки → Доступ»)
+    asks = None
+    if ctx.can("orders.grant_access"):
+        from ..models import ClientAccess, OrderAccess
+        asks = {"client": ctx.db.scalar(select(func.count()).select_from(ClientAccess).where(
+                    ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "pending")) or 0,
+                "all": ctx.db.scalar(select(func.count()).select_from(OrderAccess).where(
+                    OrderAccess.branch_id == ctx.branch.id, OrderAccess.status == "pending")) or 0}
+    return ctx.render("clients/list.html", title="Клиенты", items=items, q=q, tab=tab, sort=sort, make=make, asks=asks,
                       tabs=csvc.TABS, sorts=csvc.SORTS, counts=csvc.counts(base), makes=csvc.makes(allrows), link=link,
                       show_money=ctx.can("money.view"), fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate,
                       REGULAR_VISITS=csvc.REGULAR_VISITS, LOST_DAYS=csvc.LOST_DAYS, limited=vis is not None,
@@ -907,7 +915,8 @@ def _client_access_lists(ctx: Ctx) -> dict:
     act = ctx.db.scalars(select(ClientAccess).where(ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "approved",
                                                     ClientAccess.until > datetime.now(timezone.utc))).all()
     cl = {c.id: c for c in ctx.db.scalars(select(Client).where(Client.id.in_([a.client_id for a in act])))}
-    return {"c_pending": pend, "c_active": act, "c_clients": cl}
+    from ..models.orders import CLIENT_ACCESS_HOURS
+    return {"c_pending": pend, "c_active": act, "c_clients": cl, "C_HOURS": CLIENT_ACCESS_HOURS}
 
 
 def _grant_data(ctx: Ctx, c) -> dict:
@@ -948,7 +957,7 @@ def client_access_request(ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
 
 @router.post("/clients/{client_id}/grant")
 def client_access_grant(client_id: str, ctx: Ctx = Depends(get_ctx), user_id: str = Form(""), hours: int = Form(0),
-                        request_id: str = Form("")):
+                        request_id: str = Form(""), back: str = Form("")):
     """Директор / зам / админ дают менеджеру доступ к карточке клиента на срок (по запросу или сами)."""
     from datetime import timedelta
     from ..db import now
@@ -978,6 +987,8 @@ def client_access_grant(client_id: str, ctx: Ctx = Depends(get_ctx), user_id: st
             n.read_at = now()
     ctx.db.commit()
     flash(ctx.request, f"{u.full_name}: доступ к клиенту на {CLIENT_ACCESS_HOURS[hours]} — до {until}")
+    if back.startswith("/access-requests"):   # 20.11.2026: дали прямо из запроса — остаёмся там
+        return _to(back)
     return _to(f"/clients/{c.id}")
 
 
@@ -1175,7 +1186,7 @@ def access_request(ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
 
 
 @router.get("/access-requests")
-def access_requests(ctx: Ctx = Depends(get_ctx)):
+def access_requests(ctx: Ctx = Depends(get_ctx), cq: str = "", req: str = ""):
     from ..models import OrderAccess
     from ..models.orders import ACCESS_HOURS, ACCESS_STATUS
     ctx.need("orders.grant_access", "payroll.grant")
@@ -1194,6 +1205,8 @@ def access_requests(ctx: Ctx = Depends(get_ctx)):
     from ..services import payroll_access as pa   # 20.11.2026: зам просит «Зарплату сотрудников»
     return ctx.render("orders/access.html", title="Доступ ко всем нарядам", rows=rows, people=people, HOURS=ACCESS_HOURS,
                       reopens=reopens, reopen_orders=reopen_orders, **_client_access_lists(ctx), **pa.lists(ctx.db, ctx.branch.id),
+                      # 20.11.2026 (брат): запрос к клиенту — найти клиента прямо здесь и дать доступ на срок
+                      cq=cq, cq_req=req, cq_found=svc.search_clients(ctx.db, ctx.branch.id, cq) if cq else [],
                       STATUS=ACCESS_STATUS, pending=[a for a in rows if a.status == "pending"],
                       granted=[a for a in rows if active(a)], history=[a for a in rows if a.status != "pending" and not active(a)])
 

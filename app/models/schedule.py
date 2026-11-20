@@ -26,3 +26,6 @@ class Appointment(Entity):
     note: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(10), default="booked", index=True)
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("work_orders.id"), nullable=True)
+    # 20.11.2026 (брат): «Напомнить о записи» — менеджер позвонил, клиент подтвердил, что приедет
+    called_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    called_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)

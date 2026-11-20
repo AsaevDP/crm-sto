@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{# «Напомнить о записи» (20.11.2026, брат). 🔴 сегодня: время прошло, «Приехал» не отмечен — позвонить, едет ли.
+   🟠 завтра: позвонить сегодня, напомнить. «✓ Позвонил — подтвердил» убирает из счёта; не приедет — «Отменить запись». #}
+{% macro row(a, color, done=False) %}{% set m = people.get(a.mechanic_id) %}{% set t = local(a.start_at) %}
+<div class="card compact rim rim-{{ color }} rm-card">
+  <div class="card-h mr-h"><span class="headline">{{ a.client_name or "Без имени" }}</span>
+    <span class="caption nowrap">{{ "сегодня" if t.date() == today else "завтра" }} · <b>{{ t.strftime("%H:%M") }}</b></span></div>
+  {% if a.phone %}<a class="rm-phone" href="tel:+{{ a.phone }}">📞 {{ fmt_phone(a.phone) }}</a>{% endif %}
+  <div class="caption">{{ a.car }}{% if a.plate %} · {{ fmt_plate(a.plate) }}{% endif %}{% if m %} · к {{ m.short_name }}{% endif %}{% if a.work %} · {{ a.work }}{% endif %}</div>
+  {% if done %}{% set cb = people.get(a.called_by) %}
+  <p class="caption" style="margin:0">✓ позвонили {{ local(a.called_at).strftime("%H:%M") }}{% if cb %} · {{ cb.short_name }}{% endif %} — подтвердил</p>
+  {% else %}
+  <div class="rm-acts">
+    <form method="post" action="/schedule/{{ a.id }}/called"><button class="btn btn-sm">✓ Позвонил — подтвердил</button></form>
+    <form method="post" action="/schedule/{{ a.id }}/status" onsubmit="return confirm('Клиент не приедет — отменить запись?')">
+      <input type="hidden" name="status" value="cancel"><input type="hidden" name="back" value="/schedule/remind">
+      <button class="btn btn-sm btn-gray">Отменить запись</button></form>
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/schedule">{{ icon("back") }}Запись</a><h1 class="large-title">Напомнить о записи</h1></div>
+  <nav class="pult-tiles iss-tiles" aria-label="Кому звонить">
+    <a class="ptile {{ 'zero' if not r.late }}" href="#late" style="--tc:{{ color_css('red' if r.late else 'gray') }}"><span class="ptile-t">Не приехали</span><b>{{ r.late|length }}</b><span class="ptile-s">сегодня, время прошло</span></a>
+    <a class="ptile {{ 'zero' if not r.call }}" href="#call" style="--tc:{{ color_css('orange' if r.call else 'gray') }}"><span class="ptile-t">Завтра</span><b>{{ r.call|length }}</b><span class="ptile-s">позвонить сегодня</span></a>
+  </nav>
+</header>
+<div class="rd-stack">
+  <section class="rd-sec" id="late">
+    <div class="group-title">Сегодня не приехали — позвоните, едет ли · {{ r.late|length }}</div>
+    <div class="mr-grid">{% for a in r.late %}{{ row(a, "red") }}{% else %}
+      <div class="card compact rd-empty"><p class="footnote" style="margin:0">Все, кто записан на сегодня, приехали или ещё не время</p></div>{% endfor %}</div>
+  </section>
+  <section class="rd-sec" id="call">
+    <div class="group-title">Завтра — напомните о записи · {{ r.call|length }}</div>
+    <div class="mr-grid">{% for a in r.call %}{{ row(a, "orange") }}{% else %}
+      <div class="card compact rd-empty"><p class="footnote" style="margin:0">Завтра звонить некому</p></div>{% endfor %}</div>
+  </section>
+  {% if r.done %}
+  <section class="rd-sec">
+    <div class="group-title">Уже позвонили · {{ r.done|length }}</div>
+    <div class="mr-grid">{% for a in r.done %}{{ row(a, "gray", True) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

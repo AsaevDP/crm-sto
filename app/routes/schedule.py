@@ -62,7 +62,8 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     base = dict(day=day, view=view, mechanics=mechanics, lifts=lifts, editing=editing, APPT_STATUS=APPT_STATUS,
                 fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, local=svc.local, WEEKDAYS=WEEKDAYS,
                 can_manage=ctx.can("schedule.manage"), today=date.today(), colors=colors, own_lift=own_lift, bar=bar,
-                per=per, by=by, BY=BY, show="")
+                per=per, by=by, BY=BY, show="",
+                remind=svc.reminders(db, bid) if ctx.can("schedule.manage") else None)
     if view in ("week", "month", "custom"):
         d1, d2 = per.d1, per.d2
         if (d2 - d1).days > 92:   # свой период — не больше квартала, чтобы страница не тормозила
@@ -227,7 +228,8 @@ def appt_edit(aid: str, ctx: Ctx = Depends(get_ctx), day: str = Form(""), time: 
 
 
 @router.post("/schedule/{aid}/status")
-def appt_status(aid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), view: str = Form("day")):
+def appt_status(aid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), view: str = Form("day"),
+                back: str = Form("")):
     """Приехал → сразу приёмка с заполненными полями; не приехал / отменён / вернуть «записан»."""
     ctx.need("schedule.manage")
     a = _appt(ctx, aid)
@@ -240,7 +242,32 @@ def appt_status(aid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), 
         a.status = status
         ctx.db.commit()
         flash(ctx.request, f"Запись: {APPT_STATUS[status].lower()}")
+    if back.startswith("/schedule") and not back.startswith("//"):
+        return RedirectResponse(back, status_code=303)
     return RedirectResponse(f"/schedule?d={d}&view={view}", status_code=303)
+
+
+@router.get("/schedule/remind")
+def remind(ctx: Ctx = Depends(get_ctx)):
+    """«Напомнить о записи» (20.11.2026, брат): 🔴 сегодня не приехали (время прошло), 🟠 завтра — позвонить сегодня.
+    «✓ Позвонил — подтвердил» или «Отменить запись»."""
+    ctx.need("schedule.manage")
+    r = svc.reminders(ctx.db, ctx.branch.id)
+    people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
+    return ctx.render("schedule/remind.html", title="Напомнить о записи", r=r, people=people, local=svc.local,
+                      fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, today=date.today())
+
+
+@router.post("/schedule/{aid}/called")
+def appt_called(aid: str, ctx: Ctx = Depends(get_ctx)):
+    """Позвонил — клиент подтвердил, что приедет (запись остаётся «Записан», из напоминаний уходит)."""
+    ctx.need("schedule.manage")
+    from ..db import now
+    a = _appt(ctx, aid)
+    a.called_at, a.called_by = now(), ctx.user.id
+    ctx.db.commit()
+    flash(ctx.request, f"Позвонили: {a.client_name or a.phone} — подтвердил")
+    return RedirectResponse("/schedule/remind", status_code=303)
 
 
 def prefill_from(ctx: Ctx, appt_id: str) -> dict:

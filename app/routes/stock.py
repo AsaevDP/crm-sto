@@ -2099,7 +2099,9 @@ def my_requests_data(ctx: Ctx) -> dict:
             for x in _requests(ctx, st):
                 if st == "issued" and (x["r"].issued_at or x["r"].updated_at) < since:
                     continue
-                if x["r"].created_by == me or me in nsvc.masters(db, x["wo"]):
+                # 20.11.2026: мойщику / детейлеру — только то, что просил сам (запчасти слесарей в этой машине — не его)
+                washer = ctx.user.role.code in ("washer", "detailer")
+                if x["r"].created_by == me or (not washer and me in nsvc.masters(db, x["wo"])):
                     out["parts"].append(x)
         from ..models import OrderMessage
         for m in db.scalars(select(OrderMessage).where(OrderMessage.branch_id == ctx.branch.id, OrderMessage.kind == "part",

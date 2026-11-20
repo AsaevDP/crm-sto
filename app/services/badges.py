@@ -122,7 +122,8 @@ def compute(ctx) -> dict:
         # 🟢 12.11.2026: пришли запчасти по закупке и ждут выдачи — менеджеру, запчастисту и всем мастерам наряда.
         # Цифра = сколько запчастей. Гаснет, когда кладовщик выдал мастеру. Отдельной цифрой — не смешивается с нарядами.
         arrived = {}
-        if ctx.can("orders.approve", "parts.pick") or role in MASTERS:
+        # 20.11.2026 (брат): мойщику и детейлеру запчасти не нужны — этих цифр у них нет
+        if ctx.can("orders.approve", "parts.pick") or (role in MASTERS and role not in ("washer", "detailer")):
             from .notify import arrived_waiting
             arrived = arrived_waiting(db, bid, me.id)
             _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
@@ -144,7 +145,7 @@ def compute(ctx) -> dict:
                 if can_start_work(db, wo_, w) and not start_blocked(db, wo_, w):   # 20.11: сначала «Получил»
                     n_w += 1
             _add(out, "/orders", "orange", n_w, "ваши работы — можно делать", "/orders?tab=active")
-        if role in MASTERS:   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
+        if role in MASTERS and role not in ("washer", "detailer"):   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
             qi = select(func.count()).select_from(WorkOrder).where(
                 WorkOrder.branch_id == bid, WorkOrder.status == "instock", WorkOrder.mechanic_id == me.id)
             if arrived:
@@ -200,6 +201,8 @@ def compute(ctx) -> dict:
         my_wo = select(WorkOrder.id).where(WorkOrder.branch_id == bid, or_(
             WorkOrder.mechanic_id == me.id, WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me.id))))
         mine_req = or_(IssueRequest.created_by == me.id, IssueRequest.work_order_id.in_(my_wo))
+        if role in ("washer", "detailer"):   # 20.11.2026: запчасти слесарей в машине, которую он моет, — не его
+            mine_req = IssueRequest.created_by == me.id
         _add(out, "/my-requests", "green", db.scalar(select(func.count()).select_from(IssueRequest).where(
             IssueRequest.branch_id == bid, IssueRequest.status == "ready", mine_req)) or 0,
              "готово — забрать у окошка кладовщика", "/my-requests?tab=parts")
@@ -297,8 +300,9 @@ def compute(ctx) -> dict:
     if role in ("washer", "detailer"):   # машины в очереди мойки, которые никто не взял (и мыть уже можно)
         from . import wash as wash_svc
         brd = wash_svc.board(db, bid)
-        _add(out, "/orders", "red", sum(1 for c in brd["queue"] if not c.who and not c.blocked), "в очереди — никто не взял",
-             "/wash/queue")
+        # 20.11.2026 (брат): мойщик и детейлер — разные рабочие места: каждому — машины, где ЕГО услугу никто не взял
+        _add(out, "/orders", "red", sum(1 for c in brd["queue"] if not c.blocked and wash_svc.free_works(c, me)),
+             "в очереди — никто не взял", "/wash/queue")
 
     # ---------- Склад, Закупки (кладовщик) ----------
     if ctx.can("stock.receive") and role != "content":   # кладовщик разбора обычные поставки не принимает
@@ -384,4 +388,10 @@ def compute(ctx) -> dict:
         _add(out, "/payroll/weeks", "red", db.scalar(select(func.count()).select_from(PayrollAccess).where(
             PayrollAccess.branch_id == bid, PayrollAccess.status == "pending")) or 0,
              "зам просит доступ к «Зарплате сотрудников»", "/access-requests#payroll")
+    # 20.11.2026 (брат): «Напомнить о записи» — 🔴 сегодня не приехали (время прошло), 🟠 завтра — позвонить сегодня
+    if ctx.can("schedule.manage"):
+        from . import schedule as sch
+        rm = sch.reminders(db, bid)
+        _add(out, "/schedule", "red", len(rm["late"]), "сегодня не приехали — позвонить", "/schedule/remind#late")
+        _add(out, "/schedule", "orange", len(rm["call"]), "завтра записаны — напомнить", "/schedule/remind#call")
     return out

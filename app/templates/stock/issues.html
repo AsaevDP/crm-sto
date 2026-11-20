@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {# Выдача (11.11.2026): вкладки «Запчасти» и «Инструмент». Кладовщик видит, что выдать, что сдают, что на руках. #}
 {% block content %}
-<header class="page-head">
+<header class="page-head iss-page-head">
   {# 19.11.2026 (брат): это отдельный раздел меню; со вкладки «Инструмент» назад — в «Инструмент» #}
   <div>{% if tab == "tools" and ctx.can("tools.view", "tools.manage") %}<a class="back" href="/tools">{{ icon("back") }}Инструмент</a>{% endif %}<h1 class="large-title">Запросы на выдачу</h1></div>
   {% if true %}
@@ -26,6 +26,7 @@
   </nav>
   {% endif %}
 </header>
+<div class="iss-page">
 
 {% if tab == "chem" %}{% include "stock/_chem_issues.html" %}
 {% elif tab in ("parts", "razbor") %}
@@ -163,4 +164,5 @@
   </section>
 </div>
 {% endif %}
+</div>
 {% endblock %}

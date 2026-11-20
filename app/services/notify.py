@@ -51,8 +51,13 @@ def masters(db: Session, wo: WorkOrder) -> list:
 
 
 def team_all(db: Session, wo: WorkOrder) -> list:
-    """Менеджер, запчастист и все мастера наряда (12.11.2026: в одном заказе бывают детали для разных мастеров)."""
-    return [wo.manager_id, wo.partsman_id, *masters(db, wo)]
+    """Менеджер, запчастист и все мастера наряда (12.11.2026: в одном заказе бывают детали для разных мастеров).
+    20.11.2026 (брат): без мойщика и детейлера — сообщения о запчастях им не нужны."""
+    from ..models import Role, User
+    ids = [wo.manager_id, wo.partsman_id, *masters(db, wo)]
+    washers = set(db.scalars(select(User.id).join(Role, Role.id == User.role_id).where(
+        User.id.in_([i for i in ids if i]), Role.code.in_(("washer", "detailer")))))
+    return [i for i in ids if i not in washers]
 
 
 def parts_ready(db: Session, wo: WorkOrder):
