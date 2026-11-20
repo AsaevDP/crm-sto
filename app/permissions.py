@@ -69,8 +69,11 @@ PERMISSIONS = [
     ("attendance.view_all", "Табель всех сотрудников", "Сотрудники"),
     ("attendance.view_own", "Свой табель", "Сотрудники"),
     ("attendance.edit", "Править отметки табеля", "Сотрудники"),
-    ("payroll.view_own", "Своя зарплата", "Сотрудники"),
-    ("payroll.view_all", "Зарплата всех", "Сотрудники"),
+    ("payroll.view_own", "Своя зарплата («Моя зарплата»)", "Сотрудники"),
+    # 20.11.2026 (брат): «Зарплата сотрудников» — бухгалтер всегда, директору — галочку ставит админ, заму — на срок по запросу
+    ("payroll.view_all", "«Зарплата сотрудников» — видеть всех (директору даёт админ)", "Сотрудники"),
+    ("payroll.approve", "Зарплата: утверждать к выплате (директор; зам — когда директор дал доступ)", "Сотрудники"),
+    ("payroll.grant", "Давать заму доступ к «Зарплате сотрудников» на срок", "Сотрудники"),
     ("payroll.manage", "Схемы зарплаты и выплаты", "Сотрудники"),
     ("payroll.check", "Зарплата: проверять неделю (бухгалтер)", "Сотрудники"),
     ("payroll.pay", "Зарплата: отмечать выдачу денег за неделю", "Сотрудники"),
@@ -140,13 +143,17 @@ DEFAULT_ROLES = {
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
-        "attendance.view_all", "payroll.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
-        "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price", "purchases.all", "stock.keep", *_OWN]),
+        # 20.11.2026 (брат): «Зарплата сотрудников» (payroll.view_all) директору — только галочкой админа; утверждать —
+        # payroll.approve; заму доступ на срок — payroll.grant
+        "attendance.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
+        "payroll.advance", "payroll.approve", "payroll.grant",
+        "wash.view", "wash.buy", "wash.prices", "razbor.price", "purchases.all", "stock.keep", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
         "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price",
+        "payroll.approve",   # 20.11.2026: утверждать — когда директор дал доступ к «Зарплате сотрудников» (на срок)
         "purchases.all", "stock.keep", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
@@ -190,7 +197,10 @@ MENU = [
     ("/razbor/prices", "Цены разбора", "money", ["razbor.price"]),
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
-    ("/payroll", "Зарплата", "chart", ["payroll.view_own", "payroll.view_all"]),
+    # 20.11.2026 (брат): два пункта — «Моя зарплата» (у каждого, кто получает зарплату) и «Зарплата сотрудников»
+    # (бухгалтер; директор — по галочке админа; зам — по доступу от директора на срок; без доступа — экран «как открыть»)
+    ("/payroll/my", "Моя зарплата", "chart", ["payroll.view_own"]),
+    ("/payroll/weeks", "Зарплата сотрудников", "users", ["payroll.view_all", "payroll.approve"]),
     ("/tools", "Инструмент", "tool", ["tools.view", "tools.view_own"]),
     ("/settings", "Настройки", "gear", ["settings.access", "users.manage", "staff.dismiss", "orders.grant_access"]),
     ("/audit", "Журнал", "list", ["audit.view"]),

@@ -112,3 +112,20 @@ class PayWeekPerson(Entity):
     checked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+
+# 20.11.2026 (брат): зам открывает «Зарплату сотрудников» по запросу — директор разрешает на срок
+PAYROLL_ACCESS_HOURS = {24: "1 день", 168: "неделю", 720: "месяц"}
+
+
+class PayrollAccess(Entity):
+    """Запрос зама «Зарплата сотрудников»: причина → директор разрешает на 1 день / неделю / месяц (или отказ) →
+    действует до `until`; директор может закрыть досрочно. Пока действует — у зама права «видеть всех» и «утверждать»."""
+    __tablename__ = "payroll_access"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    reason: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)   # pending / approved / declined / closed
+    hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

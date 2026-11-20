@@ -174,5 +174,10 @@ async def get_ctx(request: Request, db: Session = Depends(get_db)) -> Ctx:
         raise ViewOnly(request.headers.get("referer") or "/")
 
     perms = effective_permissions(db, user)
+    # 20.11.2026 (брат): заму директор открыл «Зарплату сотрудников» на срок — пока срок не вышел, видит всех
+    if "payroll.approve" in perms and "payroll.view_all" not in perms:
+        from .services.payroll_access import active_until
+        if active_until(db, user.id):
+            perms = set(perms) | {"payroll.view_all"}
     return Ctx(request=request, db=db, user=user, branch=db.get(Branch, user.branch_id),
                perms=perms, branding=branding, menu=menu_for(perms), real_user=real_user)

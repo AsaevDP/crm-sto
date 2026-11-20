@@ -67,7 +67,9 @@ GRANTS_ONCE = [("grant.manager.by_partsman", "manager", "purchases.by_partsman")
                ("grant.partsman.wash_view", "partsman", "wash.view"),
                ("grant.partsman.wash_buy", "partsman", "wash.buy")]
 # Право, которое у роли по умолчанию было, а теперь его быть не должно: снимаем один раз (вернуть руками можно)
-REVOKES_ONCE = [("revoke.manager.wash_buy", "manager", "wash.buy")]   # 20.11.2026 (брат): менеджер химию не заказывает
+REVOKES_ONCE = [("revoke.manager.wash_buy", "manager", "wash.buy"),   # 20.11.2026 (брат): менеджер химию не заказывает
+                # 20.11.2026 (брат): «Зарплата сотрудников» директору — только когда админ поставит галочку
+                ("revoke.director.payroll_view_all", "director", "payroll.view_all")]
 
 
 def _grant_once(db: Session):

@@ -1178,7 +1178,7 @@ def access_request(ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
 def access_requests(ctx: Ctx = Depends(get_ctx)):
     from ..models import OrderAccess
     from ..models.orders import ACCESS_HOURS, ACCESS_STATUS
-    ctx.need("orders.grant_access")
+    ctx.need("orders.grant_access", "payroll.grant")
     rows = ctx.db.scalars(select(OrderAccess).where(OrderAccess.branch_id == ctx.branch.id)
                           .order_by(OrderAccess.created_at.desc()).limit(60)).all()
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
@@ -1191,8 +1191,9 @@ def access_requests(ctx: Ctx = Depends(get_ctx)):
     reopens = ctx.db.scalars(select(OrderReopen).where(OrderReopen.branch_id == ctx.branch.id, OrderReopen.status == "pending")
                              .order_by(OrderReopen.created_at)).all()
     reopen_orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([r.work_order_id for r in reopens])))}
+    from ..services import payroll_access as pa   # 20.11.2026: зам просит «Зарплату сотрудников»
     return ctx.render("orders/access.html", title="Доступ ко всем нарядам", rows=rows, people=people, HOURS=ACCESS_HOURS,
-                      reopens=reopens, reopen_orders=reopen_orders, **_client_access_lists(ctx),
+                      reopens=reopens, reopen_orders=reopen_orders, **_client_access_lists(ctx), **pa.lists(ctx.db, ctx.branch.id),
                       STATUS=ACCESS_STATUS, pending=[a for a in rows if a.status == "pending"],
                       granted=[a for a in rows if active(a)], history=[a for a in rows if a.status != "pending" and not active(a)])
 

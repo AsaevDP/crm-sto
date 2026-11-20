@@ -309,7 +309,7 @@ CHARGE_STATE = {"wait": ("Ждут решения админа", "orange"), "hel
 
 @router.get("/tools/charges")
 def tool_charges(ctx: Ctx = Depends(get_ctx), s: str = ""):
-    ctx.need("payroll.view_all", "tools.manage")
+    ctx.need("payroll.view_all", "tools.manage", "payroll.approve")   # 20.11.2026: директор видит и без «зарплаты всех»
     from ..models import PayrollAccrual
     from ..services import payweek as wsvc
     db = ctx.db

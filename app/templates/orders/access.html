@@ -69,6 +69,33 @@
       </div>
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов нет</p></div>{% endfor %}
+
+    {# 20.11.2026 (брат): зам просит «Зарплату сотрудников» — директор открывает на 1 день / неделю / месяц #}
+    {% if ctx.can("payroll.grant") %}
+    <div class="group-title" id="payroll">Зарплата сотрудников — доступ заму · {{ pay_pending|length }}</div>
+    {% for a in pay_pending %}{% set u = people.get(a.user_id) %}
+    <div class="card compact ac-card now">
+      <div class="card-h"><span class="headline">{{ u.full_name if u else "" }}</span>
+        <span class="caption nowrap">{{ a.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+      <p class="ov-text" style="margin:0">«{{ a.reason }}»</p>
+      <form class="ac-btns" method="post" action="/payroll-access/{{ a.id }}">
+        <span class="caption">Открыть на:</span>
+        {% for h, t in PAY_HOURS.items() %}<button class="btn btn-sm" name="hours" value="{{ h }}" onclick="this.form.action.value='approve'">{{ t }}</button>{% endfor %}
+        <input type="hidden" name="action" value="approve">
+        <button class="btn btn-sm btn-plain danger" onclick="this.form.action.value='decline'">Отказать</button>
+      </form>
+    </div>
+    {% else %}<div class="card compact"><p class="footnote" style="margin:0">Запросов нет</p></div>{% endfor %}
+    {% for a in pay_active %}{% set u = people.get(a.user_id) %}{% set d = people.get(a.decided_by) %}
+    <div class="card compact ac-card ok">
+      <div class="card-h"><span class="headline">{{ u.full_name if u else "" }} · зарплата сотрудников</span>
+        <b class="nowrap">до {{ a.until.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <p class="caption" style="margin:0">«{{ a.reason }}» · открыл {{ d.full_name if d else "" }} на {{ PAY_HOURS.get(a.hours, "") }}</p>
+      <form method="post" action="/payroll-access/{{ a.id }}"><input type="hidden" name="action" value="close">
+        <button class="btn btn-sm btn-gray">Закрыть доступ сейчас</button></form>
+    </div>
+    {% endfor %}
+    {% endif %}
   </section>
 
   <section class="ov-col on">

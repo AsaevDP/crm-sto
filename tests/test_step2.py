@@ -12,7 +12,7 @@ from .conftest import login
 
 def _menu(html: str) -> list[str]:
     side = html.split('<nav class="sidebar">')[1].split("</nav>")[0]
-    return re.findall(r'href="(/[a-z]+)"', side)
+    return re.findall(r'href="(/[a-z]+(?:/my)?)"', side)   # 20.11.2026: «Моя зарплата» = /payroll/my
 
 
 def test_requires_login(client):
@@ -35,7 +35,7 @@ def test_roles_see_different_menus(client):
     # 19.11.2026 (брат): у запчастиста закупки — в «Моих заказах» («По накладным»), отдельного пункта нет
     assert "/purchases" not in menus["oleg"] and "/money" not in menus["oleg"] and "/purchases" in menus["pavel"]
     assert "/stock" in menus["pavel"] and "/pult" not in menus["pavel"]
-    assert menus["andrey"] == ["/orders", "/schedule", "/stock", "/timesheet", "/payroll", "/tools"]
+    assert menus["andrey"] == ["/orders", "/schedule", "/stock", "/timesheet", "/payroll/my", "/tools"]
     assert "/settings" in menus["admin"] and "/audit" in menus["admin"]
     # У запчастиста и кладовщика разделы одни и те же (различаются права внутри), остальные — разные
     assert len({tuple(m) for m in menus.values()}) == 5   # 19.11.2026: у запчастиста нет «Закупок», у кладовщика есть

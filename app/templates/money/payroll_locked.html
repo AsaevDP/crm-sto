@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{# «Зарплата сотрудников» без доступа (20.11.2026, брат).
+   Директор — раздел открывает админ (галочка «Зарплата сотрудников» в правах). Зам — запрос директору, доступ на срок. #}
+{% block content %}
+<header class="page-head"><div><h1 class="large-title">Зарплата сотрудников</h1>
+  <p class="footnote" style="margin:4px 0 0">Здесь бухгалтер проверяет и выдаёт зарплату, а вы утверждаете к выплате.</p></div>
+  <div class="ov-actions"><a class="btn btn-sm btn-gray" href="/payroll/my">Моя зарплата</a></div>
+</header>
+<div class="card compact" style="max-width:640px">
+  {% if can_grant %}
+  {# директор #}
+  <div class="card-h"><span class="headline">🔒 Раздел закрыт</span></div>
+  <p class="ov-text" style="margin:0">«Зарплату сотрудников» директору открывает администратор: «Настройки» → «Сотрудники и карты» →
+    директор → право «„Зарплата сотрудников“ — видеть всех» → «Разрешить». После этого здесь появятся все сотрудники и кнопка «Утвердить к выплате».</p>
+  {% elif pending %}
+  <div class="card-h"><span class="headline">⏳ Запрос отправлен</span>
+    <span class="caption nowrap">{{ pending.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+  <p class="ov-text" style="margin:0">Ждём ответа директора. Причина: «{{ pending.reason }}». Ответ придёт сообщением.</p>
+  {% else %}
+  <div class="card-h"><span class="headline">🔒 Нужен доступ от директора</span></div>
+  {% if last and last.status == "declined" %}<p class="hint warn" style="margin:0 0 8px">Прошлый запрос — отказано.</p>
+  {% elif last and last.status in ("approved", "closed") %}<p class="hint" style="margin:0 0 8px">Прошлый доступ закончился
+    {{ last.until.astimezone().strftime("%d.%m %H:%M") if last.until else "" }}.</p>{% endif %}
+  <p class="ov-text" style="margin:0 0 8px">Директор открывает раздел на 1 день, неделю или месяц. Пока доступ действует —
+    видны все сотрудники, и вы утверждаете зарплату к выплате.</p>
+  <form class="form-row" method="post" action="/payroll/access-request">
+    <input class="field" name="reason" placeholder="Зачем нужен доступ" required>
+    <button class="btn btn-sm">Попросить доступ</button></form>
+  {% endif %}
+</div>
+{% endblock %}

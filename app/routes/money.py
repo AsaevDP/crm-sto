@@ -411,7 +411,7 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
 def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: str = "", p: str = "", d: str = ""):
     ctx.need("payroll.view_own", "payroll.view_all")
     if not (user or f or t or p or d):   # 11.11.2026: главный экран зарплаты — недельные ведомости
-        return _to("/payroll/weeks")
+        return _to("/payroll/weeks" if ctx.can("payroll.view_all") else "/payroll/my")
     from ..services.periods import Bar
     db = ctx.db
     per = _per(f, t, p, d)
@@ -442,20 +442,81 @@ def _week_start(d: str, own: bool = False) -> date:
     return wsvc.monday(x)
 
 
-def _week_users(ctx: Ctx, start: date):
-    if ctx.can("payroll.view_all"):
+def _week_users(ctx: Ctx, start: date, mine: bool = False):
+    if ctx.can("payroll.view_all") and not mine:
         return staff_for_period(ctx.db, ctx.branch.id, start)
     return [ctx.user]
 
 
+@router.get("/payroll/my")
+def payroll_my(ctx: Ctx = Depends(get_ctx), d: str = ""):
+    """«Моя зарплата» (20.11.2026, брат) — у каждого, кто получает зарплату, в т. ч. бухгалтера, директора и зама."""
+    ctx.need("payroll.view_own")
+    return _weeks_page(ctx, d, "", mine=True)
+
+
 @router.get("/payroll/weeks")
 def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = ""):
-    ctx.need("payroll.view_own", "payroll.view_all")
+    """«Зарплата сотрудников» (20.11.2026, брат): бухгалтер; директор — когда админ дал «payroll.view_all»; зам — когда
+    директор открыл доступ на срок. Без доступа — экран «как открыть» (зам — запрос директору)."""
+    if not ctx.can("payroll.view_all"):
+        if ctx.can("payroll.approve"):
+            from ..services import payroll_access as pa
+            from ..models.payroll import PayrollAccess
+            last = ctx.db.scalar(select(PayrollAccess).where(PayrollAccess.user_id == ctx.user.id)
+                                 .order_by(PayrollAccess.created_at.desc()))
+            return ctx.render("money/payroll_locked.html", title="Зарплата сотрудников", last=last,
+                              pending=pa.pending(ctx.db, ctx.user.id), can_grant=ctx.can("payroll.grant"))
+        ctx.need("payroll.view_own")
+        return _to("/payroll/my")
+    return _weeks_page(ctx, d, open_user, mine=False)
+
+
+@router.post("/payroll/access-request")
+def payroll_access_request(ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    """Зам просит у директора доступ к «Зарплате сотрудников» (20.11.2026, брат)."""
+    ctx.need("payroll.approve")
+    from ..services import payroll_access as pa
+    if ctx.can("payroll.view_all"):
+        return _to("/payroll/weeks")
+    err = pa.request(ctx.db, ctx.user, reason)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Запрос отправлен директору — ответ придёт сообщением")
+    return _to("/payroll/weeks")
+
+
+@router.post("/payroll-access/{aid}")
+def payroll_access_decide(aid: str, ctx: Ctx = Depends(get_ctx), action: str = Form(""), hours: int = Form(0)):
+    """Директор: разрешить заму «Зарплату сотрудников» на 1 день / неделю / месяц, отказать или закрыть досрочно."""
+    ctx.need("payroll.grant")
+    from ..models.payroll import PayrollAccess
+    from ..services import payroll_access as pa
+    a = ctx.db.get(PayrollAccess, _uuid(aid))
+    if not a or a.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = pa.decide(ctx.db, a, ctx.user, action, hours)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        who = ctx.db.get(User, a.user_id)
+        flash(ctx.request, f"{who.full_name if who else ''}: " + {"approve": "доступ открыт", "decline": "отказано",
+                                                                   "close": "доступ закрыт"}.get(action, "готово"))
+    return _to("/access-requests#payroll")
+
+
+def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool):
     from ..models.payroll import WEEK_STATUS
     from ..services import payweek as wsvc
     db = ctx.db
-    start = _week_start(d, own=not ctx.can("payroll.view_all"))
-    users = _week_users(ctx, start)
+    all_view = ctx.can("payroll.view_all") and not mine
+    start = _week_start(d, own=not all_view)
+    users = _week_users(ctx, start, mine)
     data = wsvc.week_data(db, ctx.branch.id, start, users)
     all_ids = set()
     for r in data["rows"].values():
@@ -466,12 +527,16 @@ def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = "")
     works = {w.id: w for w in db.scalars(select(WoWork).where(WoWork.id.in_(
         [a.wo_work_id for r in data["rows"].values() for a in r["items"] if a.wo_work_id])))}
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    hist = wsvc.history(db, ctx.branch.id, users, start, 6) if ctx.can("payroll.view_all") else []
+    hist = wsvc.history(db, ctx.branch.id, users, start, 6) if all_view else []
     from ..models import ToolCheckLine
     from ..models.payroll import PERSON_STATUS
     tl_ids = [a.tool_line_id for r in data["rows"].values() for a in r["items"] if a.tool_line_id]
     tool_checks = {l.id: l.check_id for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.id.in_(tl_ids)))} if tl_ids else {}
-    return ctx.render("money/payroll_weeks.html", title="Зарплата · неделя", start=start, end=data["end"], data=data,
+    # 20.11.2026 (брат): утверждает директор (и зам с доступом) — право payroll.approve; админ — payroll.edit
+    can_approve = all_view and ctx.can("payroll.approve", "payroll.edit")
+    return ctx.render("money/payroll_weeks.html", title="Моя зарплата" if mine else "Зарплата сотрудников",
+                      all_view=all_view, mine=mine, base="/payroll/my" if mine else "/payroll/weeks",
+                      can_approve=can_approve, start=start, end=data["end"], data=data,
                       users=users, orders=orders, vehicles=vehicles, works=works, people=people, hist=hist,
                       PERSON_STATUS=PERSON_STATUS, tool_checks=tool_checks,
                       WEEK_STATUS=WEEK_STATUS, COLS=wsvc.COLS, PAY_METHODS=PAY_METHODS, PAY_TO=PAY_TO,
@@ -545,7 +610,7 @@ def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(
         w.note = (w.note + "\n" if w.note else "") + f"{date.today():%d.%m} {ctx.user.short_name}: {note.strip()}"
     wsvc.refresh_paid(ctx.db, w, users)
     ctx.db.commit()
-    flash(ctx.request, f"Проверено: {n} чел. — ждут утверждения админа" if n else "Проверять некого — все уже проверены")
+    flash(ctx.request, f"Проверено: {n} чел. — ждут утверждения директора" if n else "Проверять некого — все уже проверены")
     return _to(_week_back(start))
 
 
@@ -553,10 +618,13 @@ def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(
 def payroll_person_status(d: str, uid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...)):
     """Один сотрудник: проверено (бухгалтер) → утверждено к выплате (админ / кому дали право) ; вернуть на проверку."""
     from ..services import payweek as wsvc
-    need = {"checked": "payroll.check", "approved": "payroll.edit", "open": "payroll.edit"}.get(status)
+    # 20.11.2026 (брат): утверждает директор (и зам, пока у него доступ) — payroll.approve; админ — payroll.edit
+    need = {"checked": ("payroll.check",), "approved": ("payroll.approve", "payroll.edit"),
+            "open": ("payroll.approve", "payroll.edit")}.get(status)
     if not need:
         raise Forbidden()
-    ctx.need(need)
+    ctx.need(*need)
+    ctx.need("payroll.view_all")
     u = ctx.db.get(User, _uuid(uid))
     if not u or u.branch_id != ctx.branch.id:
         raise Forbidden()
@@ -581,7 +649,7 @@ async def payroll_week_pay(d: str, ctx: Ctx = Depends(get_ctx)):
     data = wsvc.week_data(ctx.db, ctx.branch.id, start, users)
     targets = [u for u in users if str(u.id) == str(form.get("user_id", ""))]
     if targets and data["rows"][targets[0].id]["pst"] != "approved":
-        flash(ctx.request, f"{targets[0].short_name}: сначала бухгалтер проверяет, админ утверждает — тогда выдача", "error")
+        flash(ctx.request, f"{targets[0].short_name}: сначала бухгалтер проверяет, директор утверждает — тогда выдача", "error")
         return _to(_week_back(start, targets[0].id))
     n, total = 0, Decimal(0)
     for u in targets:

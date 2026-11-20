@@ -379,6 +379,9 @@ def setup():
                 post("admin", f"/settings/roles/{rc.id}/perm", {"perm": perm, "on": ""}, what=f"Роль разбора без {perm}", fetch=True)
         for p, m in PAIRS.items():
             post("admin", "/settings/pairs", {"partsman_id": str(uid(p)), "manager_id": str(uid(m))}, what="Пара менеджер ↔ запчастист")
+        # 20.11.2026 (брат): «Зарплату сотрудников» директору открывает админ (галочка в правах сотрудника)
+        post("admin", f"/settings/users/{uid('director')}/perm", {"perm": "payroll.view_all", "mode": "allow"},
+             what="Директору: «Зарплата сотрудников»", fetch=True)
     with at(d0, "09:30"):
         # Карты для табеля — каждому
         for i, u in enumerate(q(M.User, M.User.login != "admin")):
@@ -1417,8 +1420,8 @@ def payroll_week(monday):
                 continue   # ждут проверки бухгалтера
             if r["pst"] == "open":
                 post("buh", f"/payroll/weeks/{d}/people/{u_id}", {"status": "checked"}, what="Проверил")
-            if i >= 4:
-                post("admin", f"/payroll/weeks/{d}/people/{u_id}", {"status": "approved"}, what="Утвердил")
+            if i >= 4:   # 20.11.2026 (брат): утверждает директор (админ дал ему «Зарплату сотрудников»)
+                post("director", f"/payroll/weeks/{d}/people/{u_id}", {"status": "approved"}, what="Утвердил (директор)")
     with at(monday + timedelta(days=1), "17:00"):
         with SessionLocal() as db:
             br = db.scalar(select(M.Branch))

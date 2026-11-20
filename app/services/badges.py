@@ -360,20 +360,28 @@ def compute(ctx) -> dict:
             _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?f=declined", info=info_rz)
 
     # ---------- Зарплата: прошлая неделя ждёт проверки / утверждения ----------
-    if ctx.can("payroll.check", "payroll.edit"):
+    # 20.11.2026 (брат): цифры — у «Зарплаты сотрудников»: бухгалтеру 🟠 проверить / 🟢 выдать; директору (и заму, пока у
+    # него доступ) 🟠 утвердить — проверенные бухгалтером; админу — всё, что не утверждено
+    approver = ctx.can("payroll.view_all") and ctx.can("payroll.approve", "payroll.edit")
+    if ctx.can("payroll.check") or approver:
         from . import payweek as wsvc
         from .staff import staff_for_period
         start = wsvc.monday(date.today()) - timedelta(days=7)
         users = staff_for_period(db, bid, start)
         data = wsvc.week_data(db, bid, start, users)
         act = [r for r in data["rows"].values() if r["accrued"] > 0 and r["state"] != "paid"]
-        if ctx.can("payroll.check") and not ctx.can("payroll.edit"):
-            _add(out, "/payroll", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить",
-                 f"/payroll/weeks?d={start.isoformat()}")
-        if ctx.can("payroll.edit"):
-            _add(out, "/payroll", "orange", sum(1 for r in act if r["pst"] in ("open", "checked")), "утвердить",
-                 f"/payroll/weeks?d={start.isoformat()}")
+        link = f"/payroll/weeks?d={start.isoformat()}"
+        if ctx.can("payroll.check"):
+            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link)
+        if approver:
+            states = ("open", "checked") if ctx.can("payroll.edit") and role == "admin" else ("checked",)
+            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] in states), "утвердить к выплате", link)
         if ctx.can("payroll.pay"):
-            _add(out, "/payroll", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать",
-                 f"/payroll/weeks?d={start.isoformat()}")
+            _add(out, "/payroll/weeks", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link)
+    # 🔴 20.11.2026: зам просит доступ к «Зарплате сотрудников» — директору
+    if ctx.can("payroll.grant"):
+        from ..models.payroll import PayrollAccess
+        _add(out, "/payroll/weeks", "red", db.scalar(select(func.count()).select_from(PayrollAccess).where(
+            PayrollAccess.branch_id == bid, PayrollAccess.status == "pending")) or 0,
+             "зам просит доступ к «Зарплате сотрудников»", "/access-requests#payroll")
     return out

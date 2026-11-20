@@ -1,8 +1,14 @@
 {# Переключатель разделов зарплаты (11.11.2026): по неделям (выплаты) / за период (сводка) / схемы. #}
 {% macro payroll_nav(active) %}
 <nav class="segmented pw-nav" aria-label="Зарплата">
+  {# 20.11.2026 (брат): «Моя зарплата» — по неделям / за период (своё); «Зарплата сотрудников» — по неделям / за период (все) #}
+  {% if active in ("my", "my_period") or not ctx.can("payroll.view_all") %}
+  <a href="/payroll/my" aria-pressed="{{ (active == 'my')|lower }}">По неделям</a>
+  <a href="/payroll?p=month&user={{ ctx.user.id }}" aria-pressed="{{ (active in ('my_period', 'period'))|lower }}">За период</a>
+  {% else %}
   <a href="/payroll/weeks" aria-pressed="{{ (active == 'weeks')|lower }}">По неделям</a>
-  <a href="/payroll?p=month" aria-pressed="{{ (active == 'period')|lower }}">{{ "За период" if ctx.can("payroll.view_all") else "Моя зарплата" }}</a>
+  <a href="/payroll?p=month" aria-pressed="{{ (active == 'period')|lower }}">За период</a>
+  {% endif %}
   {% if ctx.can("settings.access") %}<a href="/settings/payroll" aria-pressed="{{ (active == 'schemes')|lower }}">Схемы и оклад</a>{% endif %}
 </nav>
 {% endmacro %}
