@@ -1,7 +1,7 @@
 {# 20.11.2026 (брат, наряд 60): мастер просит запчасть со склада под наряд — решение менеджера прямо здесь.
    x — из messages.ask_cards; back — куда вернуться; compact — внутри наряда (без номера машины). #}
 {% macro ask_card(x, back, compact=False) %}{% set m = x.m %}
-<div class="card compact issue ask-card {{ 'stuck' if x.stuck }}" id="ask-{{ m.id }}">
+<div class="card compact issue ask-card rim rim-red {{ 'stuck' if x.stuck }}" id="ask-{{ m.id }}">
   <div class="card-h"><span class="headline">🙋 {{ x.who.short_name if x.who else "Мастер" }} просит со склада</span>
     <span class="caption nowrap">{{ m.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
   {% if not compact and x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}{% endif %}</div>{% endif %}

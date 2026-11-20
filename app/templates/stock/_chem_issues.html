@@ -5,7 +5,7 @@
   <section class="ov-col on">
     <div class="group-title">Просят химию · {{ chem_new|length }}</div>
     {% for x in chem_new %}{% set st = chem_free.get(x.r.catalog_id) %}
-    <div class="card compact issue">
+    <div class="card compact issue rim rim-red">
       <div class="card-h"><span class="headline">{{ x.who.full_name if x.who else "" }} просит</span>
         <span class="caption">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
       {% if x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · для мойки машины</div>{% endif %}
@@ -27,7 +27,7 @@
   <section class="ov-col on">
     <div class="group-title">Готово — ждут, когда заберут · {{ chem_ready|length }}</div>
     {% for x in chem_ready %}
-    <div class="card compact issue ready">
+    <div class="card compact issue rim rim-orange">
       <div class="card-h"><span class="headline">{{ x.c.name if x.c else "" }}</span>
         <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span></div>
       <div class="kv"><span>для {{ x.who.full_name if x.who else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}</span><b class="nowrap">{{ x.r.issued_qty|num }} шт · отложено</b></div>

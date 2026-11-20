@@ -2133,17 +2133,81 @@ def my_requests_data(ctx: Ctx) -> dict:
     return out
 
 
+def my_requests_columns(ctx: Ctx, data: dict) -> tuple[list, list]:
+    """20.11.2026 (брат): «Мои запросы» — колонки Запчасти | Б/у · разбор | Инструмент (| Химия) и общая история.
+    В колонке сверху то, что можно забрать / подтвердить «Получил» (🟢), потом «ждёт кладовщика» (🟠), потом
+    «попросил со склада — ждёт менеджера» (серая). Согласованная просьба отдельно не показывается — она уже стала
+    запросом на выдачу (раньше одна фара была видна дважды). Получено, отказ, отменено — в истории внизу."""
+    from ..services import messages as msg
+    cols = {}
+    if ctx.can("stock.request_issue"):
+        cols["parts"] = {"key": "parts", "title": "Запчасти", "hint": "новые — у окошка склада"}
+        cols["razbor"] = {"key": "razbor", "title": "Б/у · разбор", "hint": "у окошка разбора"}
+        cols["tools"] = {"key": "tools", "title": "Инструмент", "hint": "общий, из шкафа"}
+    if ctx.can("chem.ask"):
+        cols["chem"] = {"key": "chem", "title": "Химия", "hint": "для мойки"}
+    for c in cols.values():
+        c.update(take=[], wait=[], ask=[], n_recv=0)
+    hist = []
+    for x in data["parts"]:
+        r, col = x["r"], cols.get("razbor" if x["r"].zone == "razbor" else "parts")
+        if col is None:
+            continue
+        if r.id in data["recv_ok"] or r.status == "ready":
+            col["take"].append(("part", x))
+        elif r.status == "new":
+            col["wait"].append(("part", x))
+        else:
+            hist.append(("part", x, r.issued_at or r.updated_at))
+    for a in data["asks"]:
+        m = a["m"]
+        if m.status == "approved":
+            continue
+        if m.status == "pending":
+            col = cols.get("razbor" if msg._zone_of(ctx.db, m.catalog_id) == "razbor" else "parts")
+            if col is not None:
+                col["ask"].append(("ask", a))
+        else:
+            hist.append(("ask", a, m.decided_at or m.updated_at))
+    for x in data["tools"]:
+        r = x["r"]
+        if "tools" not in cols:
+            break
+        if (r.kind == "issue" and r.status == "done" and not r.received_at) or r.status == "ready":
+            cols["tools"]["take"].append(("tool", x))
+            cols["tools"]["n_recv"] += r.status == "done"
+        elif r.status == "new":
+            cols["tools"]["wait"].append(("tool", x))
+        else:
+            hist.append(("tool", x, r.done_at or r.updated_at))
+    for x in data["chem"]:
+        r = x["r"]
+        if "chem" not in cols:
+            break
+        if r.status == "ready":
+            cols["chem"]["take"].append(("chem", x))
+        elif r.status == "new":
+            cols["chem"]["wait"].append(("chem", x))
+        else:
+            hist.append(("chem", x, r.decided_at or r.updated_at))
+    for c in cols.values():
+        c["n_take"], c["n_wait"] = len(c["take"]), len(c["wait"]) + len(c["ask"])
+        c["color"] = "green" if c["n_take"] else "orange" if c["n_wait"] else "gray"
+    hist.sort(key=lambda h: h[2], reverse=True)
+    return list(cols.values()), hist[:40]
+
+
 @router.get("/my-requests")
 def my_requests(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     ctx.need("stock.request_issue", "chem.ask")
     from ..services import chem as csvc
     data = my_requests_data(ctx)
-    tabs = ([("parts", "Запчасти"), ("tools", "Инструмент")] if ctx.can("stock.request_issue") else []) \
-        + ([("chem", "Химия")] if ctx.can("chem.ask") else [])
-    tab = tab if tab in dict(tabs) else tabs[0][0]
+    cols, hist = my_requests_columns(ctx, data)
+    # tab= в старых ссылках (сообщения, цифры в меню) — теперь прокрутка к своей колонке
+    tab = tab if tab in {c["key"] for c in cols} else ""
     people = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    return ctx.render("stock/my_requests.html", title="Мои запросы на выдачу", tab=tab, tabs=tabs, people=people,
-                      fmt_plate=osvc.fmt_plate, CHEM_STATUS=csvc.STATUS, **data)
+    return ctx.render("stock/my_requests.html", title="Мои запросы на выдачу", tab=tab, cols=cols, hist=hist,
+                      people=people, fmt_plate=osvc.fmt_plate, CHEM_STATUS=csvc.STATUS, recv_ok=data["recv_ok"])
 
 
 @router.get("/api/notify")

@@ -16,10 +16,11 @@
     {# 18.11.2026: просят выдать — красная, как цифра в меню; 19.11.2026: подготовлено, но не выдано — оранжевая;
        всё выдано — серая 0. Цифра — просят + подготовлено. #}
     {% macro sub(n, r, label) %}{% if n and r %}просят: {{ n }} · готово: {{ r }}{% elif r %}готово — не выдано{% else %}{{ label }}{% endif %}{% endmacro %}
-    {% if can_new or not can_rz %}{{ itile("parts", "Запчасти", n_parts + r_parts, "red" if n_parts else "orange" if r_parts else "gray", sub(n_parts, r_parts, "ждут выдачи")) }}
-    {% else %}{{ itile("parts", "Запчасти · склад", n_parts + r_parts, "gray", "для сведения · новые") }}{% endif %}
+    {# 20.11.2026 (брат): у всех кладовщиков один порядок — Б/у · разбор → Запчасти → Инструмент → Химия #}
     {% if can_rz %}{{ itile("razbor", "Б/у · разбор", n_rz + r_rz, "red" if n_rz else "orange" if r_rz else "gray", sub(n_rz, r_rz, "ждут выдачи")) }}
     {% else %}{{ itile("razbor", "Б/у · разбор", n_rz + r_rz, "gray", "для сведения · выдаёт разбор") }}{% endif %}
+    {% if can_new or not can_rz %}{{ itile("parts", "Запчасти", n_parts + r_parts, "red" if n_parts else "orange" if r_parts else "gray", sub(n_parts, r_parts, "ждут выдачи")) }}
+    {% else %}{{ itile("parts", "Запчасти · склад", n_parts + r_parts, "gray", "для сведения · новые") }}{% endif %}
     {% if can_tools %}{{ itile("tools", "Инструмент", n_tools + r_tools, "red" if n_tools else "orange" if r_tools else "gray", sub(n_tools, r_tools, "просят и сдают")) }}{% endif %}
     {% if can_chem %}{{ itile("chem", "Химия", n_chem + r_chem, "red" if n_chem else "orange" if r_chem else "gray", sub(n_chem, r_chem, "для мойки")) }}{% endif %}
   </nav>
@@ -37,7 +38,7 @@
     {% if pend %}
     <div class="group-title">Слесарь просит — ждёт согласования менеджера · {{ pend|length }}</div>
     {% for x in pend %}
-    <div class="card compact issue wait">
+    <div class="card compact issue rim rim-gray">
       <div class="card-h"><span class="headline">{{ x.who.full_name if x.who else "" }} просит</span>
         <span class="caption">{{ x.m.created_at.astimezone().strftime("%H:%M") }}</span></div>
       <div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
@@ -49,7 +50,7 @@
     {% endif %}
     <div class="group-title">Ждут выдачи · {{ new|length }}</div>
     {% for x in new %}
-    <div class="card compact issue">
+    <div class="card compact issue rim {{ 'rim-red' if act else 'rim-gray' }}">
       {# 20.11.2026 (брат): кто просил и его должность — мастер или менеджер #}
       <div class="card-h"><span class="headline">{% if x.who_role %}<span class="caption">{{ x.who_role }}</span> {% endif %}{{ x.who.full_name if x.who else "" }} просит</span>
         {# 19.11.2026: состояние — плашкой; кнопки ниже — действия кладовщика #}
@@ -71,7 +72,7 @@
   <section class="ov-col on">
     <div class="group-title">Готово — ждут, когда заберут · {{ ready|length }}</div>
     {% for x in ready %}
-    <div class="card compact issue ready">
+    <div class="card compact issue rim {{ 'rim-orange' if act else 'rim-gray' }}">
       <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }}</span>
         <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span></div>
       <div class="caption">просил {{ (x.who_role|lower ~ " ") if x.who_role }}{{ x.who.full_name if x.who else "" }}{% set m = people.get(x.wo.manager_id) %}{% if m %} · ведёт {{ m.full_name }}{% endif %}</div>
@@ -99,7 +100,7 @@
   <section class="ov-col on">
     <div class="group-title">Просят выдать · {{ t_issue|length }}</div>
     {% for x in t_issue %}
-    <div class="card compact tool-req">
+    <div class="card compact tool-req rim {{ 'rim-red' if can_manage else 'rim-gray' }}">
       {{ tool_line(x) }}
       {% if can_manage %}
       {# 19.11.2026: как с запчастями — достал из шкафа → «Готово к выдаче» (у сотрудника загорится); стоит рядом → «Выдано сразу» #}
@@ -113,7 +114,7 @@
 
     <div class="group-title">Готово — ждут, когда заберут · {{ t_ready|length }}</div>
     {% for x in t_ready %}
-    <div class="card compact tool-req ready">
+    <div class="card compact tool-req rim {{ 'rim-orange' if can_manage else 'rim-gray' }}">
       {{ tool_line(x) }}
       <span class="caption">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span>
       {% if can_manage %}
@@ -126,7 +127,7 @@
 
     <div class="group-title">Сдают — принять в шкаф · {{ t_return|length }}</div>
     {% for x in t_return %}
-    <div class="card compact tool-req ret">
+    <div class="card compact tool-req rim {{ 'rim-orange' if can_manage else 'rim-gray' }}">
       {{ tool_line(x) }}
       {% if can_manage %}
       <div class="tool-req-acts">

@@ -2290,3 +2290,27 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .mo-view { margin: 0 0 10px; max-width: 360px; }
 /* 19.11.2026: «Запросы на выдачу» менеджера — плитки не обрезаются на телефоне */
 .rd-tiles { grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)) !important; }
+/* 20.11.2026 (брат): «Запросы на выдачу» — у каждой карточки цветная рамка по всему контуру, цвет как у плитки:
+   🔴 просят / согласовать, 🟠 ждёт кладовщика / готово у кладовщика, 🟢 забрать / подтвердить, серая — для сведения.
+   Рамка рисуется тенью внутрь — размер карточки не меняется. Прежние полоски слева гасим. */
+.card.compact.rim { border: 0; opacity: 1;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--rim) 80%, transparent), var(--shadow-2); }
+.card.compact.rim-red { --rim: var(--red); }
+.card.compact.rim-orange { --rim: var(--orange); }
+.card.compact.rim-green { --rim: var(--green); }
+.card.compact.rim-gray { --rim: var(--gray); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gray) 50%, transparent), var(--shadow-2); }
+#parts .card.compact.rim { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--rim) 80%, transparent); }
+/* «Мои запросы» мастера: колонки Запчасти | Б/у | Инструмент (| Химия), внизу история */
+.mr-cols { display: grid; gap: 14px; align-items: start; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.mr-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; scroll-margin-top: 16px; }
+.mr-col > .group-title { margin: 0; }
+.mr-col > .card { margin: 0; }
+.mr-sub { margin: 4px 4px 0; }
+/* одна колонка (мойщик — только химия): карточки сеткой, а не на всю ширину */
+.mr-cols.one { grid-template-columns: minmax(0, 1fr); }
+.mr-cols.one .mr-col { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.mr-cols.one .mr-col > .group-title { grid-column: 1 / -1; }
+@media (max-width: 760px) { .mr-cols.one .mr-col { grid-template-columns: minmax(0, 1fr); } }
+/* четыре плитки на телефоне: «Инструмент» не обрезается */
+@media (max-width: 480px) { .iss-tiles { gap: 6px; } .iss-tiles .ptile { padding: 8px 8px 9px; } .iss-tiles .ptile-t { font-size: 12px; } }
+@media (max-width: 1100px) { .mr-cols { grid-template-columns: minmax(0, 1fr); } }

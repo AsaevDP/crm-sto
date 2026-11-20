@@ -4,7 +4,7 @@
    Менеджер приходит, забирает и нажимает «Выдано» (или это делает кладовщик — кто первый).
    19.11.2026 (брат): так же с инструментом — забрал у окошка, отнёс мастеру, «Выдано» (на руках у мастера). #}
 {% macro req_card(x) %}
-<div class="card compact issue ready">
+<div class="card compact issue rim rim-green">
   <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
     <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
   <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
@@ -17,7 +17,7 @@
 </div>
 {% endmacro %}
 {% macro tool_card(x) %}
-<div class="card compact issue ready">
+<div class="card compact issue rim rim-green">
   <div class="card-h"><span class="headline">🔧 {{ x.tool.name if x.tool else "" }}</span>
     <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
   {% if x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}{% endif %}</div>{% endif %}
@@ -68,18 +68,27 @@
   {# 12.11.2026: что ещё у кладовщика — просили, он пока не собрал; 19.11.2026 — и инструмент #}
   <section class="rd-sec" id="waiting">
     <div class="group-title">Ждут кладовщика · {{ n_wait }}</div>
-    <div class="card compact rd-list">
+    {# 20.11.2026 (брат): каждый наряд — отдельная карточка с оранжевой рамкой (раньше — строки в одной длинной рамке) #}
+    <div class="mr-grid">
       {% for x in waiting %}
-      <div class="rd-row"><span class="rd-what"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number[-6:] }}</a> · {{ x.v.make }} {{ x.v.model }}
-        <span class="caption">{{ "Б/у · разбор: " if x.r.zone == "razbor" else "Склад: " }}{{ x.lines|map(attribute="name")|join(", ") }} · просил {{ x.who.full_name if x.who else "" }}</span></span>
-        <b class="rd-when">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="card compact issue rim rim-orange">
+        <div class="card-h mr-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
+          <span class="caption nowrap">с {{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+        <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
+        <div class="caption">⏳ {{ "б/у — ждёт кладовщика разбора" if x.r.zone == "razbor" else "ждёт кладовщика склада" }}
+          · просил {{ (x.who_role|lower ~ " ") if x.who_role }}{{ x.who.full_name if x.who else "" }}</div>
+        {% for l in x.lines %}<div class="kv"><span>{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт</b></div>{% endfor %}
+      </div>
       {% endfor %}
       {% for x in t_wait %}
-      <div class="rd-row"><span class="rd-what">🔧 {{ x.tool.name if x.tool else "" }}
-        <span class="caption"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }}{% endif %} · просит {{ x.who.full_name if x.who else "" }}</span></span>
-        <b class="rd-when">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="card compact issue rim rim-orange">
+        <div class="card-h mr-h"><span class="headline">🔧 {{ x.tool.name if x.tool else "" }}</span>
+          <span class="caption nowrap">с {{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></div>
+        {% if x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}{% endif %}</div>{% endif %}
+        <div class="caption">⏳ инструмент — ждёт кладовщика · просит {{ x.who.full_name if x.who else "" }}</div>
+      </div>
       {% endfor %}
-      {% if not n_wait %}<p class="footnote" style="margin:0">Нет — всё собрано</p>{% endif %}
+      {% if not n_wait %}<div class="card compact rd-empty"><p class="footnote" style="margin:0">Нет — всё собрано</p></div>{% endif %}
     </div>
   </section>
 
