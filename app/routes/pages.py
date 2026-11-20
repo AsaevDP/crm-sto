@@ -41,7 +41,7 @@ for _p in SECTIONS:
 
 STAFF_GROUPS = [("mechanic", "Слесари"), ("electrician", "Автоэлектрики"), ("motorist", "Мотористы"),
                 ("washer", "Мойка и детейлинг"), ("detailer", "Мойка и детейлинг"), ("partsman", "Запчастисты"), ("storekeeper", "Кладовщики"),
-                ("content", "Кладовщики"), ("manager", "Менеджеры"), ("office", "Офис")]
+                ("content", "Кладовщики"), ("headkeeper", "Кладовщики"), ("manager", "Менеджеры"), ("office", "Офис")]
 
 
 def _staff_groups(ctx, staff, presence) -> list[dict]:
@@ -57,7 +57,8 @@ def _staff_groups(ctx, staff, presence) -> list[dict]:
         code = u.role.code
         if not is_mgr:
             return u.id != me.id
-        if code in ("mechanic", "electrician", "motorist", "washer", "detailer", "storekeeper", "content"):
+        if code in ("mechanic", "electrician", "motorist", "washer", "detailer", "storekeeper", "content",
+                    "headkeeper"):
             return True
         return code == "partsman" and u.works_with_id == me.id
 

@@ -247,6 +247,7 @@ NAMES = {
     "dmitro": "Дмитрий Лысенко", "andrey": "Андрей Демченко", "director": "Виктор Петренко", "deputy": "Наталья Кравец",
     "buh": "Оксана Мельничук", "elektro": "Роман Бойко", "motor": "Василий Ткачук", "moyka": "Артём Литвиненко",
     "detail": "Ольга Захарченко",
+    "glav": "Сергей Ковальчук",   # 20.11.2026: главный кладовщик — обе зоны склада
 }
 STAFF_EXTRA = []   # больше никого не заводим
 PAIRS = {"oleg": "irina"}
@@ -789,11 +790,12 @@ def step_issue(o, day, hhmm):
     reqs = q(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "new")
     with at(day, _later(hhmm, 20)):
         for r in reqs:
+            keeper = "dmitro" if r.zone == "razbor" else "pavel"   # 20.11.2026: б/у выдаёт кладовщик разбора
             if rnd.random() < 0.5:
-                post("pavel", f"/stock/issues/{r.id}/ready", what="📦 Готово к выдаче")
-                post(o.mgr if rnd.random() < 0.5 else "pavel", f"/stock/issues/{r.id}/issue", {"back": "/ready"}, what="Выдано (забрал)")
+                post(keeper, f"/stock/issues/{r.id}/ready", what="📦 Готово к выдаче")
+                post(o.mgr if rnd.random() < 0.5 else keeper, f"/stock/issues/{r.id}/issue", {"back": "/ready"}, what="Выдано (забрал)")
             else:
-                post("pavel", f"/stock/issues/{r.id}/issue", {"back": "/stock/issues"}, what="Выдано сразу")
+                post(keeper, f"/stock/issues/{r.id}/issue", {"back": "/stock/issues"}, what="Выдано сразу")
     st = o.wo().status
     R.check(st == "work", "после выдачи запчастей → «В работе»", f"{o.wo().number}: {st}")
     if day == TODAY and not LEFT_RECV:
@@ -1482,7 +1484,7 @@ def dismiss_roman(day):
 
 # ================================================================ главный цикл
 STAFF = ("admin", "irina", "oleg", "pavel", "dmitro", "andrey", "director", "deputy", "buh",
-         "elektro", "motor", "moyka", "detail")
+         "elektro", "motor", "moyka", "detail", "glav")   # 20.11.2026: + главный кладовщик
 
 
 def prepare_staff():
@@ -1712,7 +1714,8 @@ def leave_for_today(day):
             post(o.lead, f"{o.url}/issue-request", {"comment": "к 18:00"}, what="Запросить выдачу (выдать — руками)")
             r = one(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.status == "new")
             if i == 1 and r:
-                post("pavel", f"/stock/issues/{r.id}/ready", what="📦 Готово к выдаче (забрать — руками)")
+                post("dmitro" if r.zone == "razbor" else "pavel", f"/stock/issues/{r.id}/ready",
+                     what="📦 Готово к выдаче (забрать — руками)")
     # 20.11.2026: общий инструмент на руках у мастеров («Выдан под наряды» не пустой); один ещё не подтверждён
     held = [o for o in ACTIVE if o.wo() and o.wo().status in ("diag", "approve", "picking", "waiting", "instock", "work")]
     free_t = [t for t in q(M.Tool, M.Tool.category.notin_(("personal", "spare"))) if not t.holder_id and t.status in ("ok", "worn")]
@@ -1760,6 +1763,25 @@ def leave_for_today(day):
             with at(day, "17:20"):
                 post("andrey", "/messages/ask", {"item_id": str(it.id), "order_id": str(o.id), "qty": "1",
                                                  "text": "Нужен очиститель тормозов, свой закончился"}, what="Попросить под наряд")
+        # 20.11.2026 (брат): б/у с разбора под наряд — слесарь просит, менеджер согласует → запрос в зону «разбор»
+        # (выдаёт кладовщик разбора; у обычного кладовщика — для сведения)
+        from app.services import stock as _ss
+        with SessionLocal() as _db:
+            used = [i for i in _db.scalars(select(M.StockItem).join(M.PartCatalog, M.PartCatalog.id == M.StockItem.catalog_id)
+                                            .where(M.PartCatalog.kind == "used", M.StockItem.price_state == ""))]
+            bal = _ss.balances(_db, used[0].branch_id, [i.id for i in used]) if used else {}
+            used = [i for i in used if bal[i.id]["free"] > 0]
+        if used and o.wo().status == "work":
+            with at(day, "17:22"):
+                post("andrey", "/messages/ask", {"item_id": str(used[0].id), "order_id": str(o.id), "qty": "1",
+                                                 "text": "Есть б/у на разборе — подойдёт"}, what="Попросить б/у с разбора")
+                m = one(M.OrderMessage, M.OrderMessage.work_order_id == o.id, M.OrderMessage.status == "pending",
+                        M.OrderMessage.stock_item_id == used[0].id)
+                if m:
+                    post(o.mgr, f"/messages/{m.id}/decide", {"action": "approve", "back": "/ready"}, what="Согласовать б/у")
+            rz = one(M.IssueRequest, M.IssueRequest.work_order_id == o.id, M.IssueRequest.zone == "razbor",
+                     M.IssueRequest.status == "new")
+            R.check(rz is not None, "б/у под наряд — отдельный запрос кладовщику разбора", o.wo().number)
         with at(day, "17:25"):
             post("andrey", "/messages", {"order_id": str(o.id), "to": "manager",
                                          "text": "Клиенту стоит поменять задние колодки — осталось ~3 мм", "back": o.url},

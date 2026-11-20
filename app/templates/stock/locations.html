@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Ячейки склада</h1></div>
+  {% set rz_only = ctx.can("razbor.stock") and not ctx.can("stock.manage") %}
+  <div><a class="back" href="{{ '/razbor' if rz_only else '/stock' }}">{{ icon("back") }}{{ "Разбор" if rz_only else "Склад" }}</a><h1 class="large-title">Ячейки склада</h1></div>
 </header>
-{% if ctx.can("stock.manage") %}
+{# 20.11.2026 (брат): ячейки заводит и кладовщик разбора — для своей зоны (свой стеллаж, например «Р») #}
+{% if rz_only %}<p class="hint" style="margin:0 0 10px">Для деталей разбора заведите свой стеллаж (например, «Р»): ячейку детали выбирают в её карточке.</p>{% endif %}
+{% if ctx.can("stock.manage", "razbor.stock") %}
 <div class="cl-grid">
   <form class="card compact form dense" method="post" action="/stock/locations">
     <div class="card-h"><span class="headline">Весь стеллаж сразу</span></div>

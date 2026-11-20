@@ -7,6 +7,7 @@ from sqlalchemy import func, or_, select
 
 from ..models import Client, ClientEvent, Lift, User, Vehicle, WoFinding, WoPhoto, WorkOrder, WoStatusHistory, WoWork
 from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, URGENCY, WO_ACTIVE, WO_STATUSES
+from ..models.stock import ISSUE_ZONES
 from ..services import orders as svc
 from ..services import leftovers as lsvc
 from ..services import receipt as rcpt_svc
@@ -296,8 +297,12 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([p.catalog_id for p in parts if p.catalog_id])))}
     people.update(_people(ctx, *[p.created_by for p in parts]))   # подпись «кто добавил» у каждой позиции
     # открытый запрос на выдачу: ждёт кладовщика или «Готово к выдаче» (12.11.2026) — сначала готовый
-    open_issue = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status.in_(("new", "ready")))
-                           .order_by(IssueRequest.status.desc()))
+    # 20.11.2026 (брат): открытых может быть два — склад новых и разбор (б/у), у каждого своё окошко
+    open_issues = db.scalars(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status.in_(("new", "ready")))
+                             .order_by(IssueRequest.zone, IssueRequest.status.desc())).all()
+    open_issue = next((r for r in open_issues if r.status == "ready"), open_issues[0] if open_issues else None)
+    from ..models import IssueRequestLine as _IRL
+    asked_ids = set(db.scalars(select(_IRL.wo_part_id).where(_IRL.request_id.in_([r.id for r in open_issues])))) if open_issues else set()
     # 13.11.2026 (брат): подбор идёт уже на согласовании — одновременно с работами у менеджера
     can_pick = (ctx.can("parts.pick") and wo.status in ("approve", "picking", "waiting") and not wo.awaiting_prepay
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
@@ -375,11 +380,12 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         cats=cats, can_pick=can_pick, PART_STATUS=stock_svc.PART_STATUS_LABEL,   # cats — и для архива (собраны до отбора)
         show_cost=ctx.can("prices.view_purchase"), show_price=ctx.can("prices.view_sale") or ctx.can("prices.view_purchase"),
         default_markup=st_.get(db, ctx.branch.id, "pricing")["default_markup"], open_issue=open_issue,
+        open_issues=open_issues, ZONES=ISSUE_ZONES,
         # 19.11.2026 (брат): запросить выдачу того, что уже на складе, можно и пока остальное едет («Ждём запчасти»);
-        # любой мастер с работой в этом наряде, не только ведущий
-        can_request_issue=(ctx.can("stock.request_issue") and not (open_issue and open_issue.status == "new")
+        # любой мастер с работой в этом наряде, не только ведущий. 20.11: есть в резерве то, что ещё не просили
+        can_request_issue=(ctx.can("stock.request_issue")
                            and wo.status in ("waiting", "instock", "work")
-                           and any(p.status == "reserved" for p in parts)
+                           and any(p.status == "reserved" and p.id not in asked_ids for p in parts)
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id
                                 or any(w.mechanic_id == ctx.user.id for w in works))),
         parts_coming=[p for p in parts if p.status in ("need", "ordered", "arrived")],

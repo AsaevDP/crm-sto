@@ -71,12 +71,15 @@ def test_menu_badges_colors(client):
     # Менеджер: наряд «готов к выдаче» — зелёная цифра в «Нарядах»
     _as(client, "irina")
     url = _create(client, scenario="A", photos=1, plate="KA3002AA", phone="0670003002", works="Работа (цифры)").json()["url"]
-    before = _badges(client, "/orders").get("green", 0)
+    def ready_n():   # зелёных цифр у «Нарядов» может быть две (готовы к выдаче / пришли запчасти) — берём свою
+        return sum(b["n"] for b in client.get("/api/notify").json()["badges"].get("/orders", [])
+                   if b["c"] == "green" and "готовы к выдаче" in b["t"])
+    before = ready_n()
     with SessionLocal() as db:
         wo = db.get(WorkOrder, _wo(url).id)
         wo.status = "ready"
         db.commit()
-    assert _badges(client, "/orders").get("green", 0) == before + 1
+    assert ready_n() == before + 1
     client.post("/logout")
     # Слесарь чужих цифр не видит
     _as(client, "andrey")

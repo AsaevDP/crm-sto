@@ -113,6 +113,16 @@
       </div>
       {% else %}<p class="footnote" style="margin:0">Продаж не было</p>{% endfor %}
     </div>
+    {# 20.11.2026 (брат): инвентаризация детали разбора — кладовщик разбора (своя зона) #}
+    {% if ctx.can("razbor.stock") %}
+    <details class="card compact work-edit"><summary class="caption">Инвентаризация — по факту на полке {{ r.b.on_hand|num }} шт?</summary>
+      <form class="form-row" method="post" action="/stock/items/{{ i.id }}/adjust" style="margin-top:8px">
+        <label class="caption">По факту<input class="field" name="actual" value="{{ r.b.on_hand|num }}" inputmode="decimal" style="max-width:80px"></label>
+        <input class="field" name="reason" placeholder="Причина: нашлась / нет на полке" required>
+        <button class="btn btn-sm btn-tinted">Исправить остаток</button></form>
+      <p class="hint" style="margin:6px 0 0">Ячейку детали меняют выше, в «Изменить». Новые ячейки — <a href="/stock/locations">«Ячейки склада»</a>.</p>
+    </details>
+    {% endif %}
     {% if ctx.can("razbor.manage") and r.b.free > 0 %}
     <details class="card compact work-edit"><summary class="caption">Списать (разбилась, не годится)</summary>
       <form class="form-row" method="post" action="/razbor/parts/{{ i.id }}/writeoff" style="margin-top:8px">

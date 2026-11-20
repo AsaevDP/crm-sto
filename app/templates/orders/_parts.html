@@ -219,15 +219,18 @@
   </details>
   {% endif %}
 
-  {% if open_issue and open_issue.status == "ready" %}
-  {# 12.11.2026: кладовщик собрал запчасти у окошка — забрать и «Выдано» (менеджер или кладовщик) #}
-  <div class="hint iss-ready-bar"><b>📦 Запчасти готовы к выдаче — у кладовщика</b>
-    {% if open_issue.ready_at %}<span class="caption"> · с {{ open_issue.ready_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
-    {% if ctx.can("stock.issue") or ctx.can("stock.pickup") %}
-    <form method="post" action="/stock/issues/{{ open_issue.id }}/issue" style="margin-top:6px" onsubmit="return confirm('Запчасти забрали? Отметить «Выдано».')">
+  {# 12.11.2026: кладовщик собрал запчасти у окошка — забрать и «Выдано» (менеджер или кладовщик).
+     20.11.2026 (брат): два окошка — склад новых и разбор (б/у); у каждого запроса своё #}
+  {% for oi in open_issues %}{% set win = "кладовщика разбора (б/у)" if oi.zone == "razbor" else "кладовщика" %}
+  {% if oi.status == "ready" %}
+  <div class="hint iss-ready-bar"><b>📦 Запчасти готовы к выдаче — у {{ win }}</b>
+    {% if oi.ready_at %}<span class="caption"> · с {{ oi.ready_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
+    {% if ctx.can("razbor.issue" if oi.zone == "razbor" else "stock.issue") or ctx.can("stock.pickup") %}
+    <form method="post" action="/stock/issues/{{ oi.id }}/issue" style="margin-top:6px" onsubmit="return confirm('Запчасти забрали? Отметить «Выдано».')">
       <input type="hidden" name="back" value="/orders/{{ wo.id }}#parts"><button class="btn btn-sm">✓ Выдано</button></form>
     {% endif %}</div>
-  {% elif open_issue %}<p class="hint warn">Запрос на выдачу отправлен — ждёт кладовщика.</p>{% endif %}
+  {% else %}<p class="hint warn">Запрос на выдачу отправлен — ждёт {{ win }}.</p>{% endif %}
+  {% endfor %}
   {# 20.11.2026 (брат, наряд 60): мастер просит со склада — раньше было видно только внизу, в «Сообщениях» #}
   {% if ask_cards %}{% from "stock/_ask_card.html" import ask_card with context %}
   {% for x in ask_cards %}{{ ask_card(x, "/orders/" ~ wo.id ~ "#parts", compact=True) }}{% endfor %}{% endif %}
@@ -252,6 +255,6 @@
   </form>
   {% elif parts_coming and wo.status in ("waiting", "instock", "work") %}
   <p class="caption" style="margin:4px 0 0">Ещё нет на складе: {{ parts_coming|map(attribute="name")|join(", ") }}.
-    {% if open_issue %}Пока работайте с выданным — последнюю работу закрыть нельзя, пока их не выдадут.{% else %}Пришедшее можно запросить, когда оно будет на складе.{% endif %}</p>
+    {% if open_issues %}Пока работайте с выданным — последнюю работу закрыть нельзя, пока их не выдадут.{% else %}Пришедшее можно запросить, когда оно будет на складе.{% endif %}</p>
   {% endif %}
 </div>

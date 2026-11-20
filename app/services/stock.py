@@ -913,27 +913,68 @@ def parse_paste(text: str) -> list[dict]:
 
 
 # ---------- Выдача ----------
+def part_zone(db: Session, part: WoPart) -> str:
+    """20.11.2026 (брат): из какой зоны склада выдаётся деталь — "razbor" (б/у с разбора) или "new" (новые)."""
+    cat = db.get(PartCatalog, part.catalog_id) if part and part.catalog_id else None
+    return "razbor" if cat is not None and cat.kind == "used" else "new"
+
+
+def open_request(db: Session, wo_id, zone: str, statuses=("new",)) -> IssueRequest | None:
+    return db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo_id, IssueRequest.zone == zone,
+                                                IssueRequest.status.in_(statuses)))
+
+
 def request_issue(db: Session, wo: WorkOrder, comment: str = "") -> IssueRequest | None:
     """Запрос на выдачу всех зарезервированных и ещё не выданных позиций наряда.
-    Позиции, которые уже в открытом запросе (ждёт кладовщика или «готово к выдаче»), второй раз не просим."""
+    Позиции, которые уже в открытом запросе (ждёт кладовщика или «готово к выдаче»), второй раз не просим.
+    20.11.2026 (брат): новые и б/у — РАЗНЫЕ запросы (разные окошки: склад и разбор). Возвращает первый из созданных."""
     open_ids = [r.id for r in db.scalars(select(IssueRequest).where(IssueRequest.work_order_id == wo.id,
                                                                     IssueRequest.status.in_(("new", "ready"))))]
     asked = set(db.scalars(select(IssueRequestLine.wo_part_id).where(IssueRequestLine.request_id.in_(open_ids)))) if open_ids else set()
     parts = [p for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved"))
              if p.id not in asked]
-    open_req = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
-    if open_req:
-        for p in parts:   # дозаказали ещё деталь — добавляем в тот же запрос
-            db.add(IssueRequestLine(request_id=open_req.id, wo_part_id=p.id, qty=p.qty))
-        return open_req
-    if not parts:
-        return None
-    req = IssueRequest(work_order_id=wo.id, comment=comment.strip()[:500])
-    db.add(req)
-    db.flush()
+    by_zone: dict[str, list] = {}
     for p in parts:
-        db.add(IssueRequestLine(request_id=req.id, wo_part_id=p.id, qty=p.qty))
-    return req
+        by_zone.setdefault(part_zone(db, p), []).append(p)
+    first = None
+    for zone in ("new", "razbor"):
+        zparts = by_zone.get(zone, [])
+        req = open_request(db, wo.id, zone)
+        if req is None:
+            if not zparts:
+                continue
+            req = IssueRequest(work_order_id=wo.id, comment=comment.strip()[:500], zone=zone)
+            db.add(req)
+            db.flush()
+        for p in zparts:   # дозаказали ещё деталь — добавляем в тот же запрос своей зоны
+            db.add(IssueRequestLine(request_id=req.id, wo_part_id=p.id, qty=p.qty))
+        first = first or req
+    return first
+
+
+def split_mixed_open(db: Session) -> int:
+    """Один раз при запуске (20.11.2026): открытый запрос, где вместе новые и б/у, — б/у уходят в отдельный запрос
+    зоны «разбор» с тем же этапом. Запрос только из б/у — сразу зона «разбор». Сколько запросов поправили."""
+    from ..db import current_branch_id
+    n = 0
+    for req in db.scalars(select(IssueRequest).where(IssueRequest.status.in_(("new", "ready")), IssueRequest.zone == "new")).all():
+        lines = db.scalars(select(IssueRequestLine).where(IssueRequestLine.request_id == req.id)).all()
+        used = [l for l in lines if part_zone(db, db.get(WoPart, l.wo_part_id)) == "razbor"]
+        if not used:
+            continue
+        current_branch_id.set(req.branch_id)
+        if len(used) == len(lines):
+            req.zone = "razbor"
+        else:
+            twin = IssueRequest(work_order_id=req.work_order_id, comment=req.comment, zone="razbor", status=req.status,
+                                ready_at=req.ready_at, ready_by=req.ready_by, branch_id=req.branch_id, created_by=req.created_by)
+            db.add(twin)
+            db.flush()
+            for l in used:
+                l.request_id = twin.id
+        n += 1
+    db.flush()
+    return n
 
 
 def issue(db: Session, req: IssueRequest, user_id):
@@ -973,7 +1014,8 @@ def mark_ready(db: Session, req: IssueRequest, user) -> bool:
         return False
     req.status, req.ready_at, req.ready_by = "ready", now(), user.id
     wo = db.get(WorkOrder, req.work_order_id)
-    nsvc.send(db, [wo.manager_id, req.created_by], "issue_ready", "Запчасти готовы к выдаче — у кладовщика",
+    where = "у кладовщика разбора (б/у)" if req.zone == "razbor" else "у кладовщика"
+    nsvc.send(db, [wo.manager_id, req.created_by], "issue_ready", f"Запчасти готовы к выдаче — {where}",
               f"{nsvc.car(db, wo)} · наряд {wo.number}", "/ready", wo, skip=user.id)
     return True
 

@@ -8,8 +8,9 @@
   <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
     <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
   <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
-  <div class="caption">📦 запчасти у окошка кладовщика{% set rb = people.get(x.r.ready_by) %}{% if rb %} · подготовил {{ rb.full_name }}{% endif %}
-    · просил {{ x.who.full_name if x.who else "" }}</div>
+  {# 20.11.2026 (брат): два окошка — склад новых и разбор (б/у) #}
+  <div class="caption">📦 {{ "б/у у окошка разбора" if x.r.zone == "razbor" else "запчасти у окошка склада" }}{% set rb = people.get(x.r.ready_by) %}{% if rb %} · подготовил {{ rb.full_name }}{% endif %}
+    · просил {{ (x.who_role|lower ~ " ") if x.who_role }}{{ x.who.full_name if x.who else "" }}</div>
   {% for l in x.lines %}<div class="kv"><span>{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт</b></div>{% endfor %}
   <form method="post" action="/stock/issues/{{ x.r.id }}/issue" onsubmit="return confirm('Запчасти забрали? Отметить «Выдано».')">
     <input type="hidden" name="back" value="/ready"><button class="btn btn-block">✓ Выдано</button></form>
@@ -70,7 +71,7 @@
     <div class="card compact rd-list">
       {% for x in waiting %}
       <div class="rd-row"><span class="rd-what"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number[-6:] }}</a> · {{ x.v.make }} {{ x.v.model }}
-        <span class="caption">{{ x.lines|map(attribute="name")|join(", ") }} · просил {{ x.who.full_name if x.who else "" }}</span></span>
+        <span class="caption">{{ "Б/у · разбор: " if x.r.zone == "razbor" else "Склад: " }}{{ x.lines|map(attribute="name")|join(", ") }} · просил {{ x.who.full_name if x.who else "" }}</span></span>
         <b class="rd-when">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% endfor %}
       {% for x in t_wait %}

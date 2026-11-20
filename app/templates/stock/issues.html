@@ -4,8 +4,9 @@
 <header class="page-head">
   {# 19.11.2026 (брат): это отдельный раздел меню; со вкладки «Инструмент» назад — в «Инструмент» #}
   <div>{% if tab == "tools" and ctx.can("tools.view", "tools.manage") %}<a class="back" href="/tools">{{ icon("back") }}Инструмент</a>{% endif %}<h1 class="large-title">Запросы на выдачу</h1></div>
-  {% if can_tools or can_chem %}
-  {# 14.11.2026 (брат): вкладки — цветные плитки, как на складе и в наряде, чтобы бросались в глаза #}
+  {% if true %}
+  {# 14.11.2026 (брат): вкладки — цветные плитки, как на складе и в наряде, чтобы бросались в глаза.
+     20.11.2026 (брат): «Запчасти» — склад новых (кладовщик), «Б/у (разбор)» — кладовщик разбора; чужая зона — для сведения #}
   <nav class="pult-tiles iss-tiles" aria-label="Что выдаём">
     {% macro itile(key, title, n, color, sub) %}
     <a class="ptile {{ 'on' if tab == key }} {{ 'zero' if not n and tab != key }}" href="/stock/issues?tab={{ key }}"
@@ -15,7 +16,10 @@
     {# 18.11.2026: просят выдать — красная, как цифра в меню; 19.11.2026: подготовлено, но не выдано — оранжевая;
        всё выдано — серая 0. Цифра — просят + подготовлено. #}
     {% macro sub(n, r, label) %}{% if n and r %}просят: {{ n }} · готово: {{ r }}{% elif r %}готово — не выдано{% else %}{{ label }}{% endif %}{% endmacro %}
-    {{ itile("parts", "Запчасти", n_parts + r_parts, "red" if n_parts else "orange" if r_parts else "gray", sub(n_parts, r_parts, "ждут выдачи")) }}
+    {% if can_new or not can_rz %}{{ itile("parts", "Запчасти", n_parts + r_parts, "red" if n_parts else "orange" if r_parts else "gray", sub(n_parts, r_parts, "ждут выдачи")) }}
+    {% else %}{{ itile("parts", "Запчасти · склад", n_parts + r_parts, "gray", "для сведения · новые") }}{% endif %}
+    {% if can_rz %}{{ itile("razbor", "Б/у · разбор", n_rz + r_rz, "red" if n_rz else "orange" if r_rz else "gray", sub(n_rz, r_rz, "ждут выдачи")) }}
+    {% else %}{{ itile("razbor", "Б/у · разбор", n_rz + r_rz, "gray", "для сведения · выдаёт разбор") }}{% endif %}
     {% if can_tools %}{{ itile("tools", "Инструмент", n_tools + r_tools, "red" if n_tools else "orange" if r_tools else "gray", sub(n_tools, r_tools, "просят и сдают")) }}{% endif %}
     {% if can_chem %}{{ itile("chem", "Химия", n_chem + r_chem, "red" if n_chem else "orange" if r_chem else "gray", sub(n_chem, r_chem, "для мойки")) }}{% endif %}
   </nav>
@@ -23,7 +27,11 @@
 </header>
 
 {% if tab == "chem" %}{% include "stock/_chem_issues.html" %}
-{% elif tab == "parts" %}
+{% elif tab in ("parts", "razbor") %}
+{% if not act %}
+<p class="hint" style="margin:0 0 10px">Для сведения: {{ "б/у с разбора выдаёт кладовщик разбора" if zone == "razbor" else "новые запчасти выдаёт кладовщик склада" }} —
+  здесь видно, что просят и что готово, кнопок нет.</p>
+{% endif %}
 <div class="cl-grid">
   <section class="ov-col on">
     {% if pend %}
@@ -35,26 +43,28 @@
       <div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
       <div class="kv"><span>{{ x.cat.name if x.cat else "" }} <span class="mono caption">{{ x.cat.article if x.cat else "" }}</span></span><b>{{ x.m.qty|num }} шт · {{ x.cell }}</b></div>
       {% if x.m.text %}<p class="ov-text" style="margin:0">«{{ x.m.text }}»</p>{% endif %}
-      <p class="hint warn" style="margin:0">Пока не выдавать: ждём «Согласовать» от {{ x.mgr.short_name if x.mgr else "менеджера" }}. После согласования запрос появится ниже.</p>
+      <p class="hint warn" style="margin:0">Пока не выдавать: ждём «Согласовать» от {{ x.mgr.short_name if x.mgr else "менеджера" }}.{% if act %} После согласования запрос появится ниже.{% endif %}</p>
     </div>
     {% endfor %}
     {% endif %}
     <div class="group-title">Ждут выдачи · {{ new|length }}</div>
     {% for x in new %}
     <div class="card compact issue">
-      <div class="card-h"><span class="headline">{{ x.who.full_name if x.who else "" }} просит</span>
+      {# 20.11.2026 (брат): кто просил и его должность — мастер или менеджер #}
+      <div class="card-h"><span class="headline">{% if x.who_role %}<span class="caption">{{ x.who_role }}</span> {% endif %}{{ x.who.full_name if x.who else "" }} просит</span>
         {# 19.11.2026: состояние — плашкой; кнопки ниже — действия кладовщика #}
-        <span class="chip" data-s="waiting">ждёт вас · с {{ x.r.created_at.astimezone().strftime("%H:%M") }}</span></div>
+        <span class="chip" data-s="waiting">{{ "ждёт вас" if act else "ждёт кладовщика" }} · с {{ x.r.created_at.astimezone().strftime("%H:%M") }}</span></div>
       <div class="subhead"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
       {% if x.r.comment %}<p class="ov-text">«{{ x.r.comment }}»</p>{% endif %}
       {% for l in x.lines %}
       <div class="kv"><span>{% if l.urgent %}<span class="urg-tag">🔥 срочно</span> {% endif %}{{ l.name }} <span class="mono caption">{{ l.article }}</span></span><b>{{ l.qty|num }} шт · {{ l.cells|join(", ") or "—" }}</b></div>
       {% endfor %}
       {# 12.11.2026: собрал у окошка → «Готово к выдаче» (у менеджера загорится); человек уже стоит рядом → «Выдано сразу» #}
+      {% if act %}
       <div class="iss-acts">
         <form method="post" action="/stock/issues/{{ x.r.id }}/ready"><button class="btn btn-block">📦 Готово к выдаче</button></form>
         <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block btn-gray">Выдано сразу</button></form>
-      </div>
+      </div>{% endif %}
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Новых запросов нет</p></div>{% endfor %}
   </section>
@@ -64,15 +74,15 @@
     <div class="card compact issue ready">
       <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a> · {{ x.v.make }} {{ x.v.model }}</span>
         <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%H:%M") if x.r.ready_at else "" }}</span></div>
-      <div class="caption">просил {{ x.who.full_name if x.who else "" }}{% set m = people.get(x.wo.manager_id) %}{% if m %} · ведёт {{ m.full_name }}{% endif %}</div>
+      <div class="caption">просил {{ (x.who_role|lower ~ " ") if x.who_role }}{{ x.who.full_name if x.who else "" }}{% set m = people.get(x.wo.manager_id) %}{% if m %} · ведёт {{ m.full_name }}{% endif %}</div>
       {% for l in x.lines %}<div class="kv"><span>{{ l.name }}</span><b>{{ l.qty|num }} шт</b></div>{% endfor %}
-      <form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block">Выдано</button></form>
+      {% if act %}<form method="post" action="/stock/issues/{{ x.r.id }}/issue"><button class="btn btn-block">Выдано</button></form>{% endif %}
     </div>
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Подготовленного нет</p></div>{% endfor %}
     <div class="group-title">Недавно выдано</div>
     <div class="card compact">
       {% for x in done %}
-      <div class="kv"><span><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}</span><b>{{ x.r.updated_at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="kv"><span><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}</span><b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b></div>
       {% else %}<p class="footnote">Пока ничего</p>{% endfor %}
     </div>
   </section>

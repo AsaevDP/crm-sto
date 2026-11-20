@@ -99,7 +99,7 @@ def test_ready_to_issue(client):
     j = client.get("/api/notify").json()
     assert j["ready"] == before + 1 and any(n["kind"] == "issue_ready" for n in j["notes"])
     ready = client.get("/ready").text
-    assert "Фильтр (готово к выдаче)" in ready and "у окошка кладовщика" in ready
+    assert "Фильтр (готово к выдаче)" in ready and "у окошка склада" in ready
     order = client.get(url).text
     assert "Запчасти готовы к выдаче" in order
     # Менеджер забрал → «Выдано» → наряд в работе, цифра ушла, в ленте видно

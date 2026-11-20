@@ -90,6 +90,7 @@
 [data-role="manager"]    { --accent: var(--blue); }
 [data-role="partsman"]   { --accent: var(--indigo); }
 [data-role="storekeeper"]{ --accent: var(--orange); }
+[data-role="headkeeper"] { --accent: var(--orange); }
 [data-role="content"]    { --accent: var(--teal); }
 [data-role="mechanic"]   { --accent: var(--green); }
 [data-role="admin"]      { --accent: var(--graphite); }

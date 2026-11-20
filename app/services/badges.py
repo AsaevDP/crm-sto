@@ -36,18 +36,39 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
+def _zone_keeper_on_site(db, bid, role_code: str) -> bool:
+    """Кладовщик этой зоны сейчас на работе (по табелю: последняя отметка за сегодня — «пришёл»)."""
+    from ..models import Role, User
+    from .attendance import on_site_now
+    people = db.scalars(select(User).join(Role, Role.id == User.role_id).where(
+        User.branch_id == bid, User.active.is_(True), Role.code == role_code)).all()
+    if not people:
+        return False
+    last = on_site_now(db, bid, people)
+    return any(last.get(u.id) is not None and last[u.id].direction == "in" for u in people)
+
+
 def compute(ctx) -> dict:
     db, me, bid = ctx.db, ctx.user, ctx.branch.id
     role = me.role.code
     out: dict = {}
     see_all = role in ALL_ROLES
+    # 20.11.2026 (брат): главный кладовщик — обе зоны склада. Кладовщик зоны сегодня на работе (по табелю) — у главного
+    # цифры этой зоны «для сведения» (сиреневая обводка); его нет (не пришёл, ушёл, должности нет) — обычные, подменяет
+    info_new = role == "headkeeper" and _zone_keeper_on_site(db, bid, "storekeeper")
+    info_rz = role == "headkeeper" and _zone_keeper_on_site(db, bid, "content")
 
     # ---------- Слесарь просит запчасть (11.11.2026) — кладовщику «для сведения»; менеджеру цифра — у «Сообщений» ----------
-    if ctx.can("stock.issue"):
-        from ..models import OrderMessage
-        _add(out, "/stock/issues", "orange", db.scalar(select(func.count()).select_from(OrderMessage).where(
-            OrderMessage.branch_id == bid, OrderMessage.kind == "part", OrderMessage.status == "pending")) or 0,
-             "слесарь просит — ждёт согласования менеджера")
+    if ctx.can("stock.issue", "razbor.issue"):
+        from ..models import OrderMessage, PartCatalog
+        pq = select(func.count()).select_from(OrderMessage).join(PartCatalog, PartCatalog.id == OrderMessage.catalog_id).where(
+            OrderMessage.branch_id == bid, OrderMessage.kind == "part", OrderMessage.status == "pending")
+        if ctx.can("stock.issue"):   # 20.11.2026: по зонам — новые у кладовщика, б/у у кладовщика разбора
+            _add(out, "/stock/issues", "orange", db.scalar(pq.where(PartCatalog.kind != "used")) or 0,
+                 "слесарь просит — ждёт согласования менеджера", info=info_new)
+        if ctx.can("razbor.issue"):
+            _add(out, "/stock/issues", "orange", db.scalar(pq.where(PartCatalog.kind == "used")) or 0,
+                 "слесарь просит б/у — ждёт согласования менеджера", "/stock/issues?tab=razbor", info=info_rz)
 
     # ---------- Наряды ----------
     if ctx.can("orders.view_all", "orders.view_own"):
@@ -207,32 +228,40 @@ def compute(ctx) -> dict:
              "инструмент выдан — подтвердите «Получил»", "/my-requests?tab=tools")
 
     # ---------- Запросы на выдачу (кладовщик) ----------
-    if ctx.can("stock.issue", "tools.manage"):
+    if ctx.can("stock.issue", "tools.manage", "razbor.issue"):
+        iq = select(func.count()).select_from(IssueRequest).where(IssueRequest.branch_id == bid)
         if ctx.can("stock.issue"):
-            _add(out, "/stock/issues", "red", db.scalar(select(func.count()).select_from(IssueRequest).where(
-                IssueRequest.branch_id == bid, IssueRequest.status == "new")) or 0, "просят выдать запчасти")
+            # 20.11.2026 (брат): только своя зона — новые запчасти (б/у выдаёт кладовщик разбора)
+            _add(out, "/stock/issues", "red", db.scalar(iq.where(IssueRequest.status == "new", IssueRequest.zone == "new")) or 0,
+                 "просят выдать запчасти", info=info_new)
             from ..models import ChemRequest   # 12.11.2026: мойщик / детейлер просит химию
             _add(out, "/stock/issues", "red", db.scalar(select(func.count()).select_from(ChemRequest).where(
-                ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "просят химию для мойки", "/stock/issues?tab=chem")
+                ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "просят химию для мойки", "/stock/issues?tab=chem",
+                 info=info_new)
             # 🟠 19.11.2026 (брат): подготовил — ещё не выдано (горит, пока не нажато «Выдано»)
-            _add(out, "/stock/issues", "orange", db.scalar(select(func.count()).select_from(IssueRequest).where(
-                IssueRequest.branch_id == bid, IssueRequest.status == "ready")) or 0,
-                 "запчасти подготовлены — ещё не выданы", "/stock/issues")
+            _add(out, "/stock/issues", "orange", db.scalar(iq.where(IssueRequest.status == "ready", IssueRequest.zone == "new")) or 0,
+                 "запчасти подготовлены — ещё не выданы", "/stock/issues", info=info_new)
             _add(out, "/stock/issues", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
                 ChemRequest.branch_id == bid, ChemRequest.status == "ready")) or 0,
-                 "химия подготовлена — ещё не выдана", "/stock/issues?tab=chem")
+                 "химия подготовлена — ещё не выдана", "/stock/issues?tab=chem", info=info_new)
+        if ctx.can("razbor.issue"):
+            # 🔴 / 🟠 20.11.2026 (брат): б/у под наряд — у кладовщика разбора своё окошко
+            _add(out, "/stock/issues", "red", db.scalar(iq.where(IssueRequest.status == "new", IssueRequest.zone == "razbor")) or 0,
+                 "просят выдать б/у с разбора", "/stock/issues?tab=razbor", info=info_rz)
+            _add(out, "/stock/issues", "orange", db.scalar(iq.where(IssueRequest.status == "ready", IssueRequest.zone == "razbor")) or 0,
+                 "б/у подготовлено — ещё не выдано", "/stock/issues?tab=razbor", info=info_rz)
         if ctx.can("tools.manage"):
             # 18.11.2026 (брат): инструмент — цифра у «Инструмента» (раньше пряталась в «Запросах на выдачу»).
             # Ссылка — та же вкладка «Инструмент» в выдаче, где кнопки «Выдать» / «Принял».
             from ..models import ToolRequest
             tq = select(func.count()).select_from(ToolRequest).where(ToolRequest.branch_id == bid, ToolRequest.status == "new")
             _add(out, "/tools", "red", db.scalar(tq.where(ToolRequest.kind == "issue")) or 0, "просят инструмент — выдать",
-                 "/stock/issues?tab=tools")
+                 "/stock/issues?tab=tools", info=info_new)
             _add(out, "/tools", "orange", db.scalar(tq.where(ToolRequest.kind == "return")) or 0, "сдают инструмент — принять",
-                 "/stock/issues?tab=tools")
+                 "/stock/issues?tab=tools", info=info_new)
             _add(out, "/tools", "orange", db.scalar(select(func.count()).select_from(ToolRequest).where(
                 ToolRequest.branch_id == bid, ToolRequest.status == "ready", ToolRequest.kind == "issue")) or 0,
-                 "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools")
+                 "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools", info=info_new)
         # 19.11.2026 (брат): «готово — ещё не выдано» снова горит оранжевым (18.11 убирали) — пока не нажато «Выдано»
 
     # ---------- Мойка (18.11.2026, брат) ----------
@@ -277,12 +306,12 @@ def compute(ctx) -> dict:
         wait_q = (select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
                   .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")), PurchaseLine.received.is_(False)))
         late = db.scalar(wait_q.where(Purchase.expected_on.is_not(None), Purchase.expected_on < date.today())) or 0
-        _add(out, "/stock", "red", late, "опаздывают — позвонить поставщику", "/stock/receive?tab=late")
-        _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive")
+        _add(out, "/stock", "red", late, "опаздывают — позвонить поставщику", "/stock/receive?tab=late", info=info_new)
+        _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive", info=info_new)
     # 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы, сиреневая цифра у «Склада»
     if ctx.can("stock.keep"):
         from . import keep as ksvc
-        _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always")
+        _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always", info=info_new)
     # 17.11.2026 (брат): в «Закупках» у кладовщика — только свои заказы на склад; цифра — его черновики («Заказал» не нажат)
     if ctx.can("purchases.stock") and not ctx.can("purchases.manage"):
         _add(out, "/purchases", "orange", db.scalar(select(func.count()).select_from(Purchase).where(
@@ -299,7 +328,8 @@ def compute(ctx) -> dict:
             _add(out, "/stock", "red", db.scalar(lq.where(PartLeftover.status == "decide")) or 0,
                  "клиент отказался — решите с заказом у поставщика", "/stock/leftovers")
         _add(out, "/stock", "orange", db.scalar(lq.where(PartLeftover.status == "stock")) or 0,
-             "лишнее после отказа на складе — оставить, вернуть или продать", "/stock/leftovers")
+             "лишнее после отказа на складе — оставить, вернуть или продать", "/stock/leftovers",
+             info=info_new and not ctx.can("parts.pick"))
 
     # ---------- Мои заказы (запчастист) ----------
     if ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman"):
@@ -315,9 +345,9 @@ def compute(ctx) -> dict:
     if ctx.can("razbor.manage"):
         base = select(func.count()).select_from(UsedSale).where(UsedSale.branch_id == bid, UsedSale.status == "reserved")
         _add(out, "/razbor/shipping", "red", db.scalar(base.where(UsedSale.packed_at.is_(None))) or 0, "подготовить",
-             "/razbor/shipping?st=prepare")
+             "/razbor/shipping?st=prepare", info=info_rz)
         _add(out, "/razbor/shipping", "orange", db.scalar(base.where(UsedSale.packed_at.is_not(None))) or 0,
-             "готово — ждёт покупателя или отправки", "/razbor/shipping?st=ready_ship")
+             "готово — ждёт покупателя или отправки", "/razbor/shipping?st=ready_ship", info=info_rz)
 
     # ---------- Цены разбора (18.11.2026, брат) ----------
     if ctx.can("razbor.price") or ctx.can("razbor.manage"):
@@ -327,7 +357,7 @@ def compute(ctx) -> dict:
             _add(out, "/razbor/prices", "red", rc["new"], "новые детали — утвердить цену", "/razbor/prices?tab=new")
             _add(out, "/razbor/prices", "orange", rc["change"], "просят изменить цену", "/razbor/prices?tab=change")
         if ctx.can("razbor.manage"):
-            _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?f=declined")
+            _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?f=declined", info=info_rz)
 
     # ---------- Зарплата: прошлая неделя ждёт проверки / утверждения ----------
     if ctx.can("payroll.check", "payroll.edit"):

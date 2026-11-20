@@ -263,6 +263,12 @@ class IssueRequest(Entity):
     # 20.11.2026 (брат): мастер подтверждает «✓ Получил» — пока не подтвердил, «Начал» по его работам не нажимается
     received_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     received_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 20.11.2026 (брат): склад делится на две зоны со своими окошками — "new" (новые запчасти, кладовщик) и "razbor"
+    # (б/у, кладовщик разбора). Новые и б/у в наряде — два разных запроса на выдачу.
+    zone: Mapped[str] = mapped_column(String(8), default="new", server_default="new")
+
+
+ISSUE_ZONES = {"new": "склад новых запчастей", "razbor": "разбор (б/у)"}
 
 
 class IssueRequestLine(Entity):

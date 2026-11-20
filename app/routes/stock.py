@@ -1839,29 +1839,36 @@ def labels_save(ctx: Ctx = Depends(get_ctx), size: str = Form("100x70"), width_m
 
 @router.post("/stock/items/{item_id}/adjust")
 def stock_adjust(item_id: str, ctx: Ctx = Depends(get_ctx), actual: str = Form(...), reason: str = Form("")):
-    """Инвентаризация: «по факту на полке N» → корректировка разницы. Причина обязательна."""
-    ctx.need("stock.manage")
+    """Инвентаризация: «по факту на полке N» → корректировка разницы. Причина обязательна.
+    20.11.2026 (брат): кладовщик разбора — только детали разбора (своя зона); новый склад — кладовщик."""
+    ctx.need("stock.manage", "razbor.stock")
     i = ctx.db.get(StockItem, _uuid(item_id))
     if not i or i.branch_id != ctx.branch.id:
         raise Forbidden()
+    used = (ctx.db.get(PartCatalog, i.catalog_id).kind == "used")
+    if not ctx.can("stock.manage") and not used:
+        raise Forbidden()
+    back = f"/razbor/parts/{item_id}" if used and not ctx.can("stock.manage") else f"/stock/items/{item_id}"
     if not reason.strip():
         flash(ctx.request, "Укажите причину корректировки", "error")
-        return _to(f"/stock/items/{item_id}")
+        return _to(back)
     b = svc.balances(ctx.db, ctx.branch.id, [i.id])[i.id]
     fact = _dec(actual, "-1")
     if fact < 0:
         flash(ctx.request, "Остаток по факту не может быть меньше нуля", "error")
-        return _to(f"/stock/items/{item_id}")
+        return _to(back)
     if fact < b["reserved"]:   # иначе «свободно» уходит в минус — резерв под наряды висит на пустом месте
         flash(ctx.request, f"На полке меньше, чем в резерве под наряды ({b['reserved'].normalize():f} шт). "
                            f"Сначала снимите резерв в нарядах (убрать позицию или отменить наряд)", "error")
-        return _to(f"/stock/items/{item_id}")
+        return _to(back)
     diff = fact - b["on_hand"]
     if diff:
         svc.move(ctx.db, "adjust", i, diff, comment=f"Инвентаризация: {reason.strip()}")
         ctx.db.commit()
         flash(ctx.request, f"Остаток исправлен на {diff:+}")
-    return _to(f"/stock/items/{item_id}")
+    else:
+        flash(ctx.request, "Совпадает — исправлять нечего")
+    return _to(back)
 
 
 @router.get("/stock/locations")
@@ -1875,8 +1882,8 @@ def locations(ctx: Ctx = Depends(get_ctx)):
 @router.post("/stock/locations")
 def location_add(ctx: Ctx = Depends(get_ctx), rack: str = Form(...), shelf: str = Form(""), place: str = Form(""),
                  shelves: str = Form(""), places: str = Form("")):
-    """Ячейка или сразу весь стеллаж: «B», полок 4, мест 5 → 20 ячеек."""
-    ctx.need("stock.manage")
+    """Ячейка или сразу весь стеллаж: «B», полок 4, мест 5 → 20 ячеек. 20.11.2026: и кладовщик разбора (своя зона)."""
+    ctx.need("stock.manage", "razbor.stock")
     rack = rack.strip().upper()[:10]
     if not rack:
         return _to("/stock/locations")
@@ -1895,10 +1902,17 @@ def location_add(ctx: Ctx = Depends(get_ctx), rack: str = Form(...), shelf: str 
 
 
 # ======================= Выдача =======================
-def _requests(ctx: Ctx, status="new"):
+def zone_perm(zone: str) -> str:
+    """20.11.2026 (брат): кто выдаёт запрос этой зоны — кладовщик (новые) или кладовщик разбора (б/у)."""
+    return "razbor.issue" if zone == "razbor" else "stock.issue"
+
+
+def _requests(ctx: Ctx, status="new", zone: str | None = None):
     db = ctx.db
-    reqs = db.scalars(select(IssueRequest).where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == status)
-                      .order_by(IssueRequest.created_at.desc() if status != "new" else IssueRequest.created_at).limit(50)).all()
+    q = select(IssueRequest).where(IssueRequest.branch_id == ctx.branch.id, IssueRequest.status == status)
+    if zone:
+        q = q.where(IssueRequest.zone == zone)
+    reqs = db.scalars(q.order_by(IssueRequest.created_at.desc() if status != "new" else IssueRequest.created_at).limit(50)).all()
     out = []
     for r in reqs:
         wo = db.get(WorkOrder, r.work_order_id)
@@ -1912,32 +1926,44 @@ def _requests(ctx: Ctx, status="new"):
                 cells.append(f"{svc.location_label(db.get(Location, si.location_id) if si.location_id else None)} × {qty.normalize()}")
             lines.append({"name": part.name if part else "?", "article": cat.article if cat else "", "qty": l.qty,
                           "cells": cells, "status": part.status if part else "", "urgent": bool(part and part.urgent)})
-        out.append({"r": r, "wo": wo, "v": db.get(Vehicle, wo.vehicle_id), "who": db.get(User, r.created_by),
-                    "lines": lines})
+        who = db.get(User, r.created_by)
+        out.append({"r": r, "wo": wo, "v": db.get(Vehicle, wo.vehicle_id), "who": who,
+                    # 20.11.2026 (брат): кто просил и его должность — «Слесарь Андрей Демченко»
+                    "who_role": who.role.name if who and who.role else "", "lines": lines})
     return out
 
 
 @router.get("/stock/issues")
-def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
+def issues(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     """Выдача: вкладки «Запчасти» и «Инструмент» (11.11.2026) — что выдать, что сдают, что на руках."""
-    ctx.need("stock.issue", "stock.view", "tools.manage")
+    ctx.need("stock.issue", "razbor.issue", "stock.view", "tools.manage")
     from ..services import tools as tsvc
     can_tools = ctx.can("tools.manage", "tools.view")
     tool_new = tsvc.requests_list(ctx.db, ctx.branch.id, "new") if can_tools else []
-    new = _requests(ctx, "new")
+    # 20.11.2026 (брат): две зоны — «Запчасти» (новые, кладовщик) и «Б/у (разбор)» (кладовщик разбора). Чужую зону
+    # кладовщик видит «для сведения» — без кнопок (будущий главный кладовщик должен понимать, как работает соседняя)
+    can_new, can_rz = ctx.can("stock.issue"), ctx.can("razbor.issue")
+    see_zones = can_new or can_rz or ctx.can("stock.view")
+    new = _requests(ctx, "new", "new")
+    new_rz = _requests(ctx, "new", "razbor") if see_zones else []
     # 12.11.2026: химия для мойки — мойщик / детейлер просит, кладовщик выдаёт (расход СТО)
     from ..services import chem as csvc
     can_chem = ctx.can("stock.issue")
     chem_new = csvc.requests(ctx.db, ctx.branch.id, "new", days=0) if can_chem else []
-    if tab not in ("parts", "tools", "chem") or (tab == "tools" and not can_tools) or (tab == "chem" and not can_chem):
-        tab = "parts"
+    tabs_ok = ["parts", "razbor"] + (["tools"] if can_tools else []) + (["chem"] if can_chem else [])
+    if tab not in tabs_ok:
+        tab = "parts" if can_new or not can_rz else "razbor"
+    zone = "razbor" if tab == "razbor" else "new"
     # 19.11.2026 (брат): подготовлено, но не выдано — плитка оранжевая (просят — красная, всё выдано — серая)
     from ..models import ChemRequest, ToolRequest
     def _cnt(model, *conds):
         return ctx.db.scalar(select(func.count()).select_from(model).where(model.branch_id == ctx.branch.id, *conds)) or 0
-    data = dict(tab=tab, new=new, n_parts=len(new), can_tools=can_tools, n_tools=len(tool_new),
+    data = dict(tab=tab, new=new if zone == "new" else new_rz, n_parts=len(new), n_rz=len(new_rz),
+                can_new=can_new, can_rz=can_rz, zone=zone, act=ctx.can(zone_perm(zone)),
+                can_tools=can_tools, n_tools=len(tool_new),
                 can_chem=can_chem, n_chem=len(chem_new), fmt_plate=osvc.fmt_plate,
-                r_parts=_cnt(IssueRequest, IssueRequest.status == "ready"),
+                r_rz=_cnt(IssueRequest, IssueRequest.status == "ready", IssueRequest.zone == "razbor"),
+                r_parts=_cnt(IssueRequest, IssueRequest.status == "ready", IssueRequest.zone == "new"),
                 r_tools=_cnt(ToolRequest, ToolRequest.status == "ready", ToolRequest.kind == "issue") if can_tools else 0,
                 r_chem=_cnt(ChemRequest, ChemRequest.status == "ready") if can_chem else 0)
     if tab == "chem":
@@ -1956,33 +1982,41 @@ def issues(ctx: Ctx = Depends(get_ctx), tab: str = "parts"):
         from ..services import messages as msg
         pend = []
         for m in msg.pending_parts(ctx.db, ctx.branch.id):
+            cat = ctx.db.get(PartCatalog, m.catalog_id)
+            if ("razbor" if cat and cat.kind == "used" else "new") != zone:
+                continue
             wo = ctx.db.get(WorkOrder, m.work_order_id)
             item = ctx.db.get(StockItem, m.stock_item_id) if m.stock_item_id else None
-            pend.append({"m": m, "wo": wo, "v": ctx.db.get(Vehicle, wo.vehicle_id), "cat": ctx.db.get(PartCatalog, m.catalog_id),
+            pend.append({"m": m, "wo": wo, "v": ctx.db.get(Vehicle, wo.vehicle_id), "cat": cat,
                          "who": ctx.db.get(User, m.created_by), "mgr": ctx.db.get(User, wo.manager_id) if wo.manager_id else None,
                          "cell": svc.location_label(ctx.db.get(Location, item.location_id) if item and item.location_id else None)})
         data["pend"] = pend
-        data["done"] = _requests(ctx, "issued")[:15]
-        data["ready"] = _requests(ctx, "ready")
+        data["done"] = _requests(ctx, "issued", zone)[:15]
+        data["ready"] = _requests(ctx, "ready", zone)
         data["people"] = {u.id: u for u in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     return ctx.render("stock/issues.html", title="Запросы на выдачу", **data)
 
 
 @router.post("/stock/issues/{rid}/issue")
 def issue_do(rid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
-    """«Выдано»: кладовщик — сразу или после «Готово к выдаче»; менеджер — только подготовленное (12.11.2026)."""
-    ctx.need("stock.issue", "stock.pickup")
+    """«Выдано»: кладовщик — сразу или после «Готово к выдаче»; менеджер — только подготовленное (12.11.2026).
+    20.11.2026 (брат): кладовщик — только своей зоны (новые — кладовщик, б/у — кладовщик разбора)."""
+    ctx.need("stock.issue", "razbor.issue", "stock.pickup")
     r = ctx.db.get(IssueRequest, _uuid(rid))
     if not r or r.branch_id != ctx.branch.id:
         raise Forbidden()
-    ok = ("new", "ready") if ctx.can("stock.issue") else ("ready",)
+    keeper = ctx.can(zone_perm(r.zone))
+    if not keeper and not ctx.can("stock.pickup"):
+        raise Forbidden()
+    ok = ("new", "ready") if keeper else ("ready",)
     if r.status in ok:
         svc.issue(ctx.db, r, ctx.user.id)
         ctx.db.commit()
         flash(ctx.request, "Выдано")
     elif r.status == "new":
         raise Forbidden()
-    return _to(_safe_back(back, "/stock/issues" if ctx.can("stock.issue") else "/ready"))
+    home = ("/stock/issues?tab=razbor" if r.zone == "razbor" else "/stock/issues") if keeper else "/ready"
+    return _to(_safe_back(back, home))
 
 
 @router.post("/stock/issues/{rid}/received")
@@ -2006,15 +2040,15 @@ def issue_received(rid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
 
 @router.post("/stock/issues/{rid}/ready")
 def issue_ready(rid: str, ctx: Ctx = Depends(get_ctx)):
-    """Кладовщик собрал запчасти у окошка — «Готово к выдаче». У менеджера загорается."""
-    ctx.need("stock.issue")
+    """Кладовщик собрал запчасти у окошка — «Готово к выдаче». У менеджера загорается. Только своей зоны (20.11.2026)."""
+    ctx.need("stock.issue", "razbor.issue")
     r = ctx.db.get(IssueRequest, _uuid(rid))
-    if not r or r.branch_id != ctx.branch.id:
+    if not r or r.branch_id != ctx.branch.id or not ctx.can(zone_perm(r.zone)):
         raise Forbidden()
     if svc.mark_ready(ctx.db, r, ctx.user):
         ctx.db.commit()
         flash(ctx.request, "Готово к выдаче — менеджер получил сообщение")
-    return _to("/stock/issues")
+    return _to("/stock/issues?tab=razbor" if r.zone == "razbor" else "/stock/issues")
 
 
 def _ready_mine(ctx: Ctx, x) -> bool:

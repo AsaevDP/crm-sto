@@ -804,7 +804,7 @@ def payroll_settings(ctx: Ctx = Depends(get_ctx), role: str = ""):
     from ..services.attendance import days_present
     t = date.today()
     present = {u.id: days_present(db, ctx.branch.id, u.id, t.year, t.month) for u in staff}
-    order = ["mechanic", "electrician", "motorist", "washer", "detailer", "partsman", "manager", "storekeeper", "content", "accountant", "director", "admin"]
+    order = ["mechanic", "electrician", "motorist", "washer", "detailer", "partsman", "manager", "headkeeper", "storekeeper", "content", "accountant", "director", "admin"]
     role_list = sorted(roles.values(), key=lambda x: (order.index(x["role"].code) if x["role"].code in order else 99, x["role"].name))
     return ctx.render("money/payroll_settings.html", title="Зарплата: схемы", staff=staff, schemes=schemes, groups=groups,
                       present=present, role_list=role_list, role=role if role in roles else "",

@@ -39,7 +39,9 @@
     {% for x in parts %}{% set s = PST.get(x.r.status, (x.r.status, "created")) %}{% set rcv = x.r.id in recv_ok %}
     {% if rcv %}{% set s = ("выдано — подтвердите", "ready") %}{% elif x.r.status == "issued" and x.r.received_at %}{% set s = ("получено", "closed") %}{% endif %}
     <div class="card compact issue{% if x.r.status == 'ready' or rcv %} ready{% endif %}">
-      <div class="card-h mr-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
+      {% if x.r.zone == "razbor" and x.r.status == "ready" %}{% set s = ("готово — у окошка разбора", "ready") %}{% endif %}
+      <div class="card-h mr-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a>
+        {% if x.r.zone == "razbor" %}<span class="caption">· б/у с разбора</span>{% endif %}</span>
         <span class="chip" data-s="{{ s[1] }}">{{ s[0] }}</span></div>
       <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
       <div class="caption">просил {{ x.who.full_name if x.who else "" }} · {{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}

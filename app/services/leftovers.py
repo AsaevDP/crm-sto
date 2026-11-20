@@ -76,7 +76,7 @@ def refuse(db: Session, wo: WorkOrder, part: WoPart, user: User, reason: str) ->
               f"{nsvc.car(db, wo)} · наряд {wo.number} · {reason[:150]}", f"/orders/{wo.id}#parts", wo, skip=user.id)
     if asked or was_reserved:
         from .messages import storekeepers
-        nsvc.send(db, storekeepers(db, wo.branch_id), "refused_info", f"Клиент отказался: {part.name} — не выдавать",
+        nsvc.send(db, storekeepers(db, wo.branch_id, "razbor" if asked and asked.zone == "razbor" else "new"), "refused_info", f"Клиент отказался: {part.name} — не выдавать",
                   f"{nsvc.car(db, wo)} · наряд {wo.number}" + (" · убрана из запроса на выдачу" if asked else "")
                   + " · деталь остаётся на складе свободной", "/stock/issues", wo, skip=user.id)
     if asked:

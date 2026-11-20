@@ -44,10 +44,17 @@ def team(db: Session, wo: WorkOrder) -> dict:
             (("manager", wo.manager_id), ("partsman", wo.partsman_id), ("mechanic", wo.mechanic_id))}
 
 
-def storekeepers(db: Session, branch_id) -> list:
+def storekeepers(db: Session, branch_id, zone: str = "new") -> list:
+    """Кому выдавать: zone="new" — кладовщики склада новых, "razbor" — кладовщики разбора (20.11.2026)."""
     from ..permissions import effective_permissions
+    perm = "razbor.issue" if zone == "razbor" else "stock.issue"
     return [u.id for u in db.scalars(select(User).where(User.branch_id == branch_id, User.active.is_(True)))
-            if "stock.issue" in effective_permissions(db, u)]
+            if perm in effective_permissions(db, u)]
+
+
+def _zone_of(db: Session, catalog_id) -> str:
+    c = db.get(PartCatalog, catalog_id) if catalog_id else None
+    return "razbor" if c is not None and c.kind == "used" else "new"
 
 
 def label(db: Session, wo: WorkOrder) -> str:
@@ -90,8 +97,9 @@ def ask_part(db: Session, ctx, wo: WorkOrder, item: StockItem, qty: Decimal, tex
     what = f"{cat.name} × {qty.normalize():f}"
     nsvc.send(db, [wo.manager_id], "part_ask", f"{ctx.user.short_name} просит: {what} — согласуйте",
               label(db, wo) + (f" · «{m.text[:80]}»" if m.text else ""), f"/ready#ask-{m.id}", wo, skip=ctx.user.id)
-    nsvc.send(db, storekeepers(db, ctx.branch.id), "part_ask_info", f"Слесарь просит: {what} — ждёт согласования менеджера",
-              label(db, wo), "/stock/issues", wo, skip=ctx.user.id)
+    zone = _zone_of(db, item.catalog_id)
+    nsvc.send(db, storekeepers(db, ctx.branch.id, zone), "part_ask_info", f"Слесарь просит: {what} — ждёт согласования менеджера",
+              label(db, wo), "/stock/issues" + ("?tab=razbor" if zone == "razbor" else ""), wo, skip=ctx.user.id)
     return ""
 
 
@@ -136,8 +144,9 @@ def approve(db: Session, ctx, m: OrderMessage, price=None, answer: str = "") -> 
     what = f"{cat.name} × {Decimal(m.qty).normalize():f}"
     nsvc.send(db, [m.created_by], "part_ok", f"Согласовано: {what}", label(db, wo) + " · кладовщик выдаст",
               f"/orders/{wo.id}#parts", wo, skip=ctx.user.id)
-    nsvc.send(db, storekeepers(db, ctx.branch.id), "part_go", f"Согласовано — выдать: {what}", label(db, wo),
-              "/stock/issues", wo, skip=ctx.user.id)
+    zone = _zone_of(db, cat.id)
+    nsvc.send(db, storekeepers(db, ctx.branch.id, zone), "part_go", f"Согласовано — выдать: {what}", label(db, wo),
+              "/stock/issues" + ("?tab=razbor" if zone == "razbor" else ""), wo, skip=ctx.user.id)
     _close_notes(db, m)
     return ""
 
@@ -152,8 +161,9 @@ def decline(db: Session, ctx, m: OrderMessage, answer: str) -> str:
     m.status, m.decided_by, m.decided_at, m.answer = "declined", ctx.user.id, now(), answer.strip()[:300]
     nsvc.send(db, [m.created_by], "part_no", f"Отказано: {cat.name if cat else ''}", f"{label(db, wo)} · {m.answer}",
               f"/notifications#m-{m.id}", wo, skip=ctx.user.id)
-    nsvc.send(db, storekeepers(db, ctx.branch.id), "part_ask_info", f"Не выдавать: {cat.name if cat else ''} — менеджер отказал",
-              label(db, wo), "/stock/issues", wo, skip=ctx.user.id)
+    zone = _zone_of(db, m.catalog_id)
+    nsvc.send(db, storekeepers(db, ctx.branch.id, zone), "part_ask_info", f"Не выдавать: {cat.name if cat else ''} — менеджер отказал",
+              label(db, wo), "/stock/issues" + ("?tab=razbor" if zone == "razbor" else ""), wo, skip=ctx.user.id)
     _close_notes(db, m)
     return ""
 
@@ -169,10 +179,12 @@ def _close_notes(db: Session, m: OrderMessage):
 
 
 def issue_one(db: Session, wo: WorkOrder, part: WoPart, comment: str, asked_by=None) -> IssueRequest:
-    """Запрос на выдачу только этой позиции (не всего, что лежит в резерве по наряду)."""
-    req = db.scalar(select(IssueRequest).where(IssueRequest.work_order_id == wo.id, IssueRequest.status == "new"))
+    """Запрос на выдачу только этой позиции (не всего, что лежит в резерве по наряду).
+    20.11.2026: в запрос своей зоны — б/у к кладовщику разбора, новое к кладовщику."""
+    zone = ssvc.part_zone(db, part)
+    req = ssvc.open_request(db, wo.id, zone)
     if req is None:
-        req = IssueRequest(work_order_id=wo.id, comment=comment[:500])
+        req = IssueRequest(work_order_id=wo.id, comment=comment[:500], zone=zone)
         db.add(req)
         db.flush()
         if asked_by:

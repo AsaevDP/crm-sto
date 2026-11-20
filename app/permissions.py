@@ -58,6 +58,9 @@ PERMISSIONS = [
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
     ("razbor.sell", "Продажа б/у: резерв под покупателя, «продано»", "Разбор"),
+    # 20.11.2026 (брат): склад — две зоны со своими окошками. Б/у под наряд выдаёт кладовщик разбора
+    ("razbor.issue", "Выдача б/у деталей под наряд («Готово к выдаче», «Выдано»)", "Разбор"),
+    ("razbor.stock", "Ячейки и инвентаризация деталей разбора", "Разбор"),
     ("money.view", "Видеть деньги и оплаты", "Деньги"),
     ("money.accept", "Принимать оплату и оформлять возврат клиенту", "Деньги"),
     # «Закрывать наряд с долгом» убрано 11.11.2026: в долг не работаем, машина выдаётся только после полной оплаты
@@ -114,9 +117,18 @@ DEFAULT_ROLES = {
     "storekeeper": ("Кладовщик", "orange", [
         "orders.view_all", "purchases.view", "purchases.by_partsman", "stock.view", "stock.manage", "stock.issue",
         "stock.receive", "purchases.stock", "stock.keep", "razbor.view", "tools.view", "tools.manage", *_OWN]),
+    # 20.11.2026 (брат): зона кладовщика разбора — только б/у (выдача под наряд, ячейки, инвентаризация);
+    # новый склад (stock.manage / stock.issue) — зона обычного кладовщика
     "content": ("Кладовщик-контентщик", "teal", [
-        "stock.view", "stock.manage", "stock.receive", "stock.issue", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
-        "prices.view_sale", *_OWN]),
+        "stock.view", "stock.receive", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
+        "razbor.issue", "razbor.stock", "prices.view_sale", *_OWN]),
+    # 20.11.2026 (брат): главный кладовщик — обе зоны (склад новых + разбор) и инструмент. Работают втроём — контролирует
+    # и подменяет (цифры по табелю: кладовщик зоны на работе — «для сведения»); один на всё — все обязанности на нём
+    "headkeeper": ("Главный кладовщик", "orange", [
+        "orders.view_all", "purchases.view", "purchases.by_partsman", "stock.view", "stock.manage", "stock.issue",
+        "stock.receive", "purchases.stock", "stock.keep", "tools.view", "tools.manage",
+        "razbor.view", "razbor.manage", "razbor.export", "razbor.sell", "razbor.issue", "razbor.stock", "prices.view_sale",
+        *_OWN]),
     "mechanic": ("Слесарь", "green", _MASTER),
     # 12.11.2026 (брат): автоэлектрик и моторист — как слесарь (свои работы в наряде, запчасти, сообщения)
     "electrician": ("Автоэлектрик", "yellow", _MASTER),
@@ -160,7 +172,7 @@ MENU = [
     ("/clients", "Клиенты", "users", ["clients.view"]),
     ("/stock", "Склад", "stock", ["stock.view", "stock.look"]),
     # 12.11.2026: отдельный пункт кладовщику — запросы на выдачу (запчасти по нарядам и инструмент), с цифрой «сколько ждут»
-    ("/stock/issues", "Запросы на выдачу", "inbox", ["stock.issue", "tools.manage"]),
+    ("/stock/issues", "Запросы на выдачу", "inbox", ["stock.issue", "tools.manage", "razbor.issue"]),   # 20.11: и разбору
     # 12.11.2026: менеджеру — запросы на выдачу по его нарядам (ждут кладовщика / готово — забрать / выдано)
     ("/ready", "Запросы на выдачу", "inbox", ["stock.pickup"]),
     # 12.11.2026 (брат): мастерам — что они просили у кладовщика (запчасти, инструмент, химия) и что с этим сейчас
