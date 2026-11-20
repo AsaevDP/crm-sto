@@ -107,7 +107,7 @@ class WorkOrder(Entity):
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
-    # Акт выдачи: ok — исправен, partial — не полностью исправен (handover_defects обязательно), advice — есть рекомендации
+    # Акт выдачи (21.11.2026: «Отметки при выдаче»): ok — все работы выполнены (в акт не печатается), partial — не полностью исправен (handover_defects обязательно), advice — есть рекомендации
     handover_state: Mapped[str] = mapped_column(String(10), default="")
     handover_defects: Mapped[str] = mapped_column(Text, default="")
     handover_advice: Mapped[str] = mapped_column(Text, default="")

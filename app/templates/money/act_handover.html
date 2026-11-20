@@ -35,8 +35,8 @@
 </table>
 {% endif %}
 
-<h2>Состояние автомобиля при выдаче</h2>
-<p><span class="cb">{% if wo.handover_state == "ok" %}✓{% endif %}</span>Автомобиль полностью исправен</p>
+{# 21.11.2026 (брат): «Отметки при выдаче» — строки «полностью исправен» нет; «Все работы выполнены» в акт не идёт #}
+<h2>Отметки при выдаче автомобиля</h2>
 <p><span class="cb">{% if wo.handover_state == "partial" %}✓{% endif %}</span>Автомобиль выдан НЕ полностью исправным. Неисправно:</p>
 <div class="box">{{ wo.handover_defects }}</div>
 <p><span class="cb">{% if wo.handover_state == "advice" or wo.handover_advice %}✓{% endif %}</span>Рекомендации (детали ещё рабочие, но требуют внимания):</p>

@@ -200,13 +200,13 @@ def close(db: Session, wo: WorkOrder, state: str, defects: str, advice: str) -> 
         return (f"Запчасти не выданы со склада: {', '.join(p.name for p in left[:3])}"
                 f"{' …' if len(left) > 3 else ''} — выдайте их слесарю или уберите из наряда")
     if state not in ("ok", "partial", "advice"):
-        return "Выберите в акте выдачи: исправен, не полностью исправен или есть рекомендации"
+        return "Выберите отметку при выдаче: все работы выполнены, не полностью исправен или есть рекомендации"
     if state == "partial" and not defects.strip():
         return "Укажите, что именно неисправно"
     if state == "advice" and not advice.strip():
         return "Впишите рекомендации"
     wo.handover_state, wo.handover_defects, wo.handover_advice = state, defects.strip(), advice.strip()
-    label = {"ok": "Автомобиль исправен", "partial": "Не полностью исправен", "advice": "Исправен, есть рекомендации"}[state]
+    label = {"ok": "Все работы выполнены", "partial": "Не полностью исправен", "advice": "Исправен, есть рекомендации"}[state]
     osvc.event(db, wo, "act", f"Акт выдачи: {label}")
     for line in [l.strip(" -•\t") for l in defects.splitlines() if l.strip(" -•\t")]:
         osvc.event(db, wo, "recommendation", f"Неисправно при выдаче: {line}", urgency="urgent")

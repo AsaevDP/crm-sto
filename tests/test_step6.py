@@ -97,6 +97,11 @@ def test_full_money_cycle(client):
             sums[db.get(User, a.user_id).login] = sums.get(db.get(User, a.user_id).login, 0) + a.amount
     assert sums == {"andrey": Decimal("540.00"), "oleg": Decimal("6.30")}
 
+    # 21.11.2026 (брат): «Отметки при выдаче автомобиля», вместо «Полностью исправен» — «Все работы выполнены»
+    page = client.get(url).text
+    assert "Отметки при выдаче автомобиля" in page and "Все работы выполнены" in page and "Полностью исправен" not in page
+    act = client.get(f"{url}/act/handover").text
+    assert "Отметки при выдаче автомобиля" in act and "полностью исправен" not in act
     # Акт выдачи: «не полностью исправен» без перечня — нельзя
     client.post(f"{url}/close", data={"state": "partial", "defects": ""})
     assert _wo(url).status == "paid"

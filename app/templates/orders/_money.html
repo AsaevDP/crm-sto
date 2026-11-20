@@ -64,9 +64,9 @@
   <details class="add-finding" open>
     <summary class="btn btn-block btn-sm" style="background:var(--green);color:#fff">Выдать авто клиенту</summary>
     <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/close" style="margin-top:8px">
-      <div class="headline" style="font-size:14px">Акт выдачи: автомобиль…</div>
+      <div class="headline" style="font-size:14px">Отметки при выдаче автомобиля</div>
       <div class="radio-list">
-        <label><input type="radio" name="state" value="ok" checked> Полностью исправен</label>
+        <label><input type="radio" name="state" value="ok" checked> Все работы выполнены</label>
         <label><input type="radio" name="state" value="partial"> Не полностью исправен</label>
         <label><input type="radio" name="state" value="advice"> Исправен, есть рекомендации</label></div>
       <textarea class="field st-partial" name="defects" rows="2" placeholder="Что неисправно (каждое с новой строки) *" hidden></textarea>
@@ -114,7 +114,7 @@
   {% endif %}
 
   {% if wo.status == "closed" and wo.handover_state %}
-  <div class="kv"><span>Акт выдачи</span><b>{{ {"ok": "исправен", "partial": "не полностью исправен", "advice": "есть рекомендации"}[wo.handover_state] }}</b></div>
+  <div class="kv"><span>Акт выдачи</span><b>{{ {"ok": "все работы выполнены", "partial": "не полностью исправен", "advice": "есть рекомендации"}[wo.handover_state] }}</b></div>
   {% if wo.closed_with_debt_comment %}<div class="kv"><span>Закрыт с долгом (до 11.11.2026)</span><b>{{ wo.closed_with_debt_comment }}</b></div>{% endif %}
   {% endif %}
 </div>
