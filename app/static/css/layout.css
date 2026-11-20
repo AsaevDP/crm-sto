@@ -2321,8 +2321,10 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .rm-acts form { margin: 0; flex: 1 1 160px; }
 .rm-acts .btn { width: 100%; }
 /* 20.11.2026 (брат): «Запросы на выдачу» — заголовки блоков заметнее (крупнее, жирнее, тёмным), но без крика */
-.iss-page .group-title, .rd-stack > .rd-sec > .group-title { font-size: 15px; font-weight: 700; color: var(--text);
-  letter-spacing: .02em; margin-bottom: 8px; }
+.iss-page .group-title, .rd-stack > .rd-sec > .group-title, .group-title.mr-title { font-size: 15px; font-weight: 700;
+  color: var(--text); letter-spacing: .02em; margin-bottom: 8px; }
+/* 21.11.2026 (брат): «Мои запросы на выдачу» — так же, подпись колонки («у окошка склада») тоже читается */
+.group-title.mr-title .mr-hint { font-weight: 600; color: var(--text); opacity: .75; }
 /* кладовщик: заголовок страницы — вровень с плитками справа (плитки не трогаем) */
 .iss-page-head { align-items: flex-end; margin-bottom: 18px; }
 .iss-page-head h1 { margin-bottom: 0; line-height: 1.1; }

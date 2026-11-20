@@ -77,7 +77,7 @@
 <div class="mr-cols {{ 'one' if cols|length == 1 }}" style="--cols:{{ cols|length }}">
   {% for c in cols %}
   <section class="mr-col" id="col-{{ c.key }}">
-    <div class="group-title">{{ c.title }} · <span class="caption">{{ c.hint }}</span></div>
+    <div class="group-title mr-title">{{ c.title }} · <span class="mr-hint">{{ c.hint }}</span></div>
     {% for kind, x in c.take %}{% if kind == "part" %}{{ part_card(x, c.key) }}{% elif kind == "tool" %}{{ tool_card(x) }}{% else %}{{ chem_card(x) }}{% endif %}{% endfor %}
     {% for kind, x in c.wait %}{% if kind == "part" %}{{ part_card(x, c.key) }}{% elif kind == "tool" %}{{ tool_card(x) }}{% else %}{{ chem_card(x) }}{% endif %}{% endfor %}
     {% for kind, a in c.ask %}{{ ask_card(a) }}{% endfor %}
@@ -86,7 +86,7 @@
   {% endfor %}
 </div>
 
-<div class="group-title">История · 14 дней</div>
+<div class="group-title mr-title">История · 14 дней</div>
 <div class="card compact rd-list">
   {% for kind, x, at in hist %}
   <div class="rd-row"><span class="rd-what">
