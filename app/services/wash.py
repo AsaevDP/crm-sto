@@ -390,6 +390,16 @@ def next_for(db: Session, branch_id, user: User, brd: dict | None = None) -> Wor
     return None
 
 
+def waiting_for(db: Session, branch_id, user: User, brd: dict | None = None) -> list[Car]:
+    """20.11.2026 (брат): машины, которые этот мойщик / детейлер может мыть прямо сейчас (его цифра 🟠 «ждут мойки»):
+    в очереди — не серые, где есть его услуга или свободная услуга его вида; уже на мойке — где его услуга ещё не
+    начата (полировка после мойки). То, что он моет сейчас, сюда не входит — это «Я мою сейчас»."""
+    brd = brd or board(db, branch_id)
+    out = [c for c in brd["doing"] if not c.blocked and not started_by(c, user)
+           and (any(w.status == "todo" for w in own_works(c, user)) or free_works(c, user))]
+    return out + [c for c in brd["queue"] if can_take(user, c)]
+
+
 def own_works(c: Car, user: User) -> list:
     """Услуги этого мойщика / детейлера в машине (у быстрой мойки без исполнителя — того, кто взял машину)."""
     return [w for w in c.works if w.mechanic_id == user.id

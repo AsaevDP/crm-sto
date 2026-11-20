@@ -162,8 +162,10 @@ def compute(ctx) -> dict:
             # 20.11.2026 (брат): клик ведёт прямо к своему блоку очереди — «Я мою сейчас» / «Следующая»
             _add(out, "/orders", "orange", sum(1 for c in brd_["doing"] if wash_svc.busy_with(c, me)),
                  "я мою сейчас — отметить «Выполнено»", "/wash/queue#now")
-            _add(out, "/orders", "orange", 1 if wash_svc.next_for(db, bid, me, brd_) else 0,
-                 "ваша следующая машина — можно мыть", "/wash/queue#next")
+            # 20.11.2026 (брат): одна цифра — все машины, которые он может мыть сейчас (ничьи + записанные на него
+            # с ремонта); раньше «следующая» и «никто не взял» считали одну машину дважды, а ремонтные — нигде
+            _add(out, "/orders", "orange", len(wash_svc.waiting_for(db, bid, me, brd_)),
+                 "ждут мойки — ваши (можно мыть)", "/wash/queue#next")
         elif role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
             from ..models import WoWork
             from .orders import can_start_work
@@ -331,12 +333,8 @@ def compute(ctx) -> dict:
                 from . import wash as wash_svc
                 _add(out, "/wash", "red", len(wash_svc.open_asks(db, bid)), "мойщик просит изменить очередь",
                      "/wash?tab=asksq")
-    if role in ("washer", "detailer"):   # машины в очереди мойки, которые никто не взял (и мыть уже можно)
-        from . import wash as wash_svc
-        brd = wash_svc.board(db, bid)
-        # 20.11.2026 (брат): мойщик и детейлер — разные рабочие места: каждому — машины, где ЕГО услугу никто не взял
-        _add(out, "/orders", "red", sum(1 for c in brd["queue"] if not c.blocked and wash_svc.free_works(c, me)),
-             "в очереди — никто не взял", "/wash/queue#queue")
+    # 20.11.2026 (брат): красной «в очереди — никто не взял» у мойщика больше нет — очередь машин входит в его
+    # оранжевую «ждут мойки — ваши»; красная у мойщика — только «вам передали наряд»
 
     # ---------- Склад, Закупки (кладовщик) ----------
     if ctx.can("stock.receive") and role != "content":   # кладовщик разбора обычные поставки не принимает
