@@ -1870,6 +1870,10 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .warranty-bar { flex-wrap: wrap; }
 .warranty-close[open] { flex: 1 1 100%; }
 /* Разбор: плитки ровными рядами — 6 / 3×2 / 2×3, без «4 + 2» (12.11.2026) */
+/* 20.11.2026: состояния «Разбора» — 8 плиток ровно: по 4 в ряд, на широком экране все в один ряд, на телефоне по 2 */
+.pult-tiles.rz-state-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (min-width: 1700px) { .pult-tiles.rz-state-tiles { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .pult-tiles.rz-state-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pult-tiles.rz-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (min-width: 1100px) { .pult-tiles.rz-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .pult-tiles.rz-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -2195,12 +2199,7 @@ a.rp-car:hover { background: var(--fill-2); }
 .rz-views a { display: inline-flex; align-items: center; justify-content: center; padding: 7px 16px; border-radius: 9px; font-size: 15px;
   font-weight: 600; color: var(--text); text-decoration: none; white-space: nowrap; }
 .rz-views a[aria-pressed="true"] { background: var(--surface); box-shadow: var(--shadow-1, 0 1px 3px rgba(0,0,0,.12)); }
-.rz-states { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.rz-st { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; text-decoration: none;
-  color: var(--text); background: color-mix(in srgb, var(--tc) 14%, var(--surface)); border: 1.5px solid transparent; font-size: 14px; white-space: nowrap; }
-.rz-st b { font-variant-numeric: tabular-nums; color: var(--tc); }
-.rz-st.zero { opacity: .5; }
-.rz-st.on { border-color: var(--tc); }
+.rz-state-tiles { margin-bottom: 12px; }   /* 20.11.2026: состояния разбора — общими плитками (было .rz-st «таблетки») */
 .rzc-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); align-items: stretch; }
 .rzc { display: flex; gap: 14px; align-items: flex-start; color: var(--text); text-decoration: none; min-width: 0; }
 a.rzc:hover { background: var(--fill-2); }
