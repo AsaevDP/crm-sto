@@ -54,6 +54,9 @@
     "href": "?tab=arrived" ~ qq, "on": tab == "arrived", "s": "ждут выдачи со склада" if stage_counts.arrived else "всё выдано"}) %}{% endif %}
 {% for k, v in STAGES.items() %}{% set _ = items.append({"t": v[0], "n": stage_counts[k], "c": v[1], "href": "?tab=" ~ k ~ qq, "on": tab == k,
     "s": "в работе сейчас" if k == "active" else ""}) %}{% endfor %}
+{# 20.11.2026 (брат, наряд 20): мастеру — где все его работы сделаны, машина ещё у нас (мойка, другой мастер, выдача) #}
+{% if is_mech %}{% set _ = items.append({"t": "Сделал", "n": stage_counts.mydone, "c": "gray", "href": "?tab=mydone" ~ qq,
+    "on": tab == "mydone", "s": "мои работы готовы — ждёт мойки / выдачи", "zero": not stage_counts.mydone}) %}{% endif %}
 {% set _ = items.append({"t": "Все", "n": stage_counts.all, "c": "gray", "href": "?tab=all" ~ qq, "on": tab == "all", "s": "за период" if per.kind != "all" else "за всё время"}) %}
 {{ tiles(items, "ord-tiles") }}
 

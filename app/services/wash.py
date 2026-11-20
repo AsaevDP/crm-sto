@@ -322,11 +322,14 @@ def place_after_ready(db: Session, branch_id, wo: WorkOrder) -> None:
     """«Можно мыть сейчас»: машина встаёт за теми, кого уже можно мыть (перед серыми), — а не вперёд всех по времени
     ожидания. Дальше менеджер двигает как обычно."""
     q = board(db, branch_id)["queue"]
-    order = [c.o for c in q if c.o.id != wo.id]
-    if len(order) == len(q):
+    others = [c for c in q if c.o.id != wo.id]
+    if len(others) == len(q):
         return
-    ready = [i for i, c in enumerate(c for c in q if c.o.id != wo.id) if not c.blocked]
-    order.insert(ready[-1] + 1 if ready else 0, wo)
+    # 20.11.2026: перед ПЕРВОЙ серой (раньше — после последней «можно мыть»; если такая стояла за серой, новая тоже
+    # оказывалась за серой). Серых нет — в конец.
+    first_grey = next((i for i, c in enumerate(others) if c.blocked), len(others))
+    order = [c.o for c in others]
+    order.insert(first_grey, wo)
     for n, o in enumerate(order, 1):
         o.queue_rank = n
 
@@ -487,3 +490,34 @@ def close_asks(db: Session, wo: WorkOrder):
 
 def is_wash_order(wo: WorkOrder) -> bool:
     return (wo.kind or "") == "wash"
+
+
+def repair_done(db: Session, wo: WorkOrder, by=None) -> bool:
+    """20.11.2026 (брат, наряд 20): мастера ремонта закончили, в наряде осталась только мойка / детейлинг.
+    Машина встаёт в очередь мойки за теми, кого уже можно мыть (перед серыми); пост освобождается (машина уехала на
+    мойку); менеджеру — «Мастера закончили — машина ждёт мойки», мойщику / детейлеру работы — «Машина с ремонта —
+    можно мыть». Возвращает True, если это и случилось сейчас."""
+    if is_wash_order(wo):
+        return False
+    wids = washer_ids(db, wo.branch_id)
+    works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all()
+    left = [w for w in works if w.status != "done"]
+    if not left or any((w.mechanic_id or wo.mechanic_id) not in wids for w in left):
+        return False   # ещё есть работы слесарей — или мыть нечего
+    from . import notify as nsvc
+    from .orders import event, fmt_plate
+    db.flush()
+    place_after_ready(db, wo.branch_id, wo)
+    db.flush()
+    pos = next((c.pos for c in board(db, wo.branch_id)["queue"] if c.o.id == wo.id), None)
+    if wo.lift_id:
+        wo.lift_id = None
+        event(db, wo, "status", "Ремонт закончен — машина на мойку, пост свободен")
+    v = db.get(Vehicle, wo.vehicle_id)
+    car = f"{v.make} {v.model} · {fmt_plate(v.plate)}" if v else ""
+    where = f"в очереди мойки №{pos}" if pos else "на мойке"
+    nsvc.send(db, [wo.manager_id], "to_wash", "Мастера закончили — машина ждёт мойки",
+              f"{car} · наряд {wo.number} · {where}", f"/orders/{wo.id}", wo, skip=by)
+    nsvc.send(db, list(dict.fromkeys(w.mechanic_id for w in left if w.mechanic_id)), "wash_go",
+              "Машина с ремонта — можно мыть", f"{car} · {where}", "/wash/queue#queue", wo, skip=by)
+    return True

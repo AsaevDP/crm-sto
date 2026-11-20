@@ -129,8 +129,19 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     from ..services.notify import arrived_waiting
     arrived = arrived_waiting(ctx.db, ctx.branch.id, ctx.user.id)
     stage_counts["arrived"] = len(arrived)
+    # 20.11.2026 (брат, наряд 20): мастеру — наряды, где ВСЕ его работы сделаны, а машина ещё у нас (ждёт мойки,
+    # другого мастера, выдачи): плитка «Сделал», из «В работе» уходят
+    my_done = svc.master_done_orders(ctx.db, ctx.branch.id, ctx.user) if is_master(ctx.user) else []
+    if my_done:
+        stage_counts["work"] -= sum(1 for st_ in ctx.db.scalars(select(WorkOrder.status).where(WorkOrder.id.in_(my_done)))
+                                    if st_ == "work")
+    stage_counts["mydone"] = len(my_done)
     if tab == "handed":
         query = query.where(*handed_cond)
+    elif tab == "mydone":
+        query = query.where(WorkOrder.id.in_(my_done or [uuid.uuid4()]))
+    elif tab == "work" and my_done:
+        query = query.where(WorkOrder.status == "work", WorkOrder.id.not_in(my_done))
     elif tab == "arrived":
         query = query.where(WorkOrder.id.in_(list(arrived) or [uuid.uuid4()]))
     elif tab in ORDER_STAGES:
@@ -164,7 +175,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
-                      STAGES=ORDER_STAGES, stage_counts=stage_counts, show_handed=show_handed,
+                      STAGES=ORDER_STAGES, stage_counts=stage_counts, show_handed=show_handed, is_mech=is_master(ctx.user),
                       bar=periods.Bar(per, "/orders", {"tab": tab, "q": q, "status": status}))
 
 
@@ -339,8 +350,19 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     free = stock_svc.catalog_free(db, ctx.branch.id, [p.catalog_id for p in parts if p.catalog_id]) if groups else {}
     n_done = sum(1 for w in works if w.status == "done")
     mc, pm = people.get(wo.mechanic_id), people.get(wo.partsman_id)
+    # 20.11.2026 (брат, наряд 20): ремонт закончен, осталась мойка — где машина в очереди мойки
+    on_wash = None
+    if (wo.kind or "") != "wash" and wo.status == "work" and n_done < len(works):
+        from ..services import wash as wash_svc
+        wids = wash_svc.washer_ids(db, ctx.branch.id)
+        left = [w for w in works if w.status != "done"]
+        if left and all((w.mechanic_id or wo.mechanic_id) in wids for w in left):
+            brd = wash_svc.board(db, ctx.branch.id)
+            c = next((c for c in brd["queue"] + brd["doing"] if c.o.id == wo.id), None)
+            on_wash = {"pos": c.pos if c and c.stage == "queue" else 0,
+                       "who": ", ".join(u.short_name for u in c.who) if c and c.stage == "doing" else ""}
     flow = svc.flow(wo, mc.short_name if mc else "", pm.short_name if pm else "", len(findings), len(works), n_done,
-                    options_open)
+                    options_open, on_wash=on_wash)
     is_manager = ctx.can("orders.approve")
     # Кто ведёт и кто что делал (11.11.2026)
     from ..services import order_feed

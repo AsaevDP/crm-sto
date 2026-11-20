@@ -653,7 +653,7 @@ STEP_OF = {"created": 0, "diag": 1, "approve": 2, "picking": 3, "waiting": 3, "i
 
 
 def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_works: int = 0, n_done: int = 0,
-         options_open: int = 0) -> dict:
+         options_open: int = 0, on_wash: dict | None = None) -> dict:
     """Полоса шагов наверху наряда и подсказка: что сейчас сделать и кому."""
     if (wo.kind or "") == "wash":
         return _wash_flow(wo, mech, n_works, n_done)
@@ -691,6 +691,12 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
         title, text, color = "Ждём запчасти от поставщика", "Придут на склад — наряд сам перейдёт дальше.", "orange"
     elif s == "instock":
         title, text, color = "Запчасти на складе", f"{mech.capitalize()} просит выдачу и начинает ремонт.", "teal"
+    elif s == "work" and on_wash is not None:   # 20.11.2026: мастера закончили, осталась мойка
+        where = (f"Моет {on_wash['who']}." if on_wash.get("who") else
+                 f"В очереди мойки №{on_wash['pos']} — мойщик возьмёт по очереди." if on_wash.get("pos") else "Ждёт мойщика.")
+        title, text, color = ("Ремонт закончен — машина на мойке",
+                              f"Работы мастеров сделаны ({n_done} из {n_works}). {where} Помоют — наряд станет «Готов к выдаче».",
+                              "teal")
     elif s == "work":
         title, text, color = f"Ремонт · {mech}", f"Выполнено работ: {n_done} из {n_works}.", "teal"
     elif s == "ready":
@@ -909,3 +915,15 @@ def work_progress(db: Session, order_ids) -> dict:
             p["pct"] = round(100 * p["done"] / p["total"])
             p["level"] = "all" if p["done"] == p["total"] else ("part" if p["done"] else "zero")
     return out
+
+
+def master_done_orders(db: Session, branch_id, user) -> list:
+    """20.11.2026 (брат, наряд 20): открытые наряды, где у мастера есть работы и ВСЕ они сделаны, а машина ещё у нас
+    (ждёт мойки, другого мастера или выдачи). У мастера — плитка «Сделал», из «В работе» уходят."""
+    rows = db.execute(select(WoWork.work_order_id, WoWork.status).join(WorkOrder, WorkOrder.id == WoWork.work_order_id).where(
+        WorkOrder.branch_id == branch_id, WorkOrder.status.in_(("picking", "waiting", "instock", "work")),
+        or_(WoWork.mechanic_id == user.id, (WoWork.mechanic_id.is_(None)) & (WorkOrder.mechanic_id == user.id)))).all()
+    by = {}
+    for wid, st_ in rows:
+        by.setdefault(wid, []).append(st_)
+    return [wid for wid, sts in by.items() if all(s == "done" for s in sts)]

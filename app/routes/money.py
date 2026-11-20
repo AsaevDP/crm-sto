@@ -173,6 +173,9 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
             w.mechanic_id = ctx.user.id
         db.flush()
         msvc.after_change(db, wo)
+        if ctx.user.role.code not in WASHERS:   # 20.11.2026: слесари закончили, осталась мойка — машина на мойку
+            from ..services import wash as wsvc
+            wsvc.repair_done(db, wo, by=ctx.user.id)
     elif undo_ok and w.status == "done":
         w.status, w.done_at, w.done_by = "todo", None, None
         if wo.status == "ready":

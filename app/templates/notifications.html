@@ -74,7 +74,7 @@
   <section class="ov-col on">
     {% macro nrow(n, fresh) %}{% set done = n.id in done_ids %}
       <a class="nt-row {{ 'nt-new' if fresh and not done }} {{ 'nt-done' if done }}" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
-        <span class="nt-ico">{{ {"parts_ready": "✅", "parts_in": "📦", "picked": "🧾", "to_order": "🛒", "order_cancel": "✕", "issue_ready": "📦", "tool_ready": "📦", "chem_ready": "📦", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤", "msg": "💬", "part_ask": "🙋", "part_ask_info": "🙋", "part_ok": "✅", "part_go": "📦", "part_no": "✕"}.get(n.kind, "•") }}</span>
+        <span class="nt-ico">{{ {"parts_ready": "✅", "parts_in": "📦", "picked": "🧾", "to_order": "🛒", "order_cancel": "✕", "issue_ready": "📦", "tool_ready": "📦", "chem_ready": "📦", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤", "to_wash": "🫧", "wash_go": "🫧", "msg": "💬", "part_ask": "🙋", "part_ask_info": "🙋", "part_ok": "✅", "part_go": "📦", "part_no": "✕"}.get(n.kind, "•") }}</span>
         <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
         <span class="nt-side">{% if done %}<span class="chip" data-s="closed">✓ сделано</span>{% elif fresh %}<span class="chip" data-s="urgent">новое</span>{% endif %}
           <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></span>
