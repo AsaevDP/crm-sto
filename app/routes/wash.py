@@ -428,6 +428,9 @@ def wash_queue(ctx: Ctx = Depends(get_ctx)):
     handed_v = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in handed])))} if handed else {}
     return ctx.render("wash/queue.html", title="Мойка · очередь", brd=brd, mine_now=mine_now, nxt=nxt,
                       handed=handed, handed_v=handed_v, me=me,
+                      # 20.11.2026: в «Следующая» — только мои услуги (мойщику мойка, детейлеру детейлинг)
+                      my_works=lambda c: [w for w in c.works if w.status != "done"
+                                          and (w in wsvc.own_works(c, me) or w in wsvc.free_works(c, me))],
                       can_take=lambda c: wsvc.can_take(me, c), fmt_min=wsvc.fmt_min, fmt_plate=osvc.fmt_plate,
                       CLASSES=wsvc.CLASSES, now=now(), WASH_ST=WASH_ST)
 

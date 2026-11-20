@@ -25,8 +25,10 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     if not n:
         return
     lst = out.setdefault(href, [])
+    # 20.11.2026 (брат): в один кружок сливаются только дела, которые открываются одним и тем же экраном. Разные
+    # экраны — разные кружки (раньше «новые» и «вам передали» были одной цифрой, клик вёл только к первому)
     same = None if alone else next((x for x in lst if x["c"] == color and not x.get("alone")
-                                    and bool(x.get("info")) == info), None)
+                                    and bool(x.get("info")) == info and x["href"] == (link or href)), None)
     if same:   # одного цвета — одной цифрой, подсказка перечисляет всё
         same["n"] += int(n)
         same["t"] += f" · {title}"
@@ -34,6 +36,32 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
         lst.append({"c": color, "n": int(n), "t": title + (" (для сведения)" if info else ""), "href": link or href,
                     "alone": alone, "info": info})
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
+
+
+MAX_CIRCLES = 3   # 20.11.2026: больше трёх кружков у пункта меню не помещается — подпись переносится
+
+
+def _compact(out: dict) -> dict:
+    """Кружков у пункта больше трёх — одного цвета снова сливаем в один (ведёт к первому делу; на самом экране
+    дела и так разложены по цветным плиткам)."""
+    for href, lst in out.items():
+        # по одному цвету за раз — сначала менее срочные (зелёный, сиреневый, оранжевый), красные — в последнюю очередь
+        for color in ("green", "purple", "orange", "red"):
+            if len(lst) <= MAX_CIRCLES:
+                break
+            merged = []
+            for x in lst:
+                same = next((m for m in merged if x["c"] == color and m["c"] == color
+                             and bool(m.get("info")) == bool(x.get("info"))
+                             and not m.get("alone") and not x.get("alone")), None)
+                if same:
+                    same["n"] += x["n"]
+                    same["t"] += f" · {x['t']}"
+                else:
+                    merged.append(dict(x))
+            lst = merged
+        out[href] = lst
+    return out
 
 
 def _zone_keeper_on_site(db, bid, role_code: str) -> bool:
@@ -131,9 +159,11 @@ def compute(ctx) -> dict:
         if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
             from . import wash as wash_svc
             brd_ = wash_svc.board(db, bid)
-            n_w = sum(1 for c in brd_["doing"] if wash_svc.busy_with(c, me))
-            n_w += 1 if wash_svc.next_for(db, bid, me, brd_) else 0
-            _add(out, "/orders", "orange", n_w, "ваша машина — можно мыть", "/wash/queue")
+            # 20.11.2026 (брат): клик ведёт прямо к своему блоку очереди — «Я мою сейчас» / «Следующая»
+            _add(out, "/orders", "orange", sum(1 for c in brd_["doing"] if wash_svc.busy_with(c, me)),
+                 "я мою сейчас — отметить «Выполнено»", "/wash/queue#now")
+            _add(out, "/orders", "orange", 1 if wash_svc.next_for(db, bid, me, brd_) else 0,
+                 "ваша следующая машина — можно мыть", "/wash/queue#next")
         elif role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
             from ..models import WoWork
             from .orders import can_start_work
@@ -160,9 +190,13 @@ def compute(ctx) -> dict:
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0, "просят доступ ко всем нарядам",
              "/access-requests")
         from ..models import ClientAccess   # 12.11.2026: менеджер просит доступ к клиенту
+        # 20.11.2026 (брат): у «Клиентов» цифра = плитке «Просят доступ»: к одному клиенту + ко всем нарядам (вся база)
         _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(ClientAccess).where(
             ClientAccess.branch_id == bid, ClientAccess.status == "pending")) or 0, "менеджер просит доступ к клиенту",
-             "/access-requests#clients")
+             "/access-requests")
+        _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
+            OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0,
+             "просят доступ ко всем нарядам и клиентам", "/access-requests")
         from ..models import OrderReopen   # 11.11.2026: просят открыть закрытый наряд заново
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
             OrderReopen.branch_id == bid, OrderReopen.status == "pending")) or 0, "просят открыть наряд заново",
@@ -302,7 +336,7 @@ def compute(ctx) -> dict:
         brd = wash_svc.board(db, bid)
         # 20.11.2026 (брат): мойщик и детейлер — разные рабочие места: каждому — машины, где ЕГО услугу никто не взял
         _add(out, "/orders", "red", sum(1 for c in brd["queue"] if not c.blocked and wash_svc.free_works(c, me)),
-             "в очереди — никто не взял", "/wash/queue")
+             "в очереди — никто не взял", "/wash/queue#queue")
 
     # ---------- Склад, Закупки (кладовщик) ----------
     if ctx.can("stock.receive") and role != "content":   # кладовщик разбора обычные поставки не принимает
@@ -394,4 +428,4 @@ def compute(ctx) -> dict:
         rm = sch.reminders(db, bid)
         _add(out, "/schedule", "red", len(rm["late"]), "сегодня не приехали — позвонить", "/schedule/remind#late")
         _add(out, "/schedule", "orange", len(rm["call"]), "завтра записаны — напомнить", "/schedule/remind#call")
-    return out
+    return _compact(out)

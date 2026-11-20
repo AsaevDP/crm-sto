@@ -167,13 +167,32 @@ def reminders(db: Session, branch_id) -> dict:
     now = datetime.now(timezone.utc)
     today = date.today()
     start_today, _ = day_range(today, today)
-    out = {"late": [], "call": [], "done": []}
+    out = {"late": [], "call": [], "done": [], "here": []}
+    here_v, here_p = _cars_here(db, branch_id)
     for a in between(db, branch_id, today, today + timedelta(days=1)):
         if a.status != "booked":
             continue
         called = a.called_at is not None and _aware(a.called_at) >= start_today
         is_today = local(a.start_at).date() == today
-        if is_today and _aware(a.start_at) > now:
-            continue   # сегодня, время ещё не пришло — ждём
+        if is_today and _aware(a.start_at) + LATE_AFTER > now:
+            continue   # 20.11.2026: время ещё не пришло или прошло меньше 15 минут — ждём
+        if is_today and ((a.vehicle_id and a.vehicle_id in here_v) or (_plate(a.plate) and _plate(a.plate) in here_p)):
+            out["here"].append(a)   # машина клиента уже у нас (открытый наряд) — звонить «едет ли» незачем
+            continue
         (out["done"] if called else out["late"] if is_today else out["call"]).append(a)
     return out
+
+
+LATE_AFTER = timedelta(minutes=15)   # «не приехал» — через 15 минут после времени записи
+
+
+def _plate(p: str) -> str:
+    return "".join(ch for ch in (p or "").upper() if ch.isalnum())
+
+
+def _cars_here(db: Session, branch_id) -> tuple[set, set]:
+    """Машины, которые сейчас у нас: открытые наряды (id машины и госномер без пробелов)."""
+    from ..models import Vehicle, WorkOrder
+    rows = db.execute(select(Vehicle.id, Vehicle.plate).join(WorkOrder, WorkOrder.vehicle_id == Vehicle.id).where(
+        WorkOrder.branch_id == branch_id, WorkOrder.status.not_in(("closed", "cancel", "cancelled")))).all()
+    return {r[0] for r in rows}, {_plate(r[1]) for r in rows if r[1]}

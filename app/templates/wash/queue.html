@@ -30,15 +30,15 @@
 {% endif %}
 
 {% if mine_now %}
-<div class="group-title">Я мою сейчас</div>
+<div class="group-title" id="now">Я мою сейчас</div>
 <div class="wq-list">
   {% for c in mine_now %}{% call qcard(c, "doing") %}<a class="btn btn-sm" href="/orders/{{ c.o.id }}">Открыть · отметить</a>{% endcall %}{% endfor %}
 </div>
 {% endif %}
 
-<div class="wq-next card compact">
+<div class="wq-next card compact" id="next">
   {% if nxt %}{% set c = (brd.doing + brd.queue)|selectattr("o.id", "equalto", nxt.id)|first %}
-  {% set ws = c.works|selectattr("status", "ne", "done")|list %}
+  {% set ws = my_works(c) %}
   <div class="grow"><b>Следующая: {{ c.v.make }} {{ c.v.model }} · <span class="mono">{{ fmt_plate(c.v.plate) }}</span></b>
     <span class="caption">{% if c.stage == "doing" %}уже на мойке · ваша услуга: {% endif %}{% for w in ws %}{{ w.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% if c.minutes and c.stage != "doing" %} · ≈ {{ fmt_min(c.minutes) }}{% endif %}</span></div>
   <form method="post" action="/wash/take" class="one-shot"><button class="btn btn-lg">🫧 Взять следующую</button></form>

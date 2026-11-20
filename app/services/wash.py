@@ -251,28 +251,52 @@ def board(db: Session, branch_id) -> dict:
     from .orders import fresh_key
     doing = sorted([c for c in cars if c.stage == "doing"], key=lambda c: fresh_key(c.o), reverse=True)
     done = sorted([c for c in cars if c.stage == "done"], key=lambda c: fresh_key(c.o), reverse=True)
-    # Дорожки: каждый работающий бокс; боксов нет — одна общая
-    lanes = {b.id: t for b in all_boxes.values() if b.active} or {None: t}
+    # 20.11.2026 (брат): время считаем по рабочим местам — мойщики моют своё, детейлеры делают своё, друг друга не ждут
+    # (раньше одна общая очередь: полировка «ждала», пока домоют все машины, — «готово ≈ 04:46»).
+    # Дорожка = человек этой должности (никого нет — одна дорожка). Время машины — по её услугам каждого вида.
+    from ..models import Role
+    staff = {k: 0 for k in ROLE_KIND.values()}
+    for code in db.scalars(select(Role.code).join(User, User.role_id == Role.id).where(
+            User.branch_id == branch_id, User.active.is_(True), Role.code.in_(list(ROLE_KIND)))):
+        staff[ROLE_KIND[code]] += 1
+    lanes = {k: [t] * max(1, n) for k, n in staff.items()}
 
-    def lane_for(c: Car):
-        if c.o.wash_box_id in lanes:
-            return c.o.wash_box_id
-        return min(lanes, key=lambda k: lanes[k])
+    def parts_of(c: Car, left_only: bool) -> dict:
+        """Минуты машины по видам работ (вид не известен — мойка)."""
+        out = {}
+        for w in c.works:
+            if left_only and w.status == "done":
+                continue
+            k = c.kinds.get(w.id) or "wash"
+            out[k] = out.get(k, 0) + int(w.minutes or 0)
+        return out
+
+    def book(kind: str, start, minutes: int):
+        ls = lanes.setdefault(kind, [t])
+        i = min(range(len(ls)), key=lambda j: ls[j])
+        s = max(ls[i], start)
+        ls[i] = s + timedelta(minutes=minutes)
+        return s, ls[i]
 
     for c in doing:
-        k = lane_for(c)
         c.eta_end = t + timedelta(minutes=c.left)
-        lanes[k] = max(lanes[k], c.eta_end)
+        rest = parts_of(c, True)   # моют сейчас — дорожка занята на ОСТАВШЕЕСЯ время (c.left), по видам пропорционально
+        total = sum(rest.values())
+        for k, m in rest.items():
+            book(k, t, round(c.left * m / total) if total else 0)
     for i, c in enumerate(queue, 1):
         c.pos = i
         if c.blocked:
             continue   # мыть пока нельзя — время не считаем, дорожку не занимает
-        k = lane_for(c)
-        c.eta_start = max(lanes[k], t)
-        c.eta_end = c.eta_start + timedelta(minutes=c.minutes)
-        lanes[k] = c.eta_end
+        starts, ends = [], []
+        for k, m in sorted(parts_of(c, False).items(), key=lambda kv: kv[0] != "wash"):   # сначала мойка, потом детейлинг
+            s, e = book(k, max(ends) if ends else t, m)
+            starts.append(s)
+            ends.append(e)
+        c.eta_start = min(starts) if starts else t
+        c.eta_end = max(ends) if ends else t
     return {"queue": queue, "doing": doing, "done": done, "boxes": [b for b in all_boxes.values() if b.active],
-            "n_lanes": len(lanes)}
+            "n_lanes": len([b for b in all_boxes.values() if b.active]) or 1}   # подпись «боксов: N» на экране
 
 
 MOVES = {"up": "выше", "down": "ниже", "first": "первой", "last": "в конец"}

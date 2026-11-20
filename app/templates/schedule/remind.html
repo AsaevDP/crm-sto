@@ -38,6 +38,16 @@
     <div class="mr-grid">{% for a in r.call %}{{ row(a, "orange") }}{% else %}
       <div class="card compact rd-empty"><p class="footnote" style="margin:0">Завтра звонить некому</p></div>{% endfor %}</div>
   </section>
+  {% if r.here %}
+  <section class="rd-sec">
+    <div class="group-title">Записаны на сегодня — машина уже у нас · {{ r.here|length }}</div>
+    <p class="caption" style="margin:-4px 4px 6px">Звонить не нужно: машина клиента стоит в ремонте. Запись можно отметить в «Записи».</p>
+    <div class="mr-grid">{% for a in r.here %}<div class="card compact rim rim-gray rm-card">
+      <div class="card-h mr-h"><span class="headline">{{ a.client_name or "Без имени" }}</span>
+        <span class="caption nowrap">сегодня · <b>{{ local(a.start_at).strftime("%H:%M") }}</b></span></div>
+      <div class="caption">{{ a.car }}{% if a.plate %} · {{ fmt_plate(a.plate) }}{% endif %} · 🔧 машина у нас</div></div>{% endfor %}</div>
+  </section>
+  {% endif %}
   {% if r.done %}
   <section class="rd-sec">
     <div class="group-title">Уже позвонили · {{ r.done|length }}</div>
