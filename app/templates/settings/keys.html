@@ -3,15 +3,17 @@
    по кругу; крючок свободен после «Выдать авто» или отмены. Вручную номер не меняет никто. #}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Ячейки ключей</h1>
+  <div>{% if editable %}<a class="back" href="/settings">{{ icon("back") }}Настройки</a>{% else %}<a class="back" href="/pult">{{ icon("back") }}Пульт</a>{% endif %}<h1 class="large-title">Ячейки ключей</h1>
     <p class="footnote" style="margin:0">Номер выдаётся сам при приёмке. Ключи висят на этом крючке у всех, кто работает с машиной, до выдачи. Менять номер нельзя.</p></div>
 </header>
 
 <div class="card compact keys-set">
+  {% if editable %}
   <form method="post" action="/settings/keys" class="form-row keys-form">
     <label class="caption">Крючков в шкафу<input class="field" name="count" value="{{ s.count }}" inputmode="numeric" maxlength="3"></label>
     <button class="btn btn-sm">Сохранить</button>
   </form>
+  {% else %}<span class="caption">Крючков в шкафу: <b>{{ s.count }}</b></span>{% endif %}
   <div class="keys-sum"><span>Занято <b>{{ s.busy }}</b></span><span>Свободно <b>{{ s.free }}</b></span>
     {% if without %}<span class="late">Без ячейки <b>{{ without|length }}</b></span>{% endif %}</div>
 </div>

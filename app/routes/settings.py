@@ -592,6 +592,11 @@ def lift_add(ctx: Ctx = Depends(get_ctx)):
 def keys_view(ctx: Ctx = Depends(get_ctx)):
     """Сколько крючков в шкафу у каждого рабочего места и какие сейчас заняты (какой машиной)."""
     ctx.need("settings.access")
+    return ctx.render("settings/keys.html", title="Ячейки ключей", editable=True, **keys_data(ctx))
+
+
+def keys_data(ctx: Ctx) -> dict:
+    """Таблица крючков (21.11.2026: и в «Настройках», и на «Пульте» менеджера — только смотреть)."""
     from ..models import Vehicle, WorkOrder
     from ..models.orders import WO_ACTIVE
     from ..services import keys as ksvc
@@ -601,8 +606,7 @@ def keys_view(ctx: Ctx = Depends(get_ctx)):
     vs = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in rows])))} if rows else {}
     by_slot = {o.key_slot: o for o in rows if o.key_slot}
     without = [o for o in rows if o.key_slot == 0]
-    return ctx.render("settings/keys.html", title="Ячейки ключей", s=ksvc.stats(ctx.db, ctx.branch.id), by_slot=by_slot,
-                      without=without, vs=vs, fmt_plate=fmt_plate)
+    return dict(s=ksvc.stats(ctx.db, ctx.branch.id), by_slot=by_slot, without=without, vs=vs, fmt_plate=fmt_plate)
 
 
 @router.post("/keys")

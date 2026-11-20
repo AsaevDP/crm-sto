@@ -101,3 +101,10 @@ def test_badge_in_order_and_settings(client):
     with SessionLocal() as db:
         assert ksvc.count(db, db.scalar(select(WorkOrder.branch_id).where(WorkOrder.id == wo.id))) == 50
     client.post("/logout")
+    # 21.11.2026 (брат): та же таблица у менеджера с «Пульта» — только посмотреть; «Выдать со склада» на пульте нет
+    login(client, "irina", "irina123")
+    pult = client.get("/pult").text
+    assert 'href="/keys"' in pult and "Выдать со склада" not in pult
+    kp = client.get("/keys").text
+    assert "Ячейки ключей" in kp and "key-cell busy" in kp and 'name="count"' not in kp
+    client.post("/logout")

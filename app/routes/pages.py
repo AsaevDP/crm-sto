@@ -112,6 +112,15 @@ def _staff_groups(ctx, staff, presence) -> list[dict]:
     return [g for g in groups if g["rows"]]
 
 
+@router.get("/keys")
+def keys_board(ctx: Ctx = Depends(get_ctx)):
+    """21.11.2026 (брат): «Ячейки ключей» с «Пульта» — та же таблица, что в «Настройках», только посмотреть
+    (сколько крючков — меняет админ / директор в «Настройках»)."""
+    ctx.need("dashboard.view")
+    from .settings import keys_data
+    return ctx.render("settings/keys.html", title="Ячейки ключей", editable=False, **keys_data(ctx))
+
+
 @router.get("/pult")
 def pult(ctx: Ctx = Depends(get_ctx)):
     ctx.need("dashboard.view")
