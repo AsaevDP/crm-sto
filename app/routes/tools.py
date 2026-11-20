@@ -439,7 +439,15 @@ def staff_tools(uid: str, ctx: Ctx = Depends(get_ctx)):
     orders = {o.id: o for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.id.in_([t.work_order_id for t in temp if t.work_order_id])))}
     vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
     work_names = {w.id: w.name for w in ctx.db.scalars(select(WoWork).where(WoWork.id.in_([t.wo_work_id for t in temp if t.wo_work_id])))}
-    return ctx.render("tools/staff.html", title=f"Инструмент: {u.full_name}", u=u, tools=tools, checks=checks,
+    # 21.11.2026 (брат): «Сдаю» и «✓ Получил» прямо здесь, как в наряде; кладовщику — видно, что мастер уже сдаёт
+    from ..models import ToolRequest
+    ids = [t.id for t in temp] or [uuid.uuid4()]
+    returning = {r.tool_id: r for r in ctx.db.scalars(select(ToolRequest).where(
+        ToolRequest.tool_id.in_(ids), ToolRequest.kind == "return", ToolRequest.status.in_(svc.OPEN)))}
+    unrecv = {r.tool_id: r for r in ctx.db.scalars(select(ToolRequest).where(
+        ToolRequest.tool_id.in_(ids), ToolRequest.kind == "issue", ToolRequest.status == "done",
+        ToolRequest.received_at.is_(None)))}
+    return ctx.render("tools/staff.html", returning=returning, unrecv=unrecv, title=f"Инструмент: {u.full_name}", u=u, tools=tools, checks=checks,
                       personal=[t for t in tools if t.is_personal], temp=temp, orders=orders, vehicles=vehicles,
                       work_names=work_names, total=sum((t.cost for t in tools), Decimal(0)), TOOL_STATUS=TOOL_STATUS,
                       CHECK_KINDS=CHECK_KINDS, CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES,

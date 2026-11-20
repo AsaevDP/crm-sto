@@ -16,7 +16,7 @@
   <section class="ov-col on">
     <div class="tablewrap">
       <table class="table">
-        <thead><tr><th colspan="4" class="tbl-group">Личный инструмент · {{ personal|length }} <span class="caption">— выдан при приёме на работу, числится постоянно</span></th></tr>
+        <thead><tr><th colspan="4" class="tbl-group">Личный инструмент · {{ personal|length }} <span class="caption">— выдан при приёме на работу, числится постоянно{% if ctx.can("tools.manage") %}; возврат — кнопка «Начать проверку» → «При увольнении»{% endif %}</span></th></tr>
           <tr><th>Инв. №</th><th>Инструмент</th><th>Состояние</th><th class="num">Стоимость</th></tr></thead>
         <tbody>
         {% for t in personal %}
@@ -26,7 +26,7 @@
         {% else %}<tr><td colspan="4" class="footnote">Личного инструмента нет</td></tr>{% endfor %}
         </tbody>
         <thead><tr><th colspan="4" class="tbl-group">Временно, под наряд · {{ temp|length }} <span class="caption">— общий инструмент, вернуть на склад</span></th></tr>
-          <tr><th>Инв. №</th><th>Инструмент</th><th>Наряд / работа</th><th class="num">{% if ctx.can("tools.manage") %}{% else %}Стоимость{% endif %}</th></tr></thead>
+          <tr><th>Инв. №</th><th>Инструмент</th><th>Наряд / работа</th><th class="num">{% if ctx.can("tools.manage") or is_me %}{% else %}Стоимость{% endif %}</th></tr></thead>
         <tbody>
         {% for t in temp %}{% set o = orders.get(t.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else none %}
         <tr><td class="mono"><a href="/tools/{{ t.id }}">{{ t.inv_no }}</a></td>
@@ -34,7 +34,16 @@
           <td>{% if o %}<a href="/orders/{{ o.id }}" class="nowrap">{{ o.number }}</a>{% if v %} <span class="caption nowrap">{{ v.make }} {{ fmt_plate(v.plate) }}</span>{% endif %}
             {% if o.status in ("closed", "cancel") %}<div class="caption" style="color:var(--orange)">наряд закрыт, инструмент не сдан</div>{% endif %}
             {% if t.wo_work_id in work_names %}<div class="caption">{{ work_names[t.wo_work_id] }}</div>{% endif %}{% else %}—{% endif %}</td>
-          <td class="num">{% if ctx.can("tools.manage") %}
+          {# 21.11.2026 (брат): как в наряде — мастер «✓ Получил» / «Сдаю»; кладовщик «Вернул» (или примет «Сдаю» в
+             «Запросах на выдачу → Инструмент») #}
+          {% set rr = returning.get(t.id) %}{% set ur = unrecv.get(t.id) %}
+          <td class="num">{% if rr %}<span class="chip nowrap" data-s="waiting">сдаёт · ждёт кладовщика</span>
+            {% if ctx.can("tools.manage") %}<a class="btn btn-sm" href="/stock/issues?tab=tools">Принять</a>{% endif %}
+            {% elif is_me and ur %}
+            <form method="post" action="/tool-requests/{{ ur.id }}/received?back=/tools/staff/{{ u.id }}"><button class="btn btn-sm">✓ Получил</button></form>
+            {% elif is_me %}
+            <form method="post" action="/tools/{{ t.id }}/return-request?back=/tools/staff/{{ u.id }}"><button class="btn btn-sm btn-tinted">Сдаю</button></form>
+            {% elif ctx.can("tools.manage") %}
             <form method="post" action="/tools/{{ t.id }}/returned?back=/tools/staff/{{ u.id }}"
                   onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')">
               <button class="btn btn-sm btn-tinted">Вернул</button></form>
