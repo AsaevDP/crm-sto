@@ -2219,7 +2219,9 @@ def notify(ctx: Ctx = Depends(get_ctx)):
     from ..services import badges as bsvc
     from ..services import notify as nsvc
     notes = []
-    for n in nsvc.unread(ctx.db, ctx.user.id):
+    from ..services import notes as notes_svc   # 20.11.2026: уведомления о сделанном деле в цифру не идут
+    opens = notes_svc.unread_open(ctx.db, ctx.user, limit=99)   # цифра — все новые; окошек — не больше 10
+    for n in opens[:10]:
         wo = ctx.db.get(WorkOrder, n.work_order_id) if n.work_order_id else None
         can_req = bool(wo and wo.status in ("waiting", "instock", "work") and ctx.can("stock.request_issue")
                        and ctx.user.id in nsvc.masters(ctx.db, wo)   # любой мастер наряда (12.11.2026)
@@ -2228,7 +2230,7 @@ def notify(ctx: Ctx = Depends(get_ctx)):
                        and ctx.db.scalar(select(WoPart.id).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved")))
         notes.append({"id": str(n.id), "kind": n.kind, "title": n.title, "text": n.text, "url": n.url,
                       "request_url": f"/orders/{wo.id}/issue-request" if can_req else ""})
-    unread_n = len(notes)
+    unread_n = len(opens)
     razbor_n = 0
     if ctx.can("razbor.manage"):   # «Выдача и отправка» разбора: сколько резервов ещё не подготовлено
         from ..models import UsedSale
@@ -2271,16 +2273,26 @@ def notify_read(nid: str, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.get("/notifications")
-def notifications(ctx: Ctx = Depends(get_ctx), order: str = ""):
+def notifications(ctx: Ctx = Depends(get_ctx), order: str = "", f: str = ""):
     """«Сообщения» (11.11.2026): переписка по нарядам (слесарь ↔ менеджер ↔ запчастист), запросы запчастей
-    на согласование и уведомления («Все запчасти на складе», «Вам передан наряд»…)."""
+    на согласование и уведомления («Все запчасти на складе», «Вам передан наряд»…).
+    20.11.2026 (брат): сверху «Новые» (не прочитаны до этого открытия), ниже «Прочитанные» серым; у сделанного дела —
+    «✓ сделано»; плитки-фильтры по группам (?f=parts / stock / msg / people)."""
     from ..models import OrderMessage, PartCatalog
     from ..services import messages as msg
+    from ..services import notes as notes_svc
     from ..services import notify as nsvc
     rows = nsvc.recent(ctx.db, ctx.user.id)
+    new_ids = {n.id for n in rows if n.read_at is None}   # до того, как отметили прочитанным
+    done_ids = {n.id for n in rows if notes_svc.is_done(ctx.db, n, ctx.user)}
+    groups = {n.id: notes_svc.group_of(n.kind) for n in rows}
     if not ctx.viewing_as:   # глазами сотрудника — не отмечаем его сообщения прочитанными
         nsvc.mark_read(ctx.db, ctx.user.id)
         ctx.db.commit()
+    f = f if f in notes_svc.GROUPS else ""
+    tiles_n = {k: sum(1 for n in rows if groups[n.id] == k and n.id in new_ids and n.id not in done_ids)
+               for k in notes_svc.GROUPS}
+    shown = [n for n in rows if not f or groups[n.id] == f]
     mine = msg.visible(ctx)
     # Менеджеру — все ждущие согласования по его нарядам (даже если писали не лично ему)
     pend = [m for m in msg.pending_parts(ctx.db, ctx.branch.id)
@@ -2306,7 +2318,9 @@ def notifications(ctx: Ctx = Depends(get_ctx), order: str = ""):
                 out.append(u.short_name)
         return ", ".join(out)
     stuck_ids = {m.id for m in pend if orders.get(m.work_order_id) and orders[m.work_order_id].status not in msg.ASK_STATUSES}
-    return ctx.render("notifications.html", title="Сообщения", rows=rows, msgs=mine, pend_ids={m.id for m in pend},
+    return ctx.render("notifications.html", title="Сообщения", rows=shown, msgs=mine, pend_ids={m.id for m in pend},
+                      new_ids=new_ids, done_ids=done_ids, f=f, GROUPS=notes_svc.GROUPS, tiles_n=tiles_n,
+                      all_new=sum(1 for n in rows if n.id in new_ids and n.id not in done_ids),
                       stuck_ids=stuck_ids,
                       to_names={m.id: _names(m) for m in mine},
                       orders=orders, people=people, cats=cats, prices=prices, write_orders=write_orders,

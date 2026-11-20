@@ -4,16 +4,21 @@
    уведомления. Запчасть из наличия слесарь просит в карточке склада — «Попросить под наряд». #}
 {% block content %}
 <header class="page-head"><div><h1 class="large-title">Сообщения</h1>
-  <p class="footnote" style="margin:4px 0 0">Переписка по машинам в ремонте и запросы запчастей. Уведомления — справа.</p></div>
+  <p class="footnote" style="margin:4px 0 0">Слева — переписка по машинам. Справа — уведомления: новые сверху, прочитанные ниже серым; сделанное — «✓ сделано».</p></div>
   {% if ctx.can("parts.ask") %}<div class="ov-actions"><a class="btn btn-sm btn-tinted" href="/stock">Попросить запчасть со склада</a></div>{% endif %}
 </header>
-{% set k = rows|map(attribute="kind")|list %}
-{% set n_pend = pend_ids|length %}
-{# 20.11.2026 (брат): «Ждут согласования» перенесено в «Запросы на выдачу» (красная плитка «Согласовать») #}
-{{ tiles([
-  {"t": "Переписка", "n": msgs|length, "c": "blue", "s": "по моим машинам"},
-  {"t": "Уведомления", "n": rows|length, "c": "gray", "s": "последние"},
-  {"t": "Запчасти на складе", "n": k|select("equalto", "parts_ready")|list|length, "c": "green", "s": "можно начинать ремонт"}]) }}
+{# 20.11.2026 (брат): «глазами сотрудника» — его сообщения не отмечаются прочитанными (пусть увидит сам) #}
+{% if ctx.viewing_as %}
+<p class="hint warn nt-viewas">👁 Вы смотрите глазами сотрудника — его сообщения <b>не отмечаются прочитанными</b>, красная цифра
+  у «Сообщений» не погаснет. Погаснет, когда он сам откроет эту страницу (или дело будет сделано).</p>
+{% endif %}
+{# 20.11.2026 (брат): плитки — фильтр уведомлений по группам; цифра — сколько новых (не сделанных) в группе #}
+{% set items_t = [{"t": "Все", "n": all_new, "c": "red" if all_new else "gray", "s": "новые" if all_new else "новых нет",
+                   "href": "/notifications", "on": not f, "zero": not all_new}] %}
+{% for key, (label, kinds) in GROUPS.items() %}{% set _ = items_t.append({"t": label, "n": tiles_n[key],
+    "c": "red" if tiles_n[key] else "gray", "s": "новые" if tiles_n[key] else "новых нет",
+    "href": "/notifications?f=" ~ key, "on": f == key, "zero": not tiles_n[key]}) %}{% endfor %}
+{{ tiles(items_t, "nt-tiles") }}
 
 <div class="cl-grid">
   <section class="ov-col on">
@@ -67,15 +72,24 @@
   </section>
 
   <section class="ov-col on">
-    <div class="group-title">Уведомления</div>
-    <div class="card compact nt-list">
-      {% for n in rows %}
-      <a class="nt-row" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
+    {% macro nrow(n, fresh) %}{% set done = n.id in done_ids %}
+      <a class="nt-row {{ 'nt-new' if fresh and not done }} {{ 'nt-done' if done }}" data-kind="{{ n.kind }}" href="{{ n.url or '#' }}">
         <span class="nt-ico">{{ {"parts_ready": "✅", "parts_in": "📦", "picked": "🧾", "to_order": "🛒", "order_cancel": "✕", "issue_ready": "📦", "tool_ready": "📦", "chem_ready": "📦", "urgent_in": "🔥", "urgent_ask": "🔥", "handover": "👤", "msg": "💬", "part_ask": "🙋", "part_ask_info": "🙋", "part_ok": "✅", "part_go": "📦", "part_no": "✕"}.get(n.kind, "•") }}</span>
         <span class="grow"><b>{{ n.title }}</b><span class="caption">{{ n.text }}</span></span>
-        <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+        <span class="nt-side">{% if done %}<span class="chip" data-s="closed">✓ сделано</span>{% elif fresh %}<span class="chip" data-s="urgent">новое</span>{% endif %}
+          <span class="caption nowrap">{{ n.created_at.astimezone().strftime("%d.%m %H:%M") }}</span></span>
       </a>
-      {% else %}<p class="footnote" style="margin:0">Уведомлений пока нет</p>{% endfor %}
+    {% endmacro %}
+    {% set fresh = rows|selectattr("id", "in", new_ids)|rejectattr("id", "in", done_ids)|list %}
+    {% set fresh_ids = fresh|map(attribute="id")|list %}
+    {% set old = rows|rejectattr("id", "in", fresh_ids)|list %}
+    <div class="group-title">Новые · {{ fresh|length }}</div>
+    <div class="card compact nt-list">
+      {% for n in fresh %}{{ nrow(n, True) }}{% else %}<p class="footnote" style="margin:0">Новых уведомлений нет</p>{% endfor %}
+    </div>
+    <div class="group-title">Прочитанные и сделанные · {{ old|length }}</div>
+    <div class="card compact nt-list nt-old">
+      {% for n in old %}{{ nrow(n, False) }}{% else %}<p class="footnote" style="margin:0">Пока пусто</p>{% endfor %}
     </div>
   </section>
 </div>

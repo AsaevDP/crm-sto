@@ -2332,6 +2332,13 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .ac-client { display: grid; gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--fill-2); }
 .ac-client > span { min-width: 0; overflow-wrap: anywhere; }
 .ac-hours { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 0; }
+/* 20.11.2026 (брат): «Сообщения» — новые подсвечены, прочитанные и сделанные — серые */
+.nt-row.nt-new { background: color-mix(in srgb, var(--accent) 7%, transparent); border-radius: 8px; }
+.nt-row.nt-new b { font-weight: 700; }
+.nt-old .nt-row, .nt-row.nt-done { opacity: .62; }
+.nt-old .nt-row:hover, .nt-row.nt-done:hover { opacity: 1; }
+.nt-side { display: grid; justify-items: end; gap: 3px; flex: none; }
+.nt-viewas { margin: 0 0 10px; }
 /* четыре плитки на телефоне: «Инструмент» не обрезается */
 @media (max-width: 480px) { .iss-tiles { gap: 6px; } .iss-tiles .ptile { padding: 8px 8px 9px; } .iss-tiles .ptile-t { font-size: 12px; } }
 @media (max-width: 360px) { .iss-tiles { gap: 4px; } .iss-tiles .ptile { padding: 7px 5px 8px; } .iss-tiles .ptile-t { font-size: 10.5px; } }
