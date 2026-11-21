@@ -23,23 +23,9 @@
   {% endif %}
 </div>
 
-{# 21.11.2026 (брат): «Сотрудники» — полосой во всю ширину над рабочими местами (группы в ряд); «Запись на сегодня»
+{# 21.11.2026 (брат): сначала рабочие места (подъёмники — в ряд, остальные виды — столбиками вниз), под ними «Сотрудники» полосой; «Запись на сегодня»
    убрана; рабочие места — группами по видам. Место занято, если машина на нём или мастер места сейчас с ней работает. #}
-<section class="card compact pult-staff">
-  <div class="card-h"><span class="headline">Сотрудники</span><a class="footnote" href="/timesheet">табель →</a></div>
-  <div class="pst-band">
-    {# 12.11.2026: по группам. Мастер — чем занят; остальные — 🟢 на месте / 🔴 ушёл (по отметке картой) #}
-    {% for g in staff_groups %}
-    <div class="pst-group">
-      <div class="pst-title">{{ g.title }} · {{ g.rows|length }}</div>
-      {% for r in g.rows %}
-      <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
-        <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span></div>
-      {% endfor %}
-    </div>
-    {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}
-  </div>
-</section>
+
 
 <section class="pult-lifts-wrap">
   <div class="group-title pult-places-h">Рабочие места · занято {{ lifts|selectattr(1)|list|length }} из {{ lifts|length }}</div>
@@ -72,6 +58,21 @@
     </div>
   </div>
   {% endfor %}
+  </div>
+</section>
+<section class="card compact pult-staff">
+  <div class="card-h"><span class="headline">Сотрудники</span><a class="footnote" href="/timesheet">табель →</a></div>
+  <div class="pst-band">
+    {# 12.11.2026: по группам. Мастер — чем занят; остальные — 🟢 на месте / 🔴 ушёл (по отметке картой) #}
+    {% for g in staff_groups %}
+    <div class="pst-group">
+      <div class="pst-title">{{ g.title }} · {{ g.rows|length }}</div>
+      {% for r in g.rows %}
+      <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
+        <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span></div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}
   </div>
 </section>
 {% endblock %}
