@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SIM = ROOT / "data" / "sim"
-DAYS = int(os.getenv("SIM_DAYS", "7"))   # 12.11.2026 (брат): неделя истории, машин побольше (для пробы: SIM_DAYS=3)
+DAYS = int(os.getenv("SIM_DAYS", "13"))   # 22.11.2026 (брат): две недели истории (пн–пт), плотнее (для пробы: SIM_DAYS=3)
 SEED = 1211
 
 sys.path.insert(0, str(ROOT))
@@ -385,7 +385,7 @@ def make_clients(n):
     return out
 
 
-CLIENTS = make_clients(28)   # 20.11.2026 (брат): машин на СТО всего 20–30 — не количество, а каждая связь
+CLIENTS = make_clients(42)   # 22.11.2026 (брат): плотнее — 35–40 машин, 50–60 нарядов
 
 
 def free_client(repeat=False):
@@ -393,7 +393,7 @@ def free_client(repeat=False):
     repeat — чаще постоянные: у них есть история визитов (карточка клиента, «Прошлый визит», гарантия)."""
     busy = {o.c["plate"] for o in ACTIVE if o.wo() is not None and o.wo().status not in ("closed", "cancelled")}
     pool = [c for c in CLIENTS if c["plate"] not in busy] or CLIENTS
-    if repeat and rnd.random() < 0.5:
+    if repeat and rnd.random() < 0.25:   # 22.11.2026: чаще новые машины (35–40 машин за две недели)
         pool = [c for c in pool if c["visits"]] or pool
     return rnd.choice(pool)
 
@@ -475,7 +475,9 @@ def first_stock():
     with at(d, "10:00"):
         r = post("oleg", "/purchases/new", {"supplier_new": "Автотехнікс"}, what="Закупка на склад")
         pid = r.url.path.rsplit("/", 1)[1] if r is not None else None
-        paste = "\n".join(f"{n}; {a}; {b}; {qty}; {c}" for n, a, b, qty, c in STOCK)
+        # 22.11.2026: история — две недели, склад закупаем на две недели (вдвое больше)
+        k = 2 if DAYS > 7 else 1
+        paste = "\n".join(f"{n}; {a}; {b}; {qty * k}; {c}" for n, a, b, qty, c in STOCK)
         post("oleg", f"/purchases/{pid}/lines", {"paste": paste}, what="Строки списком (Excel)")
         post("oleg", f"/purchases/{pid}", {"action": "save", "expected_on": str(d + timedelta(days=1)),
                                            "supplier_invoice": "АТ-00871", "supplier_phone": "+380445550011"}, what="Дата «привезут»")
@@ -1440,7 +1442,7 @@ def attendance(day):
     if KIOSK is None:
         KIOSK = P("admin")
     for u in q(M.User, M.User.active.is_(True), M.User.login.notin_(("admin", "director", "deputy"))):
-        if day.weekday() == 6 or (day.weekday() == 5 and u.role.code not in ("mechanic", "manager", "washer")) or rnd.random() < 0.04:
+        if (day.weekday() >= 5 and day != TODAY) or rnd.random() < 0.04:   # 22.11.2026: сб и вс — выходные
             continue
         card = one(M.StaffCard, M.StaffCard.user_id == u.id)
         if not card:
@@ -1496,7 +1498,9 @@ def schedule_tomorrow(day):
     """Менеджер записывает клиентов на завтра."""
     out = []
     nxt = day + timedelta(days=1)
-    if nxt >= TODAY + timedelta(days=3) or nxt.weekday() == 6:
+    while nxt.weekday() >= 5 and nxt != TODAY:   # 22.11.2026: сб и вс — выходные, записываем на понедельник
+        nxt += timedelta(days=1)
+    if nxt >= TODAY + timedelta(days=3):
         return out
     # 20.11.2026: машин мало — по записи приезжает одна в день (через раз); на будущие дни — две (это ещё не машины)
     for _ in range(rnd.choice((0, 1)) if nxt <= TODAY else 2):
@@ -1952,6 +1956,169 @@ def leave_for_today(day):
                  what="Доступ к клиенту")
 
 
+# ================================================================ 22.11.2026 (брат): новое для ручной проверки
+SITE_DONE = [False]
+SITE_PARTS = (("Рычаг передний правый", "TC1311", "Lemförder", "2650"), ("Пыльник ШРУСа наружный", "800 019", "Febi", "420"),
+              ("Стойка стабилизатора задняя", "FE30442", "Febi", "560"), ("Подшипник ступицы передний", "VKBA 3644", "SKF", "1450"))
+
+
+def site_history(day):
+    """«На сайт»: клиент отказался от четырёх заказанных деталей → приехали на склад → запчастист «Продать» →
+    директор утвердил три (одну — с фото и описанием на сайте; вторую продали через сайт с отправкой; третью запчастист
+    взял в другой наряд — «нет на складе»), четвёртая ждёт утверждения."""
+    SITE_DONE[0] = True
+    o = new_order(day, "irina", "09:10", kind="mechanic", scen="B")
+    if not o:
+        return
+    o.fail_plan = None
+    step_diag(o, day, "09:15")
+    step_price(o, day, "10:10")
+    with at(day, "10:40"):
+        for name, art, brand, cost in SITE_PARTS:
+            post("oleg", f"{o.url}/parts", {"name": name, "article": art, "brand": brand, "qty": "1", "cost": cost,
+                                            "markup_pct": "35", "action": "order"}, what=f"Заказать: {name}")
+        post("oleg", f"{o.url}/picking-done", what="Подбор завершён")
+    step_approve(o, day, "11:00", send=True)
+    ps = {p.name: p for p in parts_of(o)}
+    with at(day, "11:40"):
+        for name, *_ in SITE_PARTS:
+            if name in ps:
+                post("irina", f"{o.url}/parts/{ps[name].id}/delete", {"reason": "Клиент передумал — поставит позже сам"},
+                     what="Клиент отказался (уже заказано)")
+    los = [one(M.PartLeftover, M.PartLeftover.wo_part_id == ps[n].id) for n, *_ in SITE_PARTS if n in ps]
+    los = [lo for lo in los if lo]
+    loc = (q(M.Location, M.Location.rack == "B") or q(M.Location))[0]
+    for lo in los:
+        with at(day, "12:10"):
+            post("oleg", f"/stock/leftovers/{lo.id}", {"action": "to_stock", "note": "Поставщик не принимает отказ"},
+                 what="Отказ клиента: пусть приедет на склад")
+        line = one(M.PurchaseLine, M.PurchaseLine.id == lo.purchase_line_id)
+        if line and not line.received:
+            with at(day, "14:20"):
+                post("pavel", "/stock/receive", {"line_id": str(line.id), f"loc_{line.id}": str(loc.id),
+                                                 f"inv_{line.id}": "ТТН-71840"}, what="Приняли отказанное — на склад")
+        get("oleg", "/stock/leftovers", what="Лишнее после отказов")
+        with at(day, "14:40"):
+            post("oleg", f"/stock/leftovers/{lo.id}", {"action": "sale"}, what="Лишнее: «Продать» → на сайт")
+    sn = {x.leftover_id: x for x in q(M.SiteNew)}
+    items = [sn.get(lo.id) for lo in los]
+    R.check(len([x for x in items if x]) == len(los) and all(x.state == "pending" for x in items if x),
+            "«Продать» — деталь в «На сайт → Новые», ждёт утверждения", str(len(los)))
+    items = [x for x in items if x]
+    if len(items) < 4:
+        return
+    r1, r2, r3, _r4 = items
+    with at(day, "15:30"):
+        for x in (r1, r2, r3):
+            post("director", f"/site/new/{x.id}/approve", what="На сайт: утвердить цену")
+    with at(day, "16:10"):
+        for x in (r1, r2):
+            post("dmitro", f"/site/new/{x.id}", {"description": "Новая, в заводской упаковке. Осталась после отказа клиента.",
+                                                 "publish": "1"}, files=photo(2), what="На сайт: фото и описание")
+    with at(day, "16:40"):
+        c = rnd.choice(CLIENTS)
+        post("dmitro", f"/site/new/{r2.id}/sell", {"qty": "1", "buyer_name": "Покупатель с сайта", "buyer_phone": "0671239090",
+                                                   "delivery": "np", "pay_method": "card", "channel": "site",
+                                                   "np_address": "Киев, отделение 12", "action": "reserve"},
+             what="На сайт: продать (резерв, отправка)")
+    R.check(one(M.UsedSale, M.UsedSale.site_new_id == r2.id) is not None, "новая деталь продана через сайт — продажа разбора", r2.code)
+    other = next((x for x in ACTIVE if x is not o and x.wo() and x.wo().status == "approve"), None)
+    if other:
+        with at(day, "17:10"):
+            post("oleg", f"{other.url}/parts", {"catalog_id": str(r3.catalog_id), "name": SITE_PARTS[2][0], "qty": "1",
+                                                "cost": "", "markup_pct": "35", "action": "auto"},
+                 what="Подбор: со склада (деталь с сайта)")
+        from app.services import site as site_svc
+        with SessionLocal() as db:
+            st_ = next((r["stage"] for r in site_svc.rows(db, r3.branch_id) if r["s"].id == r3.id), "")
+        R.check(st_ == "nostock", "новую с сайта взяли в наряд — «нет на складе», с сайта ушла", st_)
+
+
+def site_today(day):
+    """Сегодня: кладовщик выставил из карточки склада «На продажу» две позиции; директор одну отклонил (у кладовщика
+    разбора 🔴 «отказано»), вторая ждёт утверждения (у директора 🔴)."""
+    for name, qty in (("Ролик натяжной", "1"), ("Лампа W5W (2 шт)", "2")):
+        it = next((i for i in q(M.StockItem) if i.catalog_id == cat_id(name)), None)
+        if it and free_qty(it.catalog_id) >= Decimal(qty):
+            with at(day, "10:30"):
+                post("pavel", f"/stock/items/{it.id}/to-site", {"qty": qty}, what=f"На продажу из склада: {name}")
+    x = next((s_ for s_ in q(M.SiteNew, M.SiteNew.source == "manual") if s_.state == "pending"), None)
+    if x:
+        with at(day, "12:00"):
+            post("director", f"/site/new/{x.id}/decline", {"answer": "Этот ролик нужен в ремонт — не продаём"},
+                 what="На сайт: отказать с причиной")
+
+
+def schedule_next_week(day):
+    """Плотная запись на следующую неделю: у каждого мастера 1–3 записи в день по часам (свободные часы видно), одна
+    запись в субботу «вышли», одну менеджер перенёс на другое время (клиент попросил)."""
+    from app.services.orders import norm_phone
+    mon = day + timedelta(days=(7 - day.weekday()) % 7 or 7)
+    works = {"andrey": ["ТО, масло и фильтры", "Стук спереди", "Замена колодок", "Развал-схождение", "Замена ремня ГРМ"],
+             "elektro": ["Не заводится", "Горит Check Engine", "Диагностика электрики"],
+             "motor": ["Течь масла", "Троит двигатель", "Замена прокладки ГБЦ"],
+             "moyka": ["Мойка кузова", "Комплексная мойка"], "detail": ["Полировка кузова", "Химчистка салона"]}
+    made = []
+    for k in range(5):
+        d = mon + timedelta(days=k)
+        for mech in works:
+            free = list(range(9, 18))
+            rnd.shuffle(free)
+            taken = set()
+            for _ in range(rnd.choice((1, 2, 2, 3))):
+                dur = rnd.choice((60, 60, 120))
+                hh = next((h for h in free if h not in taken and (dur == 60 or (h + 1 not in taken and h + 1 < 19))), None)
+                if hh is None:
+                    break
+                taken.update({hh} if dur == 60 else {hh, hh + 1})
+                c = rnd.choice(CLIENTS)
+                with at(day, f"{rnd.randint(11, 16)}:{rnd.randint(0, 59):02d}"):
+                    post("irina", "/schedule", {"day": str(d), "time": f"{hh:02d}:00", "duration": str(dur),
+                                                "mechanic_id": str(uid(mech)), "client_name": c["name"], "phone": c["phone"],
+                                                "car": f"{c['make']} {c['model']}", "plate": c["plate"],
+                                                "work": rnd.choice(works[mech]), "note": "", "view": "week"},
+                         what="Запись на следующую неделю")
+                a = q(M.Appointment, M.Appointment.phone == norm_phone(c["phone"]), order=M.Appointment.created_at.desc())
+                if a:
+                    made.append((a[0], c, mech, dur, d))
+    sat = mon + timedelta(days=5)
+    c = rnd.choice(CLIENTS)
+    with at(day, "16:30"):
+        post("irina", "/schedule", {"day": str(sat), "time": "10:00", "duration": "120", "mechanic_id": str(uid("andrey")),
+                                    "client_name": c["name"], "phone": c["phone"], "car": f"{c['make']} {c['model']}",
+                                    "plate": c["plate"], "work": "Срочно: замена сцепления — вышли в субботу", "note": "",
+                                    "view": "week"}, what="Запись в выходной «всё равно»")
+    if made:
+        a, c, mech, dur, d = made[0]
+        with at(day, "17:20"):
+            post("irina", f"/schedule/{a.id}", {"day": str(d), "time": "18:00", "duration": "60", "mechanic_id": str(uid(mech)),
+                                                "lift_id": "", "client_name": c["name"], "phone": c["phone"],
+                                                "car": f"{c['make']} {c['model']}", "plate": c["plate"], "work": a.work,
+                                                "note": "Клиент попросил перенести на вечер", "view": "week"},
+                 what="Перенести запись (позвонил клиенту)")
+    R.check(len(made) >= 20, "плотная запись на следующую неделю", str(len(made)))
+
+
+def queue_today(day):
+    """Менеджер поднял наряд в очереди слесаря и электрика (↑ — раньше)."""
+    from app.services import workload as wl
+    from app.services.orders import staff_by_role
+    for lg in ("andrey", "elektro"):
+        with SessionLocal() as db:
+            br = db.scalar(select(M.Branch))
+            mid = uid(lg)
+            qq = wl.queue_of(wl.plan(db, br.id, staff_by_role(db, br.id, "masters")), mid)
+            solid = [b.wo.id for b in qq if b.kind == "solid"]
+        if len(solid) >= 2:
+            with at(day, "17:50"):
+                post("irina", f"/schedule/queue/{solid[-1]}", {"mech": str(mid), "where": "up", "back": "/schedule"},
+                     what="Очередь мастера: наряд раньше")
+            with SessionLocal() as db:
+                qq = wl.queue_of(wl.plan(db, br.id, staff_by_role(db, br.id, "masters")), mid)
+                after = [b.wo.id for b in qq if b.kind == "solid"]
+            R.check(after.index(solid[-1]) == len(solid) - 2, "↑ в очереди — наряд встал раньше", lg)
+
+
 def run():
     t0 = _time.time()
     prepare_staff()
@@ -1962,14 +2129,17 @@ def run():
     setup()
     first_stock()
     appts = []
-    for n in range(DAYS + 1):
-        day = START + timedelta(days=n)
+    wd = -1   # 22.11.2026: рабочий день по счёту (сб и вс — выходные; сегодня — «вышли в субботу»)
+    for n_ in range(DAYS + 1):
+        day = START + timedelta(days=n_)
         R.day = day
-        if day.weekday() == 6:
+        if day.weekday() >= 5 and day != TODAY:
             continue
+        wd += 1
+        n = wd
         print(f"\r{day} · активных нарядов {len(ACTIVE)} · ошибок {len(R.fails)}   ", end="", flush=True)
         attendance(day)
-        if day.weekday() == 0 and n > 0:
+        if day.weekday() == 0 and n > 0 and day < TODAY:
             payroll_week(day)
         if n == 1:
             razbor_start(day)
@@ -1995,10 +2165,10 @@ def run():
             new_order(day, a["mgr"], f"{a['hh']:02d}:05", from_appt=a)
         # 20.11.2026 (брат): всего 20–30 машин — за прошлые дни по 1–2 (насыщенные наряды), сегодняшние машины
         # заводит leave_for_today (каждая — под свою кнопку)
-        if day < TODAY:
-            for _ in range((1, 2, 2, 1, 2, 1, 1)[n % 7] if day.weekday() < 5 else 1):
+        if day < TODAY:   # 22.11.2026 (брат): плотнее — 2–3 машины в день
+            for _ in range((3, 2, 3, 3, 2)[n % 5]):
                 new_order(day, rnd.choice(MANAGERS), f"{rnd.randint(8, 12):02d}:{rnd.randint(0, 59):02d}")
-        if day < TODAY and n in (2, 4):   # быстрая мойка за прошлые дни — две машины (сегодняшние — в wash_today)
+        if day < TODAY and n in (2, 4, 7):   # быстрая мойка за прошлые дни (сегодняшние — в wash_today)
             quick_wash(day, f"{rnd.randint(9, 15):02d}:{rnd.randint(0, 59):02d}")
         # Двигаем наряды по шагам
         approve_left = [0]
@@ -2039,9 +2209,14 @@ def run():
                     break   # сегодня — остаются наряды на всех этапах
         if day < TODAY:
             chem_desk(day)
+        if day < TODAY and (TODAY - day).days <= 3 and not SITE_DONE[0]:
+            site_history(day)   # 22.11.2026: «На сайт» — отказы → «Продать», директор, фото, продажа
         appts += schedule_tomorrow(day)
         if day == TODAY:
             leave_for_today(day)
+            site_today(day)
+            schedule_next_week(day)
+            queue_today(day)
             check_badges()
             break
         end_of_day(day)
@@ -2146,7 +2321,7 @@ def final_checks():
         # 20.11.2026 (брат): машин на СТО 20–30 (машины разбора не считаются)
         cars = db.scalar(select(func.count(func.distinct(M.WorkOrder.vehicle_id))))
         orders = db.scalar(select(func.count()).select_from(M.WorkOrder))
-        R.check(20 <= cars <= 30, "машин на СТО — от 20 до 30", f"машин {cars}, нарядов {orders}")
+        R.check(30 <= cars <= 45 and 45 <= orders <= 70, "машин на СТО 30–45, нарядов 45–70 (плотно)", f"машин {cars}, нарядов {orders}")
         print(f"\nМашин: {cars}, нарядов: {orders}")
     # Каждый экран каждого сотрудника открывается
     menu_pages()
