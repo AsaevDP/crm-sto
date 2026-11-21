@@ -2617,3 +2617,4 @@ input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transp
 .nav-back svg { width: 16px; height: 16px; }
 .content a.back { display: none; }
 @media print { .nav-back { display: none !important; } }
+/* 22.11.2026 (брат): «Последнее изменение» — своей строкой слева, на уровне остальных строк шапки наряда */ .wo-last { margin-left: 0; flex-basis: 100%; }
