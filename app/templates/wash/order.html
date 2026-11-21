@@ -45,11 +45,21 @@
   <section class="stack">
     <div class="card compact" id="works">
       <div class="card-h"><span class="headline">Что сделать · {{ n_done }} из {{ works|length }}</span></div>
+      {# 22.11.2026 (брат): цифры — столбиками, как в наряде; мастер видит, но не меняет #}
+      {% if works %}<div class="nm-cols nm-head n5" aria-hidden="true"><span>Н/ч</span><span>Кол-во</span><span>Время</span><span>Цена</span><span>Сумма</span></div>{% endif %}
       {% for w in works %}
       <div class="part work" data-ws="{{ w.status }}">
         <div class="part-main">
-          <span class="part-name">{{ w.name }}{% if w.minutes %}<span class="caption work-who">≈ {{ fmt_min(w.minutes) }}</span>{% endif %}</span>
+          <span class="part-name">{{ w.name }}</span>
           <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
+        </div>
+        {% set th = (w.minutes / 60) if w.minutes else ((w.hours or 0) * (w.qty or 1) if (w.pricing or "hours") == "hours" and w.hours else 1) %}
+        <div class="nm-cols n5">
+          <span>{{ "фикс" if w.pricing == "fixed" else (w.hours|num if w.hours else "—") }}</span>
+          <span>{{ (w.qty or 1)|num }}</span>
+          <span class="{{ 'est' if not w.minutes }}">{{ "" if w.minutes else "≈" }}{% if th < 1 %}{{ (th * 60)|round|int }} мин{% else %}{{ th|round(2)|num }} ч{% endif %}</span>
+          <span>{{ (w.rate or 0)|money(0) }} ₴</span>
+          <b>{{ (w.price or 0)|money }} ₴</b>
         </div>
         {% if w.status == "done" and w.done_at %}<div class="caption work-done-by">✓ Выполнено {{ w.done_at.astimezone().strftime("%d.%m %H:%M") }}</div>{% endif %}
         {% if w.status == "paused" and pauses.get(w.id) %}<div class="hint warn" style="margin:0">Пауза: {{ pauses[w.id].pause_reason }} · с {{ pauses[w.id].started_at.astimezone().strftime("%H:%M") }}</div>{% endif %}

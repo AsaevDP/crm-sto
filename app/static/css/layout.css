@@ -2526,3 +2526,18 @@ dialog .title-2 .zp-st { font-size: 13px; margin-left: 6px; }
 .zp-cols.week .zp-sub .nowrap { white-space: normal; }
 @media (max-width: 760px) { .pult-tiles.vs-tiles.zp-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .zp-day .caption, .zp-day-pct { display: none; } .zp-day { padding: 6px 5px; overflow: hidden; } .zp-day-h b { font-size: 15px; } }
+
+/* ===== Наряд: цифры работ и запчастей столбиками (22.11.2026, брат) ===== */
+.nm-cols { display: grid; gap: 4px 8px; align-items: baseline; font-size: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.nm-cols > * { text-align: right; white-space: nowrap; min-width: 0; }
+.nm-cols b { color: var(--text); font-weight: 600; }
+.nm-cols.n5 { grid-template-columns: minmax(0, .7fr) minmax(0, .7fr) minmax(0, .8fr) minmax(0, 1fr) minmax(max-content, 1.3fr); }
+.nm-cols.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.nm-cols.p3 { grid-template-columns: minmax(0, 1fr) minmax(max-content, 1fr) minmax(max-content, 1.2fr); }
+.nm-cols.p1 { grid-template-columns: minmax(0, 1fr); }
+.nm-cols.p1 > * { text-align: left; }
+.nm-cols .est { color: var(--orange); }
+.nm-cols .nm-wide { grid-column: 2 / -1; white-space: normal; }
+.nm-head { font-size: 12px; font-weight: 600; padding: 8px 0 4px; border-bottom: 1px solid var(--separator); margin-bottom: 2px; }
+.part-meta { display: flex; gap: 6px 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.wk-time-ask { color: var(--orange); }

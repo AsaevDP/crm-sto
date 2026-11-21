@@ -24,15 +24,23 @@
       {% else %}<span class="chip part-st" data-ps="{{ p.status }}">{% if in_group %}✓ выбран · {% endif %}{{ PART_STATUS.get(p.status, p.status) }}</span>{% endif %}
     {% endif %}
   </div>
-  <div class="part-nums">
-    <span>{{ p.qty|num }} шт
-      {% if can_urgent and p.status in ("need", "ordered", "arrived", "reserved") %}
-      <form class="inline-form" method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/urgent" style="display:inline">
-        <button class="urg-btn" aria-pressed="{{ 'true' if p.urgent else 'false' }}" title="Слесарю деталь нужна срочно — увидят менеджер, запчастист и кладовщик">🔥 {{ "Срочно ✓" if p.urgent else "Срочно" }}</button></form>
-      {% endif %}</span>
-    {% set au = people.get(p.created_by) %}{% if au %}<span class="caption who-at" title="Добавил(а) {{ au.full_name }}">{{ au.full_name }} · {{ p.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
-    {% if show_price %}<span>{% if p.price %}× <b class="p-price">{{ p.price|money }}</b> ₴ = <b class="p-sum nowrap">{{ (p.price * p.qty)|money }}</b> ₴{% else %}<span class="caption">цену уточнит запчастист</span>{% endif %}</span>{% endif %}
+  {# 22.11.2026 (брат): цифры — столбиками с подписями сверху блока: Кол-во · Цена · Сумма #}
+  <div class="nm-cols {{ 'p3' if show_price else 'p1' }}">
+    <span data-l="Кол-во">{{ p.qty|num }} шт</span>
+    {% if show_price %}{% if p.price %}<span data-l="Цена"><span class="p-price">{{ p.price|money }}</span> ₴</span>
+    <b data-l="Сумма"><span class="p-sum">{{ (p.price * p.qty)|money }}</span> ₴</b>
+    {% else %}<span class="caption nm-wide">цену уточнит запчастист</span>{% endif %}{% endif %}
   </div>
+  {% set au = people.get(p.created_by) %}
+  {% if au or (can_urgent and p.status in ("need", "ordered", "arrived", "reserved")) %}
+  <div class="part-meta">
+    {% if can_urgent and p.status in ("need", "ordered", "arrived", "reserved") %}
+    <form class="inline-form" method="post" action="/orders/{{ wo.id }}/parts/{{ p.id }}/urgent" style="display:inline">
+      <button class="urg-btn" aria-pressed="{{ 'true' if p.urgent else 'false' }}" title="Слесарю деталь нужна срочно — увидят менеджер, запчастист и кладовщик">🔥 {{ "Срочно ✓" if p.urgent else "Срочно" }}</button></form>
+    {% endif %}
+    {% if au %}<span class="caption who-at" title="Добавил(а) {{ au.full_name }}">{{ au.full_name }} · {{ p.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>{% endif %}
+  </div>
+  {% endif %}
   {% if show_cost or (can_offer and p.status in ("need", "option", "declined")) or (can_archive and p.status not in ("issued", "installed", "returned")) %}
   <div class="part-cost">
     {% if show_cost and can_pick and p.status not in ("issued", "installed") %}
@@ -93,6 +101,7 @@
     </span>
   </div>
 
+  {% if plain_parts or groups %}<div class="nm-cols nm-head {{ 'p3' if show_price else 'p1' }}" aria-hidden="true"><span>Кол-во</span>{% if show_price %}<span>Цена</span><span>Сумма</span>{% endif %}</div>{% endif %}
   {% for p in plain_parts %}{{ part_row(p) }}{% endfor %}
 
   {% for g, items in groups.items() %}

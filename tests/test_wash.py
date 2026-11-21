@@ -115,8 +115,9 @@ def test_quick_intake_queue_and_washer_flow(client):
     # чужую по порядку машину не взять и через адрес
     r = client.post("/wash/take", data={"order_id": str(a.id)}, follow_redirects=False)
     assert r.headers["location"] == "/wash/queue"
-    for word in ("Проблемы", "Диагностика", "Согласование", "Запчасти", "₴"):
+    for word in ("Проблемы", "Диагностика", "Согласование", "Запчасти", "Принять оплату"):
         assert word not in page, word
+    assert "nm-cols" in page and "Сумма" in page   # 22.11.2026 (брат): мастер видит цену своих услуг, но не деньги наряда
     while True:   # берём по очереди, пока не дойдём до машины A (база в тестах общая)
         r = client.post("/wash/take", follow_redirects=False)
         assert r.status_code == 303
@@ -168,5 +169,6 @@ def test_washer_sees_only_own_work_in_repair_order(client):
     login(client, "moyka", "moyka123")
     page = _main(client.get(f"/orders/{wid}").text)
     assert "Мойка после ремонта (тест)" in page and "машина с ремонта" in page
-    assert "Согласование" not in page and "Запчасти" not in page and "₴" not in page
+    assert "Согласование" not in page and "Запчасти" not in page and "Принять оплату" not in page
+    assert "Сумма" in page   # 22.11.2026: цена своей услуги видна
     client.post("/logout")

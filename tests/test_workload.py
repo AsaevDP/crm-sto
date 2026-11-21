@@ -45,7 +45,7 @@ def test_time_field_and_orders_in_calendar(client):
                                              "qty": "1", "mechanic_id": str(andrey.id), "time_h": "4,5"})
     with SessionLocal() as db:
         assert db.get(WoWork, w_id).minutes == 270 and db.get(WoWork, w_id).hours == Decimal("3")
-    assert "⏱ 4,5 ч на выполнение" in client.get(url).text
+    assert 'data-l="Время" class="" title="Время на выполнение">4,5 ч' in client.get(url).text   # столбик «Время»
     with SessionLocal() as db:
         from app.services.orders import staff_by_role
         p = workload.plan(db, db.get(WorkOrder, wid).branch_id, staff_by_role(db, db.get(WorkOrder, wid).branch_id, "masters"))
