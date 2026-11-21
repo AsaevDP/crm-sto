@@ -121,6 +121,8 @@ class UsedSale(Entity):
     packed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     packed_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     place: Mapped[str | None] = mapped_column(String(60), default="", nullable=True)
+    # 22.11.2026 (брат): продажа новой детали из «На сайт → Новые» (SiteNew); у б/у — пусто
+    site_new_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
 
 class Carrier(Entity):
@@ -132,3 +134,34 @@ class Carrier(Entity):
     note: Mapped[str] = mapped_column(String(200), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class SiteNew(Entity):
+    """«На сайт → Новые» (22.11.2026, брат): новая запчасть со склада на продажу — от неё отказался клиент (запчастист
+    «Продать» в «Лишнем после отказов») или её выставили из карточки склада («На продажу»). Цена — та, что была для
+    клиента (запчастист с наценкой), кладовщик разбора её не меняет; на сайт — после утверждения директором / замом.
+    Деталь остаётся обычной позицией склада: её можно взять в наряд — тогда из продажи она уходит сама (нет свободного
+    остатка). state: pending — ждёт утверждения, approved — утверждена, declined — отказано (answer — причина).
+    status: on — выставлена, off — снята с продажи."""
+    __tablename__ = "site_new"
+    catalog_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("parts_catalog.id"), index=True)
+    code: Mapped[str] = mapped_column(String(20), default="", index=True)        # Н-0001 — для сайта
+    qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)             # сколько выставили на продажу
+    price: Mapped[Decimal] = mapped_column(MONEY, default=0)                    # за 1 шт — цена для клиента
+    state: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    answer: Mapped[str] = mapped_column(Text, default="")
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    status: Mapped[str] = mapped_column(String(10), default="on", index=True)
+    source: Mapped[str] = mapped_column(String(10), default="refused")          # refused / manual
+    leftover_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")                       # почему клиент отказался
+    description: Mapped[str] = mapped_column(Text, default="")                  # для объявления на сайте
+    publish: Mapped[bool] = mapped_column(Boolean, default=True)                # показывать на сайте
+
+
+class SiteNewPhoto(Entity):
+    __tablename__ = "site_new_photos"
+    site_new_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("site_new.id", ondelete="CASCADE"), index=True)
+    file: Mapped[str] = mapped_column(String(255))

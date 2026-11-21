@@ -1063,7 +1063,11 @@ def razbor_file(name: str, ctx: Ctx = Depends(get_ctx)):
 @router.get("/razbor/export.{fmt}")
 def export(fmt: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("razbor.export")
-    rows = svc.export_rows(ctx.db, ctx.branch.id)
+    # 22.11.2026 (брат): один файл для сайта — б/у разбора и новые на продажу (колонка «Тип»)
+    from ..services import site as site_svc
+    site_svc.sync_leftovers(ctx.db, ctx.branch.id)
+    rows = svc.export_rows(ctx.db, ctx.branch.id) + site_svc.export_rows(ctx.db, ctx.branch.id)
+    ctx.db.commit()
     stamp = date.today().strftime("%Y-%m-%d")
     makers = {"xlsx": (svc.export_xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
               "csv": (svc.export_csv, "text/csv; charset=utf-8"), "json": (svc.export_json, "application/json"),

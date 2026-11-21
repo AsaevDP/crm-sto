@@ -347,7 +347,7 @@ def economy(db: Session, branch_id, donor: Donor) -> DonorEconomy:
 
 
 # ---------- Экспорт для сайта ----------
-COLUMNS = ["Код", "Название", "Марка", "Модель", "Год", "Двигатель", "КПП", "Кузов", "Состояние", "Цена, грн",
+COLUMNS = ["Тип", "Код", "Название", "Марка", "Модель", "Год", "Двигатель", "КПП", "Кузов", "Состояние", "Цена, грн",
            "Количество", "Описание", "Донор", "Фото", "Категория"]
 
 
@@ -365,7 +365,7 @@ def export_rows(db: Session, branch_id) -> list[dict]:
         donor = db.get(Donor, i.donor_id) if i.donor_id else None
         photos = db.scalars(select(StockPhoto).where(StockPhoto.stock_item_id == i.id).order_by(StockPhoto.created_at)).all()
         rows.append({
-            "Код": i.code, "Название": cat.name, "Категория": cat.category, "Марка": i.donor_make, "Модель": i.donor_model,
+            "Тип": "Б/у", "Код": i.code, "Название": cat.name, "Категория": cat.category, "Марка": i.donor_make, "Модель": i.donor_model,
             "Год": i.donor_year or "", "Двигатель": donor.engine if donor else "", "КПП": donor.gearbox if donor else "",
             "Кузов": donor.body if donor else "", "Состояние": CONDITIONS.get(i.condition, i.condition),
             "Цена, грн": float(i.sale_price), "Количество": float(free), "Описание": i.description,
@@ -395,7 +395,7 @@ def export_xlsx(rows) -> bytes:
         c.font = Font(bold=True)
     for r in rows:
         ws.append([r[k] for k in COLUMNS])
-    for col, width in zip("ABCDEFGHIJKLMN", (9, 34, 12, 14, 7, 16, 12, 12, 18, 11, 11, 40, 8, 30)):
+    for col, width in zip("ABCDEFGHIJKLMNO", (7, 9, 34, 12, 14, 7, 16, 12, 12, 18, 11, 11, 40, 8, 30)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     out = io.BytesIO()
@@ -404,7 +404,7 @@ def export_xlsx(rows) -> bytes:
 
 
 def export_json(rows) -> bytes:
-    data = [{"code": r["Код"], "name": r["Название"], "make": r["Марка"], "model": r["Модель"], "year": r["Год"],
+    data = [{"type": "new" if r.get("Тип") == "Новая" else "used", "code": r["Код"], "name": r["Название"], "make": r["Марка"], "model": r["Модель"], "year": r["Год"],
              "engine": r["Двигатель"], "gearbox": r["КПП"], "body": r["Кузов"], "condition": r["Состояние"],
              "price_uah": r["Цена, грн"], "qty": r["Количество"], "description": r["Описание"],
              "photos": [x.strip() for x in r["Фото"].split(",") if x.strip()]} for r in rows]

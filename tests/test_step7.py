@@ -56,10 +56,10 @@ def test_donor_parts_sale_and_export(client):
     assert f"photos/{lamp}_1.jpg" in names and f"photos/{lamp}_2.jpg" in names
     ws = load_workbook(io.BytesIO(z.read("razbor.xlsx"))).active
     rows = list(ws.iter_rows(values_only=True))
-    assert rows[0][:2] == ("Код", "Название")
-    assert {row[0] for row in rows[1:]} >= {lamp, mirror}
-    lamp_row = next(row for row in rows if row[0] == lamp)
-    assert lamp_row[1] == "Фара передняя левая (тест)" and lamp_row[9] == 6500 and f"{lamp}_1.jpg" in lamp_row[13]
+    assert rows[0][:3] == ("Тип", "Код", "Название")   # 22.11.2026: «Тип» — новая / б/у (раздел «На сайт»)
+    assert {row[1] for row in rows[1:]} >= {lamp, mirror}
+    lamp_row = next(row for row in rows if row[1] == lamp)
+    assert lamp_row[0] == "Б/у" and lamp_row[2] == "Фара передняя левая (тест)" and lamp_row[10] == 6500 and f"{lamp}_1.jpg" in lamp_row[14]
     assert z.read("razbor.csv")[:3] == b"\xef\xbb\xbf"  # BOM — Excel понимает кириллицу
     assert json.loads(z.read("razbor.json"))["items"]
 

@@ -17,7 +17,8 @@
     {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/shipping">📦 Выдача и отправка</a>{% endif %}
     {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/refs">Марки и категории</a>{% endif %}
     {% if ctx.can("razbor.stock") and not ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки</a>{% endif %}
-    {% if ctx.can("razbor.export") %}<a class="btn btn-sm btn-gray" href="/razbor/export.zip" title="Excel + CSV + JSON + фото в одном архиве">⤓ Для сайта · {{ n_site }}</a>{% endif %}
+    {# 22.11.2026 (брат): всё для сайта (б/у и новые, выгрузка) — в разделе «На сайт» #}
+    {% if ctx.can("razbor.export") %}<a class="btn btn-sm btn-gray" href="/site?t=used" title="Раздел «На сайт»: б/у разбора и новые запчасти, выгрузка для сайта">{{ icon("globe") }}На сайт · {{ n_site }}</a>{% endif %}
   </div>
 </header>
 

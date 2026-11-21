@@ -2618,3 +2618,40 @@ input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transp
 .content a.back { display: none; }
 @media print { .nav-back { display: none !important; } }
 /* 22.11.2026 (брат): «Последнее изменение» — своей строкой слева, на уровне остальных строк шапки наряда */ .wo-last { margin-left: 0; flex-basis: 100%; }
+/* 22.11.2026 (брат): «На сайт» — новые на продажу и б/у разбора */
+.st-tabs { margin-bottom: 12px; }
+.sn-tiles { margin-bottom: 12px; }
+.sn-list { display: grid; gap: 10px; }
+.sn-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; grid-template-areas: "ph main nums" "ph acts acts"; gap: 6px 14px;
+  align-items: start; box-shadow: var(--shadow-1), inset 4px 0 0 var(--tc, var(--separator)); color: var(--text); text-decoration: none; }
+.sn-used { grid-template-areas: "ph main nums"; }
+.sn-ph { grid-area: ph; width: 84px; height: 84px; border-radius: 12px; background: var(--fill-2); display: grid; place-items: center; overflow: hidden; }
+.sn-ph img { width: 100%; height: 100%; object-fit: cover; }
+.sn-main { grid-area: main; display: grid; gap: 3px; min-width: 0; }
+.sn-top { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.sn-code { font-family: var(--font-mono, ui-monospace, monospace); color: var(--text-2); }
+.sn-top .chip { color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.sn-desc { font-size: 13px; color: var(--text-2); }
+.sn-nums { grid-area: nums; display: flex; gap: 16px; text-align: right; }
+.sn-nums > span { display: grid; }
+.sn-nums b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.sn-acts { grid-area: acts; display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.sn-acts form { margin: 0; }
+.sn-more > summary { list-style: none; }
+.sn-more > summary::-webkit-details-marker { display: none; }
+.sn-more[open] { flex-basis: 100%; }
+.sn-more[open] > form, .sn-more[open] > .sn-photos { margin-top: 8px; max-width: 520px; }
+.sn-photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.sn-photos form { position: relative; }
+.sn-photos img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
+.sn-photos button { position: absolute; top: 2px; right: 2px; background: var(--surface); border-radius: 50%; padding: 0 6px; min-height: 0; }
+.to-site { position: relative; }
+.to-site > summary { list-style: none; }
+.to-site > summary::-webkit-details-marker { display: none; }
+.to-site-pop { position: absolute; right: 0; top: calc(100% + 6px); width: 280px; z-index: 20; box-shadow: var(--shadow-2); }
+@media (max-width: 760px) {
+  .sn-row { grid-template-columns: 64px minmax(0, 1fr); grid-template-areas: "ph main" "nums nums" "acts acts"; }
+  .sn-used { grid-template-areas: "ph main" "nums nums"; }
+  .sn-ph { width: 64px; height: 64px; }
+  .sn-nums { justify-content: flex-start; text-align: left; }
+}

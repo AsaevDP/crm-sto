@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles %}
+{# «На сайт» (22.11.2026, брат): «Новые» — новые запчасти на продажу (отказы клиентов и «На продажу» со склада): цена —
+   для клиента, кладовщик разбора её не меняет, утверждает директор / зам; «Б/у · разбор» — детали разбора с галочкой
+   «на сайт» и в наличии. Продажа — как у б/у: резерв → «Выдача и отправка» → продано. #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">На сайт</h1>
+    <p class="footnote" style="margin:0">Что продаём через сайт: новые запчасти, от которых отказались клиенты, и б/у с разборки</p></div>
+  {% if can_export %}<div class="ov-actions">
+    <a class="btn btn-sm btn-gray" href="/razbor/export.zip" title="Excel + CSV + JSON + фото — новые и б/у вместе, колонка «Тип»">⤓ Выгрузка для сайта · {{ n_new_site + n_used }}</a>
+    <a class="btn btn-sm btn-gray" href="/razbor/export.xlsx">⬇ Excel</a></div>{% endif %}
+</header>
+
+<nav class="segmented st-tabs" aria-label="Что продаём">
+  <a href="/site?t=new" aria-pressed="{{ (t == 'new')|lower }}">Новые · {{ counts.wait + counts.site + counts.nostock + counts.declined }}</a>
+  <a href="/site?t=used" aria-pressed="{{ (t == 'used')|lower }}">Б/у · разбор · {{ n_used }}</a>
+</nav>
+
+{% if t == "new" %}
+{{ tiles([
+  {"t": "Ждут утверждения", "n": counts.wait, "s": "цену утверждает директор", "c": "red" if can_price else "orange", "href": "/site?t=new&f=wait", "on": f == "wait"},
+  {"t": "На сайте", "n": counts.site, "s": "утверждено, есть на складе", "c": "green", "href": "/site?t=new&f=site", "on": f == "site"},
+  {"t": "Нет на складе", "n": counts.nostock, "s": "взяли в наряд", "c": "gray", "href": "/site?t=new&f=nostock", "on": f == "nostock"},
+  {"t": "Отказано", "n": counts.declined, "s": "директор не утвердил", "c": "red", "href": "/site?t=new&f=declined", "on": f == "declined"},
+  {"t": "Продано", "n": counts.sold, "s": "всё продали", "c": "teal", "href": "/site?t=new&f=sold", "on": f == "sold"},
+  {"t": "Сняты", "n": counts.off, "s": "сняли с продажи", "c": "gray", "href": "/site?t=new&f=off", "on": f == "off"},
+], "sn-tiles") }}
+
+<div class="sn-list">
+{% for r in rows %}{% set s = r.s %}{% set c = r.c %}{% set stg = STAGES[r.stage] %}
+<section class="card compact sn-row" id="sn{{ s.id }}" style="--tc:var(--{{ stg[1] }})">
+  <div class="sn-ph">{% if r.photos %}<img src="/razbor/files/{{ r.photos[0].file.split('/')[-1] }}" alt="">{% else %}<span class="caption">нет фото</span>{% endif %}</div>
+  <div class="sn-main">
+    <div class="sn-top"><b class="sn-code">{{ s.code }}</b> <b>{{ c.name if c else "?" }}</b>
+      {% if c and c.brand %}<span class="tag">{{ c.brand }}</span>{% endif %}
+      <span class="chip" style="--c:var(--{{ stg[1] }})" data-st>{{ stg[0] }}</span></div>
+    <div class="caption">{% if c and c.article %}<span class="mono">{{ c.article }}</span> · {% endif %}{% if s.source == "refused" %}отказ клиента{% if r.wo %} · <a href="/orders/{{ r.wo.id }}">наряд {{ r.wo.number[-6:] }}</a>{% endif %}{% if s.reason %} · «{{ s.reason }}»{% endif %}{% else %}выставлено со склада{% endif %}</div>
+    {% if s.description %}<div class="sn-desc">{{ s.description }}</div>{% endif %}
+    {% if s.state == "declined" and s.answer %}<div class="hint warn" style="margin:4px 0 0">Отказано: {{ s.answer }}</div>{% endif %}
+  </div>
+  <div class="sn-nums">
+    <span><span class="caption">цена за шт</span><b class="nowrap">{{ s.price|money }} ₴</b></span>
+    <span><span class="caption">можно продать</span><b>{{ r.avail|num }} из {{ s.qty|num }}</b></span>
+    {% if r.sold %}<span><span class="caption">продано / в резерве</span><b>{{ r.sold|num }}</b></span>{% endif %}
+  </div>
+  <div class="sn-acts">
+    {% if can_price and s.state != "approved" and s.status == "on" %}
+    <form method="post" action="/site/new/{{ s.id }}/approve"><button class="btn btn-sm">✓ Утвердить цену</button></form>
+    {% if s.state == "pending" %}<details class="sn-more"><summary class="btn btn-sm btn-gray">Отказать…</summary>
+      <form method="post" action="/site/new/{{ s.id }}/decline" class="form dense"><input class="field" name="answer" required maxlength="300" placeholder="Причина — кладовщик увидит">
+        <button class="btn btn-sm btn-danger">Отказать</button></form></details>{% endif %}
+    {% endif %}
+    {% if can_sell and r.stage == "site" %}
+    <button class="btn btn-sm btn-tinted" type="button" onclick="document.getElementById('sell{{ s.id }}').showModal()">Продать</button>
+    {% endif %}
+    {% if can_edit %}
+    <details class="sn-more"><summary class="btn btn-sm btn-gray">Фото и описание</summary>
+      <form method="post" action="/site/new/{{ s.id }}" enctype="multipart/form-data" class="form dense">
+        <input type="hidden" name="back" value="/site?t=new&f={{ f }}">
+        <label class="caption">Описание для сайта<textarea class="field" name="description" rows="3" placeholder="Новая, в упаковке. Подходит: …">{{ s.description }}</textarea></label>
+        <label class="row caption"><input type="checkbox" name="publish" value="1" {% if s.publish %}checked{% endif %}> показывать на сайте</label>
+        <label class="caption">Добавить фото<input class="field" type="file" name="photos" accept="image/*" multiple></label>
+        <button class="btn btn-sm">Сохранить</button>
+      </form>
+      {% if r.photos %}<div class="sn-photos">{% for p in r.photos %}<form method="post" action="/site/new/{{ s.id }}"><input type="hidden" name="action" value="photo_del"><input type="hidden" name="photo" value="{{ p.id }}"><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""><button class="btn btn-plain btn-sm" title="Удалить фото">✕</button></form>{% endfor %}</div>{% endif %}
+    </details>
+    <form method="post" action="/site/new/{{ s.id }}"><input type="hidden" name="action" value="{{ 'on' if s.status == 'off' else 'off' }}"><input type="hidden" name="back" value="/site?t=new&f={{ f }}">
+      <button class="btn btn-sm btn-plain">{{ "Вернуть на продажу" if s.status == "off" else "Снять с продажи" }}</button></form>
+    {% endif %}
+  </div>
+</section>
+{% if can_sell and r.stage == "site" %}
+<dialog id="sell{{ s.id }}" class="sheet sheet-wide">
+  <form method="post" action="/site/new/{{ s.id }}/sell" class="form">
+    <h2 class="title-2">Продать · {{ s.code }} {{ c.name if c else "" }}</h2>
+    <p class="footnote" style="margin:0">Цена утверждена: {{ s.price|money }} ₴ за шт — её не меняем. Можно продать: {{ r.avail|num }} шт.</p>
+    <div class="form-row three">
+      <label>Количество<input class="field" name="qty" value="1" inputmode="decimal"></label>
+      <label>Покупатель<input class="field" name="buyer_name" placeholder="Имя"></label>
+      <label>Телефон<input class="field" name="buyer_phone" type="tel" placeholder="067 123 45 67"></label>
+    </div>
+    <div class="form-row three">
+      <label>Как забирает<select class="field" name="delivery"><option value="pickup">Самовывоз</option><option value="np">Нова Пошта</option><option value="other">Другая доставка</option></select></label>
+      <label>Оплата<select class="field" name="pay_method">{% for k, v in PAY_METHODS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+      <label>Откуда покупатель<select class="field" name="channel"><option value="">—</option>{% for k, v in CHANNELS.items() %}<option value="{{ k }}" {{ 'selected' if k == 'site' }}>{{ v }}</option>{% endfor %}</select></label>
+    </div>
+    <label>Куда отправить (город, отделение)<input class="field" name="np_address" placeholder="Если доставка"></label>
+    <label class="row caption"><input type="checkbox" name="cod" value="1"> наложенный платёж</label>
+    <div class="form-row"><button class="btn" name="action" value="reserve">В резерв под покупателя</button>
+      <button class="btn btn-tinted" name="action" value="sold">Продано сразу</button>
+      <button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+{% endif %}
+{% else %}
+<div class="card compact"><p class="footnote" style="margin:0">{% if f == "wait" %}Ничего не ждёт утверждения.{% elif f == "site" %}Новых запчастей на сайте пока нет. Они появятся, когда запчастист в «Лишнем после отказов» нажмёт «Продать» (или выставят из карточки склада «На продажу») и директор утвердит цену.{% else %}Здесь пусто.{% endif %}</p></div>
+{% endfor %}
+</div>
+
+{% else %}
+<p class="footnote">Детали разбора с галочкой «на сайт», утверждённой ценой и в наличии. Править — в карточке детали «Разбора».</p>
+<div class="sn-list">
+{% for r in used_rows %}{% set i = r.i %}
+<a class="card compact sn-row sn-used" href="/razbor/parts/{{ i.id }}">
+  <div class="sn-ph">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="">{% else %}<span class="caption">нет фото</span>{% endif %}</div>
+  <div class="sn-main"><div class="sn-top"><b class="sn-code">{{ i.code }}</b> <b>{{ r.c.name if r.c else "" }}</b></div>
+    <div class="caption">{{ i.donor_make }} {{ i.donor_model }} {{ i.donor_year or "" }}{% if r.loc %} · ячейка {{ r.loc }}{% endif %}</div></div>
+  <div class="sn-nums"><span><span class="caption">цена</span><b class="nowrap">{{ i.sale_price|money }} ₴</b></span>
+    <span><span class="caption">в наличии</span><b>{{ r.b.free|num }}</b></span></div>
+</a>
+{% else %}<div class="card compact"><p class="footnote" style="margin:0">Б/у деталей на сайте пока нет — поставьте галочку «на сайт» в карточке детали «Разбора».</p></div>{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

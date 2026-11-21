@@ -569,6 +569,7 @@ def populate():
         # 18.11.2026: ещё 3 машины — с неутверждёнными ценами (директор утверждает в «Ценах разбора»)
         add_razbor_examples(db, branch.id, users["director"].id if "director" in users else None)
         add_more_razbor_parts(db, branch.id, users["director"].id if "director" in users else None)   # 19.11.2026
+        add_site_new_examples(db, branch.id, users["director"].id if "director" in users else None)   # 22.11.2026
 
         # ---- Табель: отметки по картам за прошлый и текущий месяц ----
         import random
@@ -948,4 +949,29 @@ def _demo_wash_queue(db, branch, users, as_user):
         if doing:
             first = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.status == "doing"))
             db.add(WoWorkSession(work_order_id=wo.id, wo_work_id=first.id, mechanic_id=wo.mechanic_id, started_at=_now()))
+    db.flush()
+
+
+def add_site_new_examples(db, branch_id, director_id=None):
+    """«На сайт → Новые» (22.11.2026, брат): две новые запчасти со склада на продажу — одна уже утверждена (на сайте),
+    вторая ждёт утверждения директором."""
+    from decimal import Decimal
+    from sqlalchemy import select
+    from .models import PartCatalog, StockItem
+    from .services import site as site_svc
+    from .services import stock as ssvc
+    items = db.scalars(select(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id).where(
+        StockItem.branch_id == branch_id, PartCatalog.kind == "new")).all()
+    bal = ssvc.balances(db, branch_id, [i.id for i in items]) if items else {}
+    done = 0
+    for i in items:
+        if done >= 2 or i.id not in bal or bal[i.id]["free"] < 1 or not i.cost:
+            continue
+        sn = site_svc.offer_from_stock(db, i, Decimal(1))
+        if isinstance(sn, str):
+            continue
+        sn.description = "Новая, в заводской упаковке. Осталась после отказа клиента."
+        if done == 0:
+            sn.state, sn.decided_by = "approved", director_id
+        done += 1
     db.flush()

@@ -8,7 +8,7 @@
   В. приехала и лежит в резерве — резерв снят, деталь свободна на складе → в «Лишнее после отказов»;
   Г. выдана мастеру — сначала «Вернуть на склад».
 Лишнее на складе: «Оставить на складе» (подбирается в другие машины как обычно), «Вернуть поставщику» (списание со
-склада с пометкой «возврат поставщику»), «Продать» (пометка; когда будет сайт — вкладка «Новые запчасти»).
+склада с пометкой «возврат поставщику»), «Продать» (→ «На сайт → Новые», services/site.py: цена для клиента, утверждает директор).
 Решает запчастист (parts.pick), кладовщик видит список и тоже может отметить (stock.manage)."""
 from decimal import Decimal
 
@@ -136,6 +136,10 @@ def decide(db: Session, lo: PartLeftover, user: User, action: str, note: str = "
               f"{nsvc.car(db, wo)} · наряд {wo.number} · {user.short_name}", f"/orders/{wo.id}#parts", wo, skip=user.id)
     from .orders import event
     event(db, wo, "status", f"Отказ клиента от «{part.name if part else ''}»: {msg}" + (f" — {lo.note}" if lo.note else ""))
+    # 22.11.2026 (брат): «Продать» — сразу в «На сайт → Новые» (цену утверждает директор); передумали — снята с продажи
+    from . import site as site_svc
+    db.flush()
+    site_svc.sync_leftovers(db, lo.branch_id)
     return ""
 
 

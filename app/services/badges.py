@@ -395,6 +395,16 @@ def compute(ctx) -> dict:
         if ctx.can("razbor.manage"):
             _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?f=declined", info=info_rz)
 
+    # ---------- «На сайт» (22.11.2026, брат): новые запчасти на продажу ----------
+    if ctx.can("razbor.price") or ctx.can("razbor.export"):
+        from . import site as site_svc
+        sc = site_svc.counts(db, bid, sync=False)
+        if ctx.can("razbor.price"):
+            _add(out, "/site", "red", sc["wait"], "новые на продажу — утвердить цену", "/site?t=new&f=wait")
+        if ctx.can("razbor.export"):
+            _add(out, "/site", "red", sc["declined"], "директор отказал — посмотреть причину", "/site?t=new&f=declined")
+            _add(out, "/site", "orange", sc["nophoto"], "на сайте без фото — добавить фото", "/site?t=new&f=site")
+
     # ---------- Зарплата: прошлая неделя ждёт проверки / утверждения ----------
     # 20.11.2026 (брат): цифры — у «Зарплаты сотрудников»: бухгалтеру 🟠 проверить / 🟢 выдать; директору (и заму, пока у
     # него доступ) 🟠 утвердить — проверенные бухгалтером; админу — всё, что не утверждено

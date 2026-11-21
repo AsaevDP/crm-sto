@@ -13,6 +13,15 @@
         <button class="btn btn-sm">🏷 Наклейка</button>
       </form>
       {% endif %}
+      {# 22.11.2026 (брат): выставить новую запчасть на продажу через сайт — цена: закупка + наценка, утверждает директор #}
+      {% if c.kind == "new" and not look and ctx.can("stock.manage", "razbor.price") and b.free > 0 %}
+      <details class="to-site"><summary class="btn btn-sm btn-gray">{{ icon("globe") }}На продажу</summary>
+        <form method="post" action="/stock/items/{{ i.id }}/to-site" class="card compact form dense to-site-pop">
+          <label class="caption">Сколько выставить (свободно {{ b.free|num }})<input class="field" name="qty" value="1" inputmode="decimal"></label>
+          <p class="caption" style="margin:0">Цена — закупка + стандартная наценка. На сайт — после утверждения директором («На сайт → Новые»).</p>
+          <button class="btn btn-sm">Выставить на продажу</button>
+        </form></details>
+      {% endif %}
     </div>
   </div>
 </header>
