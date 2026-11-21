@@ -110,14 +110,28 @@ def compute(ctx) -> dict:
                 qq = qq.where(mine)
             return db.scalar(qq) or 0
 
-        # 🔴 срочная запчасть ещё не выдана (менеджер, запчастист, админ)
+        # 22.11.2026 (брат): «🔥 Срочно» у детали — цифра только у того, от кого зависит дело.
+        # Запчастист — 🔴 «срочная деталь не пришла» (ещё не на складе: подбор / заказана), гаснет, когда её примут.
+        # Менеджер — 🔴 только «срочная деталь без срока»: нет даты «привезут» — спросить у запчастиста; дата появилась —
+        # цифра гаснет (пока деталь едет, у менеджера цифры нет; действия кладовщика на его цифры не влияют).
         if ctx.can("orders.approve", "parts.pick"):
-            uq = (select(func.count(func.distinct(WoPart.work_order_id))).join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
-                  .where(WorkOrder.branch_id == bid, WoPart.urgent.is_(True),
-                         WoPart.status.in_(("need", "ordered", "reserved")), WorkOrder.status.not_in(("closed", "cancel"))))
-            if not see_all:
-                uq = uq.where(mine)
-            _add(out, "/orders", "red", db.scalar(uq) or 0, "срочные запчасти", "/orders?tab=parts")
+            from ..models import Purchase, PurchaseLine
+            uq = (select(WoPart.work_order_id).distinct().join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
+                  .where(WorkOrder.branch_id == bid, WoPart.urgent.is_(True), WoPart.status.in_(("need", "ordered")),
+                         WorkOrder.status.not_in(("closed", "cancel"))))
+
+            def urgent_badge(q, title):
+                ids = db.scalars(q).all()   # один наряд — цифра ведёт прямо к его запчастям
+                _add(out, "/orders", "red", len(ids), title, f"/orders/{ids[0]}#parts" if len(ids) == 1 else "/orders?tab=parts")
+            if ctx.can("parts.pick"):
+                urgent_badge(uq if see_all else uq.where(WorkOrder.partsman_id == me.id),
+                             "срочная деталь не пришла — поторопите поставщика")
+            if ctx.can("orders.approve"):
+                dated = (select(PurchaseLine.id).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
+                         .where(PurchaseLine.wo_part_id == WoPart.id, Purchase.expected_on.is_not(None)).exists())
+                mq = uq.where(~dated)
+                urgent_badge(mq if see_all else mq.where(WorkOrder.manager_id == me.id),
+                             "срочная деталь без срока — спросите у запчастиста")
         if role in MASTERS:
             from ..models import OrderMaster   # 13.11.2026: + добавленный мастер, пока не закончил свою диагностику
             n_extra = db.scalar(select(func.count()).select_from(OrderMaster).join(WorkOrder, WorkOrder.id == OrderMaster.work_order_id)

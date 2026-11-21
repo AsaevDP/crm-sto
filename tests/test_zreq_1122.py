@@ -112,3 +112,49 @@ def test_finding_edit(client):
     with SessionLocal() as db:
         assert db.get(WoFinding, f.id).text == "Заменить прокладку клапанной крышки"
     client.post("/logout")
+
+
+def test_urgent_part_badges(client):
+    """«🔥 Срочно»: запчастисту 🔴 пока деталь не пришла; менеджеру 🔴 только пока нет даты «привезут»."""
+    from datetime import date
+    from app.models import Purchase, PurchaseLine
+    login(client, "irina", "irina123")
+    url = _order_url(_create(client, plate="ВВ 2213 ВВ", phone="0672211223"))
+    oid = uuid.UUID(url.rsplit("/", 1)[1])
+    client.post("/logout")
+    login(client, "oleg", "oleg123")
+    client.post(f"{url}/parts", data={"name": "Рычаг передний (тест срочно)", "cost": "1500", "qty": "1", "action": "order"})
+    client.post("/logout")
+    with SessionLocal() as db:
+        wo = db.get(WorkOrder, oid)
+        current_branch_id.set(wo.branch_id)
+        part = db.scalar(select(WoPart).where(WoPart.work_order_id == oid))
+        part.urgent, part.status = True, "ordered"
+        pu = Purchase(status="ordered", work_order_id=oid)
+        db.add(pu)
+        db.flush()
+        db.add(PurchaseLine(purchase_id=pu.id, catalog_id=part.catalog_id, qty=1, price=1500, wo_part_id=part.id))
+        db.commit()
+        pid = pu.id
+
+    def red(user):
+        login(client, user, user + "123")
+        b = [x for x in client.get("/api/notify").json()["badges"].get("/orders", []) if x["c"] == "red"]
+        client.post("/logout")
+        return b
+
+    # без даты: менеджеру — «без срока», запчастисту — «не пришла»; ссылка ведёт прямо в наряд
+    m = [x for x in red("irina") if "без срока" in x["t"]]
+    assert m and m[0]["href"] == f"/orders/{oid}#parts" or m and m[0]["href"] == "/orders?tab=parts"
+    assert any("не пришла" in x["t"] for x in red("oleg"))
+    # запчастист поставил дату — у менеджера цифра гаснет, у запчастиста остаётся
+    with SessionLocal() as db:
+        db.get(Purchase, pid).expected_on = date.today()
+        db.commit()
+    assert not any("без срока" in x["t"] for x in red("irina"))
+    assert any("не пришла" in x["t"] for x in red("oleg"))
+    # деталь пришла — гаснет и у запчастиста
+    with SessionLocal() as db:
+        db.get(WoPart, part.id).status = "reserved"
+        db.commit()
+    assert not any("не пришла" in x["t"] for x in red("oleg"))
