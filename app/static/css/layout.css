@@ -2564,3 +2564,16 @@ dialog .title-2 .zp-st { font-size: 13px; margin-left: 6px; }
 .part-line .part-meta { flex: 1 1 0; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; }
 .part-line .part-meta .who-at { white-space: normal; line-height: 1.25; }
 .part-line .nm-cols { flex: none; }
+/* 22.11.2026 (брат): шапка дня недели — кнопка «записать на этот день»; свободные часы — компактной строкой */
+button.zp-col-h { border: 0; background: transparent; font: inherit; text-align: left; padding: 0; cursor: pointer; width: 100%; color: var(--text); }
+button.zp-col-new:hover .zp-add { text-decoration: underline; }
+.zp-free { padding-top: 6px; padding-bottom: 6px; }
+.zp-cols.week .zp-free { font-size: 12px; }
+.zp-cols.week .zp-free > span:first-child { white-space: nowrap; }
+.zp-cols.week .zp-free { flex-wrap: nowrap; padding: 5px 8px; }
+.zp-cols.week .zp-free-w, .zp-cols.week .zp-tent-note { display: none; }
+.zp-cols.week .zp-free .zp-add { font-size: 15px; line-height: 1; }
+.zp-free { flex-wrap: nowrap; padding: 6px 10px; }
+.zp-free > span:first-child { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.zp-free-w.tent { color: var(--orange); }
+.zp-free > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; } .zp-free .zp-add { white-space: nowrap; flex: none; }

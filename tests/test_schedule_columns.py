@@ -60,3 +60,20 @@ def test_master_sees_only_own_column(client):
         aid = db.scalar(select(Appointment.id).where(Appointment.client_name == "Чужой Клиент"))
     assert '<dialog id="zp-edit"' not in client.get(f"/schedule?p=day&d={d}&edit={aid}").text   # чужую не открыть
     client.post("/logout")
+
+
+def test_free_time_by_hour_and_week_day_button(client):
+    from app.routes.schedule import _hourly
+    assert _hourly([("08:00", "11:00", 180)]) == [("08:00", "09:00", 60), ("09:00", "10:00", 60), ("10:00", "11:00", 60)]
+    assert _hourly([("15:30", "17:15", 105)]) == [("15:30", "16:00", 30), ("16:00", "17:00", 60)]   # 15 мин в конце — нет
+    assert _hourly([("15:45", "16:00", 15)]) == []
+    login(client, "irina", "irina123")
+    andrey = _uid("andrey")
+    d = date.today() + timedelta(days=7)
+    while d.weekday() == 6:
+        d += timedelta(days=1)
+    week = client.get(f"/schedule?p=week&d={d}&m={andrey}").text
+    # день недели — кнопка «записать на этот день» с мастером и первым свободным часом, без перехода на «день»
+    assert f'data-day="{d}"' in week and "zp-col-new" in week and f'data-mech="{andrey}"' in week
+    assert "08:00–09:00" in week
+    client.post("/logout")

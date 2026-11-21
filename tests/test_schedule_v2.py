@@ -17,7 +17,9 @@ def test_free_windows_and_call_tomorrow(client):
     client.post("/schedule", data={"day": day, "time": "10:00", "duration": "60", "mechanic_id": str(sergey),
                                    "client_name": "Окна Тестовый", "phone": "0671112299", "car": "Kia Rio"})
     page = client.get(f"/schedule?d={day}").text
-    assert "Свободные окна" in page and "08:00–10:00" in page and "11:00–19:00" in page
+    # 22.11.2026 (брат): свободное время — по часу: 08–09, 09–10, (10–11 занято), 11–12 … 18–19
+    assert "Свободные окна" in page and "08:00–09:00" in page and "09:00–10:00" in page and "11:00–12:00" in page
+    assert "18:00–19:00" in page and "08:00–10:00" not in page
     assert "Записей" in page and "zp-col" in page and "zp-free" in page
     # 20.11.2026 (брат): вместо плитки внизу — кнопка «Напомнить о записи» с оранжевой цифрой, в меню — тоже 🟠
     assert "Напомнить о записи" in client.get("/schedule").text

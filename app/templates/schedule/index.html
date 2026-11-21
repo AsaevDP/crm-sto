@@ -29,10 +29,9 @@
 {% endmacro %}
 
 {% macro free_card(x, d) %}
-{% if can_manage %}<button type="button" class="zp-it zp-free" data-new data-day="{{ d }}" data-time="{{ x.t }}" data-mech="{{ x.mech or '' }}" data-mins="{{ x.mins }}">
-  <span><b class="zp-time">{{ x.t }}–{{ x.end }}</b> свободно</span><span class="zp-add">＋ Записать</span>
-  {% if x.tent %}<span class="zp-sub zp-tent-note">часть времени — наряд «возможно»</span>{% endif %}</button>
-{% else %}<span class="zp-it zp-free"><span><b class="zp-time">{{ x.t }}–{{ x.end }}</b> свободно</span>{% if x.tent %}<span class="zp-sub zp-tent-note">часть времени — наряд «возможно»</span>{% endif %}</span>{% endif %}
+{% if can_manage %}<button type="button" class="zp-it zp-free" title="Записать клиента на {{ x.t }}{{ ' (на это время может встать наряд «возможно» — ждёт согласования)' if x.tent }}" data-new data-day="{{ d }}" data-time="{{ x.t }}" data-mech="{{ x.mech or '' }}" data-mins="{{ x.mins }}">
+  <span><b class="zp-time">{{ x.t }}–{{ x.end }}</b><span class="zp-free-w {{ 'tent' if x.tent }}">{{ " возможно занято" if x.tent else " свободно" }}</span></span><span class="zp-add">＋<span class="zp-free-w"> Записать</span></span></button>
+{% else %}<span class="zp-it zp-free"><span><b class="zp-time">{{ x.t }}–{{ x.end }}</b><span class="zp-free-w {{ 'tent' if x.tent }}">{{ " возможно занято" if x.tent else " свободно" }}</span></span></span>{% endif %}
 {% endmacro %}
 
 {% macro items(list, d, show_mech=false) %}
@@ -100,12 +99,16 @@
 <div class="zp-cols week">
   {% for c in cols %}
   <section class="card compact zp-col {{ 'is-today' if c.d == today }} {{ 'off' if c.off }} {{ 'past' if c.d < today }}" style="--lc:var(--{{ c.lv }})">
-    <a class="zp-col-h" href="{{ bar.url(p='day', d=c.d) }}" title="Открыть день">
+    {# 22.11.2026 (брат): нажали на день недели — сразу «Новая запись» на этот день (и выбранного мастера), без перехода #}
+    {% set can_new = can_manage and c.d >= today and not c.off %}
+    {% if can_new %}<button type="button" class="zp-col-h zp-col-new" data-new data-day="{{ c.d }}" data-time="{{ c.first }}" data-mech="{{ pick.id if pick else '' }}" title="Записать клиента на этот день">
+    {% else %}<div class="zp-col-h">{% endif %}
       <span class="zp-who"><span><b>{{ WEEKDAYS[c.d.weekday()] }}, {{ c.d.day }}</b><span class="caption">{{ MON[c.d.month - 1] }}{% if c.d == today %} · сегодня{% endif %}</span></span></span>
       <span class="zp-pct">{{ c.pct }}%</span>
       <span class="zp-bar"><i style="width:{{ c.pct }}%"></i></span>
       <span class="caption zp-col-sub">{% if c.off %}выходной{% else %}записей {{ c.n }} · {{ c.hours|round(1)|num }} ч{% endif %}</span>
-    </a>
+      {% if can_new %}<span class="zp-add zp-col-sub">＋ Записать</span>{% endif %}
+    {% if can_new %}</button>{% else %}</div>{% endif %}
     <div class="zp-list">
       {{ items(c["items"], c.d, not pick and not own) }}
       {% if not c["items"] %}<p class="caption zp-empty">{{ "выходной" if c.off else "записей не было" if c.d < today else "свободно" }}</p>{% endif %}
@@ -113,7 +116,7 @@
   </section>
   {% endfor %}
 </div>
-{% if not pick and not own and can_manage %}<p class="hint zp-hint">Свободное время по дням видно, если выбрать одного мастера. Или — кнопка «Свободные окна».</p>{% endif %}
+{% if not pick and not own and can_manage %}<p class="hint zp-hint">Нажмите на день — откроется запись на этот день. Свободные часы по дням видно, если выбрать одного мастера.</p>{% endif %}
 
 {% else %}
 {# ===== Месяц / свой период: календарь ===== #}

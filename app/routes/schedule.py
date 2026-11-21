@@ -54,6 +54,30 @@ def _appt_item(a) -> dict:
             "end": (s + timedelta(minutes=a.duration_min or 30)).strftime("%H:%M"), "mech": a.mechanic_id}
 
 
+def _hourly(free: list) -> list:
+    """Свободное окно → по часу (22.11.2026, брат): «08:00–09:00», «09:00–10:00»… — на каждый час своя «＋ Записать».
+    Неполный кусок в начале или в конце окна (например 15:30–16:00) — если в нём не меньше 30 минут."""
+    out = []
+    for a, b, _ in free:
+        s_, e_ = _mins(a), _mins(b)
+        cur = s_
+        while cur < e_:
+            nxt = min(e_, (cur // 60 + 1) * 60)
+            if nxt - cur >= 30:
+                out.append((_hhmm(cur), _hhmm(nxt), nxt - cur))
+            cur = nxt
+    return out
+
+
+def _mins(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def _hhmm(mins: int) -> str:
+    return f"{mins // 60:02d}:{mins % 60:02d}"
+
+
 def _sorted(items: list) -> list:
     """По времени. У «свободно», на которое легли наряды «возможно» (согласование, диагностика), — пометка: окно
     свободно, но если клиент согласует, мастер будет занят (в свободные окна «возможно» не входит — решение 22.11)."""
@@ -116,9 +140,10 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
         cols = [{"id": x.id} for x in who]
         aa = svc.between(db, bid, dd, dd)
         segs = wl_svc.segments_on(wl, dd)
-        return svc.day_load(db, bid, dd, cols, aa, extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
+        return svc.day_load(db, bid, dd, cols, aa, min_gap=30,
+                            extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
     fl = free_cols(fday, shown) if can_manage else {}
-    free_rows = [{"m": x, "free": fl.get(x.id, {}).get("free", [])} for x in shown] if can_manage else []
+    free_rows = [{"m": x, "free": _hourly(fl.get(x.id, {}).get("free", []))} for x in shown] if can_manage else []
     base = dict(view=view, day=day, per=per, bar=bar, today=today, masters=masters, shown=shown, pick=pick, own=own,
                 all_masters=all_masters, colors=colors, own_lift=own_lift, lifts=lifts, editing=editing,
                 can_manage=can_manage, APPT_STATUS=APPT_STATUS, fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate,
@@ -130,7 +155,7 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
                 wo_off=[b for b in wl["off"] if b.mech_id in ids])
     if view == "day":
         segs = wl_svc.segments_on(wl, day)
-        load = svc.day_load(db, bid, day, [{"id": x.id} for x in shown], appts,
+        load = svc.day_load(db, bid, day, [{"id": x.id} for x in shown], appts, min_gap=30,
                             extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
         work_min = max(1, day_h * 60)
         cols = []
@@ -138,7 +163,7 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
             ld = load[x.id]
             items = [_appt_item(a) for a in appts if a.mechanic_id == x.id]
             items += _wo_items(segs.get(x.id, []))
-            items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": x.id} for a, b, mm in ld["free"]]
+            items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": x.id} for a, b, mm in _hourly(ld["free"])]
             pct = min(100, round(ld["booked"] * 100 / work_min))
             cols.append({"m": x, "items": _sorted(items), "pct": pct, "lv": _level(pct), "booked": ld["booked"] / 60,
                          "n": sum(1 for a in appts if a.mechanic_id == x.id and a.status != "cancel"),
@@ -163,8 +188,10 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
                 items += [dict(it, mech=x.id) for it in _wo_items(segs.get(x.id, []))]
             if pick and can_manage and dd >= today and dd.weekday() not in days_off:
                 fr = free_cols(dd, [pick]).get(pick.id, {}).get("free", [])
-                items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": pick.id} for a, b, mm in fr]
-            cols.append({"d": dd, "items": _sorted(items), "pct": pct_day[dd], "lv": _level(pct_day[dd]),
+                items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": pick.id} for a, b, mm in _hourly(fr)]
+            srt = _sorted(items)
+            cols.append({"d": dd, "items": srt, "pct": pct_day[dd], "lv": _level(pct_day[dd]),
+                         "first": next((x["t"] for x in srt if x["kind"] == "free"), ""),
                          "hours": mins_day[dd] / 60, "n": len([a for a in by_day.get(dd, []) if a.status != "cancel"]),
                          "off": dd.weekday() in days_off})
         return ctx.render("schedule/index.html", title="Запись", cols=cols, **base)
