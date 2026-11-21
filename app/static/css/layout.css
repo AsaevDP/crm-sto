@@ -2608,3 +2608,12 @@ a.zp-day-a:hover { background: var(--fill-2); }
 a.zp-col-h:hover b { color: var(--accent); }
 .zp-move-hint a { color: inherit; }
 input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transparent); }
+/* 22.11.2026 (брат): «‹ Назад» — одна кнопка слева вверху каждой страницы; прежние «‹ Раздел» ссылки спрятаны */
+.nav-back { justify-self: start; align-self: start; display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px 5px 8px;
+  border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--separator);
+  color: var(--accent); font-size: 14px; font-weight: 600; text-decoration: none; margin-bottom: -4px; }
+.nav-back:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.nav-back[hidden] { display: none; }
+.nav-back svg { width: 16px; height: 16px; }
+.content a.back { display: none; }
+@media print { .nav-back { display: none !important; } }

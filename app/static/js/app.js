@@ -235,3 +235,43 @@
     ensure(sel, j.name);
   });
 })();
+
+
+// 22.11.2026 (брат): «‹ Назад» на каждой странице — на предыдущую страницу, откуда пришли.
+// Помним путь в sessionStorage (только своя вкладка). Та же страница после «Сохранить» (POST → та же страница) и окошки
+// (?edit=, ?free=…) — не новый шаг, поэтому «Назад» сразу уводит туда, откуда пришли, а не на ту же страницу до сохранения.
+// Истории нет (страницу открыли первой) — в раздел страницы (её прежняя ссылка a.back), нет и её — кнопка скрыта.
+(function navBack() {
+  const btn = document.getElementById('nav-back');
+  if (!btn) return;
+  const KEY = 'crm-nav', SKIP = ['edit', 'mv', 'free', 'fd', 't'];
+  const norm = href => {
+    const u = new URL(href, location.origin);
+    SKIP.forEach(k => u.searchParams.delete(k));
+    u.searchParams.sort();
+    return u.pathname + (u.searchParams.toString() ? '?' + u.searchParams : '');
+  };
+  let st = [];
+  try { st = JSON.parse(sessionStorage.getItem(KEY) || '[]'); } catch (e) {}
+  const cur = norm(location.href);
+  if (st[st.length - 1] !== cur) {
+    if (st[st.length - 2] === cur) st.pop();   // вернулись назад (кнопкой или браузером)
+    else st.push(cur);
+  }
+  st = st.slice(-50);
+  try { sessionStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
+  const own = document.querySelector('.content a.back');   // прежняя ссылка «‹ Раздел» — запасной путь
+  const prev = st.length > 1 ? st[st.length - 2] : (own ? own.getAttribute('href') : '');
+  if (!prev) return;
+  btn.href = prev;
+  btn.title = 'Вернуться на предыдущую страницу';
+  btn.hidden = false;
+  btn.addEventListener('click', e => {
+    if (st.length > 1) {   // уходим на предыдущую — убираем текущую из пути
+      e.preventDefault();
+      st.pop();
+      try { sessionStorage.setItem(KEY, JSON.stringify(st)); } catch (er) {}
+      location.href = prev;
+    }
+  });
+})();

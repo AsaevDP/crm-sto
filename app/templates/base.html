@@ -49,6 +49,9 @@
 
   <div class="main">
     <main class="content">
+      {# 22.11.2026 (брат): «‹ Назад» на каждой странице — на предыдущую страницу (app.js: navBack). Нет истории —
+         в раздел страницы (её прежняя ссылка a.back), нет и её — кнопка скрыта. Прежние «‹ …» ссылки спрятаны (layout.css) #}
+      <a class="nav-back" id="nav-back" href="#" hidden>{{ icon("back") }}<span>Назад</span></a>
       {% if DEMO %}<div class="tag" style="justify-self:start">Демо-версия · данные сбрасываются при перезапуске</div>{% endif %}
       {% if flash %}<div class="flash {{ flash.kind }}" role="status">{{ flash.text }}</div>{% endif %}
       {% block content %}{% endblock %}
