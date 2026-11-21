@@ -101,7 +101,8 @@ def test_pult_shows_busy_lift(client):
     login(client, "irina", "irina123")
     from app.services.orders import lift_busy
     with SessionLocal() as db:
-        free = next(l for l in db.scalars(select(Lift).order_by(Lift.number)) if not lift_busy(db, l))
+        free = next(l for l in db.scalars(select(Lift).where(Lift.active.is_(True)).order_by(Lift.number))
+                    if not lift_busy(db, l))   # 21.11.2026: выключенные рабочие места на «Пульте» не показываются
         free_id = str(free.id)
     r = _create(client, plate="КА 5555 КА", phone="0501234567", lift_id=free_id)
     assert r.status_code == 200, r.text

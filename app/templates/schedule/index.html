@@ -135,7 +135,7 @@
   <section class="card compact zp-col {{ 'off' if c.off }}" style="--mc:{{ color_css(colors.get(x.id, 'gray') if x else 'gray') }};--lc:var(--{{ c.lv }})">
     <div class="zp-col-h">
       {% if x %}<a class="zp-who" href="{{ bar.url(m=x.id, **per.params()) }}" title="Показать только этого мастера"><i class="zp-dot big"></i>
-        <span><b>{{ x.short_name }}</b><span class="caption">{{ x.role.name }}{% if own_lift.get(x.id) %} · пост {{ own_lift[x.id].number }}{% endif %}</span></span></a>
+        <span><b>{{ x.short_name }}</b><span class="caption">{{ x.role.name }}{% if own_lift.get(x.id) %} · {{ own_lift[x.id].label }}{% endif %}</span></span></a>
       <span class="zp-pct">{{ c.pct }}%</span>
       <span class="zp-bar"><i style="width:{{ c.pct }}%"></i></span>
       <span class="caption zp-col-sub">{% if c.off %}выходной{% else %}занят {{ c.booked|round(1)|num }} из {{ day_h }} ч · записей {{ c.n }}{% endif %}</span>
@@ -231,7 +231,7 @@
     <label>Мастер<select class="field" name="mechanic_id"><option value="">Мастер не выбран</option>
       {% for mm in all_masters %}<option value="{{ mm.id }}" {% if e and e.mechanic_id == mm.id %}selected{% endif %}>{{ mm.full_name }} · {{ mm.role.name|lower }}</option>{% endfor %}</select></label>
     <label>Пост<select class="field" name="lift_id"><option value="">Пост мастера</option>
-      {% for l in lifts %}<option value="{{ l.id }}" {% if e and e.lift_id == l.id %}selected{% endif %}>{{ l.number }} · {{ l.name }}</option>{% endfor %}</select></label>
+      {% for l in lifts %}<option value="{{ l.id }}" {% if e and e.lift_id == l.id %}selected{% endif %}>{{ l.full_label }}</option>{% endfor %}</select></label>
   </div>
   <div class="form-row">
     <label>Телефон<input class="field" name="phone" type="tel" inputmode="tel" placeholder="067 123 45 67" value="{{ fmt_phone(e.phone) if e else '' }}"></label>

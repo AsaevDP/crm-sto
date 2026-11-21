@@ -98,9 +98,8 @@ def populate():
             users[login] = u
         for p_login, m_login in PAIRS.items():
             users[p_login].works_with_id = users[m_login].id
-        lifts = {l.number: l for l in db.scalars(select(Lift))}
-        names = {1: "Пост 1 · ТО", 2: "Пост 2 · Подвеска", 3: "Пост 3 · Тормоза", 4: "Пост 4 · Двигатель",
-                 5: "Пост 5 · Развал", 6: "Пост 6 · Шиномонтаж"}
+        lifts = {l.number: l for l in db.scalars(select(Lift).where(Lift.kind.in_(("lift", ""))))}
+        names = {1: "ТО", 2: "Подвеска", 3: "Тормоза", 4: "Двигатель", 5: "Развал", 6: "Шиномонтаж"}
         for n, login in {1: "andrey", 2: "sergey", 3: "viktor", 4: "taras", 5: "igor"}.items():
             lifts[n].mechanic_id = users[login].id
         for n, name in names.items():

@@ -2682,3 +2682,21 @@ input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transp
 .part-st-box { display: inline-flex; align-items: center; gap: 6px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
 .part-st-box .inline-form { display: inline; margin: 0; }
 .urg-tag.was { opacity: .6; }
+
+/* 21.11.2026 (брат): «Рабочие места» — группы по видам, вид + номер в шапке карточки */
+.pl-group { margin-top: 18px; }
+.pl-head { display: grid; grid-template-columns: 1fr 76px; gap: 8px; }
+.pl-head .field { font-weight: 600; }
+.lift-edit input[name=name] { width: 100%; font-weight: 400; }
+.pl-swap { margin: 0; color: var(--orange); }
+
+/* 21.11.2026 (брат): «Пульт» — сотрудники полосой над рабочими местами, места группами по видам */
+.pult-staff { margin: 14px 0 18px; }
+.pst-band { display: grid; gap: 10px 22px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); align-items: start; }
+.pst-band .pst-group + .pst-group { margin-top: 0; }
+.pult-places-h { margin-bottom: 2px; }
+.pult-pgroup { display: grid; gap: 6px; }
+.pult-pgroup + .pult-pgroup { margin-top: 12px; }
+.pult-pgrid { display: grid; gap: 14px 16px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); align-items: start; }
+.pult-pgrid .pult-pgroup + .pult-pgroup { margin-top: 0; }
+.pult-pgroup.wide { grid-column: 1 / -1; }

@@ -165,7 +165,7 @@ def seed():
 
         lifts = []
         for n in range(1, 11):
-            lift = Lift(number=n, name=f"Пост {n}")
+            lift = Lift(number=n, name="", kind="lift")   # 21.11.2026: «Подъёмник N»; остальные места — places.ensure
             db.add(lift)
             lifts.append(lift)
         db.add(AccessPoint(name="Вход в цех", kind="gate"))

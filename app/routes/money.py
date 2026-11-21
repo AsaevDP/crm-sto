@@ -159,6 +159,9 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
 
     if action == "start" and w.status in ("todo", "paused"):
         close_open()
+        from ..services import places as psvc
+        if mech:
+            psvc.seat(db, wo, mech)   # 21.11.2026 (брат): «Начал» — машина встаёт на рабочее место мастера
         db.add(WoWorkSession(work_order_id=wo.id, wo_work_id=w.id, mechanic_id=mech, lift_id=wo.lift_id, started_at=t))
         w.status = "doing"
     elif action == "pause" and w.status == "doing":

@@ -40,7 +40,8 @@ for _p in SECTIONS:
 
 
 STAFF_GROUPS = [("mechanic", "Слесари"), ("electrician", "Автоэлектрики"), ("motorist", "Мотористы"),
-                ("washer", "Мойка и детейлинг"), ("detailer", "Мойка и детейлинг"), ("partsman", "Запчастисты"), ("storekeeper", "Кладовщики"),
+                ("washer", "Мойка"), ("detailer", "Детейлинг"),   # 21.11.2026: мойка и детейлинг — разные места
+                ("partsman", "Запчастисты"), ("storekeeper", "Кладовщики"),
                 ("content", "Кладовщики"), ("headkeeper", "Кладовщики"), ("manager", "Менеджеры"), ("office", "Офис")]
 
 
@@ -158,6 +159,21 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     from ..services.orders import fmt_plate, lifts_with_load
     db, bid = ctx.db, ctx.branch.id
     lifts = lifts_with_load(db, bid)
+    # 21.11.2026 (брат): место занято, если на нём стоит машина ИЛИ его мастер сейчас работает с машиной (мойщик,
+    # электрик — без подъёмника; машина на чужом месте). Такое место — «работает с машиной», без «стоит здесь».
+    from ..models.org import PLACE_KINDS
+    from ..services import places as psvc
+    now_wo = psvc.working_now(db, bid)
+    away = set()
+    rows = []
+    for l, wo in lifts:
+        if not wo and l.mechanic_id and now_wo.get(l.mechanic_id):
+            wo = db.get(WorkOrder, now_wo[l.mechanic_id])
+            away.add(l.id)
+        rows.append((l, wo))
+    lifts = rows
+    place_groups = [{"kind": k, "title": v[1], "items": [(l, wo) for l, wo in lifts if l.kind == k]} for k, v in PLACE_KINDS.items()]
+    place_groups = [g for g in place_groups if g["items"]]   # выключенные виды не показываем
     vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([wo.vehicle_id for _, wo in lifts if wo])))}
     staff = db.scalars(select(User).where(User.branch_id == bid, User.active.is_(True)).order_by(User.full_name)).all()
     people = {u.id: u for u in staff}
@@ -186,7 +202,6 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     from ..services import schedule as ssvc
     from ..services.orders import staff_by_role
     colors = ssvc.mech_colors(staff_by_role(db, bid, "masters"))
-    appts = ssvc.between(db, bid, _date.today(), _date.today())
     on_site = sum(1 for v in presence.values() if v and v[0] == "in")
     staff_groups = _staff_groups(ctx, staff, presence)
     money_today = None
@@ -200,12 +215,11 @@ def pult(ctx: Ctx = Depends(get_ctx)):
         ("Запчасти", counts.get("picking", 0) + counts.get("waiting", 0), "/orders?status=waiting", "yellow",
          f"подбор {counts.get('picking', 0)} · ждём {counts.get('waiting', 0)}"),
         ("Готовы", counts.get("ready", 0) + counts.get("paid", 0), "/orders?status=ready", "green", "ждут клиента"),
-        ("Запись сегодня", len([a for a in appts if a.status != "cancel"]), "/schedule", "teal",
-         f"ждём {len([a for a in appts if a.status == 'booked'])}"),
+        # 21.11.2026 (брат): «Запись сегодня» с пульта убрана — запись смотрят в «Записи»
         ("На месте", on_site, "/timesheet", "indigo", f"из {len(staff)}"),
     ]
     return ctx.render("pult.html", title="Пульт", lifts=lifts, prog=prog, vehicles=vehicles, people=people, staff=staff, paused=paused,
-                      presence=presence, tiles=tiles, appts=appts, colors=colors, money_today=money_today, staff_groups=staff_groups,
+                      presence=presence, tiles=tiles, colors=colors, place_groups=place_groups, away=away, money_today=money_today, staff_groups=staff_groups,
                       issue_new=issue_new, local=ssvc.local, today=_date.today(),
                       counts=counts, busy=busy, fmt_plate=fmt_plate)
 

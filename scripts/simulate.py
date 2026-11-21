@@ -424,15 +424,18 @@ def setup():
         for i, u in enumerate(q(M.User, M.User.login != "admin")):
             if not one(M.StaffCard, M.StaffCard.user_id == u.id):
                 post("admin", f"/settings/users/{u.id}/cards", {"uid": f"77{i:08d}", "label": "пропуск"}, what=f"Карта {u.full_name}")
-        # Посты
-        names = {1: "Пост 1 · Слесарный", 2: "Пост 2 · Подвеска", 3: "Пост 3 · Развал", 4: "Пост 4 · Двигатель",
-                 5: "Пост 5 · Электрика", 7: "Мойка", 8: "Детейлинг"}
-        lift_mech = {1: "andrey", 4: "motor", 5: "elektro"}
+        # Рабочие места (21.11.2026): подъёмники 1–3, электрик 1, моторист 1, мойка 1, детейлинг 1; остальные выключены
+        places = {("lift", 1): ("Слесарный", "andrey"), ("lift", 2): ("Подвеска", None), ("lift", 3): ("Развал", None),
+                  ("electric", 1): ("", "elektro"), ("motor", 1): ("", "motor"), ("wash", 1): ("", "moyka"),
+                  ("detail", 1): ("", "detail")}
         for l in q(M.Lift, order=M.Lift.number):
-            if l.number in names:
-                m = lift_mech.get(l.number)
-                post("admin", f"/settings/lifts/{l.id}", {"name": names[l.number], "mechanic_id": str(uid(m)) if m else "",
-                                                          "active": "1"}, what=f"Пост {l.number}")
+            key = (l.kind, l.number)
+            name, m = places.get(key, (l.name, None))
+            on = key in places
+            if on or l.active:
+                post("admin", f"/settings/lifts/{l.id}", {"kind": l.kind, "number": str(l.number), "name": name,
+                                                          "mechanic_id": str(uid(m)) if m else "", "active": "1" if on else ""},
+                     what=f"Рабочее место {l.label}")
         # Склад: стеллажи A (ТО), B (ремонт), Х (химия)
         for rack, sh, pl in (("A", 4, 5), ("B", 4, 5), ("Х", 2, 4)):
             post("pavel", "/stock/locations", {"rack": rack, "shelves": str(sh), "places": str(pl)}, what=f"Стеллаж {rack}")

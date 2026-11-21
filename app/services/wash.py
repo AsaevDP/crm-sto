@@ -370,6 +370,8 @@ def take(db: Session, wo: WorkOrder, user: User) -> WoWork | None:
         t = now()
         for s in db.scalars(select(WoWorkSession).where(WoWorkSession.wo_work_id == first.id, WoWorkSession.ended_at.is_(None))):
             s.ended_at = t
+        from . import places as psvc
+        psvc.seat(db, wo, user.id)   # 21.11.2026: машина с ремонта — на место мойщика / детейлера (быстрая мойка — нет)
         db.add(WoWorkSession(work_order_id=wo.id, wo_work_id=first.id, mechanic_id=user.id, lift_id=None, started_at=t))
         first.status = "doing"
     wo.queue_rank = None

@@ -78,9 +78,10 @@ def test_progress_done_by_and_undo(client):
 def test_mechanic_takes_lift(client):
     _as(client, "andrey")
     with SessionLocal() as db:
-        free = db.scalar(select(Lift).where(Lift.mechanic_id.is_(None)).order_by(Lift.number))
+        free = db.scalar(select(Lift).where(Lift.mechanic_id.is_(None), Lift.kind == "lift", Lift.active.is_(True))
+                         .order_by(Lift.number))
         sergey_lift = db.scalar(select(Lift).where(Lift.mechanic_id == _uid("sergey")))
-    assert "Мой подъёмник" in client.get("/orders").text
+    assert "Моё рабочее место" in client.get("/orders").text   # 21.11.2026: «Рабочие места»
     client.post("/lifts/take", data={"lift_id": str(free.id)})
     with SessionLocal() as db:
         mine = db.scalars(select(Lift).where(Lift.mechanic_id == _uid("andrey"))).all()

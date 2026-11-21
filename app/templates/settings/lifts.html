@@ -1,23 +1,61 @@
 {% extends "base.html" %}
+{# «Рабочие места» (21.11.2026, брат; было «Подъёмники и слесари»). Пять видов, у каждого свои номера.
+   Вид и номер выбираются: если такой номер уже есть — места меняются местами. Мастер — только своей должности.
+   «Работает» — переключатель, сохраняется сразу. #}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Подъёмники</h1></div>
-  <form method="post" action="/settings/lifts"><button class="btn btn-sm btn-tinted">{{ icon("plus") }}Добавить</button></form>
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Рабочие места</h1></div>
 </header>
-<p class="subhead" style="margin:0">За каждым постом закреплён один слесарь. Он подставляется в наряд сам. Уволился или заболел — выберите другого и сохраните.</p>
+<p class="subhead" style="margin:0">За каждым местом закреплён один мастер своей должности — он подставляется в наряд сам.
+  Нажал «Начал» — машина встаёт на его место. Лишние места выключите переключателем.</p>
 
-<div class="lift-grid fill scroll">
-  {% for l in lifts %}
-  <form class="card lift-edit {% if not l.active %}muted{% endif %}" method="post" action="/settings/lifts/{{ l.id }}">
-    <div class="lift-num">{{ l.number }}</div>
-    <input class="field" name="name" value="{{ l.name }}" maxlength="60" placeholder="Название поста" aria-label="Название поста {{ l.number }}">
-    <select class="field" name="mechanic_id" aria-label="Слесарь поста {{ l.number }}">
-      <option value="">— слесарь не закреплён —</option>
-      {% for m in mechanics %}<option value="{{ m.id }}" {% if m.id == l.mechanic_id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}
-    </select>
-    <label class="lift-active"><input type="checkbox" class="switch" name="active" value="1" {% if l.active %}checked{% endif %}> работает</label>
-    <button class="btn btn-sm">Сохранить</button>
-  </form>
-  {% endfor %}
-</div>
+{% for g in groups %}
+<section class="pl-group" id="pl-{{ g.kind }}">
+  <div class="group-title">{{ g.title }} · работают {{ g["items"]|selectattr("active")|list|length }} из {{ g.limit }}</div>
+  <div class="lift-grid">
+    {% for l in g["items"] %}
+    <form class="card lift-edit {% if not l.active %}muted{% endif %}" method="post" action="/settings/lifts/{{ l.id }}" data-place>
+      <div class="pl-head">
+        <select class="field pl-kind" name="kind" aria-label="Вид места">
+          {% for k, v in KINDS.items() %}<option value="{{ k }}" data-limit="{{ v[3] }}" {% if k == l.kind %}selected{% endif %}>{{ v[0] }}</option>{% endfor %}
+        </select>
+        <select class="field pl-num" name="number" aria-label="Номер места" data-cur="{{ l.number }}">
+          {% for n in range(1, g.limit + 1) %}<option value="{{ n }}" {% if n == l.number %}selected{% endif %}>{{ n }}</option>{% endfor %}
+        </select>
+      </div>
+      <input class="field" name="name" value="{{ l.name }}" maxlength="60" placeholder="Подпись, например «Развал»" aria-label="Подпись места {{ l.label }}">
+      <select class="field pl-master" name="mechanic_id" aria-label="Мастер места {{ l.label }}">
+        <option value="">— мастер не закреплён —</option>
+        {% for m in masters %}<option value="{{ m.id }}" data-kind="{{ ROLE_KIND.get(m.role.code, '') }}" {% if m.id == l.mechanic_id %}selected{% endif %}
+          {% if ROLE_KIND.get(m.role.code) != l.kind %}hidden disabled{% endif %}>{{ m.full_name }}</option>{% endfor %}
+      </select>
+      <label class="lift-active"><input type="checkbox" class="switch pl-on" name="active" value="1" {% if l.active %}checked{% endif %}> работает</label>
+      <p class="caption pl-swap" hidden>Такой номер уже есть — места поменяются номерами</p>
+      <button class="btn btn-sm">Сохранить</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+<script>
+(function () {
+  document.querySelectorAll('[data-place]').forEach(function (f) {
+    var kind = f.querySelector('.pl-kind'), num = f.querySelector('.pl-num'), mas = f.querySelector('.pl-master'),
+        swap = f.querySelector('.pl-swap'), k0 = kind.value, n0 = num.dataset.cur;
+    // переключатель «работает» — сохраняется сразу
+    f.querySelector('.pl-on').addEventListener('change', function () { f.requestSubmit ? f.requestSubmit() : f.submit(); });
+    function hint() { swap.hidden = (kind.value === k0 && num.value === n0); }
+    kind.addEventListener('change', function () {
+      var lim = +kind.selectedOptions[0].dataset.limit, cur = Math.min(+num.value, lim);
+      num.innerHTML = '';
+      for (var i = 1; i <= lim; i++) { var o = new Option(i, i); if (i === cur) o.selected = true; num.add(o); }
+      mas.querySelectorAll('option[data-kind]').forEach(function (o) {
+        var ok = o.dataset.kind === kind.value; o.hidden = !ok; o.disabled = !ok; if (!ok && o.selected) mas.value = '';
+      });
+      hint();
+    });
+    num.addEventListener('change', hint);
+  });
+})();
+</script>
 {% endblock %}

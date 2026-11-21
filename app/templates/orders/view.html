@@ -167,7 +167,7 @@
     <select class="field" name="mechanic_id" required aria-label="Мастер"><option value="">Мастер…</option>
       {% for u in diag_mechanics %}<option value="{{ u.id }}">{{ u.short_name }} · {{ MASTERS.get(u.role.code, '')|lower }}</option>{% endfor %}</select>
     <select class="field" name="lift_id" aria-label="Пост"><option value="">Пост…</option>
-      {% for l, busy in diag_lifts %}<option value="{{ l.id }}">{{ l.number }}{% if busy %} · занят{% endif %}</option>{% endfor %}</select>
+      {% for l, busy in diag_lifts %}<option value="{{ l.id }}">{{ l.full_label }}{% if busy %} · занято{% endif %}</option>{% endfor %}</select>
     <button class="btn btn-sm">На диагностику</button>
   </form>
   {% endif %}
@@ -283,8 +283,8 @@
       <form class="form dense" method="post" action="/orders/{{ wo.id }}/assign" id="assign-f">
         <label>Менеджер — ведёт клиента<select class="field" name="manager_id">
           {% for u in managers %}<option value="{{ u.id }}" {% if u.id == wo.manager_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</select></label>
-        {% if not flow.wash %}<label>Пост (подъёмник)<select class="field" name="lift_id" id="as-lift"><option value="">Без поста (очередь)</option>
-          {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.number }} · {{ l.name }}{% if busy and busy.id != wo.id %} · занят{% endif %}</option>{% endfor %}</select></label>{% endif %}
+        {% if not flow.wash %}<label>Рабочее место<select class="field" name="lift_id" id="as-lift"><option value="">Без места (очередь)</option>
+          {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if l.id == wo.lift_id %}selected{% endif %}>{{ l.full_label }}{% if busy and busy.id != wo.id %} · занято{% endif %}</option>{% endfor %}</select></label>{% endif %}
         <label>{{ "Кто моет" if flow.wash else "Ведущий мастер" }}<select class="field" name="mechanic_id" id="as-mech"><option value="">Не выбран</option>
           {% for code, label in MASTERS.items() %}{% set grp = mechanics|selectattr("role.code", "equalto", code)|list %}{% if grp %}<optgroup label="{{ label }}">
           {% for u in grp %}<option value="{{ u.id }}" {% if u.id == wo.mechanic_id %}selected{% endif %}>{{ u.full_name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}</select></label>
@@ -309,7 +309,7 @@
       </div>
       {% else %}
       {% set pm, mc, mg = people.get(wo.partsman_id), people.get(wo.mechanic_id), people.get(wo.manager_id) %}
-      {% if not flow.wash %}<div class="kv"><span>Подъёмник</span><b>{{ lift.number ~ " · " ~ lift.name if lift else "—" }}</b></div>{% endif %}
+      {% if not flow.wash %}<div class="kv"><span>Рабочее место</span><b>{{ lift.full_label if lift else "—" }}</b></div>{% endif %}
       <div class="kv"><span>Ведущий мастер</span><b>{{ mc.full_name if mc else "—" }}</b></div>
       {% if not flow.wash %}<div class="kv"><span>Запчастист</span><b>{{ pm.full_name if pm else "—" }}</b></div>{% endif %}
       <div class="kv"><span>Менеджер</span><b>{{ mg.full_name if mg else "—" }}</b></div>

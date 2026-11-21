@@ -368,7 +368,8 @@ def test_lift_one_car_and_stock_adjust_limits(client):
     from app.models import Lift
     from app.services.orders import lift_busy
     with SessionLocal() as db:
-        free = next(l for l in db.scalars(select(Lift).order_by(Lift.number.desc())) if not lift_busy(db, l))
+        free = next(l for l in db.scalars(select(Lift).where(Lift.active.is_(True), Lift.kind == "lift")
+                                          .order_by(Lift.number.desc())) if not lift_busy(db, l))
         lid = str(free.id)
     assert _create(client, plate="КЕ 1115 КЕ", phone="0501115000", lift_id=lid).status_code == 200
     # Подъёмник занят — машину всё равно принимаем, в очередь (без подъёмника), а не вторую на тот же пост
@@ -378,7 +379,7 @@ def test_lift_one_car_and_stock_adjust_limits(client):
     assert queued.lift_id is None
     from app.models import WoStatusHistory
     with SessionLocal() as db:
-        assert "в очереди на подъёмник" in db.scalar(select(WoStatusHistory.comment).where(
+        assert "в очереди на место «Подъёмник" in db.scalar(select(WoStatusHistory.comment).where(
             WoStatusHistory.work_order_id == queued.id))
     # Поставить на занятый подъёмник из наряда нельзя — сначала освободить
     client.post(f"/orders/{queued.id}/assign", data={"lift_id": lid, "partsman_id": "", "mechanic_id": "",

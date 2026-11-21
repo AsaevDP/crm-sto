@@ -52,6 +52,8 @@ async def lifespan(_app):
             tools_svc.adopt_text_places(db, b.id)   # «Шкаф 1 · полка 2» текстом → шкафы и полки (11.11.2026)
             from .services import razbor as razbor_svc
             razbor_svc.seed_refs(db, b.id)          # справочники разбора: категории, марки и модели (11.11.2026)
+            from .services import places as places_svc
+            places_svc.ensure(db, b.id)   # 21.11.2026: рабочие места — вид и номер, всего 40 (лишние выключены)
         db.commit()
     if DEMO:
         from .demo_data import populate

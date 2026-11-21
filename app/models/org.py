@@ -27,13 +27,34 @@ class Setting(Entity):
     value: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
+# 21.11.2026 (брат): «Рабочие места» — пять видов, у каждого свои номера (1…лимит) и своя должность мастера
+PLACE_KINDS = {   # вид: (одно место, группа, должность мастера, сколько мест всего)
+    "lift": ("Подъёмник", "Подъёмники", "mechanic", 20),
+    "electric": ("Электрик", "Электрики", "electrician", 5),
+    "motor": ("Моторист", "Мотористы", "motorist", 5),
+    "wash": ("Мойка", "Мойка", "washer", 5),
+    "detail": ("Детейлинг", "Детейлинг", "detailer", 5),
+}
+
+
 class Lift(Entity):
+    """Рабочее место (было «подъёмник / пост»): вид + номер внутри вида, закреплённый мастер, работает или нет."""
     __tablename__ = "lifts"
     number: Mapped[int] = mapped_column(Integer)
-    name: Mapped[str] = mapped_column(String(60), default="")
+    name: Mapped[str] = mapped_column(String(60), default="")   # необязательная подпись: «Подвеска», «Развал»
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    # Закреплённый слесарь: всегда один и тот же человек на этом посту
+    # Закреплённый мастер: всегда один и тот же человек на этом месте
     mechanic_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id", use_alter=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(12), default="lift", server_default="")
+
+    @property
+    def label(self) -> str:
+        """«Подъёмник 3», «Электрик 1», «Мойка 2»."""
+        return f"{PLACE_KINDS.get(self.kind or 'lift', PLACE_KINDS['lift'])[0]} {self.number}"
+
+    @property
+    def full_label(self) -> str:
+        return self.label + (f" · {self.name}" if self.name else "")
 
 
 class OrderCounter(Entity):

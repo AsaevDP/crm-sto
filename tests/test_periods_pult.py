@@ -33,7 +33,10 @@ def test_period_bar_everywhere_and_pult(client):
     assert 'data-pkey="all"' in client.get("/orders").text                            # наряды: «Всё время»
 
     pult = client.get("/pult").text
-    for t in ("На СТО", "Согласование", "Запчасти", "Готовы", "Запись сегодня", "На месте", "Деньги сегодня"):
+    for t in ("На СТО", "Согласование", "Запчасти", "Готовы", "На месте", "Деньги сегодня", "Рабочие места", "Сотрудники"):
+        assert t in pult, t
+    assert "Запись на сегодня" not in pult and "Запись сегодня" not in pult   # 21.11.2026: записи с пульта убраны
+    for t in ():
         assert t in pult, t
     _as(client, "irina")
     assert "Деньги сегодня" in client.get("/pult").text   # менеджер видит кассу дня

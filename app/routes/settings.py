@@ -547,43 +547,46 @@ def user_perm(user_id: str, ctx: Ctx = Depends(get_ctx), perm: str = Form(...), 
     return {"ok": True, "effective": perm in effective_permissions(ctx.db, u)}
 
 
-# ---------- Подъёмники (посты) ----------
+# ---------- Рабочие места (21.11.2026, брат; было «Подъёмники и слесари») ----------
 @router.get("/lifts")
 def lifts_view(ctx: Ctx = Depends(get_ctx)):
     ctx.need("settings.access")
-    from ..models import Lift
+    from ..models.org import PLACE_KINDS
+    from ..services import places as psvc
     from ..services.orders import staff_by_role
-    lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id).order_by(Lift.number)).all()
-    mechanics = staff_by_role(ctx.db, ctx.branch.id, "masters")
-    return ctx.render("settings/lifts.html", title="Подъёмники", lifts=lifts, mechanics=mechanics,
-                      by_id={m.id: m for m in mechanics})
+    if psvc.ensure(ctx.db, ctx.branch.id):
+        ctx.db.commit()
+    places = psvc.all_places(ctx.db, ctx.branch.id)
+    masters = staff_by_role(ctx.db, ctx.branch.id, "masters")
+    groups = [{"kind": k, "title": v[1], "one": v[0], "limit": v[3], "items": [p for p in places if p.kind == k]}
+              for k, v in PLACE_KINDS.items()]
+    return ctx.render("settings/lifts.html", title="Рабочие места", groups=groups, masters=masters,
+                      by_id={m.id: m for m in masters}, KINDS=PLACE_KINDS, ROLE_KIND=psvc.ROLE_KIND)
 
 
 @router.post("/lifts/{lift_id}")
 def lift_save(lift_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(""), mechanic_id: str = Form(""),
-              active: str = Form("")):
+              active: str = Form(""), kind: str = Form(""), number: str = Form("")):
     ctx.need("settings.access")
     from ..models import Lift
+    from ..services import places as psvc
     lift = ctx.db.get(Lift, uuid.UUID(lift_id))
     if not lift or lift.branch_id != ctx.branch.id:
         raise Forbidden()
-    lift.name = name.strip()[:60] or f"Пост {lift.number}"
     mech = ctx.db.get(User, uuid.UUID(mechanic_id)) if mechanic_id else None
-    lift.mechanic_id = mech.id if mech and mech.branch_id == ctx.branch.id and mech.role.code in MASTERS else None
-    lift.active = bool(active)
-    ctx.db.commit()
-    flash(ctx.request, f"Подъёмник {lift.number} сохранён")
-    return _back("/settings/lifts")
-
-
-@router.post("/lifts")
-def lift_add(ctx: Ctx = Depends(get_ctx)):
-    ctx.need("settings.access")
-    from ..models import Lift
-    n = (ctx.db.scalar(select(func.max(Lift.number)).where(Lift.branch_id == ctx.branch.id)) or 0) + 1
-    ctx.db.add(Lift(number=n, name=f"Пост {n}"))
-    ctx.db.commit()
-    flash(ctx.request, f"Добавлен подъёмник {n}")
+    if mech and (mech.branch_id != ctx.branch.id or mech.role.code not in MASTERS):
+        mech = None
+    try:
+        n = int(number) if number else lift.number
+    except ValueError:
+        n = lift.number
+    err = psvc.save(ctx.db, lift, kind or lift.kind, n, name, mech, bool(active))
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"{lift.label} — сохранено" + ("" if lift.active else " (выключено)"))
     return _back("/settings/lifts")
 
 

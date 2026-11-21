@@ -30,7 +30,7 @@
       <span class="chip" data-s="{{ x.o.status }}" title="{{ STATUSES[x.o.status] }}">{{ STATUS_SHORT.get(x.o.status, STATUSES[x.o.status]) }}</span>
     </div>
     <div class="headline ocard-car">{{ x.v.make }} {{ x.v.model }}{% if x.v.year %} · {{ x.v.year }}{% endif %}</div>
-    <div class="subhead ocard-plate">{{ fmt_plate(x.v.plate) }} {{ key_tag(x.o) }}{% if x.lift %} · Подъёмник {{ x.lift.number }}{% endif %}</div>
+    <div class="subhead ocard-plate">{{ fmt_plate(x.v.plate) }} {{ key_tag(x.o) }}{% if x.lift %} · {{ x.lift.label }}{% endif %}</div>
     <div class="caption">{{ x.c.full_name }}{% if x.mechanic %} · слесарь {{ x.mechanic.short_name }}{% endif %}{% if x.o.scenario == "A" %} · без диагностики{% endif %}</div>
     {% if x.urgent %}<span class="urg-tag" style="justify-self:start">🔥 срочная деталь</span>{% endif %}
     {% if x.prog and x.prog.total %}{{ progress(x.prog) }}{% endif %}

@@ -30,7 +30,7 @@ TABLE_SECTION = {t: k for k, (_, ts) in SECTIONS.items() for t in ts}
 
 TABLE_NAMES = {
     "users": "Сотрудник", "roles": "Роль", "role_permissions": "Право роли", "user_permissions": "Право сотрудника",
-    "settings": "Настройки", "staff_cards": "Карта", "work_orders": "Наряд", "lifts": "Подъёмник",
+    "settings": "Настройки", "staff_cards": "Карта", "work_orders": "Наряд", "lifts": "Рабочее место",
     "clients": "Клиент", "vehicles": "Авто", "wo_photos": "Фото", "wo_works": "Работа", "wo_status_history": "Статус наряда",
     "order_counters": "Счётчик номеров", "wo_findings": "Находка", "wo_parts": "Запчасть", "payments": "Оплата",
     "wo_work_sessions": "Таймер работы", "client_events": "Заметка клиента", "appointments": "Запись",
@@ -50,7 +50,7 @@ FIELD_NAMES = {
     "role_id": "Роль", "permission": "Право", "allow": "Разрешено", "key": "Настройка", "value": "Значение",
     "uid": "Номер карты", "label": "Подпись", "color": "Цвет", "password_hash": "Пароль", "pin_hash": "PIN",
     "number": "Номер", "status": "Статус", "scenario": "Сценарий", "client_id": "Клиент", "vehicle_id": "Авто",
-    "manager_id": "Менеджер", "partsman_id": "Запчастист", "mechanic_id": "Слесарь", "lift_id": "Подъёмник",
+    "manager_id": "Менеджер", "partsman_id": "Запчастист", "mechanic_id": "Слесарь", "lift_id": "Рабочее место",
     "complaint": "Жалоба", "plate": "Госномер", "make": "Марка", "model": "Модель", "year": "Год", "vin": "VIN",
     "mileage": "Пробег", "mileage_in": "Пробег на приёмке", "cancel_reason": "Причина отмены",
     "fuel_level": "Топливо", "intake_items": "В машине", "intake_note": "Замечания", "to_status": "Новый статус",
@@ -227,7 +227,7 @@ def describe(db: Session, rows: list[AuditLog]) -> list[Item]:
     users = {u.id: u for u in db.scalars(select(User))}
     names = {str(k): v.full_name for k, v in users.items()}
     names.update({str(r.id): r.name for r in db.scalars(select(Role))})
-    names.update({str(l.id): f"пост {l.number}" for l in db.scalars(select(Lift))})
+    names.update({str(l.id): l.label for l in db.scalars(select(Lift))})
     from ..models import Permission
     perms = {p.code: p.name for p in db.scalars(select(Permission))}
     # Подписи объектов — пачкой по каждой таблице

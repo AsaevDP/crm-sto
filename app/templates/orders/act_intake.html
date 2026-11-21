@@ -61,7 +61,7 @@
         <tr><th>VIN</th><td colspan="3">{{ v.vin or "" }}</td></tr>
         <tr><th>Пробег</th><td>{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км{% else %}&nbsp;{% endif %}</td>
           <th>Топливо</th><td>{{ FUEL_LEVELS.get(wo.fuel_level, "") }}</td></tr>
-        <tr><th>Слесарь / пост</th><td colspan="3">{{ mechanic.full_name if mechanic else "" }}{% if lift %} · пост {{ lift.number }}{% endif %}</td></tr>
+        <tr><th>Мастер / место</th><td colspan="3">{{ mechanic.full_name if mechanic else "" }}{% if lift %} · {{ lift.label }}{% endif %}</td></tr>
       </table>
     </div>
     <div>

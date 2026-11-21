@@ -345,8 +345,10 @@ def staff_by_role(db: Session, branch_id, role_code) -> list[User]:
 
 
 def lifts_with_load(db: Session, branch_id) -> list[tuple[Lift, WorkOrder | None]]:
-    """Подъёмники и что на них сейчас стоит (последний активный наряд)."""
-    lifts = db.scalars(select(Lift).where(Lift.branch_id == branch_id, Lift.active.is_(True)).order_by(Lift.number)).all()
+    """Рабочие места (включённые) и что на них сейчас стоит (последний активный наряд). 21.11.2026: по видам —
+    подъёмники, электрики, мотористы, мойка, детейлинг; внутри вида по номеру."""
+    from .places import sort_key
+    lifts = sorted(db.scalars(select(Lift).where(Lift.branch_id == branch_id, Lift.active.is_(True))).all(), key=sort_key)
     busy = {}
     for wo in db.scalars(select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.lift_id.is_not(None),
                                                  WorkOrder.status.in_(WO_ACTIVE)).order_by(WorkOrder.created_at)):
@@ -597,7 +599,7 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
         return u.id if ok else None
 
     lift = db.get(Lift, _uuid(f.lift_id)) if f.lift_id and _uuid(f.lift_id) else None
-    if lift and lift.branch_id != bid:
+    if lift and (lift.branch_id != bid or not lift.active):   # 21.11.2026: выключенное место — без места (очередь)
         lift = None
     # Подъёмник занят — машину всё равно принимаем, она ждёт в очереди (решение брата 11.11.2026).
     # На подъёмник её ставят, когда он освободится («Кто и где» в наряде). Слесарь поста — тот же.
@@ -618,8 +620,8 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     from . import keys   # 18.11.2026: номер крючка для ключей — сам, по кругу; все заняты — «Без ячейки»
     keys.assign(db, wo)
     db.add(WoStatusHistory(work_order_id=wo.id, from_status="", to_status="created",
-                           comment=f"Приёмка · в очереди на подъёмник {queue_for.number}" if queue_for else "Приёмка"))
-    wo.queued_for = queue_for.number if queue_for else None   # для сообщения после приёмки (в базу не пишется)
+                           comment=f"Приёмка · в очереди на место «{queue_for.label}»" if queue_for else "Приёмка"))
+    wo.queued_for = queue_for.label if queue_for else None   # для сообщения после приёмки (в базу не пишется)
     event(db, wo, "order", f"Приёмка. {wo.complaint or ''}".strip())
     if wo.scenario == "A":
         rate = _hour_rate(db, bid)

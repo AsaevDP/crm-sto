@@ -23,57 +23,55 @@
   {% endif %}
 </div>
 
-<div class="pult-main fill">
-  <section class="pult-lifts-wrap">
-    <div class="group-title">Подъёмники · занято {{ lifts|selectattr(1)|list|length }} из {{ lifts|length }}</div>
+{# 21.11.2026 (брат): «Сотрудники» — полосой во всю ширину над рабочими местами (группы в ряд); «Запись на сегодня»
+   убрана; рабочие места — группами по видам. Место занято, если машина на нём или мастер места сейчас с ней работает. #}
+<section class="card compact pult-staff">
+  <div class="card-h"><span class="headline">Сотрудники</span><a class="footnote" href="/timesheet">табель →</a></div>
+  <div class="pst-band">
+    {# 12.11.2026: по группам. Мастер — чем занят; остальные — 🟢 на месте / 🔴 ушёл (по отметке картой) #}
+    {% for g in staff_groups %}
+    <div class="pst-group">
+      <div class="pst-title">{{ g.title }} · {{ g.rows|length }}</div>
+      {% for r in g.rows %}
+      <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
+        <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span></div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}
+  </div>
+</section>
+
+<section class="pult-lifts-wrap">
+  <div class="group-title pult-places-h">Рабочие места · занято {{ lifts|selectattr(1)|list|length }} из {{ lifts|length }}</div>
+  <div class="pult-pgrid">
+  {% for g in place_groups %}
+  <div class="pult-pgroup {{ 'wide' if g.kind == 'lift' }}">
+    <div class="pst-title">{{ g.title }} · занято {{ g["items"]|selectattr(1)|list|length }} из {{ g["items"]|length }}</div>
     <div class="plifts">
-      {% for l, wo in lifts %}
+      {% for l, wo in g["items"] %}
       {% if wo %}
-      {% set v, mc = vehicles.get(wo.vehicle_id), people.get(wo.mechanic_id) %}
+      {% set v = vehicles.get(wo.vehicle_id) %}{% set mid = l.mechanic_id if l.id in away else wo.mechanic_id %}{% set mc = people.get(mid) %}
       {% set st = "pause" if wo.id in paused else wo.status %}
-      <a class="plift" data-st="{{ st }}" href="/orders/{{ wo.id }}" style="--mc:{{ color_css(colors.get(wo.mechanic_id, 'gray')) }}">
-        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ (l.name or "").split("·")[-1].strip() }}</span>{{ key_tag(wo) }}</span>
-        <span class="plift-car">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></span>
+      <a class="plift" data-st="{{ st }}" href="/orders/{{ wo.id }}" style="--mc:{{ color_css(colors.get(mid, 'gray')) }}">
+        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ l.name or l.label }}</span>{{ key_tag(wo) }}</span>
+        <span class="plift-car">{{ v.make if v }} {{ v.model if v }} {% if v %}<span class="ov-plate">{{ fmt_plate(v.plate) }}</span>{% endif %}</span>
         <span class="plift-row">{% if st == "pause" %}<span class="chip" data-s="waiting">⏸ Пауза</span>{% else %}<span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
           {% if mc %}<span class="plift-mech"><i></i>{{ mc.short_name }}</span>{% endif %}</span>
+        {% if l.id in away %}<span class="caption">работает с машиной · {{ wo.number[-6:] }}</span>{% endif %}
         {% if st == "pause" %}<span class="caption pause-why">{{ paused[wo.id] }}</span>{% endif %}
         {% if prog.get(wo.id) and prog[wo.id].total %}{{ progress(prog[wo.id]) }}{% endif %}
       </a>
       {% else %}
       {% set lm = people.get(l.mechanic_id) %}
       <div class="plift" data-st="free" style="--mc:{{ color_css(colors.get(l.mechanic_id, 'gray')) }}">
-        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ (l.name or "").split("·")[-1].strip() }}</span><span class="chip" data-s="created">Свободен</span></span>
-        <span class="plift-free">свободен{% if lm %} · <span class="plift-mech"><i></i>{{ lm.short_name }}</span>{% endif %}</span>
+        <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ l.name or l.label }}</span><span class="chip" data-s="created">Свободен</span></span>
+        <span class="plift-free">свободно{% if lm %} · <span class="plift-mech"><i></i>{{ lm.short_name }}</span>{% endif %}</span>
       </div>
       {% endif %}
       {% endfor %}
     </div>
-  </section>
-
-  <section class="pult-side">
-    <div class="card compact pult-today">
-      <div class="card-h"><span class="headline">Запись на сегодня · {{ appts|length }}</span><a class="footnote" href="/schedule">вся запись →</a></div>
-      {% for a in appts %}
-      <a class="ptoday" data-st="{{ a.status }}" href="/schedule?edit={{ a.id }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
-        <b class="nowrap">{{ local(a.start_at).strftime("%H:%M") }}</b>
-        <span class="grow">{{ a.client_name or "—" }} <span class="caption">{{ a.car }}</span></span>
-        <span class="st-ico" data-st="{{ a.status }}">{{ {"booked": "ждём", "arrived": "✓ приехал", "noshow": "✕ не приехал", "cancel": "отменён"}[a.status] }}</span>
-      </a>
-      {% else %}<p class="footnote" style="margin:0">На сегодня записей нет</p>{% endfor %}
-    </div>
-    <div class="card compact">
-      <div class="card-h"><span class="headline">Сотрудники</span><a class="footnote" href="/timesheet">табель →</a></div>
-      {# 12.11.2026: по группам. Слесарь — чем занят; остальные — 🟢 на месте / 🔴 ушёл (по отметке картой) #}
-      {% for g in staff_groups %}
-      <div class="pst-group">
-        <div class="pst-title">{{ g.title }} · {{ g.rows|length }}</div>
-        {% for r in g.rows %}
-        <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
-          <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span></div>
-        {% endfor %}
-      </div>
-      {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}
-    </div>
-  </section>
-</div>
+  </div>
+  {% endfor %}
+  </div>
+</section>
 {% endblock %}

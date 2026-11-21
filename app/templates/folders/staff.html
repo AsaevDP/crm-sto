@@ -9,7 +9,7 @@
   <tr><th>Телефон</th><td>{{ u.phone or "—" }}</td></tr>
   <tr><th>Принят на работу</th><td>{{ u.hired_date.strftime("%d.%m.%Y") }}</td></tr>
   {% if not u.active %}<tr><th>Уволен</th><td>{{ u.dismissed_on.strftime("%d.%m.%Y") if u.dismissed_on else "—" }}{% if u.dismiss_reason %} · {{ u.dismiss_reason }}{% endif %}</td></tr>{% endif %}
-  <tr><th>Подъёмник</th><td>{{ (lift.number ~ " · " ~ lift.name) if lift else "не закреплён" }}</td></tr>
+  <tr><th>Рабочее место</th><td>{{ lift.full_label if lift else "не закреплено" }}</td></tr>
 </table>
 
 <div class="kpis">

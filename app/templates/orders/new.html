@@ -102,7 +102,7 @@
         </label>
         <label>Подъёмник
           <select class="field" name="lift_id" id="lift"><option value="">В очередь (без поста)</option>
-            {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if busy %}data-busy="{{ busy.number }}"{% endif %}>{{ l.number }} · {{ l.name }}{% if busy %} · занят{% endif %}</option>{% endfor %}</select>
+            {% for l, busy in lifts %}<option value="{{ l.id }}" data-mech="{{ l.mechanic_id or '' }}" {% if busy %}data-busy="{{ busy.number }}"{% endif %}>{{ l.full_label }}{% if busy %} · занято{% endif %}</option>{% endfor %}</select>
         </label>
       </div>
       <p class="hint warn" id="liftwarn" hidden></p>
@@ -184,7 +184,7 @@
     if (mech) $('mechanic_id').value = mech;   // слесарь, закреплённый за постом
     const busy = lift.selectedOptions[0].dataset.busy;
     lw.hidden = !busy;
-    if (busy) lw.textContent = `Подъёмник занят (наряд ${busy}) — машину примем, она встанет в очередь. Поставите на подъёмник, когда он освободится.`;
+    if (busy) lw.textContent = `Место занято (наряд ${busy}) — машину примем, она встанет в очередь. Поставите на место, когда оно освободится.`;
   };
 
   // ---- Поиск клиента ----

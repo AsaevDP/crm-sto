@@ -163,7 +163,9 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     orders = ctx.db.scalars(query.order_by(svc.FRESH).limit(200)).all()   # 18.11.2026: свежие сверху
     lifts = []
     if ctx.can("lifts.take") and is_master(ctx.user):
-        lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.active.is_(True))
+        from ..services import places as psvc   # 21.11.2026: только места своего вида (слесарь — подъёмники…)
+        lifts = ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.active.is_(True),
+                                                  Lift.kind == psvc.kind_for_role(ctx.user.role.code))
                                .order_by(Lift.number)).all()
     # 12.11.2026: менеджер видит свои наряды; ко всем — по запросу на срок
     acc = None
@@ -189,8 +191,12 @@ def lift_take(ctx: Ctx = Depends(get_ctx), lift_id: str = Form("")):
     lift = ctx.db.get(Lift, _uuid(lift_id)) if lift_id else None
     if lift and (lift.branch_id != ctx.branch.id or not lift.active):
         raise Forbidden()
+    from ..services import places as psvc
+    if lift and lift.kind != psvc.kind_for_role(ctx.user.role.code):
+        flash(ctx.request, "Это место другого вида — выберите своё", "error")
+        return RedirectResponse("/orders", status_code=303)
     if lift and lift.mechanic_id and lift.mechanic_id != ctx.user.id:
-        flash(ctx.request, "Этот подъёмник закреплён за другим слесарем", "error")
+        flash(ctx.request, "Это место закреплено за другим мастером", "error")
         return RedirectResponse("/orders", status_code=303)
     for l in ctx.db.scalars(select(Lift).where(Lift.branch_id == ctx.branch.id, Lift.mechanic_id == ctx.user.id)):
         if not lift or l.id != lift.id:
@@ -198,7 +204,7 @@ def lift_take(ctx: Ctx = Depends(get_ctx), lift_id: str = Form("")):
     if lift:
         lift.mechanic_id = ctx.user.id
     ctx.db.commit()
-    flash(ctx.request, f"Вы закреплены за подъёмником {lift.number}" if lift else "Вы откреплены от подъёмника")
+    flash(ctx.request, f"Ваше рабочее место — {lift.label}" if lift else "Вы откреплены от рабочего места")
     return RedirectResponse("/orders", status_code=303)
 
 
@@ -268,7 +274,7 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
             return {"ok": True, "url": f"/orders/{same.id}"}
         raise
     q = getattr(wo, "queued_for", None)
-    flash(request, f"Наряд {wo.number} создан" + (f" — подъёмник {q} занят, машина в очереди" if q else ""))
+    flash(request, f"Наряд {wo.number} создан" + (f" — {q} занято, машина в очереди" if q else ""))
     return {"ok": True, "url": f"/orders/{wo.id}"}
 
 
@@ -569,7 +575,7 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
         lift = own if own and not svc.lift_busy(ctx.db, own, wo) else None
     busy = svc.lift_busy(ctx.db, lift, wo) if lift else None
     if busy:
-        flash(ctx.request, f"На подъёмнике {lift.number} уже стоит машина (наряд {busy.number}) — сначала освободите его", "error")
+        flash(ctx.request, f"На месте «{lift.label}» уже стоит машина (наряд {busy.number}) — сначала освободите его", "error")
         return RedirectResponse(f"/orders/{order_id}", status_code=303)
     wo.partsman_id, wo.mechanic_id = pick(partsman_id, "partsman"), new_mech
     done = []
@@ -583,7 +589,7 @@ def order_assign(order_id: str, ctx: Ctx = Depends(get_ctx), partsman_id: str = 
             ex.active = False
         if wo.status == "diag":      # новый ведущий диагностирует сам
             wo.lead_diag_at = ex.diag_done_at if ex else None
-        done.append("мастер" + (f" (пост {lift.number})" if lift else ""))
+        done.append("мастер" + (f" ({lift.label})" if lift else ""))
     # Передать наряд другому менеджеру (11.11.2026). Передаёт только менеджер (и админ), без подтверждения директора.
     new_uuid = svc._uuid(manager_id)
     new_mg = ctx.db.get(User, new_uuid) if new_uuid else None
