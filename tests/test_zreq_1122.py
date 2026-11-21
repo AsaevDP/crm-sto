@@ -1,0 +1,114 @@
+"""Правки 22.11.2026 (брат): машина с улицы на мойку — перед серыми; варианты запчастей у запчастиста в новом наряде
+(«ещё вариант» любой кнопкой, то же название — в ту же группу); «Выбрать со склада»; ✅ у «К работе»; «Изменить»
+у проблемы."""
+import uuid
+
+from sqlalchemy import select
+
+from app.db import SessionLocal, current_branch_id
+from app.models import WoFinding, WoPart, WorkOrder, WoWork
+from app.services import wash as wsvc
+
+from .conftest import login
+from .test_step3 import _create
+from .test_wash_queue import _repair_car
+from .test_wash import _intake, _wo_by_plate
+
+
+def _order_url(r):
+    return r.json()["url"]
+
+
+def test_quick_wash_goes_before_grey(client):
+    grey = _repair_car(client, "АА 9101 ММ", "0671119101", status="approve")   # мыть пока нельзя
+    login(client, "irina", "irina123")
+    # менеджер уже расставлял очередь — у всех машин есть место
+    client.post(f"/wash/{grey.id}/move", data={"where": "last"})
+    assert _intake(client, "АА 9102 ММ", "0671119102", ["Экспресс-мойка (поверхностная)"]).json()["ok"]
+    new = _wo_by_plate("АА 9102 ММ")
+    with SessionLocal() as db:
+        q = wsvc.board(db, new.branch_id)["queue"]
+        ids = [c.o.id for c in q]
+        first_grey = next(i for i, c in enumerate(q) if c.blocked)
+        assert ids.index(new.id) < first_grey   # с улицы — перед серыми
+        assert all(not c.blocked for c in q[:ids.index(new.id)])
+    # убрать машины теста из очереди, чтобы не мешать другим тестам
+    current_branch_id.set(new.branch_id)
+    with SessionLocal() as db:
+        for o in (db.get(WorkOrder, new.id), db.get(WorkOrder, grey.id)):
+            o.status = "cancelled"
+        db.commit()
+    client.post("/logout")
+
+
+def test_partsman_options_in_new_order(client):
+    login(client, "irina", "irina123")
+    url = _order_url(_create(client, plate="ВВ 2211 ВВ", phone="0672211221"))
+    client.post("/logout")
+    login(client, "oleg", "oleg123")
+    page = client.get(url).text
+    assert "Выбрать со склада" in page and "Замена передних колодок" in page
+    # первый вариант — «новая деталь»
+    r = client.post(f"{url}/parts", data={"name": "Колодки передние", "brand": "Bosch", "cost": "1000", "qty": "1",
+                                          "action": "option", "option_group": ""}, follow_redirects=False)
+    assert r.status_code == 303
+    # второй — снова «новая деталь», то же название (другой регистр и пробелы) → в ту же группу
+    client.post(f"{url}/parts", data={"name": "колодки  передние", "brand": "TRW", "cost": "800", "qty": "1",
+                                      "action": "option", "option_group": ""})
+    # третий — выбрали группу, но нажали синюю «Со склада или заказать» — всё равно вариант
+    oid = uuid.UUID(url.rsplit("/", 1)[1])
+    with SessionLocal() as db:
+        grp = db.scalar(select(WoPart.option_group).where(WoPart.work_order_id == oid, WoPart.option_group.is_not(None)))
+    client.post(f"{url}/parts", data={"name": "Колодки передние", "brand": "Ferodo", "cost": "900", "qty": "1",
+                                      "action": "auto", "option_group": grp})
+    with SessionLocal() as db:
+        parts = db.scalars(select(WoPart).where(WoPart.work_order_id == oid)).all()
+        assert len(parts) == 3 and {p.option_group for p in parts} == {grp} and all(p.status == "option" for p in parts)
+        work = db.scalar(select(WoWork).where(WoWork.work_order_id == oid, WoWork.name == "Замена передних колодок"))
+    # ✅ у «К работе»: две детали к работе — две галочки
+    for n in ("Датчик износа", "Скоба колодок"):
+        client.post(f"{url}/parts", data={"name": n, "cost": "100", "qty": "1", "action": "order",
+                                          "wo_work_id": str(work.id)})
+    assert "Замена передних колодок  ✅✅<" in client.get(url).text
+    # окно «Выбрать со склада»: только свободное на складе, у каждой — раздел и категория
+    items = client.get("/api/stock/pick").json()["items"]
+    assert all(x["free"] > 0 and x["section"] and x["category"] for x in items)
+    client.post("/logout")
+    # менеджеру адрес закрыт
+    login(client, "irina", "irina123")
+    assert client.get("/api/stock/pick").status_code in (403, 303)
+    client.post("/logout")
+
+
+def test_finding_edit(client):
+    login(client, "irina", "irina123")
+    url = _order_url(_create(client, scenario="B", plate="ВВ 2212 ВВ", phone="0672211222"))
+    client.post("/logout")
+    login(client, "andrey", "andrey123")
+    client.post(f"{url}/findings", data={"text": "Течь масла", "urgency": "soon"}, headers={"x-requested-with": "fetch"})
+    oid = uuid.UUID(url.rsplit("/", 1)[1])
+    with SessionLocal() as db:
+        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == oid))
+    page = client.get(url).text
+    assert "Изменить" in page and "Удалить" in page   # обе кнопки
+    client.post(f"{url}/findings/{f.id}/edit", data={"text": "Течь масла с клапанной крышки", "urgency": "urgent"})
+    with SessionLocal() as db:
+        f2 = db.get(WoFinding, f.id)
+        assert f2.text == "Течь масла с клапанной крышки" and f2.urgency == "urgent"
+    client.post(f"{url}/diag-done")
+    client.post("/logout")
+    # менеджер: «Да» → работа; правка проблемы меняет и название работы
+    login(client, "irina", "irina123")
+    client.post(f"{url}/findings/{f.id}/approval", data={"value": "yes"})
+    client.post(f"{url}/findings/{f.id}/edit", data={"text": "Заменить прокладку клапанной крышки", "urgency": "soon"})
+    with SessionLocal() as db:
+        w = db.scalar(select(WoWork).where(WoWork.finding_id == f.id))
+        assert w.name == "Заменить прокладку клапанной крышки"
+        # после согласования с клиентом — нельзя
+        current_branch_id.set(db.get(WorkOrder, oid).branch_id)
+        db.get(WorkOrder, oid).status = "work"
+        db.commit()
+    client.post(f"{url}/findings/{f.id}/edit", data={"text": "Другое", "urgency": "soon"})
+    with SessionLocal() as db:
+        assert db.get(WoFinding, f.id).text == "Заменить прокладку клапанной крышки"
+    client.post("/logout")

@@ -78,6 +78,33 @@ def catalog_free(db: Session, branch_id, catalog_ids) -> dict:
     return out
 
 
+SECTION_LABEL = {"to": "ТО", "repair": "Запчасти"}
+
+
+def stock_pick_list(db: Session, branch_id) -> list[dict]:
+    """22.11.2026 (брат): «Выбрать со склада» в форме запчасти наряда — всё, что сейчас свободно на складе (новые и
+    утверждённые б/у; химия — нет), с разделом и категорией, чтобы листать без поиска."""
+    rows = db.scalars(select(PartCatalog).where(PartCatalog.branch_id == branch_id,
+                                                or_(PartCatalog.section.is_(None), PartCatalog.section != "chem"))).all()
+    free = catalog_free(db, branch_id, [r.id for r in rows])
+    out = []
+    for r in rows:
+        if free[r.id] <= 0:
+            continue
+        si = db.scalars(select(StockItem).where(StockItem.catalog_id == r.id).order_by(StockItem.updated_at.desc())).first()
+        used = r.kind == "used"
+        loc = db.get(Location, si.location_id) if si and si.location_id else None
+        out.append({"id": str(r.id), "name": r.name, "article": r.article, "brand": r.brand, "revision": r.revision,
+                    "fits": r.fits, "free": float(free[r.id]), "used": used, "code": si.code if si else "",
+                    "cost": float((si.sale_price if used else si.cost) if si else 0),
+                    "section": "Б/у · разбор" if used else SECTION_LABEL.get(r.section or "", "Другое"),
+                    "category": r.category or "Без категории", "sub": r.subcategory or "",
+                    "place": loc.label if loc else ""})
+    sec_order = {"ТО": 0, "Запчасти": 1, "Другое": 2}   # б/у — в конце
+    out.sort(key=lambda x: (sec_order.get(x["section"], 3), x["category"].lower(), x["sub"].lower(), x["name"].lower()))
+    return out
+
+
 def search_catalog(db: Session, branch_id, q: str, limit: int = 12) -> list[dict]:
     q = (q or "").strip()
     if len(q) < 2:

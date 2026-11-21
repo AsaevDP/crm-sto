@@ -30,6 +30,14 @@
       "autoPort": false
     },
     {
+      "name": "crmsto-try",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8870", "--reload"],
+      "env": { "DATABASE_URL": "sqlite:///data/try/crm.db" },
+      "port": 8870,
+      "autoPort": false
+    },
+    {
       "name": "crmsto-5",
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8860"],

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from ..db import now
 from ..models import Client, ClientEvent, User, Vehicle, WoFinding, WoPhoto
-from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS
+from ..models.orders import FUEL_LEVELS, INTAKE_ITEMS, URGENCY
 from ..services import orders as svc
 from ..web import Ctx, Forbidden, flash, get_ctx
 from .orders import _order, _uuid
@@ -67,6 +67,36 @@ def finding_delete(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx)):
             ctx.db.delete(e)
         ctx.db.delete(f)
         ctx.db.commit()
+    return _back(order_id)
+
+
+@router.post("/orders/{order_id}/findings/{finding_id}/edit")
+def finding_edit(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx), text: str = Form(""),
+                 urgency: str = Form("")):
+    """22.11.2026 (брат): исправить проблему, не удаляя — текст и срочность. Кто написал и менеджер, пока наряд не
+    согласован с клиентом. Работа, созданная из проблемы («✓ Да»), меняет название, если его не правили отдельно."""
+    wo = _order(ctx, order_id)
+    f = ctx.db.get(WoFinding, _uuid(finding_id))
+    if not f or f.work_order_id != wo.id:
+        raise Forbidden()
+    if wo.status not in ("created", "diag", "approve") or not (
+            f.created_by == ctx.user.id or ctx.can("orders.approve") or ctx.can("orders.view_all")):
+        flash(ctx.request, "Проблему уже нельзя изменить — наряд согласован с клиентом", "error")
+        return _back(order_id)
+    text = text.strip()
+    if not text:
+        flash(ctx.request, "Опишите проблему", "error")
+        return _back(order_id)
+    old = f.text
+    f.text = text[:2000]
+    if urgency in URGENCY:
+        f.urgency = urgency
+    from ..models import WoWork
+    w = ctx.db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.finding_id == f.id))
+    if w and w.name == old[:200]:
+        w.name = f.text[:200]
+    ctx.db.commit()
+    flash(ctx.request, "Проблема исправлена")
     return _back(order_id)
 
 

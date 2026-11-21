@@ -78,7 +78,10 @@
       }
     }
     const r = await fetch(form.action, { method: 'POST', body: fd, credentials: 'same-origin' });
-    location.href = r.url || location.href;
+    // 22.11.2026: вернулись на ту же страницу — как обычная отправка (место и недописанный текст в других полях)
+    const to = r.url ? new URL(r.url) : null;
+    if (!to || to.pathname + to.search === location.pathname + location.search) { window.crmReload ? window.crmReload() : location.reload(); return; }
+    location.href = r.url;
   }));
 
   // ---- Просмотр на весь экран: <a data-lightbox href="полное фото"> ----

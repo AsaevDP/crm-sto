@@ -309,10 +309,14 @@ async def wash_create(request: Request, ctx: Ctx = Depends(get_ctx)):
     names = ", ".join(s.name for s in chosen)
     osvc.set_status(db, wo, "work", f"Мойка: {names}" + (f" · бокс {box.name or box.number}" if box else ""))
     # 19.11.2026 (брат): менеджер может поставить быструю мойку вне очереди — первой (иначе — в конец)
+    db.flush()
     if g("queue_place") == "first" and ctx.can("orders.approve"):
-        db.flush()
         if wsvc.move(db, bid, wo, "first"):
             osvc.event(db, wo, "status", "Мойка: поставлена первой — вне очереди")
+    else:
+        # 21.11.2026 (брат): машина с улицы — в конец тех, кого можно мыть, но ПЕРЕД серыми (раньше, если менеджер
+        # уже двигал очередь, новая вставала за всеми, в т. ч. за машинами, которые мыть ещё нельзя)
+        wsvc.place_after_ready(db, bid, wo)
     from sqlalchemy.exc import IntegrityError
     try:
         db.commit()

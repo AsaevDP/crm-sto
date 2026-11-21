@@ -138,9 +138,13 @@
     <summary class="btn btn-tinted btn-block">{{ icon("plus") }}Добавить запчасть</summary>
     <form class="form dense" id="fpart" method="post" action="/orders/{{ wo.id }}/parts" style="margin-top:10px">
       <p class="hint opt-for" id="optfor" hidden></p>
-      <div class="search-box">
-        <input class="field search" id="pfind" placeholder="Найти в каталоге: название, артикул" autocomplete="off">
-        <div class="results" id="presults" hidden></div>
+      <div class="search-row">
+        <div class="search-box">
+          <input class="field search" id="pfind" placeholder="Найти в каталоге: название, артикул" autocomplete="off">
+          <div class="results" id="presults" hidden></div>
+        </div>
+        {# 22.11.2026 (брат): второй путь — выбрать из того, что лежит на складе (первый — «Склад → В наряд») #}
+        {% if can_pick %}<button type="button" class="btn btn-sm btn-tinted" id="pstock">📦 Выбрать со склада</button>{% endif %}
       </div>
       <input type="hidden" name="catalog_id"><input type="hidden" name="revision">
       <input class="field" name="name" placeholder="Название (видит клиент) *" required>
@@ -162,7 +166,8 @@
       </div>
       {% endif %}
       {% if works %}
-      <label>К работе<select class="field" name="wo_work_id"><option value="">—</option>{% for w in works %}<option value="{{ w.id }}">{{ w.name[:60] }}</option>{% endfor %}</select></label>
+      {# 22.11.2026 (брат): сколько деталей уже подобрано к работе — столько ✅ после названия (не больше 5) #}
+      <label>К работе<select class="field" name="wo_work_id"><option value="">—</option>{% for w in works %}{% set nw = parts|selectattr("wo_work_id", "equalto", w.id)|list|length %}<option value="{{ w.id }}">{{ w.name[:60] }}{% if nw %}  {{ "✅" * (nw if nw < 5 else 5) }}{% endif %}</option>{% endfor %}</select></label>
       {% endif %}
       <p class="hint" id="pfree" hidden></p>
       <div class="add-acts">
@@ -187,6 +192,15 @@
       {% if can_pick %}<label>Купить всего, шт — излишек на склад<input class="field" name="order_qty" inputmode="decimal" placeholder="как в наряде"></label>{% endif %}
     </form>
   </details>
+  {% if can_pick %}
+  <dialog class="sheet sheet-wide ps-dlg" id="pstock-dlg">
+    <div class="ps-top"><h3>Выбрать со склада</h3><button type="button" class="btn btn-sm btn-gray ps-close">Закрыть</button></div>
+    <input class="field search ps-q" placeholder="Название, бренд, артикул, категория" autocomplete="off">
+    <div class="ps-tabs chips"></div>
+    <div class="ps-list"></div>
+    <p class="hint" style="margin:0">Только то, что свободно на складе. Нажмите на деталь — она подставится в форму, дальше кнопка как обычно.</p>
+  </dialog>
+  {% endif %}
   {% endif %}
   {% if can_pick and (wo.status == "picking" or (wo.status == "approve" and not wo.picked_at)) %}
   <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button>

@@ -69,6 +69,13 @@ def catalog_search(ctx: Ctx = Depends(get_ctx), q: str = ""):
     return {"items": svc.search_catalog(ctx.db, ctx.branch.id, q)}
 
 
+@router.get("/api/stock/pick")
+def stock_pick(ctx: Ctx = Depends(get_ctx)):
+    """22.11.2026 (брат): окно «Выбрать со склада» в форме запчасти наряда."""
+    ctx.need("parts.pick")
+    return {"items": svc.stock_pick_list(ctx.db, ctx.branch.id)}
+
+
 # ======================= Бренды (11.11.2026) =======================
 BRAND_EDIT = ("parts.pick", "parts.offer", "purchases.manage", "stock.manage", "settings.access")
 
@@ -139,6 +146,20 @@ def _can_choose(ctx: Ctx, wo: WorkOrder) -> bool:
     return (ctx.can("orders.approve") or _can_pick(ctx, wo)) and wo.status in OFFER_STATUSES
 
 
+def _open_group_by_name(ctx: Ctx, wo: WorkOrder, name: str, skip_id) -> str | None:
+    """Открытая группа вариантов (никто не выбран) с деталью того же названия — без учёта регистра и пробелов."""
+    key = " ".join(name.split()).casefold()
+    groups: dict[str, list[WoPart]] = {}
+    for p in ctx.db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.option_group.is_not(None),
+                                                 WoPart.id != skip_id)):
+        groups.setdefault(p.option_group, []).append(p)
+    for g, items in groups.items():
+        if all(p.status in ("option", "declined") for p in items) and \
+                any(" ".join(p.name.split()).casefold() == key for p in items):
+            return g
+    return None
+
+
 @router.post("/orders/{order_id}/parts")
 def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(""), name: str = Form(""),
              article: str = Form(""), brand: str = Form(""), revision: str = Form(""), qty: str = Form("1"),
@@ -153,6 +174,10 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
         raise Forbidden()
     if not picker and action in ("auto", "order", "stock"):
         action = "need"
+    # 22.11.2026 (брат): выбрана группа «ещё вариант к …» — это вариант, какую бы кнопку ни нажали (раньше синяя
+    # «Со склада или заказать» добавляла обычную деталь, и пара не получалась)
+    if option_group:
+        action = "option"
     from ..services import brands
     brand = brands.norm(brand)
     if brand:
@@ -199,9 +224,15 @@ def part_add(order_id: str, ctx: Ctx = Depends(get_ctx), catalog_id: str = Form(
         elif option_group and ctx.db.scalar(select(WoPart.id).where(
                 WoPart.work_order_id == wo.id, WoPart.option_group == option_group)):
             grp = option_group
+        if grp is None and not option_group:
+            # 22.11.2026: «новая деталь», но вариант с тем же названием уже начат и ждёт пары — в ту же группу
+            grp = _open_group_by_name(ctx, wo, cat.name, part.id)
         grp = grp or uuid.uuid4().hex
         part.option_group, part.status = grp, "option"
-        msg = f"{label} — вариант на выбор клиенту"
+        n_in = ctx.db.scalar(select(func.count(WoPart.id)).where(WoPart.work_order_id == wo.id,
+                                                                  WoPart.option_group == grp)) or 1
+        msg = (f"{label} — вариант {n_in} на выбор клиенту" if n_in > 1 else
+               f"{label} — первый вариант. Второй добавьте кнопкой «Ещё вариант» у этой детали")
     elif action == "need":
         part.status = "need"
         msg = f"{label} — в наряде, запчастист подберёт" if not picker else f"{label} — добавлено, выберите: со склада или заказать"

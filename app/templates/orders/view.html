@@ -13,6 +13,10 @@
     {% if fp %}<div class="pgallery xs">{% for p in fp %}<a href="/photos/{{ p.id }}" data-lightbox><img loading="lazy" src="/photos/{{ p.id }}?t=1" alt=""></a>{% endfor %}</div>{% endif %}
     <div class="finding-foot">
       <span class="caption">{{ people.get(f.created_by).short_name if people.get(f.created_by) else "" }} · {{ f.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+      {# 22.11.2026 (брат): «Изменить» — исправить текст и срочность, не удаляя (кто написал и менеджер, до «Согласовал с клиентом») #}
+      {% if wo.status in ("created", "diag", "approve") and (f.created_by == ctx.user.id or ctx.can("orders.approve") or ctx.can("orders.view_all")) %}
+      <button type="button" class="btn btn-plain btn-sm fd-edit-btn" data-f="{{ f.id }}">Изменить</button>
+      {% endif %}
       {% if can_approve %}
       <div class="segmented yn" data-url="/orders/{{ wo.id }}/findings/{{ f.id }}/approval">
         <button type="button" data-v="yes" aria-pressed="{{ (f.approval == 'yes')|lower }}">✓ Да</button>
@@ -22,6 +26,16 @@
       <form method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Удалить</button></form>
       {% endif %}
     </div>
+    {% if wo.status in ("created", "diag", "approve") and (f.created_by == ctx.user.id or ctx.can("orders.approve") or ctx.can("orders.view_all")) %}
+    <form class="form fd-edit" id="fe-{{ f.id }}" method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/edit" hidden>
+      <textarea class="field" name="text" rows="2" required>{{ f.text }}</textarea>
+      <select class="field" name="urgency">{% for k, v in URGENCY.items() %}<option value="{{ k }}" {{ "selected" if k == f.urgency }}>{{ v }}</option>{% endfor %}</select>
+      <div class="line" style="display:flex;gap:8px;justify-content:flex-end">
+        <button type="button" class="btn btn-gray btn-sm fd-edit-cancel">Отмена</button>
+        <button class="btn btn-sm">Сохранить</button>
+      </div>
+    </form>
+    {% endif %}
   </div>
 {% endmacro %}
 {% set problems_card %}
@@ -180,7 +194,7 @@
   <button type="button" data-t="hist" aria-pressed="false">Деньги</button>
 </div>
 
-<div class="ov-grid fill{% if flow.wash %} ov-wash{% endif %}">
+<div class="ov-grid fill{% if flow.wash %} ov-wash{% else %} ov-order{% endif %}">
   {# ===== Колонка 1: приём → проблемы → согласование ===== #}
   <section class="ov-col" data-t="main">
     <div class="card compact step-card {{ 'now' if flow.cur == 0 }}" id="intake" style="--sc:var(--blue)">
@@ -542,12 +556,23 @@
       optfor.hidden = false; optfor.textContent = `Ещё вариант к «${b.dataset.name}» — выберите другой бренд и цену`;
       details.open = true; details.scrollIntoView({ block: 'start', behavior: 'smooth' }); f.brand.focus();
     }));
-    details.addEventListener('toggle', () => { if (!details.open) { f.option_group.value = ''; optfor.hidden = true; } });
+    // 22.11.2026 (брат): выбран «ещё вариант к …» — остаётся одна кнопка «Добавить вариант» (раньше нажимали синюю
+    // «Со склада или заказать», и вместо пары добавлялась обычная деталь)
+    const optBtn = f.querySelector('.opt-btn'), plainBtns = [...f.querySelectorAll('.add-acts button:not(.opt-btn)')];
+    function optMode() {
+      const on = !!f.option_group.value;
+      plainBtns.forEach(b => { b.hidden = on; });
+      optBtn.textContent = on ? 'Добавить вариант' : 'Вариант на выбор';
+      optBtn.classList.toggle('btn-tinted', !on);
+    }
+    details.addEventListener('toggle', () => { if (!details.open) { f.option_group.value = ''; optfor.hidden = true; optMode(); } });
     // 13.11.2026: выбрали «ещё вариант к: …» в списке — название подставляется, если пустое
     f.option_group.addEventListener('change', () => {
       const o = f.option_group.selectedOptions[0];
-      if (f.option_group.value && !f.name.value.trim()) f.name.value = o.textContent.replace(/^ещё вариант к:\s*/, '');
+      if (f.option_group.value && !f.name.value.trim()) f.name.value = o.textContent.replace(/^(ещё )?вариант к:\s*/, '').replace(/ — (на складе|заказать)$/, '');
+      optMode();
     });
+    document.querySelectorAll('.add-opt').forEach(b => b.addEventListener('click', optMode));
     let t, found = [];
     find.addEventListener('input', () => { clearTimeout(t); t = setTimeout(async () => {
       if (find.value.trim().length < 2) { res.hidden = true; return; }
@@ -558,14 +583,49 @@
         : '<div class="res footnote">Нет в каталоге — заполните поля, позиция создастся сама</div>';
       res.hidden = false; }, 250); });
     res.addEventListener('click', e => {
-      const b = e.target.closest('[data-i]'); if (!b) return; const x = found[+b.dataset.i];
+      const b = e.target.closest('[data-i]'); if (!b) return; pick(found[+b.dataset.i]);
+    });
+    // 22.11.2026 (брат): «📦 Выбрать со склада» — окно со всем, что свободно на складе: поиск, разделы, категории
+    const sbtn = document.getElementById('pstock'), dlg = document.getElementById('pstock-dlg');
+    if (sbtn && dlg) {
+      let all = [], sec = '';
+      const q = dlg.querySelector('.ps-q'), list = dlg.querySelector('.ps-list'), tabs = dlg.querySelector('.ps-tabs');
+      const draw = () => {
+        const s = q.value.trim().toLowerCase();
+        const rows = all.filter(x => (!sec || x.section === sec) && (!s || [x.name, x.brand, x.article, x.code, x.category, x.sub, x.fits].join(' ').toLowerCase().includes(s)));
+        let head = '', html = '';
+        rows.forEach(x => {
+          const h = x.section + ' › ' + x.category + (x.sub ? ' › ' + x.sub : '');
+          if (h !== head) { html += `<div class="ps-head">${esc(h)}</div>`; head = h; }
+          html += `<button type="button" class="ps-row" data-id="${x.id}"><span class="grow"><b>${x.used ? '<span class="tag">б/у ' + esc(x.code) + '</span> ' : ''}${esc(x.name)}</b>
+            <span class="caption">${esc([x.brand, x.article, x.place ? 'ячейка ' + x.place : ''].filter(Boolean).join(' · '))}</span></span>
+            <span class="ps-free nowrap">${x.free} шт</span></button>`;
+        });
+        list.innerHTML = html || '<p class="hint">Ничего не найдено</p>';
+      };
+      sbtn.addEventListener('click', async () => {
+        dlg.showModal(); list.innerHTML = '<p class="hint">Загружаю…</p>';
+        const r = await fetch('/api/stock/pick', { headers: { 'x-requested-with': 'fetch' } });
+        all = (await r.json()).items;
+        const secs = [...new Set(all.map(x => x.section))];
+        tabs.innerHTML = ['', ...secs].map(s => `<button type="button" class="chip" data-s="${esc(s)}" aria-pressed="${s === sec}">${s ? esc(s) : 'Всё'} · ${all.filter(x => !s || x.section === s).length}</button>`).join('');
+        draw(); q.focus();
+      });
+      tabs.addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (!b) return; sec = b.dataset.s;
+        tabs.querySelectorAll('[data-s]').forEach(x => x.setAttribute('aria-pressed', x === b)); draw(); });
+      q.addEventListener('input', draw);
+      list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (!b) return;
+        pick(all.find(x => x.id === b.dataset.id)); dlg.close(); f.qty.focus(); });
+      dlg.querySelector('.ps-close').addEventListener('click', () => dlg.close());
+    }
+    function pick(x) {
       f.catalog_id.value = x.id; f.name.value = x.name; f.article.value = x.article; window.crmSetBrand(f.brand, x.brand); f.revision.value = x.revision;
       if (costOk && x.cost) f.cost.value = x.cost.toFixed(2);
       if (costOk && x.used) f.markup_pct.value = 0;   // б/у с разбора: клиент платит цену разбора
       if (!costOk && x.used && f.price) f.price.value = x.cost.toFixed(2);
       free.hidden = false; free.textContent = x.free > 0 ? `На складе свободно: ${x.free}` : 'На складе нет — будет заказ';
       res.hidden = true; find.value = ''; calc();
-    });
+    }
     // Поменяли название, бренд или артикул руками — это уже другая позиция каталога
     ['name', 'article'].forEach(n => f[n].addEventListener('input', () => { f.catalog_id.value = ''; free.hidden = true; }));
     f.brand.addEventListener('change', () => { f.catalog_id.value = ''; free.hidden = true; });
@@ -604,6 +664,46 @@
     btn.disabled = false; btn.textContent = 'Сохранить проблему';
   });
   {% endif %}
+  // 22.11.2026 (брат): любой блок наряда сворачивается — нажать на заголовок или «⌃» справа. Свёрнутое запоминается
+  // у этого сотрудника на этом устройстве для всех нарядов, пока не развернёт.
+  (function fold() {
+    const FK = 'crm-fold-{{ ctx.user.id }}';
+    let st = {}; try { st = JSON.parse(localStorage.getItem(FK) || '{}'); } catch (e) {}
+    const save = () => { try { localStorage.setItem(FK, JSON.stringify(st)); } catch (e) {} };
+    const cards = [...document.querySelectorAll('main .card[id]')].filter(c => c.querySelector(':scope > .card-h'));
+    const set = (c, on, keep) => {
+      c.classList.toggle('folded', on);
+      const b = c.querySelector(':scope > .card-h .fold-btn');
+      if (b) { b.setAttribute('aria-expanded', String(!on)); b.title = on ? 'Развернуть' : 'Свернуть'; }
+      if (!keep) { if (on) st[c.id] = 1; else delete st[c.id]; save(); }
+    };
+    cards.forEach(c => {
+      const h = c.querySelector(':scope > .card-h');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'fold-btn'; b.setAttribute('aria-label', 'Свернуть или развернуть блок');
+      b.innerHTML = '<span aria-hidden="true">⌃</span>';
+      h.appendChild(b);
+      h.classList.add('foldable');
+      h.addEventListener('click', e => {
+        if (e.target.closest('a, button:not(.fold-btn), input, select, form, label, summary')) return;
+        set(c, !c.classList.contains('folded'));
+      });
+      if (st[c.id]) set(c, true, true);
+    });
+    // Перешли к блоку (полоса этапов, ссылка #parts) — он разворачивается, но запомненное не трогаем
+    const open = id => { const c = document.getElementById(id); if (c && c.classList.contains('folded')) set(c, false, true); };
+    if (location.hash) open(location.hash.slice(1));
+    window.addEventListener('hashchange', () => open(location.hash.slice(1)));
+    document.addEventListener('click', e => { const a = e.target.closest('a[href^="#"]'); if (a && a.getAttribute('href').length > 1) open(a.getAttribute('href').slice(1)); }, true);
+  })();
+  // 22.11.2026 (брат): «Изменить» у проблемы — форма правки прямо под ней
+  document.addEventListener('click', e => {
+    const b = e.target.closest('.fd-edit-btn, .fd-edit-cancel'); if (!b) return;
+    const fin = b.closest('.finding'), form = fin && fin.querySelector('.fd-edit'); if (!form) return;
+    form.hidden = b.classList.contains('fd-edit-cancel');
+    fin.querySelector('.finding-text').hidden = !form.hidden;
+    if (!form.hidden) { const t = form.querySelector('textarea'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  });
 })();
 </script>
 {% endblock %}

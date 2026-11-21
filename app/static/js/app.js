@@ -14,13 +14,52 @@
   // Перешли на другую страницу (следующий этап, другой раздел) — ничего не трогаем.
   const SCROLL_KEY = 'crm-keep-scroll';
   const scrollers = () => [...document.querySelectorAll('.ov-col, .sticky-scroll')];
+  // 22.11.2026 (брат): недописанный текст в ДРУГИХ полях страницы не пропадает после отправки формы. Пример: пишешь
+  // проблему, отправил сообщение — страница перезагрузилась, текст проблемы был стёрт. Перед уходом запоминаем
+  // изменённые, но не отправленные поля (кроме самой отправленной формы), после перезагрузки той же страницы — возвращаем.
+  const DRAFT_KEY = 'crm-drafts';
+  const draftFields = () => [...document.querySelectorAll('main textarea, main input')].filter(el =>
+    el.tagName === 'TEXTAREA' || ['text', 'number', 'tel', 'email', 'url', ''].includes((el.getAttribute('type') || '').toLowerCase()));
+  // Ключ поля — по форме (id или адрес) и имени, а не по номеру формы: после отправки на странице может стать
+  // больше форм (новое сообщение, новая деталь)
+  const formKey = f => f ? (f.id || f.getAttribute('action') || 'form') : '-';
+  const fieldKey = el => {
+    const base = `${formKey(el.form)}|${el.id}|${el.name}`;
+    const same = draftFields().filter(x => `${formKey(x.form)}|${x.id}|${x.name}` === base);
+    return `${base}|${same.indexOf(el)}`;
+  };
+  let lastSent = null, lastSentAt = 0;
+  document.addEventListener('submit', e => { lastSent = e.target; lastSentAt = Date.now(); }, true);
+  function saveDrafts(sent) {
+    const items = draftFields().filter(el => !el.readOnly && !el.disabled && !el.classList.contains('search')
+      && el.value.trim() && el.value !== el.defaultValue && !(sent && el.form === sent))
+      .map(el => ({ k: fieldKey(el), v: el.value }));
+    try {
+      if (items.length) sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ p: location.pathname, t: Date.now(), items }));
+      else sessionStorage.removeItem(DRAFT_KEY);
+    } catch (err) {}
+  }
   function remember(f) {
     if ((f.method || '').toLowerCase() !== 'post' || (f.target && f.target !== '_self')) return;
+    saveDrafts(f instanceof HTMLFormElement ? f : (Date.now() - lastSentAt < 60000 ? lastSent : null));
     try {
       sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ p: location.pathname, y: window.scrollY, t: Date.now(),
         cols: scrollers().map(c => c.scrollTop) }));
     } catch (err) {}
   }
+  (function restoreDrafts() {
+    let s = null;
+    try { s = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null'); sessionStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    if (!s || s.p !== location.pathname || Date.now() - s.t > 60000) return;
+    const byKey = new Map(draftFields().map(el => [fieldKey(el), el]));
+    s.items.forEach(({ k, v }) => {
+      const el = byKey.get(k);
+      if (!el || el.value !== el.defaultValue) return;
+      el.value = v;
+      let d = el.closest('details'); while (d) { d.open = true; d = d.parentElement && d.parentElement.closest('details'); }
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  })();
   document.addEventListener('submit', e => {
     if (e.target instanceof HTMLFormElement && !e.defaultPrevented) remember(e.target);
   });
@@ -123,16 +162,50 @@
     try { localStorage.setItem(XKEY, JSON.stringify(s.slice(-400))); } catch (e) {}
   }
   function read(t) { if (t.readUrl) fetch(t.readUrl, { method: 'POST', headers: { 'x-requested-with': 'fetch' } }).catch(() => {}); }
-  function sync() {   // «Закрыть все» — когда окошек два и больше; пустая стопка не видна
+  // 22.11.2026 (брат): «Свернуть» — окошко прячется в кнопку справа внизу «🔔 N · Развернуть», его можно снова
+  // открыть и перечитать. Свёрнутые помнит браузер (crm-toasts-min). Новое уведомление показывается как обычно;
+  // свернули его — оно встаёт первым в общей свёртке.
+  const MKEY = 'crm-toasts-min';
+  function minIds() { try { return JSON.parse(localStorage.getItem(MKEY) || '[]'); } catch (e) { return []; } }
+  function setMin(ids) { try { localStorage.setItem(MKEY, JSON.stringify(ids.slice(-100))); } catch (e) {} }
+  function minimize(ids) {
+    const m = minIds().filter(i => !ids.includes(i));
+    setMin([...m, ...ids]);   // последние свёрнутые — в конце списка = первые при разворачивании
+    ids.forEach(i => { const el = document.querySelector(`.toast[data-id="${CSS.escape(i)}"]`); if (el) el.hidden = true; });
+    sync();
+  }
+  function expand() {
+    const m = minIds(), s = stack(), head = s.querySelector('.toasts-head');
+    setMin([]);
+    // свёрнутые — сверху вниз от последнего свёрнутого к первому, под ними — те, что и так были открыты
+    m.forEach(i => { const el = s.querySelector(`.toast[data-id="${CSS.escape(i)}"]`); if (el) { el.hidden = false; head.after(el); } });
+    sync();
+  }
+  function pill() {
+    let p = document.querySelector('.toasts-pill');
+    if (!p) {
+      p = document.createElement('button'); p.type = 'button'; p.className = 'toasts-pill';
+      p.title = 'Развернуть уведомления'; p.addEventListener('click', expand);
+      document.body.appendChild(p);
+    }
+    return p;
+  }
+  function sync() {   // «Закрыть все» / «Свернуть все» — когда открытых окошек два и больше; пустая стопка не видна
     const s = document.querySelector('.toasts'); if (!s) return;
-    const n = s.querySelectorAll('.toast').length;
-    s.hidden = !n;
-    s.querySelector('.toasts-head').hidden = n < 2;
+    const all = [...s.querySelectorAll('.toast')];
+    const open = all.filter(el => !el.hidden).length, hid = all.length - open;
+    s.hidden = !open;
+    s.querySelector('.toasts-head').hidden = open < 2;
+    const p = pill();
+    p.hidden = !hid;
+    document.body.classList.toggle('has-toast-pill', !!hid);
+    p.innerHTML = `<span aria-hidden="true">🔔</span> <b>${hid}</b> · Развернуть`;
   }
   function closeAll() {
-    const list = load();
-    markClosed(list.map(t => t.id)); list.forEach(read); save([]);
-    document.querySelectorAll('.toasts .toast').forEach(el => el.remove());
+    const ids = [...document.querySelectorAll('.toasts .toast:not([hidden])')].map(el => el.dataset.id);
+    const list = load(), gone = list.filter(t => ids.includes(t.id));
+    markClosed(ids); gone.forEach(read); save(list.filter(t => !ids.includes(t.id)));
+    ids.forEach(i => { const el = document.querySelector(`.toast[data-id="${CSS.escape(i)}"]`); if (el) el.remove(); });
     sync();
   }
   function stack() {
@@ -140,10 +213,13 @@
     if (!s) {
       s = document.createElement('div'); s.className = 'toasts'; s.setAttribute('aria-live', 'polite');
       const head = document.createElement('div'); head.className = 'toasts-head';
+      const mn = document.createElement('button');
+      mn.type = 'button'; mn.className = 'toasts-all'; mn.innerHTML = '<span aria-hidden="true">⌄</span> Свернуть все';
+      mn.addEventListener('click', () => minimize([...s.querySelectorAll('.toast:not([hidden])')].map(el => el.dataset.id)));
       const all = document.createElement('button');
       all.type = 'button'; all.className = 'toasts-all'; all.innerHTML = '<span aria-hidden="true">✕</span> Закрыть все';
       all.addEventListener('click', closeAll);
-      head.appendChild(all); s.appendChild(head); document.body.appendChild(s);
+      head.append(mn, all); s.appendChild(head); document.body.appendChild(s);
     }
     return s;
   }
@@ -165,7 +241,12 @@
       markClosed([t.id]); save(load().filter(x => x.id !== t.id)); el.remove(); sync(); read(t);
     };
     close.addEventListener('click', done);
-    el.append(body, close);
+    const mn = document.createElement('button');
+    mn.className = 'toast-x toast-min'; mn.type = 'button'; mn.title = 'Свернуть'; mn.setAttribute('aria-label', 'Свернуть'); mn.textContent = '⌄';
+    mn.addEventListener('click', () => minimize([t.id]));
+    const ctl = document.createElement('div'); ctl.className = 'toast-ctl'; ctl.append(close, mn);
+    el.append(body, ctl);
+    if (minIds().includes(t.id)) el.hidden = true;
     // Кнопка действия прямо в окошке (11.11.2026): например, слесарю — «Запросить выдачу» одним кликом
     if (t.action && t.action.url) {
       const b = document.createElement('button');
@@ -189,6 +270,7 @@
     render(t);
   };
   load().forEach(render);
+  sync();
 })();
 
 // ===== Панель дат: горячие клавиши (10.11.2026) =====
@@ -244,24 +326,27 @@
 (function navBack() {
   const btn = document.getElementById('nav-back');
   if (!btn) return;
-  const KEY = 'crm-nav', SKIP = ['edit', 'mv', 'free', 'fd', 't'];
+  // 22.11.2026 (брат): шаг пути — СТРАНИЦА (адрес без ?…), а не каждое нажатие на ней. Переключили вкладку, плитку,
+  // день, фильтр — это та же страница: запоминаем её последний вид, но нового шага нет. «Назад» уводит на предыдущую
+  // страницу (в том виде, в каком её оставили), а не отменяет нажатия по одному.
+  const KEY = 'crm-nav2', SKIP = ['edit', 'mv', 'free', 'fd', 't'];
   const norm = href => {
     const u = new URL(href, location.origin);
     SKIP.forEach(k => u.searchParams.delete(k));
     u.searchParams.sort();
-    return u.pathname + (u.searchParams.toString() ? '?' + u.searchParams : '');
+    return { k: u.pathname, u: u.pathname + (u.searchParams.toString() ? '?' + u.searchParams : '') };
   };
   let st = [];
-  try { st = JSON.parse(sessionStorage.getItem(KEY) || '[]'); } catch (e) {}
+  try { st = JSON.parse(sessionStorage.getItem(KEY) || '[]').filter(x => x && x.k); } catch (e) {}
   const cur = norm(location.href);
-  if (st[st.length - 1] !== cur) {
-    if (st[st.length - 2] === cur) st.pop();   // вернулись назад (кнопкой или браузером)
-    else st.push(cur);
-  }
+  const top = st[st.length - 1];
+  if (top && top.k === cur.k) top.u = cur.u;                     // та же страница — только обновили её вид
+  else if (st.length > 1 && st[st.length - 2].k === cur.k) { st.pop(); st[st.length - 1].u = cur.u; }   // вернулись назад
+  else st.push(cur);
   st = st.slice(-50);
   try { sessionStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
   const own = document.querySelector('.content a.back');   // прежняя ссылка «‹ Раздел» — запасной путь
-  const prev = st.length > 1 ? st[st.length - 2] : (own ? own.getAttribute('href') : '');
+  const prev = st.length > 1 ? st[st.length - 2].u : (own ? own.getAttribute('href') : '');
   if (!prev) return;
   btn.href = prev;
   btn.title = 'Вернуться на предыдущую страницу';

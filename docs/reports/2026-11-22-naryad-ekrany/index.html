@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Наряд на разных экранах — отчёт 22.11.2026</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f5f5f7; color: #1d1d1f; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 36px 0 10px; }
+  p, li { font-size: 15px; line-height: 1.5; }
+  .sub { color: #6e6e73; margin: 0 0 20px; }
+  .card { background: #fff; border-radius: 16px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin: 14px 0; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pair.phone { grid-template-columns: 1fr 1fr; max-width: 640px; }
+  figure { margin: 0; }
+  figure img { width: 100%; border-radius: 10px; border: 1px solid #e5e5ea; display: block; }
+  figcaption { font-size: 13px; color: #6e6e73; margin-top: 6px; }
+  .bad { color: #d70015; font-weight: 600; }
+  .ok { color: #248a3d; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td, th { text-align: left; padding: 7px 10px; border-bottom: 1px solid #e5e5ea; }
+  th { color: #6e6e73; font-weight: 600; }
+  @media (max-width: 700px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Наряд на разных экранах</h1>
+  <p class="sub">Отчёт 22.11.2026 · наряд 000044 (BMW X5, 13 запчастей, 4 работы), вход менеджера</p>
+
+  <div class="card">
+    <b>Что было не так</b>
+    <ul>
+      <li>На больших мониторах (от 1600 px) «Запчасти» и «Работы» уходили во <b>вторую колонку</b>, на ноутбуке — под «Проблемы». Порядок блоков менялся от экрана к экрану.</li>
+      <li>На узком ПК (900–1199 px) левая колонка сжималась до ~350 px, подписи этапов обрезались («Согласова…»), заголовки переносились.</li>
+      <li>Когда правая колонка выше левой, между «Проблемами» и «Запчастями» появлялась <b>пустая полоса</b>.</li>
+      <li>На телефоне цифры у «Нарядов» в нижней панели наезжали на «Запись».</li>
+    </ul>
+    <b>Что сделано</b>
+    <ul>
+      <li>На любом ПК одинаково: слева этапы <b>1 Приём → 2 Проблемы → 4 Запчасти → 5 Работы</b> друг под другом, справа «Деньги и выдача», «Кто и где», «Лента», «Сообщения».</li>
+      <li>900–1199 px: всё в одну колонку (сначала этапы, ниже деньги), полоса этапов — 3 × 2, подписи целиком.</li>
+      <li>Пустой полосы между блоками больше нет.</li>
+      <li>Телефон: у пункта нижней панели не больше двух цифр (самые срочные), остальные видны на странице.</li>
+      <li>Каждый блок теперь можно свернуть (кнопка ⌃ справа в заголовке).</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <b>Замер на каждом размере</b>
+    <table>
+      <tr><th>Экран</th><th>Прокрутка вбок</th><th>Обрезанные кнопки и подписи</th><th>Раскладка</th></tr>
+      <tr><td>1920 × 1080</td><td class="ok">нет</td><td class="ok">нет</td><td>этапы слева, панель 420 px справа</td></tr>
+      <tr><td>1366 × 768</td><td class="ok">нет</td><td class="ok">нет</td><td>этапы слева, панель 360 px справа</td></tr>
+      <tr><td>1280 × 720</td><td class="ok">нет</td><td class="ok">нет</td><td>этапы слева, панель 360 px справа</td></tr>
+      <tr><td>1024 × 768</td><td class="ok">нет</td><td class="ok">нет (было: «Согласова…»)</td><td>одна колонка</td></tr>
+      <tr><td>768 (планшет)</td><td class="ok">нет</td><td class="ok">нет</td><td>вкладки «Проблемы / Запчасти / Деньги»</td></tr>
+      <tr><td>375 (iPhone)</td><td class="ok">нет</td><td class="ok">нет</td><td>вкладки, нижняя панель — 2 цифры</td></tr>
+    </table>
+  </div>
+
+  <h2>1920 — большой монитор</h2>
+  <div class="pair">
+    <figure><img src="01-do-1920.jpg" alt=""><figcaption><span class="bad">Было:</span> три колонки — «Запчасти» и «Работы» в середине.</figcaption></figure>
+    <figure><img src="02-posle-1920.jpg" alt=""><figcaption><span class="ok">Стало:</span> как на ноутбуке — этапы слева по порядку.</figcaption></figure>
+  </div>
+
+  <h2>1024 — узкий ноутбук</h2>
+  <div class="pair">
+    <figure><img src="03-do-1024.jpg" alt=""><figcaption><span class="bad">Было:</span> узкая левая колонка, «Согласова…», «Деньги и выдача» в две строки.</figcaption></figure>
+    <figure><img src="04-posle-1024.jpg" alt=""><figcaption><span class="ok">Стало:</span> одна колонка, этапы 3 × 2.</figcaption></figure>
+  </div>
+  <div class="pair">
+    <figure><img src="05-posle-1024-zapchasti.jpg" alt=""><figcaption>1024: «Запчасти» на всю ширину — столбики «Кол-во · Цена · Сумма» ровно.</figcaption></figure>
+    <figure><img src="06-do-1366-propusk.jpg" alt=""><figcaption><span class="bad">Было</span> (короткий наряд, 1366): пустая полоса между «Согласованием» и «Запчастями». Исправлено.</figcaption></figure>
+  </div>
+
+  <h2>1366 и 1280 — обычный ноутбук</h2>
+  <div class="pair">
+    <figure><img src="07-1366.jpg" alt=""><figcaption>1366 × 768.</figcaption></figure>
+    <figure><img src="08-1280.jpg" alt=""><figcaption>1280 × 720.</figcaption></figure>
+  </div>
+
+  <h2>Телефон и планшет</h2>
+  <div class="pair phone">
+    <figure><img src="09-do-375.jpg" alt=""><figcaption><span class="bad">Было:</span> внизу четыре цифры у «Нарядов» наезжают на «Запись».</figcaption></figure>
+    <figure><img src="10-posle-375.jpg" alt=""><figcaption><span class="ok">Стало:</span> две самые срочные цифры.</figcaption></figure>
+  </div>
+  <div class="pair">
+    <figure><img src="11-768.jpg" alt=""><figcaption>Планшет 768: вкладки, всё помещается.</figcaption></figure>
+  </div>
+</main>
+</body>
+</html>
