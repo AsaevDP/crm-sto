@@ -2341,6 +2341,39 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .nt-old .nt-row:hover, .nt-row.nt-done:hover { opacity: 1; }
 .nt-side { display: grid; justify-items: end; gap: 3px; flex: none; }
 .nt-viewas { margin: 0 0 10px; }
+/* 22.11.2026 (брат): «Загрузка мастеров» на «Пульте» — крупно и по цветам загрузки */
+.ld-total { display: grid; grid-template-columns: auto 1fr; gap: 10px 22px; align-items: center; margin-bottom: 14px;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--lc) 55%, transparent), var(--shadow-2); }
+.ld-total-pct { display: grid; }
+.ld-total-pct b { font-size: 44px; line-height: 1; color: var(--lc); font-variant-numeric: tabular-nums; }
+.ld-total-pct span { font-size: 13px; color: var(--text-2, var(--gray)); }
+.ld-total-bar { height: 18px; border-radius: 999px; background: color-mix(in srgb, var(--gray) 22%, transparent); overflow: hidden; }
+.ld-total-bar i { display: block; height: 100%; border-radius: inherit; background: var(--lc); }
+.ld-total-nums { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 15px; }
+.ld-total-nums b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.ld-list { display: grid; gap: 10px; }
+.ld-row { display: grid; grid-template-columns: minmax(170px, 240px) 1fr auto; grid-template-rows: auto auto; gap: 4px 18px;
+  align-items: center; padding: 14px 18px; color: var(--text); text-decoration: none; border-left: 6px solid var(--mc); }
+.ld-row:hover { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--lc) 45%, transparent), var(--shadow-2); }
+.ld-who { display: flex; gap: 10px; align-items: center; min-width: 0; grid-column: 1; grid-row: 1 / 3; }
+.ld-who > span { display: grid; min-width: 0; }
+.ld-who b { font-size: 16px; overflow-wrap: anywhere; }
+.ld-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--mc); flex: none; }
+.ld-bar { grid-column: 2; grid-row: 1; height: 22px; border-radius: 999px; background: color-mix(in srgb, var(--gray) 22%, transparent); overflow: hidden; }
+.ld-bar i { display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--lc) 70%, #fff), var(--lc)); }
+.ld-pct { display: grid; justify-items: end; grid-column: 3; grid-row: 1 / 3; }
+.ld-pct b { font-size: 28px; line-height: 1; color: var(--lc); font-variant-numeric: tabular-nums; }
+.ld-word { font-size: 12px; font-weight: 600; color: var(--lc); white-space: nowrap; }
+.ld-sub { grid-column: 2; grid-row: 2; }
+@media (max-width: 640px) {
+  .ld-row { grid-template-columns: 1fr auto; padding: 12px 14px; }
+  .ld-who { grid-row: 1; grid-column: 1; }
+  .ld-bar { grid-column: 1 / -1; grid-row: 2; }
+  .ld-sub { grid-column: 1 / -1; grid-row: 3; }
+  .ld-pct { grid-row: 1; grid-column: 2; }
+  .ld-total-pct b { font-size: 36px; }
+}
 /* четыре плитки на телефоне: «Инструмент» не обрезается */
 @media (max-width: 480px) { .iss-tiles { gap: 6px; } .iss-tiles .ptile { padding: 8px 8px 9px; } .iss-tiles .ptile-t { font-size: 12px; } }
 @media (max-width: 360px) { .iss-tiles { gap: 4px; } .iss-tiles .ptile { padding: 7px 5px 8px; } .iss-tiles .ptile-t { font-size: 10.5px; } }

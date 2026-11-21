@@ -142,6 +142,7 @@ DEFAULT_ROLES = {
     # Директор: видит всё и всю бухгалтерию, сам ничего не «крутит» в нарядах
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
+        "schedule.manage",   # 22.11.2026 (брат): директор тоже записывает клиентов, как менеджер
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         # 20.11.2026 (брат): «Зарплата сотрудников» (payroll.view_all) директору — только галочкой админа; утверждать —
         # payroll.approve; заму доступ на срок — payroll.grant

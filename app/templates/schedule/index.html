@@ -192,6 +192,9 @@
       {% endif %}{% endfor %}
     </div>
     {% endif %}
+    {# 22.11.2026 (брат): «Новая запись» — только у тех, кто записывает (менеджер, директор, зам, админ); остальные
+       видят только чужую запись, если открыли её (без кнопок) #}
+    {% if can_manage or e %}
     <form class="card compact form dense" method="post" action="/schedule{% if e %}/{{ e.id }}{% endif %}" id="appt-form">
       <div class="card-h"><span class="headline">{{ "Запись клиента" if e else "Новая запись" }}</span>
         {% if e %}<span class="chip" data-st="{{ e.status }}">{{ APPT_STATUS[e.status] }}</span>{% endif %}</div>
@@ -223,6 +226,7 @@
       {% if can_manage %}<div class="form-row"><button class="btn btn-sm">{{ "Сохранить" if e else "Записать" }}</button>
         {% if e %}<a class="btn btn-sm btn-gray" href="?d={{ day }}&p={{ view }}&by={{ by }}">Новая запись</a>{% endif %}</div>{% endif %}
     </form>
+    {% endif %}
     {% if e and can_manage %}
     <div class="card compact appt-actions">
       {% if e.work_order_id %}<a class="btn btn-sm" href="/orders/{{ e.work_order_id }}">Открыть наряд</a>

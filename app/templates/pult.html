@@ -7,6 +7,7 @@
   <div><p class="footnote">{{ WD[today.weekday()]|capitalize }}, {{ today.day }} {{ MG[today.month - 1] }} · что происходит прямо сейчас</p><h1 class="large-title">Пульт</h1></div>
   <div class="ov-actions">
     {# 21.11.2026 (брат): «Выдать со склада» убрана (дублировала «Запросы на выдачу») — вместо неё «Ячейки ключей» #}
+    <a class="btn btn-sm btn-gray" href="/load">📊 Загрузка мастеров</a>
     <a class="btn btn-sm btn-gray" href="/keys">🔑 Ячейки ключей</a>
     {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
   </div>

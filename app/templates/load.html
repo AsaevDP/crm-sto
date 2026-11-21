@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_period.html" import period_bar %}
+{# Загрузка мастеров (22.11.2026, брат): с «Пульта». По записям клиентов: сколько часов записано из рабочих.
+   Цвет полосы — по загрузке: до 60 % зелёная, 60–90 % оранжевая, больше 90 % красная. #}
+{% macro level(p) %}{{ "red" if p > 90 else "orange" if p >= 60 else "green" }}{% endmacro %}
+{% macro word(p) %}{{ "перегружен" if p > 90 else "плотно" if p >= 60 else "есть время" }}{% endmacro %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/pult">{{ icon("back") }}Пульт</a><h1 class="large-title">Загрузка мастеров</h1>
+    <p class="footnote" style="margin:0">По записям клиентов · {{ per.label }}</p></div>
+  <div class="ov-actions">{{ period_bar(bar) }}</div>
+</header>
+
+<div class="card ld-total" style="--lc:var(--{{ level(total.pct) }})">
+  <div class="ld-total-pct"><b>{{ total.pct }}%</b><span>загрузка СТО</span></div>
+  <div class="ld-total-bar"><i style="width:{{ total.pct }}%"></i></div>
+  <div class="ld-total-nums">
+    <span><b>{{ total.hours|round(1)|num }}</b> ч записано</span>
+    <span><b>{{ total.free|round(1)|num }}</b> ч свободно</span>
+    <span><b>{{ total.n }}</b> записей</span>
+    <span><b>{{ rows|length }}</b> мастеров</span>
+  </div>
+</div>
+
+<div class="ld-list">
+  {% for r in rows %}{% set m = r.m %}
+  <a class="card ld-row" href="/schedule?p={{ per.kind }}&d={{ per.anchor }}&by=mech" style="--lc:var(--{{ level(r.pct) }});--mc:{{ color_css(colors.get(m.id, 'gray')) }}">
+    <span class="ld-who"><i class="ld-dot"></i><span><b>{{ m.full_name }}</b><span class="caption">{{ m.role.name }}</span></span></span>
+    <span class="ld-bar"><i style="width:{{ [r.pct, 2]|max }}%"></i></span>
+    <span class="ld-pct"><b>{{ r.pct }}%</b><span class="ld-word">{{ word(r.pct) }}</span></span>
+    <span class="ld-sub caption">{{ r.hours|round(1)|num }} из {{ r.cap }} ч · записей {{ r.n }}{% if r.noshow %} · не приехали {{ r.noshow }}{% endif %}</span>
+  </a>
+  {% else %}<div class="card compact"><p class="footnote" style="margin:0">Мастеров нет</p></div>{% endfor %}
+</div>
+<p class="hint" style="margin:10px 4px 0">Рабочий день — {{ day_h }} ч, выходной — {% for x in days_off|sort %}{{ WEEKDAYS[x]|lower }}{{ ", " if not loop.last }}{% else %}нет{% endfor %}.
+  Нажмите на мастера — откроется «Запись» за этот период.</p>
+{% endblock %}

@@ -121,6 +121,29 @@ def keys_board(ctx: Ctx = Depends(get_ctx)):
     return ctx.render("settings/keys.html", title="Ячейки ключей", editable=False, **keys_data(ctx))
 
 
+@router.get("/load")
+def load_board(ctx: Ctx = Depends(get_ctx), p: str = "", d: str = "", f: str = "", t: str = ""):
+    """22.11.2026 (брат): «Загрузка мастеров» с «Пульта» — по записям клиентов за день / неделю / месяц, крупно и
+    по цветам: до 60 % — зелёная, 60–90 % — оранжевая, больше 90 % — красная. Та же логика, что в «Записи»."""
+    ctx.need("dashboard.view")
+    from ..services import periods
+    from ..services import schedule as ssvc
+    from ..services.orders import staff_by_role
+    db, bid = ctx.db, ctx.branch.id
+    per = periods.parse(p, d, f, t, default="day", allowed=("day", "week", "month"))
+    mechanics = sorted(staff_by_role(db, bid, "masters"), key=lambda m: m.full_name)
+    appts = ssvc.between(db, bid, per.d1, per.d2)
+    pl = ssvc.period_load(db, bid, per.d1, per.d2, mechanics, appts)
+    rows = [{"m": m, **pl[m.id]} for m in mechanics]
+    total_h = sum(r["hours"] for r in rows)
+    total_cap = sum(r["cap"] for r in rows) or 1
+    return ctx.render("load.html", title="Загрузка мастеров", rows=rows, per=per, bar=periods.Bar(per, "/load", {}),
+                      colors=ssvc.mech_colors(staff_by_role(db, bid, "masters")), day_h=pl["_day_h"], days_off=pl["_off"],
+                      total={"hours": total_h, "cap": total_cap, "pct": min(100, round(total_h * 100 / total_cap)),
+                             "n": sum(r["n"] for r in rows), "free": max(0, total_cap - total_h)},
+                      WEEKDAYS=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
+
+
 @router.get("/pult")
 def pult(ctx: Ctx = Depends(get_ctx)):
     ctx.need("dashboard.view")
