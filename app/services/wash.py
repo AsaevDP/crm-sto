@@ -237,7 +237,9 @@ def board(db: Session, branch_id) -> dict:
         c = Car(o=o, v=vehicles.get(o.vehicle_id), works=ws, stage=stage, minutes=total, left=left,
                 box=all_boxes.get(o.wash_box_id), who=[people[i] for i in who_ids if i in people],
                 act=activity_label(o, people.get(o.activity_by)), repair=rep, asked=asks.get(o.id),
-                kinds={w.id: svc_kind.get(w.wash_service_id, "") for w in ws},
+                # 21.11.2026: вид услуги — по прайсу, а нет его (работа с ремонта) — по должности исполнителя
+                kinds={w.id: svc_kind.get(w.wash_service_id, "")
+                       or ROLE_KIND.get(_role(people.get(w.mechanic_id)) if w.mechanic_id in people else "", "") for w in ws},
                 owner_role=_role(people.get(o.mechanic_id)) if o.mechanic_id in people else "")
         if rep:
             oth = others.get(o.id, [])
@@ -341,6 +343,14 @@ def place_after_ready(db: Session, branch_id, wo: WorkOrder) -> None:
 def raise_up(db: Session, branch_id, wo: WorkOrder) -> bool:
     """«↑» — поднять машину на одно место в очереди (клиент спешит, постоянный)."""
     return move(db, branch_id, wo, "up")
+
+
+def concerns(user: User, c: Car) -> bool:
+    """21.11.2026 (брат): машина касается этого мойщика / детейлера — в наряде есть несделанная услуга его вида
+    (мойщику — мойка, детейлеру — детейлинг; есть и то и другое — видят оба). Остальные в его очереди не показываем."""
+    if ROLE_KIND.get(_role(user)) is None:
+        return True
+    return any(w.status != "done" and fits(user, c.kinds.get(w.id, "")) for w in c.works)
 
 
 def can_take(user: User, c: Car) -> bool:

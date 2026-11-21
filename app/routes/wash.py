@@ -423,6 +423,9 @@ def wash_queue(ctx: Ctx = Depends(get_ctx)):
     brd = wsvc.board(db, bid)
     mine_now = [c for c in brd["doing"] if wsvc.busy_with(c, me)]   # начал и не закончил свои услуги
     nxt = wsvc.next_for(db, bid, me, brd)
+    # 21.11.2026 (брат): мойщику — только машины с мойкой, детейлеру — только с его услугами (есть оба — видят оба)
+    brd = dict(brd, queue=[c for c in brd["queue"] if wsvc.concerns(me, c)],
+               doing=[c for c in brd["doing"] if wsvc.concerns(me, c) or c in mine_now])
     from ..services.handover import pending_orders
     handed = [db.get(WorkOrder, i) for i in pending_orders(db, bid, me.id)]
     handed_v = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in handed])))} if handed else {}
