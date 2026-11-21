@@ -2541,3 +2541,8 @@ dialog .title-2 .zp-st { font-size: 13px; margin-left: 6px; }
 .nm-head { font-size: 12px; font-weight: 600; padding: 8px 0 4px; border-bottom: 1px solid var(--separator); margin-bottom: 2px; }
 .part-meta { display: flex; gap: 6px 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 .wk-time-ask { color: var(--orange); }
+/* 22.11.2026 (брат): столбики не на всю ширину — поджаты к правому краю, под суммой */
+.nm-cols.n5 { grid-template-columns: 40px 50px 58px 64px minmax(86px, max-content); justify-content: end; column-gap: 10px; }
+.nm-cols.n3 { grid-template-columns: 40px 50px 58px; justify-content: end; column-gap: 10px; }
+.nm-cols.p3 { grid-template-columns: 56px minmax(84px, max-content) minmax(92px, max-content); justify-content: end; column-gap: 10px; }
+@media (max-width: 380px) { .nm-cols.n5, .nm-cols.n3, .nm-cols.p3 { column-gap: 6px; } }
