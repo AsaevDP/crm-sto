@@ -1,7 +1,7 @@
 """Главная, разделы-заготовки (наполняются на следующих шагах), пульт, журнал."""
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from ..services.periods import Bar
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -122,7 +122,7 @@ def keys_board(ctx: Ctx = Depends(get_ctx)):
 
 
 @router.get("/load")
-def load_board(ctx: Ctx = Depends(get_ctx), p: str = "", d: str = "", f: str = "", t: str = ""):
+def load_board(ctx: Ctx = Depends(get_ctx), p: str = "", d: str = "", f: str = "", t: str = "", from_: str = Query("", alias="from")):
     """22.11.2026 (брат): «Загрузка мастеров» с «Пульта» — по записям клиентов за день / неделю / месяц, крупно и
     по цветам: до 60 % — зелёная, 60–90 % — оранжевая, больше 90 % — красная. Та же логика, что в «Записи»."""
     ctx.need("dashboard.view")
@@ -141,7 +141,8 @@ def load_board(ctx: Ctx = Depends(get_ctx), p: str = "", d: str = "", f: str = "
     rows = [{"m": m, **pl[m.id]} for m in mechanics]
     total_h = sum(r["hours"] for r in rows)
     total_cap = sum(r["cap"] for r in rows) or 1
-    return ctx.render("load.html", title="Загрузка мастеров", rows=rows, per=per, bar=periods.Bar(per, "/load", {}),
+    return ctx.render("load.html", title="Загрузка мастеров", rows=rows, per=per, bar=periods.Bar(per, "/load", {"from": "schedule" if from_ == "schedule" else ""}),
+                      back=("/schedule", "Запись") if from_ == "schedule" else ("/pult", "Пульт"),
                       colors=ssvc.mech_colors(staff_by_role(db, bid, "masters")), day_h=pl["_day_h"], days_off=pl["_off"],
                       total={"hours": total_h, "cap": total_cap, "pct": min(100, round(total_h * 100 / total_cap)),
                              "n": sum(r["n"] for r in rows), "free": max(0, total_cap - total_h),

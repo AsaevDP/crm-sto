@@ -6,7 +6,7 @@
 {% macro word(p) %}{{ "перегружен" if p > 90 else "плотно" if p >= 60 else "есть время" }}{% endmacro %}
 {% block content %}
 <header class="page-head">
-  <div><a class="back" href="/pult">{{ icon("back") }}Пульт</a><h1 class="large-title">Загрузка мастеров</h1>
+  <div><a class="back" href="{{ back[0] }}">{{ icon("back") }}{{ back[1] }}</a><h1 class="large-title">Загрузка мастеров</h1>
     <p class="footnote" style="margin:0">Наряды в работе + записи клиентов · {{ per.label }}</p></div>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>

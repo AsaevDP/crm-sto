@@ -33,107 +33,152 @@ def _own_only(ctx: Ctx) -> bool:
 BY = {"mech": "По мастерам", "date": "По датам"}
 
 
+def _level(p: int) -> str:
+    """Цвет загрузки, как в «Загрузке мастеров»: до 60 % зелёный, 60–90 % оранжевый, больше 90 % красный."""
+    return "red" if p > 90 else "orange" if p >= 60 else "green"
+
+
+def _wo_items(segs: list) -> list:
+    """Куски нарядов мастера за день → по одной карточке на наряд (с первого куска до последнего)."""
+    acc = {}
+    for s, e, b in segs:
+        x = acc.setdefault(id(b), {"kind": "wo", "b": b, "s": s, "e": e, "mins": 0})
+        x["s"], x["e"] = min(x["s"], s), max(x["e"], e)
+        x["mins"] += int((e - s).total_seconds() // 60)
+    return [dict(x, t=x["s"].strftime("%H:%M"), end=x["e"].strftime("%H:%M")) for x in acc.values()]
+
+
+def _appt_item(a) -> dict:
+    s = svc.local(a.start_at)
+    return {"kind": "appt", "a": a, "t": s.strftime("%H:%M"),
+            "end": (s + timedelta(minutes=a.duration_min or 30)).strftime("%H:%M"), "mech": a.mechanic_id}
+
+
+def _sorted(items: list) -> list:
+    """По времени. У «свободно», на которое легли наряды «возможно» (согласование, диагностика), — пометка: окно
+    свободно, но если клиент согласует, мастер будет занят (в свободные окна «возможно» не входит — решение 22.11)."""
+    order = {"appt": 0, "wo": 1, "free": 2}
+    tent = [(x["t"], x["end"], x.get("mech")) for x in items if x["kind"] == "wo" and x["b"].kind != "solid"]
+    for x in items:
+        if x["kind"] == "free":
+            x["tent"] = any(s < x["end"] and x["t"] < e and (m is None or x.get("mech") in (None, m)) for s, e, m in tent)
+    return sorted(items, key=lambda x: (x["t"], order[x["kind"]]))
+
+
 @router.get("/schedule")
 def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: str = "", p: str = "", by: str = "",
-             f: str = "", t: str = "", show: str = ""):
-    """Запись (11.11.2026): день / неделя / месяц / свой период; «по мастерам» или «по датам»; загрузка мастеров;
-    списки «будущие» и «прошлые». Старые ссылки ?view=week продолжают работать."""
+             f: str = "", t: str = "", show: str = "", m: str = "", fd: str = "", free: str = ""):
+    """Запись (22.11.2026, брат — новый вид «столбиками»). День — столбик на каждого мастера; неделя — столбик на
+    каждый день; месяц — календарь. В столбике по времени: записи клиентов, наряды мастера и «свободно» (+ записать).
+    Наверху плитки (записей / ждём / приехали / не приехали), кнопки «Новая запись», «Свободные окна», «Напомнить о
+    записи», «Загрузка мастеров»; выбор мастера (?m=). Мастер видит только себя, без кнопок записи."""
     ctx.need("schedule.view", "schedule.manage")
-    from ..services import periods
-    db, bid = ctx.db, ctx.branch.id
     if show in ("future", "past"):
         return _lists(ctx, show, by)
+    return _board(ctx, d, view, edit, p, f, t, m, fd, free)
+
+
+def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
+    from ..services import periods
+    from ..services import workload as wl_svc
+    db, bid = ctx.db, ctx.branch.id
+    today = date.today()
     kind = p if p in ("day", "week", "month", "custom") else (view if view in ("week", "month") else "day")
     per = periods.parse(kind, d, f, t, default="day", allowed=("day", "week", "month", "custom"))
-    view = per.kind
-    day = per.anchor
-    by = by if by in BY else ("mech" if view in ("day", "month") else "date")
-    bar = periods.Bar(per, "/schedule", {"by": by})
-    mechanics = osvc.staff_by_role(db, bid, "masters")
-    if _own_only(ctx):
-        mechanics = [m for m in mechanics if m.id == ctx.user.id]
+    view, day = per.kind, per.anchor
+    all_masters = osvc.staff_by_role(db, bid, "masters")
+    colors = svc.mech_colors(all_masters)   # цвет мастера один и тот же у всех
+    can_manage = ctx.can("schedule.manage")
+    own = not can_manage
+    masters = [x for x in all_masters if x.id == ctx.user.id] if own else all_masters
+    pick = None if own else next((x for x in masters if str(x.id) == m), None)
+    shown = [pick] if pick else masters
+    ids = {x.id for x in shown}
     lifts = db.scalars(select(Lift).where(Lift.branch_id == bid, Lift.active.is_(True)).order_by(Lift.number)).all()
-    mine = ctx.user.id if _own_only(ctx) else None
-    editing = db.get(Appointment, _uuid(edit)) if edit else None
-    if editing and editing.branch_id != bid:
-        editing = None
-    colors = svc.mech_colors(osvc.staff_by_role(db, bid, "masters"))  # цвет мастера один и тот же у всех
     own_lift = {l.mechanic_id: l for l in lifts if l.mechanic_id}
-    base = dict(day=day, view=view, mechanics=mechanics, lifts=lifts, editing=editing, APPT_STATUS=APPT_STATUS,
-                fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, local=svc.local, WEEKDAYS=WEEKDAYS,
-                can_manage=ctx.can("schedule.manage"), today=date.today(), colors=colors, own_lift=own_lift, bar=bar,
-                per=per, by=by, BY=BY, show="",
-                remind=svc.reminders(db, bid) if ctx.can("schedule.manage") else None)
-    # 22.11.2026 (брат): наряды в календаре — несделанные работы мастеров по открытым нарядам (services/workload.py)
-    from ..services import workload as wl_svc
-    wl = wl_svc.plan(db, bid, osvc.staff_by_role(db, bid, "masters"))
-    base["wo_off"] = [b for b in wl["off"] if b.mech_id in {m.id for m in mechanics}]
-    if view in ("week", "month", "custom"):
-        d1, d2 = per.d1, per.d2
-        if (d2 - d1).days > 92:   # свой период — не больше квартала, чтобы страница не тормозила
-            d2 = d1 + timedelta(days=92)
-        days = [d1 + timedelta(days=i) for i in range((d2 - d1).days + 1)]
-        appts = svc.between(db, bid, d1, d2, mechanic_id=mine, with_cancelled=False)
-        by_day = {x: [] for x in days}
-        for a in appts:
-            by_day.setdefault(svc.local(a.start_at).date(), []).append(a)
-        people = {u.id: u for u in mechanics}
-        extra = {m.id: wl_svc.minutes_by_day(wl, m.id) for m in mechanics}
-        hours = {d: sum((a.duration_min or 0) for a in by_day.get(d, []) if a.status in ("booked", "arrived")) / 60
-                    + sum(x.get(d, 0) for x in extra.values()) / 60 for d in days}
-        pl = svc.period_load(db, bid, d1, d2, mechanics, appts, extra=extra)
-        wo_by_day = {}   # (мастер, день) → [(Block, минут)] — и сплошные, и «возможно»
-        for d in days:
-            for mid, segs in wl_svc.segments_on(wl, d).items():
-                acc = {}
-                for s, e, b in segs:
-                    acc[b] = acc.get(b, 0) + int((e - s).total_seconds() // 60)
-                wo_by_day[(mid, d)] = list(acc.items())
-        cap = max(1, len(mechanics)) * pl["_day_h"]   # часов работы всех мастеров в день
-        # Календарь месяца: недели по 7 дней, с понедельника; дни чужого месяца — пустые
-        weeks = []
-        if view == "month":
-            s = d1 - timedelta(days=d1.weekday())
-            while s <= d2:
-                weeks.append([s + timedelta(days=i) for i in range(7)])
-                s += timedelta(days=7)
-        no_mech = [a for a in appts if not a.mechanic_id]
-        return ctx.render("schedule/index.html", title="Запись", days=days, by_day=by_day, people=people, hours=hours,
-                          load={d: min(100, round(hours[d] * 100 / cap)) for d in days}, pl=pl, weeks=weeks,
-                          appts=appts, no_mech=no_mech, day_h=pl["_day_h"], days_off=pl["_off"],
-                          summary=_summary(appts), wo_by_day=wo_by_day, **base)
-    appts = svc.between(db, bid, day, day, mechanic_id=mine)
-    columns = [{"id": m.id, "title": m.short_name, "user": m} for m in mechanics]
-    if not mine and (any(a.mechanic_id is None for a in appts) or not columns):
-        columns.append({"id": None, "title": "Без мастера", "user": None})  # только если есть такие записи
-    g = svc.grid(db, bid, day, columns, appts)
-    segs = wl_svc.segments_on(wl, day)
-    load = svc.day_load(db, bid, day, columns, appts, extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
-    g["wo_blocks"] = _wo_blocks(g, columns, segs)
-    summary = _summary(appts)
-    tomorrow = []
-    if ctx.can("schedule.manage"):
-        tomorrow = [a for a in svc.between(db, bid, date.today() + timedelta(days=1), date.today() + timedelta(days=1))
-                    if a.status == "booked"]
-    return ctx.render("schedule/index.html", title="Запись", columns=columns, g=g, appts=appts, load=load,
-                      summary=summary, tomorrow=tomorrow, people={m.id: m for m in mechanics}, **base)
+    keep = {"m": str(pick.id) if pick else ""}
+    bar = periods.Bar(per, "/schedule", keep)
+    editing = db.get(Appointment, _uuid(edit)) if edit else None
+    if editing and (editing.branch_id != bid or (own and editing.mechanic_id != ctx.user.id)):
+        editing = None
+    wl = wl_svc.plan(db, bid, all_masters)
+    # Период: записи выбранных мастеров (у руководителя без выбора — и «без мастера»)
+    d1, d2 = (day, day) if view == "day" else (per.d1, per.d2)
+    if (d2 - d1).days > 92:   # свой период — не больше квартала
+        d2 = d1 + timedelta(days=92)
+    appts = [a for a in svc.between(db, bid, d1, d2) if a.mechanic_id in ids or (not pick and not own and not a.mechanic_id)]
+    cfg_load = svc.period_load(db, bid, d1, d2, shown, appts,
+                               extra={x.id: wl_svc.minutes_by_day(wl, x.id) for x in shown})
+    day_h, days_off = cfg_load["_day_h"], cfg_load["_off"]
+    # Свободные окна: на выбранный день (в «Дне» — этот день, иначе сегодня или первый день периода)
+    fday = _day(fd) if fd else (day if view == "day" else max(today, d1))
+    def free_cols(dd, who):
+        cols = [{"id": x.id} for x in who]
+        aa = svc.between(db, bid, dd, dd)
+        segs = wl_svc.segments_on(wl, dd)
+        return svc.day_load(db, bid, dd, cols, aa, extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
+    fl = free_cols(fday, shown) if can_manage else {}
+    free_rows = [{"m": x, "free": fl.get(x.id, {}).get("free", [])} for x in shown] if can_manage else []
+    base = dict(view=view, day=day, per=per, bar=bar, today=today, masters=masters, shown=shown, pick=pick, own=own,
+                all_masters=all_masters, colors=colors, own_lift=own_lift, lifts=lifts, editing=editing,
+                can_manage=can_manage, APPT_STATUS=APPT_STATUS, fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate,
+                local=svc.local, WEEKDAYS=WEEKDAYS, MON=MON, summary=_summary(appts), day_h=day_h, days_off=days_off,
+                remind=svc.reminders(db, bid) if can_manage else None, fday=fday, free_rows=free_rows,
+                open_free=bool(free) and can_manage, level=_level,
+                load_ok=ctx.can("dashboard.view"), people={x.id: x for x in all_masters},
+                new_day=day if view == "day" and day >= today else max(today, d1),
+                wo_off=[b for b in wl["off"] if b.mech_id in ids])
+    if view == "day":
+        segs = wl_svc.segments_on(wl, day)
+        load = svc.day_load(db, bid, day, [{"id": x.id} for x in shown], appts,
+                            extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
+        work_min = max(1, day_h * 60)
+        cols = []
+        for x in shown:
+            ld = load[x.id]
+            items = [_appt_item(a) for a in appts if a.mechanic_id == x.id]
+            items += _wo_items(segs.get(x.id, []))
+            items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": x.id} for a, b, mm in ld["free"]]
+            pct = min(100, round(ld["booked"] * 100 / work_min))
+            cols.append({"m": x, "items": _sorted(items), "pct": pct, "lv": _level(pct), "booked": ld["booked"] / 60,
+                         "n": sum(1 for a in appts if a.mechanic_id == x.id and a.status != "cancel"),
+                         "off": day.weekday() in days_off})
+        loose = [_appt_item(a) for a in appts if not a.mechanic_id]
+        if loose:
+            cols.append({"m": None, "items": _sorted(loose), "pct": 0, "lv": "green", "booked": 0, "n": len(loose), "off": False})
+        return ctx.render("schedule/index.html", title="Запись", cols=cols, **base)
+    days = [d1 + timedelta(days=i) for i in range((d2 - d1).days + 1)]
+    by_day = {x: [] for x in days}
+    for a in appts:
+        by_day.setdefault(svc.local(a.start_at).date(), []).append(a)
+    cap = max(1, len(shown)) * day_h * 60
+    mins_day = {dd: sum(cfg_load[x.id]["by_day"].get(dd, 0) for x in shown) for dd in days}
+    pct_day = {dd: min(100, round(mins_day[dd] * 100 / cap)) for dd in days}
+    if view == "week":
+        cols = []
+        for dd in days:
+            segs = wl_svc.segments_on(wl, dd)
+            items = [_appt_item(a) for a in by_day.get(dd, [])]
+            for x in shown:
+                items += [dict(it, mech=x.id) for it in _wo_items(segs.get(x.id, []))]
+            if pick and can_manage and dd >= today and dd.weekday() not in days_off:
+                fr = free_cols(dd, [pick]).get(pick.id, {}).get("free", [])
+                items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": pick.id} for a, b, mm in fr]
+            cols.append({"d": dd, "items": _sorted(items), "pct": pct_day[dd], "lv": _level(pct_day[dd]),
+                         "hours": mins_day[dd] / 60, "n": len([a for a in by_day.get(dd, []) if a.status != "cancel"]),
+                         "off": dd.weekday() in days_off})
+        return ctx.render("schedule/index.html", title="Запись", cols=cols, **base)
+    # Месяц / свой период — календарь: недели с понедельника, дни вне периода пустые
+    weeks, s = [], d1 - timedelta(days=d1.weekday())
+    while s <= d2:
+        weeks.append([s + timedelta(days=i) for i in range(7)])
+        s += timedelta(days=7)
+    wo_n = {dd: len({id(b) for x in shown for _, _, b in wl_svc.segments_on(wl, dd).get(x.id, [])}) for dd in days}
+    return ctx.render("schedule/index.html", title="Запись", weeks=weeks, by_day=by_day, d1=d1, d2=d2,
+                      pct_day=pct_day, mins_day=mins_day, wo_n=wo_n, **base)
 
 
-def _wo_blocks(g: dict, columns: list, segs: dict) -> list:
-    """Куски нарядов на сетке дня (22.11.2026): строка и высота по шагу сетки, колонка — мастер."""
-    out, step, h1 = [], g["step"], g["h1"]
-    col_idx = {c["id"]: i for i, c in enumerate(columns)}
-    for mid, lst in segs.items():
-        if mid not in col_idx:
-            continue
-        for s, e, b in lst:
-            mins = int((e - s).total_seconds() // 60)
-            row = ((s.hour - h1) * 60 + s.minute) // step
-            if row < 0 or row >= len(g["slots"]):
-                continue
-            out.append({"b": b, "row": row + 2, "span": max(1, -(-mins // step)), "col": col_idx[mid] + 2,
-                        "time": s.strftime("%H:%M"), "end": e.strftime("%H:%M"), "mins": mins})
-    return out
+MON = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
 
 
 def _summary(appts) -> dict:
@@ -151,30 +196,17 @@ def _lists(ctx: Ctx, show: str, by: str):
     if show == "past":
         appts = list(reversed(appts))
     mechanics = osvc.staff_by_role(db, bid, "masters")
-    people = {u.id: u for u in mechanics}
-    by = by if by in BY else "date"
-    groups = []
-    if by == "mech":
-        for m in mechanics + [None]:
-            rows = [a for a in appts if a.mechanic_id == (m.id if m else None)]
-            if rows:
-                groups.append({"title": m.full_name if m else "Без мастера", "mech": m.id if m else None, "rows": rows})
-    else:
-        cur = None
-        for a in appts:
-            k = svc.local(a.start_at).date()
-            if k != cur:
-                groups.append({"title": k, "rows": []})
-                cur = k
-            groups[-1]["rows"].append(a)
-    from ..services import periods
-    per = periods.parse("day", today.isoformat(), allowed=("day", "week", "month", "custom"))
-    return ctx.render("schedule/index.html", title="Запись", show=show, groups=groups, people=people, appts=appts,
-                      by=by, BY=BY, view="list", day=today, today=today, mechanics=mechanics, lifts=[], editing=None,
-                      APPT_STATUS=APPT_STATUS, fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate, local=svc.local,
-                      WEEKDAYS=WEEKDAYS, can_manage=False, colors=svc.mech_colors(mechanics), own_lift={},
-                      bar=periods.Bar(per, "/schedule", {"by": by}), per=per, summary=_summary(appts),
-                      list_range=(d1, d2))
+    groups, cur = [], None
+    for a in appts:
+        k = svc.local(a.start_at).date()
+        if k != cur:
+            groups.append({"d": k, "items": []})
+            cur = k
+        groups[-1]["items"].append(_appt_item(a))
+    return ctx.render("schedule/list.html", title="Все записи списком", show=show, groups=groups,
+                      people={u.id: u for u in mechanics}, colors=svc.mech_colors(mechanics), today=today,
+                      APPT_STATUS=APPT_STATUS, fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate,
+                      WEEKDAYS=WEEKDAYS, MON=MON, summary=_summary(appts), can_manage=ctx.can("schedule.manage"))
 
 
 def _fill(ctx: Ctx, a: Appointment, f: dict):
@@ -218,25 +250,31 @@ def _warn_overlap(ctx: Ctx, a: Appointment):
         flash(ctx.request, f"Записан на {svc.local(a.start_at).strftime('%d.%m %H:%M')}")
 
 
+def _back(back: str, default: str) -> str:
+    """Вернуться туда, откуда записывали (тот же день / неделя / мастер), — только внутри «Записи»."""
+    return back if back.startswith("/schedule") and not back.startswith("//") else default
+
+
 _FIELDS = ("day", "time", "duration", "mechanic_id", "lift_id", "client_name", "phone", "car", "plate", "work", "note")
 
 
 @router.post("/schedule")
 def appt_add(ctx: Ctx = Depends(get_ctx), day: str = Form(""), time: str = Form("09:00"), duration: str = Form("60"),
              mechanic_id: str = Form(""), lift_id: str = Form(""), client_name: str = Form(""), phone: str = Form(""),
-             car: str = Form(""), plate: str = Form(""), work: str = Form(""), note: str = Form(""), view: str = Form("day")):
+             car: str = Form(""), plate: str = Form(""), work: str = Form(""), note: str = Form(""), view: str = Form("day"),
+             back: str = Form("")):
     ctx.need("schedule.manage")
     f = dict(zip(_FIELDS, (day, time, duration, mechanic_id, lift_id, client_name, phone, car, plate, work, note)))
     if not (client_name.strip() or phone.strip()):
         flash(ctx.request, "Укажите имя или телефон клиента", "error")
-        return RedirectResponse(f"/schedule?d={day}&view={view}", status_code=303)
+        return RedirectResponse(_back(back, f"/schedule?d={day}&view={view}"), status_code=303)
     a = Appointment()
     _fill(ctx, a, f)
     ctx.db.add(a)
     ctx.db.flush()
     _warn_overlap(ctx, a)
     ctx.db.commit()
-    return RedirectResponse(f"/schedule?d={_day(day)}&view={view}", status_code=303)
+    return RedirectResponse(_back(back, f"/schedule?d={_day(day)}&view={view}"), status_code=303)
 
 
 def _appt(ctx: Ctx, aid: str) -> Appointment:
@@ -249,14 +287,15 @@ def _appt(ctx: Ctx, aid: str) -> Appointment:
 @router.post("/schedule/{aid}")
 def appt_edit(aid: str, ctx: Ctx = Depends(get_ctx), day: str = Form(""), time: str = Form("09:00"), duration: str = Form("60"),
               mechanic_id: str = Form(""), lift_id: str = Form(""), client_name: str = Form(""), phone: str = Form(""),
-              car: str = Form(""), plate: str = Form(""), work: str = Form(""), note: str = Form(""), view: str = Form("day")):
+              car: str = Form(""), plate: str = Form(""), work: str = Form(""), note: str = Form(""), view: str = Form("day"),
+             back: str = Form("")):
     ctx.need("schedule.manage")
     a = _appt(ctx, aid)
     _fill(ctx, a, dict(zip(_FIELDS, (day, time, duration, mechanic_id, lift_id, client_name, phone, car, plate, work, note))))
     ctx.db.flush()
     _warn_overlap(ctx, a)
     ctx.db.commit()
-    return RedirectResponse(f"/schedule?d={_day(day)}&view={view}", status_code=303)
+    return RedirectResponse(_back(back, f"/schedule?d={_day(day)}&view={view}"), status_code=303)
 
 
 @router.post("/schedule/{aid}/status")
@@ -274,9 +313,7 @@ def appt_status(aid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), 
         a.status = status
         ctx.db.commit()
         flash(ctx.request, f"Запись: {APPT_STATUS[status].lower()}")
-    if back.startswith("/schedule") and not back.startswith("//"):
-        return RedirectResponse(back, status_code=303)
-    return RedirectResponse(f"/schedule?d={d}&view={view}", status_code=303)
+    return RedirectResponse(_back(back, f"/schedule?d={d}&view={view}"), status_code=303)
 
 
 @router.get("/schedule/remind")

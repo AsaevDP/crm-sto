@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles %}
+{# «Все записи списком» (22.11.2026): будущие (60 дней) или прошлые (90 дней), по датам. Нажали — день в «Записи». #}
+{% set ST_WORD = {"booked": "Ждём", "arrived": "Приехал", "noshow": "Не приехал", "cancel": "Отменена"} %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/schedule">{{ icon("back") }}Запись</a>
+    <h1 class="large-title">Все записи списком</h1>
+    <p class="footnote" style="margin:0">{{ "Будущие — 60 дней вперёд" if show == "future" else "Прошлые — 90 дней назад" }}</p></div>
+  <div class="ov-actions"><nav class="segmented" aria-label="Какие записи">
+    <a href="/schedule?show=future" aria-pressed="{{ (show == 'future')|lower }}">Будущие</a>
+    <a href="/schedule?show=past" aria-pressed="{{ (show == 'past')|lower }}">Прошлые</a></nav></div>
+</header>
+
+{{ tiles([
+  {"t": "Записей", "n": summary.all, "c": "blue"},
+  {"t": "Ждём", "n": summary.booked, "c": "orange"},
+  {"t": "Приехали", "n": summary.arrived, "c": "green"},
+  {"t": "Не приехали", "n": summary.noshow, "c": "red"},
+], "zp-tiles") }}
+
+<div class="zp-lgroups">
+{% for g in groups %}
+<section class="card compact zp-lgroup">
+  <a class="card-h" href="/schedule?p=day&d={{ g.d }}"><span class="headline">{{ WEEKDAYS[g.d.weekday()] }}, {{ g.d.day }} {{ MON[g.d.month - 1] }}{% if g.d == today %} · сегодня{% endif %}</span>
+    <span class="caption">записей {{ g["items"]|length }}</span></a>
+  <div class="zp-list">
+  {% for x in g["items"] %}{% set a = x.a %}{% set mm = people.get(a.mechanic_id) %}
+    <a class="zp-it zp-appt zp-row" data-st="{{ a.status }}" href="/schedule?p=day&d={{ g.d }}&edit={{ a.id }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
+      <b class="zp-time">{{ x.t }}–{{ x.end }}</b>
+      <span class="zp-name">{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}</span>
+      <span class="zp-sub">{{ a.car }}{% if a.plate %} · <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}{% if a.work %} · {{ a.work }}{% endif %}</span>
+      <span class="zp-who-s"><i class="zp-dot"></i>{{ mm.short_name if mm else "Без мастера" }}</span>
+      <span class="zp-st" data-st="{{ a.status }}">{{ ST_WORD[a.status] }}</span>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% else %}<div class="card compact"><p class="footnote" style="margin:0">{{ "Записей вперёд нет" if show == "future" else "За 90 дней записей не было" }}.</p></div>{% endfor %}
+</div>
+{% endblock %}

@@ -53,7 +53,7 @@ def test_time_field_and_orders_in_calendar(client):
         assert b.kind == "solid" and b.minutes >= 270   # 4,5 ч сцепления + другие работы наряда
         first_day = b.segs[0][0].date()
     page = client.get(f"/schedule?d={first_day}&by=mech").text
-    assert "wo-blk" in page and "🔧" in page
+    assert "zp-wo" in page and "🔧" in page
     assert client.get("/schedule?p=week&by=mech").status_code == 200
     # ждём запчасти, обещают через 10 дней — вне графика; через день — в графике
     with SessionLocal() as db:
