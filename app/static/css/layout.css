@@ -2782,3 +2782,23 @@ body.has-toast-pill .toasts { bottom: calc(134px + env(safe-area-inset-bottom));
 /* 22.11.2026: на телефоне у пункта нижней панели — не больше двух цифр (самые срочные — они первые), остальные не
    наезжают на соседний пункт; все цифры видны на самой странице */
 .tabbar .nbadges .nbadge:nth-child(n+3) { display: none; }
+
+/* 22.11.2026 (брат): бегущая рамка цвета кружка — «здесь нужно действовать», пока дело не сделано (app.js: crmNeed) */
+@property --need-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.need-rel { position: relative; }
+.need { --need-c: var(--accent); }
+.need-red { --need-c: var(--red); }
+.need-orange { --need-c: var(--orange); }
+.need-purple { --need-c: var(--purple); }
+.need-green { --need-c: var(--green); }
+.need::after { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 2.5px; pointer-events: none; z-index: 3;
+  background: conic-gradient(from var(--need-a), color-mix(in srgb, var(--need-c) 18%, transparent) 0deg,
+              var(--need-c) 70deg, color-mix(in srgb, var(--need-c) 18%, transparent) 140deg,
+              color-mix(in srgb, var(--need-c) 18%, transparent) 180deg, var(--need-c) 250deg,
+              color-mix(in srgb, var(--need-c) 18%, transparent) 320deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: need-run 2.6s linear infinite; }
+@keyframes need-run { to { --need-a: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .need::after { animation: none; background: var(--need-c); } }
+@media print { .need::after { display: none; } }

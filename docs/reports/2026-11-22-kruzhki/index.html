@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кружки → дело: отчёт 22.11.2026</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; background: #f5f5f7; color: #1d1d1f; }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { font-size: 26px; margin: 0 0 6px; } h2 { font-size: 19px; margin: 34px 0 10px; }
+  p, li { font-size: 15px; line-height: 1.5; } .sub { color: #6e6e73; margin: 0 0 18px; }
+  .card { background: #fff; border-radius: 16px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.06); margin: 14px 0; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  figure { margin: 0; } figure img { width: 100%; border-radius: 10px; border: 1px solid #e5e5ea; display: block; }
+  figcaption { font-size: 13px; color: #6e6e73; margin-top: 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; border-radius: 12px; overflow: hidden; }
+  td, th { text-align: left; padding: 6px 9px; border-bottom: 1px solid #ececf0; vertical-align: top; }
+  th { color: #6e6e73; font-weight: 600; background: #fafafa; position: sticky; top: 0; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #555; word-break: break-all; }
+  .nowrap { white-space: nowrap; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Кружки ведут к делу и обводят его</h1>
+  <p class="sub">Отчёт 22.11.2026 · проверены все кружки у всех 14 сотрудников (рабочая база на сегодня, копия)</p>
+  <div class="card">
+    <b>Как теперь работает</b>
+    <ul>
+      <li><b>Дело в одном наряде</b> — нажал на кружок, открылся этот наряд прямо на нужном блоке (Проблемы / Запчасти / Работы / Деньги), нужная строка обведена.</li>
+      <li><b>Нарядов несколько</b> — открывается список нарядов с фильтром: обведена плитка-фильтр и <b>каждый</b> наряд с делом.</li>
+      <li><b>Дело не в наряде</b> — открывается нужная страница: обведены плитка и строки (запросы на выдачу, зарплата по людям, «Всегда в наличии», запросы доступа, машины в очереди мойки…).</li>
+      <li>Рамка <b>бежит по краю</b>, цвет — как у кружка (🔴 🟠 🟣 🟢), и горит, <b>пока дело не сделано</b>. Сделали — цифра гаснет, рамка уходит (обновление раз в 15 секунд).</li>
+      <li>«Для сведения» (сиреневая обводка у кружка главного кладовщика) — без рамки: делает другой.</li>
+    </ul>
+    <b>Что нашлось и исправлено по пути</b>
+    <ul>
+      <li>Запчастист: кружок «черновики под наряды» вёл на несуществующую вкладку — теперь на «Заказать».</li>
+      <li>Кладовщик: после правки «срочно» проверка цифр у кладовщика падала — исправлено (в интернет не уходило).</li>
+      <li>«Всегда в наличии»: обводились и строки «почти на норме» — теперь только то, что ниже нормы (как в кружке).</li>
+      <li>Мойщик: кружок вёл на пустое место — теперь обведена каждая машина, которую можно мыть.</li>
+      <li>Запросы доступа, «Приход», «Лишнее после отказов», зарплата — раньше там нечего было обвести; теперь обводятся строки.</li>
+    </ul>
+  </div>
+
+  <h2>Как это выглядит</h2>
+  <div class="grid">
+    <figure><img src="01-menedzher-soglasovanie-spisok.jpg" alt=""><figcaption>Менеджер · 🟠4 «согласовать с клиентом»: плитка «Согласование» и каждый из 4 нарядов.</figcaption></figure>
+    <figure><img src="02-menedzher-naryad-problemy.jpg" alt=""><figcaption>Внутри наряда — блок «Согласование» (и кнопка «Согласовал с клиентом»).</figcaption></figure>
+    <figure><img src="03-slesar-raboty.jpg" alt=""><figcaption>Слесарь · 🟠3 «ваши работы — можно делать»: сразу в наряд, блок «Работы» и каждая работа.</figcaption></figure>
+    <figure><img src="07-menedzher-srochno-naryad24.jpg" alt=""><figcaption>Менеджер · 🔴 «срочная деталь без срока» — наряд 24, «Запчасти».</figcaption></figure>
+    <figure><img src="04-buhgalter-zarplata.jpg" alt=""><figcaption>Бухгалтер · 🟠3 «проверить»: ровно эти 3 человека; 🟢 «выдать» — ниже, зелёным.</figcaption></figure>
+    <figure><img src="05-kladovshik-vydacha.jpg" alt=""><figcaption>Кладовщик · 🔴 «просят выдать» и 🟠 «подготовлено»: плитки и карточки запросов.</figcaption></figure>
+    <figure><img src="06-moyshik-ochered.jpg" alt=""><figcaption>Мойщик · 🟠3 «ждут мойки — ваши»: обведены 3 машины, серые («мыть пока нельзя») — нет.</figcaption></figure>
+  </div>
+
+  <h2>Все кружки всех сотрудников</h2>
+  <p>Под каждым входом открыта ссылка каждого кружка; «✓» — страница открылась и на ней есть что обвести. Ошибок: <b>0</b>.</p>
+  <table>
+    <thead><tr><th>Вход</th><th>Кружок</th><th>Что значит</th><th>Куда ведёт</th><th>Что обведено</th></tr></thead>
+    <tbody>
+<tr><td>admin</td><td class=nowrap>/orders 🔴4</td><td>срочная деталь не пришла — поторопите поставщика &#183; просят доступ ко всем нарядам &#183; просят открыть наряд заново</td><td class=mono>/orders/8d445520-89f6-4878-a7e4-2d670113371e#parts</td><td>✓ блок #parts, строк: 1, #parts</td></tr>
+<tr><td>admin</td><td class=nowrap>/orders 🟠4</td><td>согласовать с клиентом</td><td class=mono>/orders?tab=approve</td><td>✓ блок #problems, строк: 1, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/orders 🟢7</td><td>готовы к выдаче клиенту</td><td class=mono>/orders?tab=ready</td><td>✓ блок #money, нарядов в списке: 7 из 7, плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/clients 🔴1</td><td>менеджер просит доступ к клиенту</td><td class=mono>/access-requests#clients</td><td>✓ #clients</td></tr>
+<tr><td>admin</td><td class=nowrap>/clients 🔴1</td><td>просят доступ ко всем нарядам и клиентам</td><td class=mono>/access-requests#all</td><td>✓ #all</td></tr>
+<tr><td>admin</td><td class=nowrap>/stock/issues 🔴2</td><td>просят выдать запчасти</td><td class=mono>/stock/issues</td><td>✓ карточки цвета</td></tr>
+<tr><td>admin</td><td class=nowrap>/stock/issues 🟠1</td><td>запчасти подготовлены — ещё не выданы</td><td class=mono>/stock/issues</td><td>✓ карточки цвета</td></tr>
+<tr><td>admin</td><td class=nowrap>/tools 🟠1</td><td>инструмент подготовлен — ещё не выдан</td><td class=mono>/stock/issues?tab=tools</td><td>✓ плитка, карточки цвета</td></tr>
+<tr><td>admin</td><td class=nowrap>/wash 🟢4</td><td>помыты — позвонить клиенту, оплата и выдача</td><td class=mono>/wash?tab=now</td><td>✓ блок #money, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/stock 🔴1</td><td>клиент отказался — решите с заказом у поставщика</td><td class=mono>/stock/leftovers</td><td>✓ строки</td></tr>
+<tr><td>admin</td><td class=nowrap>/stock 🟠10</td><td>ждём приход — подготовиться принять &#183; лишнее после отказа на складе — оставить, вернуть или продать</td><td class=mono>/stock/receive?tab=wait</td><td>✓ плитка, строки</td></tr>
+<tr><td>admin</td><td class=nowrap>/stock 🟣2</td><td>&#171;Всегда в наличии&#187; — ниже нормы</td><td class=mono>/stock/always</td><td>✓ строки</td></tr>
+<tr><td>admin</td><td class=nowrap>/razbor/shipping 🔴3</td><td>подготовить</td><td class=mono>/razbor/shipping?st=prepare</td><td>✓ плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/razbor/shipping 🟠1</td><td>готово — ждёт покупателя или отправки</td><td class=mono>/razbor/shipping?st=ready_ship</td><td>✓ плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/razbor/prices 🔴7</td><td>новые детали — утвердить цену</td><td class=mono>/razbor/prices?tab=new</td><td>✓ плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/razbor/prices 🟠1</td><td>просят изменить цену</td><td class=mono>/razbor/prices?tab=change</td><td>✓ плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/razbor 🔴1</td><td>отказано в утверждении — посмотреть причину</td><td class=mono>/razbor?v=parts&amp;f=declined</td><td>✓ плитка (открыта)</td></tr>
+<tr><td>admin</td><td class=nowrap>/site 🔴2</td><td>новые на продажу — утвердить цену</td><td class=mono>/site?t=new&amp;f=wait</td><td>✓ плитка</td></tr>
+<tr><td>admin</td><td class=nowrap>/payroll/weeks 🟠8</td><td>проверить &#183; утвердить к выплате</td><td class=mono>/payroll/weeks?d=2026-11-09</td><td>✓ строки</td></tr>
+<tr><td>admin</td><td class=nowrap>/payroll/weeks 🟢2</td><td>выдать</td><td class=mono>/payroll/weeks?d=2026-11-09</td><td>✓ строки</td></tr>
+<tr><td>admin</td><td class=nowrap>/schedule 🟠12</td><td>завтра записаны — напомнить</td><td class=mono>/schedule/remind#call</td><td>✓ #call, карточки цвета</td></tr>
+<tr><td>director</td><td class=nowrap>/orders 🔴1</td><td>просят доступ ко всем нарядам</td><td class=mono>/access-requests#all</td><td>✓ #all</td></tr>
+<tr><td>director</td><td class=nowrap>/orders 🔴2</td><td>просят открыть наряд заново</td><td class=mono>/access-requests#reopen</td><td>✓ #reopen</td></tr>
+<tr><td>director</td><td class=nowrap>/clients 🔴1</td><td>менеджер просит доступ к клиенту</td><td class=mono>/access-requests#clients</td><td>✓ #clients</td></tr>
+<tr><td>director</td><td class=nowrap>/clients 🔴1</td><td>просят доступ ко всем нарядам и клиентам</td><td class=mono>/access-requests#all</td><td>✓ #all</td></tr>
+<tr><td>director</td><td class=nowrap>/wash 🟢4</td><td>помыты — позвонить клиенту, оплата и выдача</td><td class=mono>/wash?tab=now</td><td>✓ блок #money, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>director</td><td class=nowrap>/stock 🟣2</td><td>&#171;Всегда в наличии&#187; — ниже нормы</td><td class=mono>/stock/always</td><td>✓ строки</td></tr>
+<tr><td>director</td><td class=nowrap>/razbor/prices 🔴7</td><td>новые детали — утвердить цену</td><td class=mono>/razbor/prices?tab=new</td><td>✓ плитка</td></tr>
+<tr><td>director</td><td class=nowrap>/razbor/prices 🟠1</td><td>просят изменить цену</td><td class=mono>/razbor/prices?tab=change</td><td>✓ плитка</td></tr>
+<tr><td>director</td><td class=nowrap>/site 🔴2</td><td>новые на продажу — утвердить цену</td><td class=mono>/site?t=new&amp;f=wait</td><td>✓ плитка</td></tr>
+<tr><td>director</td><td class=nowrap>/payroll/weeks 🟠2</td><td>утвердить к выплате</td><td class=mono>/payroll/weeks?d=2026-11-09</td><td>✓ строки</td></tr>
+<tr><td>director</td><td class=nowrap>/schedule 🟠12</td><td>завтра записаны — напомнить</td><td class=mono>/schedule/remind#call</td><td>✓ #call, карточки цвета</td></tr>
+<tr><td>deputy</td><td class=nowrap>/orders 🔴3</td><td>просят доступ ко всем нарядам &#183; просят открыть наряд заново</td><td class=mono>/access-requests#all</td><td>✓ #all</td></tr>
+<tr><td>deputy</td><td class=nowrap>/orders 🟠4</td><td>согласовать с клиентом</td><td class=mono>/orders?tab=approve</td><td>✓ блок #problems, строк: 1, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>deputy</td><td class=nowrap>/orders 🟢7</td><td>готовы к выдаче клиенту</td><td class=mono>/orders?tab=ready</td><td>✓ блок #money, нарядов в списке: 7 из 7, плитка</td></tr>
+<tr><td>deputy</td><td class=nowrap>/clients 🔴1</td><td>менеджер просит доступ к клиенту</td><td class=mono>/access-requests#clients</td><td>✓ #clients</td></tr>
+<tr><td>deputy</td><td class=nowrap>/clients 🔴1</td><td>просят доступ ко всем нарядам и клиентам</td><td class=mono>/access-requests#all</td><td>✓ #all</td></tr>
+<tr><td>deputy</td><td class=nowrap>/wash 🟢4</td><td>помыты — позвонить клиенту, оплата и выдача</td><td class=mono>/wash?tab=now</td><td>✓ блок #money, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>deputy</td><td class=nowrap>/stock 🟣2</td><td>&#171;Всегда в наличии&#187; — ниже нормы</td><td class=mono>/stock/always</td><td>✓ строки</td></tr>
+<tr><td>deputy</td><td class=nowrap>/razbor/prices 🔴7</td><td>новые детали — утвердить цену</td><td class=mono>/razbor/prices?tab=new</td><td>✓ плитка</td></tr>
+<tr><td>deputy</td><td class=nowrap>/razbor/prices 🟠1</td><td>просят изменить цену</td><td class=mono>/razbor/prices?tab=change</td><td>✓ плитка</td></tr>
+<tr><td>deputy</td><td class=nowrap>/site 🔴2</td><td>новые на продажу — утвердить цену</td><td class=mono>/site?t=new&amp;f=wait</td><td>✓ плитка</td></tr>
+<tr><td>deputy</td><td class=nowrap>/schedule 🟠12</td><td>завтра записаны — напомнить</td><td class=mono>/schedule/remind#call</td><td>✓ #call, карточки цвета</td></tr>
+<tr><td>irina</td><td class=nowrap>/orders 🟠4</td><td>согласовать с клиентом</td><td class=mono>/orders?tab=approve</td><td>✓ блок #problems, строк: 1, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>irina</td><td class=nowrap>/orders 🟢7</td><td>готовы к выдаче клиенту</td><td class=mono>/orders?tab=ready</td><td>✓ блок #money, нарядов в списке: 7 из 7, плитка</td></tr>
+<tr><td>irina</td><td class=nowrap>/orders 🟢3</td><td>пришли запчасти — ждут выдачи</td><td class=mono>/orders?tab=arrived</td><td>✓ блок #parts, нарядов в списке: 3 из 3, плитка</td></tr>
+<tr><td>irina</td><td class=nowrap>/ready 🟠2</td><td>запчасти — ждут кладовщика</td><td class=mono>/ready#waiting</td><td>✓ #waiting, карточки цвета</td></tr>
+<tr><td>irina</td><td class=nowrap>/ready 🟢1</td><td>кладовщик подготовил</td><td class=mono>/ready#mine</td><td>✓ #mine, карточки цвета</td></tr>
+<tr><td>irina</td><td class=nowrap>/ready 🟢1</td><td>инструмент подготовлен — забрать у окошка и отнести мастеру</td><td class=mono>/ready#tools</td><td>✓ #tools, карточки цвета</td></tr>
+<tr><td>irina</td><td class=nowrap>/wash 🟢4</td><td>помыты — позвонить клиенту, оплата и выдача</td><td class=mono>/wash?tab=now</td><td>✓ блок #money, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>irina</td><td class=nowrap>/schedule 🟠12</td><td>завтра записаны — напомнить</td><td class=mono>/schedule/remind#call</td><td>✓ #call, карточки цвета</td></tr>
+<tr><td>oleg</td><td class=nowrap>/orders 🔴1</td><td>срочная деталь не пришла — поторопите поставщика</td><td class=mono>/orders/8d445520-89f6-4878-a7e4-2d670113371e#parts</td><td>✓ блок #parts, строк: 1, #parts</td></tr>
+<tr><td>oleg</td><td class=nowrap>/orders 🟠1</td><td>подобрать запчасти</td><td class=mono>/orders/d686fe8f-4238-4f33-be31-67fc9fb6684d#parts</td><td>✓ блок #parts, строк: 1, #parts</td></tr>
+<tr><td>oleg</td><td class=nowrap>/orders 🟢3</td><td>пришли запчасти — ждут выдачи</td><td class=mono>/orders?tab=arrived</td><td>✓ блок #parts, нарядов в списке: 3 из 3, плитка</td></tr>
+<tr><td>oleg</td><td class=nowrap>/wash 🟠2</td><td>химия заканчивается — заказать</td><td class=mono>/wash?tab=chem</td><td>✓ плитка</td></tr>
+<tr><td>oleg</td><td class=nowrap>/stock 🔴1</td><td>клиент отказался — решите с заказом у поставщика</td><td class=mono>/stock/leftovers</td><td>✓ строки</td></tr>
+<tr><td>oleg</td><td class=nowrap>/stock 🟠1</td><td>лишнее после отказа на складе — оставить, вернуть или продать</td><td class=mono>/stock/leftovers</td><td>✓ строки</td></tr>
+<tr><td>oleg</td><td class=nowrap>/my-orders 🟠1</td><td>черновики под наряды — нажмите &#171;✓ Заказал&#187;</td><td class=mono>/my-orders?st=todo</td><td>✓ плитка</td></tr>
+<tr><td>pavel</td><td class=nowrap>/stock/issues 🔴2</td><td>просят выдать запчасти</td><td class=mono>/stock/issues</td><td>✓ карточки цвета</td></tr>
+<tr><td>pavel</td><td class=nowrap>/stock/issues 🟠1</td><td>запчасти подготовлены — ещё не выданы</td><td class=mono>/stock/issues</td><td>✓ карточки цвета</td></tr>
+<tr><td>pavel</td><td class=nowrap>/tools 🟠1</td><td>инструмент подготовлен — ещё не выдан</td><td class=mono>/stock/issues?tab=tools</td><td>✓ плитка, карточки цвета</td></tr>
+<tr><td>pavel</td><td class=nowrap>/stock 🟠9</td><td>ждём приход — подготовиться принять</td><td class=mono>/stock/receive?tab=wait</td><td>✓ плитка, строки</td></tr>
+<tr><td>pavel</td><td class=nowrap>/stock 🟠1</td><td>лишнее после отказа на складе — оставить, вернуть или продать</td><td class=mono>/stock/leftovers</td><td>✓ строки</td></tr>
+<tr><td>pavel</td><td class=nowrap>/stock 🟣2</td><td>&#171;Всегда в наличии&#187; — ниже нормы</td><td class=mono>/stock/always</td><td>✓ строки</td></tr>
+<tr><td>pavel</td><td class=nowrap>/purchases 🟠1</td><td>ваши черновики — нажмите &#171;Заказан&#187;</td><td class=mono>/purchases?tab=draft</td><td>✓ плитка</td></tr>
+<tr><td>dmitro</td><td class=nowrap>/razbor/shipping 🔴3</td><td>подготовить</td><td class=mono>/razbor/shipping?st=prepare</td><td>✓ плитка</td></tr>
+<tr><td>dmitro</td><td class=nowrap>/razbor/shipping 🟠1</td><td>готово — ждёт покупателя или отправки</td><td class=mono>/razbor/shipping?st=ready_ship</td><td>✓ плитка</td></tr>
+<tr><td>dmitro</td><td class=nowrap>/razbor 🔴1</td><td>отказано в утверждении — посмотреть причину</td><td class=mono>/razbor?v=parts&amp;f=declined</td><td>✓ плитка (открыта)</td></tr>
+<tr><td>glav</td><td class=nowrap>/stock/issues 🔴2</td><td>просят выдать запчасти</td><td class=mono>/stock/issues</td><td>✓ карточки цвета</td></tr>
+<tr><td>glav</td><td class=nowrap>/stock/issues 🟠1</td><td>запчасти подготовлены — ещё не выданы</td><td class=mono>/stock/issues</td><td>✓ карточки цвета</td></tr>
+<tr><td>glav</td><td class=nowrap>/tools 🟠1</td><td>инструмент подготовлен — ещё не выдан</td><td class=mono>/stock/issues?tab=tools</td><td>✓ плитка, карточки цвета</td></tr>
+<tr><td>glav</td><td class=nowrap>/stock 🟠9</td><td>ждём приход — подготовиться принять</td><td class=mono>/stock/receive?tab=wait</td><td>✓ плитка, строки</td></tr>
+<tr><td>glav</td><td class=nowrap>/stock 🟠1</td><td>лишнее после отказа на складе — оставить, вернуть или продать</td><td class=mono>/stock/leftovers</td><td>✓ строки</td></tr>
+<tr><td>glav</td><td class=nowrap>/stock 🟣2</td><td>&#171;Всегда в наличии&#187; — ниже нормы</td><td class=mono>/stock/always</td><td>✓ строки</td></tr>
+<tr><td>glav</td><td class=nowrap>/razbor/shipping 🔴3</td><td>подготовить</td><td class=mono>/razbor/shipping?st=prepare</td><td>✓ плитка</td></tr>
+<tr><td>glav</td><td class=nowrap>/razbor/shipping 🟠1</td><td>готово — ждёт покупателя или отправки</td><td class=mono>/razbor/shipping?st=ready_ship</td><td>✓ плитка</td></tr>
+<tr><td>glav</td><td class=nowrap>/razbor 🔴1</td><td>отказано в утверждении — посмотреть причину</td><td class=mono>/razbor?v=parts&amp;f=declined</td><td>✓ плитка (открыта)</td></tr>
+<tr><td>andrey</td><td class=nowrap>/orders 🔴1</td><td>новые — посмотреть</td><td class=mono>/orders/c5737bf5-7e4a-4771-b541-639385581af4#problems</td><td>✓ блок #problems, #problems</td></tr>
+<tr><td>andrey</td><td class=nowrap>/orders 🟠3</td><td>ваши работы — можно делать</td><td class=mono>/orders/c3984e23-b2c0-4eaa-80ca-5233281e78b8#works</td><td>✓ блок #works, строк: 3, #works</td></tr>
+<tr><td>andrey</td><td class=nowrap>/orders 🟢3</td><td>пришли запчасти — ждут выдачи</td><td class=mono>/orders?tab=arrived</td><td>✓ блок #parts, нарядов в списке: 3 из 3, плитка</td></tr>
+<tr><td>andrey</td><td class=nowrap>/orders 🟢1</td><td>запчасти на складе — можно начинать</td><td class=mono>/orders/27d198cd-137d-4481-b7aa-2e8fcaa6f85d#parts</td><td>✓ блок #parts, #parts</td></tr>
+<tr><td>andrey</td><td class=nowrap>/my-requests 🟠2</td><td>ждут кладовщика или менеджера</td><td class=mono>/my-requests?tab=parts</td><td>✓ карточки цвета</td></tr>
+<tr><td>andrey</td><td class=nowrap>/my-requests 🟢1</td><td>готово — забрать у окошка кладовщика</td><td class=mono>/my-requests?tab=parts</td><td>✓ карточки цвета</td></tr>
+<tr><td>andrey</td><td class=nowrap>/my-requests 🟢1</td><td>инструмент готов — забрать у кладовщика</td><td class=mono>/my-requests?tab=tools</td><td>✓ карточки цвета</td></tr>
+<tr><td>andrey</td><td class=nowrap>/schedule 🟠2</td><td>сегодня ждём клиентов</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>andrey</td><td class=nowrap>/schedule 🟣14</td><td>к вам записали — отметьте &#171;Видел&#187;</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>elektro</td><td class=nowrap>/orders 🔴2</td><td>новые — посмотреть</td><td class=mono>/orders?tab=intake</td><td>✓ блок #problems, нарядов в списке: 2 из 2, плитка</td></tr>
+<tr><td>elektro</td><td class=nowrap>/orders 🟠4</td><td>ваши работы — можно делать</td><td class=mono>/orders?tab=active</td><td>✓ блок #works, строк: 1, нарядов в списке: 4 из 4, плитка</td></tr>
+<tr><td>elektro</td><td class=nowrap>/orders 🟢2</td><td>пришли запчасти — ждут выдачи</td><td class=mono>/orders?tab=arrived</td><td>✓ блок #parts, нарядов в списке: 2 из 2, плитка</td></tr>
+<tr><td>elektro</td><td class=nowrap>/my-requests 🟠1</td><td>ждут кладовщика или менеджера</td><td class=mono>/my-requests?tab=parts</td><td>✓ карточки цвета</td></tr>
+<tr><td>elektro</td><td class=nowrap>/my-requests 🟢1</td><td>готово — забрать у окошка кладовщика</td><td class=mono>/my-requests?tab=parts</td><td>✓ карточки цвета</td></tr>
+<tr><td>elektro</td><td class=nowrap>/schedule 🟠1</td><td>сегодня ждём клиентов</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>elektro</td><td class=nowrap>/schedule 🟣10</td><td>к вам записали — отметьте &#171;Видел&#187;</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>motor</td><td class=nowrap>/orders 🔴1</td><td>новые — посмотреть</td><td class=mono>/orders/3736b22c-264c-4193-bd6e-5000ed99f653#problems</td><td>✓ блок #problems, #problems</td></tr>
+<tr><td>motor</td><td class=nowrap>/orders 🔴1</td><td>вам передали наряд — нажмите &#171;Принял&#187;</td><td class=mono>/orders/8d445520-89f6-4878-a7e4-2d670113371e#ho-accept</td><td>✓ блок #ho-accept, #ho-accept</td></tr>
+<tr><td>motor</td><td class=nowrap>/orders 🟢1</td><td>пришли запчасти — ждут выдачи</td><td class=mono>/orders/5be6bb84-8b65-416d-82b3-b90e30739538#parts</td><td>✓ блок #parts, #parts</td></tr>
+<tr><td>motor</td><td class=nowrap>/my-requests 🟠1</td><td>ждут кладовщика или менеджера</td><td class=mono>/my-requests?tab=parts</td><td>✓ карточки цвета</td></tr>
+<tr><td>motor</td><td class=nowrap>/my-requests 🟢1</td><td>инструмент выдан — подтвердите &#171;Получил&#187;</td><td class=mono>/my-requests?tab=tools</td><td>✓ карточки цвета</td></tr>
+<tr><td>motor</td><td class=nowrap>/schedule 🟣9</td><td>к вам записали — отметьте &#171;Видел&#187;</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>motor</td><td class=nowrap>/schedule 🟢1</td><td>клиент приехал — начните работу</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>moyka</td><td class=nowrap>/orders 🟠3</td><td>ждут мойки — ваши (можно мыть)</td><td class=mono>/wash/queue#next</td><td>✓ нарядов в списке: 3 из 3, #next</td></tr>
+<tr><td>detail</td><td class=nowrap>/orders 🟠2</td><td>ждут мойки — ваши (можно мыть)</td><td class=mono>/wash/queue#next</td><td>✓ нарядов в списке: 2 из 2, #next</td></tr>
+<tr><td>detail</td><td class=nowrap>/schedule 🟣11</td><td>к вам записали — отметьте &#171;Видел&#187;</td><td class=mono>/schedule#zp-sig</td><td>✓ #zp-sig</td></tr>
+<tr><td>buh</td><td class=nowrap>/payroll/weeks 🟠3</td><td>проверить</td><td class=mono>/payroll/weeks?d=2026-11-09</td><td>✓ строки</td></tr>
+<tr><td>buh</td><td class=nowrap>/payroll/weeks 🟢2</td><td>выдать</td><td class=mono>/payroll/weeks?d=2026-11-09</td><td>✓ строки</td></tr>
+
+    </tbody>
+  </table>
+</main>
+</body>
+</html>

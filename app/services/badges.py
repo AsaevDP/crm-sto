@@ -18,12 +18,20 @@ from ..permissions import MASTERS
 ALL_ROLES = ("admin", "director", "deputy")
 
 
-def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False, info: bool = False):
+def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False, info: bool = False,
+         wo=None, blk: str = "", rows=None, sel=None):
     """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды).
     info — 19.11.2026 (брат): «для сведения» (вы следите, делает другой) — цифра с сиреневой обводкой; с цифрами
-    «действие ваше» того же цвета не складывается."""
+    «действие ваше» того же цвета не складывается.
+    22.11.2026 (брат): кружок ведёт прямо к делу и обводит его бегущей рамкой своего цвета, пока дело не сделано
+    (app.js: crmNeed). wo — наряды, где дело (один — ссылка сразу в наряд на блок blk; несколько — список, в нём
+    обведён каждый наряд); rows — строки внутри наряда (селекторы, например [data-id="…"]); sel — [(адрес, селектор)]
+    для дел не в наряде."""
     if not n:
         return
+    wo = [str(i) for i in dict.fromkeys(wo or [])]
+    if len(wo) == 1 and blk:
+        link = f"/orders/{wo[0]}{blk}"
     lst = out.setdefault(href, [])
     # 20.11.2026 (брат): в один кружок сливаются только дела, которые открываются одним и тем же экраном. Разные
     # экраны — разные кружки (раньше «новые» и «вам передали» были одной цифрой, клик вёл только к первому)
@@ -32,10 +40,21 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     if same:   # одного цвета — одной цифрой, подсказка перечисляет всё
         same["n"] += int(n)
         same["t"] += f" · {title}"
+        _merge_marks(same, {"wo": wo, "blk": blk, "rows": rows or [], "sel": sel or []})
     else:
         lst.append({"c": color, "n": int(n), "t": title + (" (для сведения)" if info else ""), "href": link or href,
-                    "alone": alone, "info": info})
+                    "alone": alone, "info": info, "wo": wo, "blk": blk, "rows": list(rows or []),
+                    "sel": [list(s) for s in (sel or [])]})
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
+
+
+def _merge_marks(a: dict, b: dict) -> None:
+    """Слили два кружка в один — и места для рамки тоже."""
+    a["wo"] = list(dict.fromkeys(a.get("wo", []) + b.get("wo", [])))
+    a["blk"] = a.get("blk") or b.get("blk", "")
+    a["rows"] = a.get("rows", []) + b.get("rows", [])
+    a["sel"] = a.get("sel", []) + [list(s) for s in b.get("sel", [])]
+    a.setdefault("also", []).append(b.get("href", ""))
 
 
 MAX_CIRCLES = 3   # 20.11.2026: больше трёх кружков у пункта меню не помещается — подпись переносится
@@ -57,6 +76,7 @@ def _compact(out: dict) -> dict:
                 if same:
                     same["n"] += x["n"]
                     same["t"] += f" · {x['t']}"
+                    _merge_marks(same, x)
                 else:
                     merged.append(dict(x))
             lst = merged
@@ -102,65 +122,74 @@ def compute(ctx) -> dict:
     if ctx.can("orders.view_all", "orders.view_own"):
         mine = or_(WorkOrder.manager_id == me.id, WorkOrder.mechanic_id == me.id, WorkOrder.partsman_id == me.id)
 
-        def n_status(*sts, field=None):
-            qq = select(func.count()).select_from(WorkOrder).where(WorkOrder.branch_id == bid, WorkOrder.status.in_(sts))
+        def ids_status(*sts, field=None):
+            """22.11.2026: не число, а сами наряды — чтобы обвести каждый."""
+            qq = select(WorkOrder.id).where(WorkOrder.branch_id == bid, WorkOrder.status.in_(sts))
             if field is not None:
                 qq = qq.where(field == me.id)
             elif not see_all:
                 qq = qq.where(mine)
-            return db.scalar(qq) or 0
+            return db.scalars(qq).all()
 
         # 22.11.2026 (брат): «🔥 Срочно» у детали — цифра только у того, от кого зависит дело.
         # Запчастист — 🔴 «срочная деталь не пришла» (ещё не на складе: подбор / заказана), гаснет, когда её примут.
         # Менеджер — 🔴 только «срочная деталь без срока»: нет даты «привезут» — спросить у запчастиста; дата появилась —
         # цифра гаснет (пока деталь едет, у менеджера цифры нет; действия кладовщика на его цифры не влияют).
         if ctx.can("orders.approve", "parts.pick"):
-            from ..models import Purchase, PurchaseLine
-            uq = (select(WoPart.work_order_id).distinct().join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
-                  .where(WorkOrder.branch_id == bid, WoPart.urgent.is_(True), WoPart.status.in_(("need", "ordered")),
-                         WorkOrder.status.not_in(("closed", "cancel"))))
+            pq0 = (select(WoPart.id, WoPart.work_order_id).join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
+                   .where(WorkOrder.branch_id == bid, WoPart.urgent.is_(True), WoPart.status.in_(("need", "ordered")),
+                          WorkOrder.status.not_in(("closed", "cancel"))))
 
             def urgent_badge(q, title):
-                ids = db.scalars(q).all()   # один наряд — цифра ведёт прямо к его запчастям
-                _add(out, "/orders", "red", len(ids), title, f"/orders/{ids[0]}#parts" if len(ids) == 1 else "/orders?tab=parts")
+                rows_ = db.execute(q).all()   # один наряд — цифра ведёт прямо к его запчастям, деталь обведена
+                ids = list(dict.fromkeys(r[1] for r in rows_))
+                _add(out, "/orders", "red", len(ids), title, "/orders?tab=parts", wo=ids, blk="#parts",
+                     rows=[f'.part[data-id="{r[0]}"]' for r in rows_])
             if ctx.can("parts.pick"):
-                urgent_badge(uq if see_all else uq.where(WorkOrder.partsman_id == me.id),
+                urgent_badge(pq0 if see_all else pq0.where(WorkOrder.partsman_id == me.id),
                              "срочная деталь не пришла — поторопите поставщика")
             if ctx.can("orders.approve"):
                 dated = (select(PurchaseLine.id).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
                          .where(PurchaseLine.wo_part_id == WoPart.id, Purchase.expected_on.is_not(None)).exists())
-                mq = uq.where(~dated)
+                mq = pq0.where(~dated)
                 urgent_badge(mq if see_all else mq.where(WorkOrder.manager_id == me.id),
                              "срочная деталь без срока — спросите у запчастиста")
         if role in MASTERS:
             from ..models import OrderMaster   # 13.11.2026: + добавленный мастер, пока не закончил свою диагностику
-            n_extra = db.scalar(select(func.count()).select_from(OrderMaster).join(WorkOrder, WorkOrder.id == OrderMaster.work_order_id)
-                                .where(WorkOrder.branch_id == bid, WorkOrder.status == "diag", OrderMaster.user_id == me.id,
-                                       OrderMaster.active.is_(True), OrderMaster.diag_done_at.is_(None),
-                                       WorkOrder.mechanic_id != me.id)) or 0
-            n_lead = db.scalar(select(func.count()).select_from(WorkOrder).where(
+            ids_extra = db.scalars(select(WorkOrder.id).join(OrderMaster, WorkOrder.id == OrderMaster.work_order_id)
+                                   .where(WorkOrder.branch_id == bid, WorkOrder.status == "diag", OrderMaster.user_id == me.id,
+                                          OrderMaster.active.is_(True), OrderMaster.diag_done_at.is_(None),
+                                          WorkOrder.mechanic_id != me.id)).all()
+            ids_lead = db.scalars(select(WorkOrder.id).where(
                 WorkOrder.branch_id == bid, WorkOrder.mechanic_id == me.id,
-                or_(WorkOrder.status == "created", (WorkOrder.status == "diag") & WorkOrder.lead_diag_at.is_(None)))) or 0
-            _add(out, "/orders", "red", n_lead + n_extra, "новые — посмотреть", "/orders?tab=intake")
+                or_(WorkOrder.status == "created", (WorkOrder.status == "diag") & WorkOrder.lead_diag_at.is_(None)))).all()
+            _add(out, "/orders", "red", len(ids_lead) + len(ids_extra), "новые — посмотреть", "/orders?tab=intake",
+                 wo=[*ids_lead, *ids_extra], blk="#problems")
         # 🔴 13.11.2026: мне передали наряд (менеджеру, мастеру, запчастисту) — горит, пока не нажал «✓ Принял»
         from .handover import pending_orders
         # 19.11.2026: у мойщика «Наряды» = очередь мойки — там блок «Вам передали»
-        _add(out, "/orders", "red", len(pending_orders(db, bid, me.id)), "вам передали наряд — нажмите «Принял»",
-             "/wash/queue#handed" if role in ("washer", "detailer") else "/orders?tab=handed")
+        handed = pending_orders(db, bid, me.id)
+        washer_ = role in ("washer", "detailer")
+        _add(out, "/orders", "red", len(handed), "вам передали наряд — нажмите «Принял»",
+             "/wash/queue#handed" if washer_ else "/orders?tab=handed",
+             wo=[] if washer_ else handed, blk="#ho-accept")
         if ctx.can("orders.approve"):
-            _add(out, "/orders", "orange", n_status("approve", field=None if see_all else WorkOrder.manager_id),
-                 "согласовать с клиентом", "/orders?tab=approve")
+            ids_ = ids_status("approve", field=None if see_all else WorkOrder.manager_id)
+            _add(out, "/orders", "orange", len(ids_), "согласовать с клиентом", "/orders?tab=approve", wo=ids_,
+                 blk="#problems", rows=[".approve-box"])
         if ctx.can("parts.pick") and not ctx.can("orders.approve"):
             # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»
-            qp = select(func.count()).select_from(WorkOrder).where(
+            qp = select(WorkOrder.id).where(
                 WorkOrder.branch_id == bid, or_(WorkOrder.status == "picking",
                                                 (WorkOrder.status == "approve") & WorkOrder.picked_at.is_(None)))
             if not see_all:
                 qp = qp.where(WorkOrder.partsman_id == me.id)
-            _add(out, "/orders", "orange", db.scalar(qp) or 0, "подобрать запчасти", "/orders?tab=approve")
+            ids_ = db.scalars(qp).all()
+            _add(out, "/orders", "orange", len(ids_), "подобрать запчасти", "/orders?tab=approve", wo=ids_, blk="#parts",
+                 rows=["#addpart"])
         if ctx.can("orders.approve"):
-            _add(out, "/orders", "green", n_status("ready", field=None if see_all else WorkOrder.manager_id),
-                 "готовы к выдаче клиенту", "/orders?tab=ready")
+            ids_ = ids_status("ready", field=None if see_all else WorkOrder.manager_id)
+            _add(out, "/orders", "green", len(ids_), "готовы к выдаче клиенту", "/orders?tab=ready", wo=ids_, blk="#money")
         # 🟢 12.11.2026: пришли запчасти по закупке и ждут выдачи — менеджеру, запчастисту и всем мастерам наряда.
         # Цифра = сколько запчастей. Гаснет, когда кладовщик выдал мастеру. Отдельной цифрой — не смешивается с нарядами.
         arrived = {}
@@ -169,54 +198,57 @@ def compute(ctx) -> dict:
             from .notify import arrived_waiting
             arrived = arrived_waiting(db, bid, me.id)
             _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
-                 alone=True)
+                 alone=True, wo=list(arrived), blk="#parts")
         if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
             from . import wash as wash_svc
             brd_ = wash_svc.board(db, bid)
             # 20.11.2026 (брат): клик ведёт прямо к своему блоку очереди — «Я мою сейчас» / «Следующая»
-            _add(out, "/orders", "orange", sum(1 for c in brd_["doing"] if wash_svc.busy_with(c, me)),
-                 "я мою сейчас — отметить «Выполнено»", "/wash/queue#now")
+            now_ = [c.o.id for c in brd_["doing"] if wash_svc.busy_with(c, me)]
+            _add(out, "/orders", "orange", len(now_), "я мою сейчас — отметить «Выполнено»", "/wash/queue#now", wo=now_)
             # 20.11.2026 (брат): одна цифра — все машины, которые он может мыть сейчас (ничьи + записанные на него
             # с ремонта); раньше «следующая» и «никто не взял» считали одну машину дважды, а ремонтные — нигде
-            _add(out, "/orders", "orange", len(wash_svc.waiting_for(db, bid, me, brd_)),
-                 "ждут мойки — ваши (можно мыть)", "/wash/queue#next")
+            # 22.11.2026: в очереди обведена каждая такая машина
+            wait_ = [c.o.id for c in wash_svc.waiting_for(db, bid, me, brd_)]
+            _add(out, "/orders", "orange", len(wait_), "ждут мойки — ваши (можно мыть)", "/wash/queue#next", wo=wait_)
         elif role in MASTERS:   # 🟡 12.11.2026: мои работы, которые можно делать прямо сейчас (и у второго мастера тоже)
             from ..models import WoWork
             from .orders import can_start_work
             from .receipt import start_blocked
-            n_w = 0
+            ok_works = []
             for w, wo_ in db.execute(select(WoWork, WorkOrder).join(WorkOrder, WorkOrder.id == WoWork.work_order_id).where(
                     WorkOrder.branch_id == bid, WoWork.mechanic_id == me.id, WoWork.status != "done",
                     WorkOrder.status.in_(("picking", "waiting", "instock", "work")))):
                 if can_start_work(db, wo_, w) and not start_blocked(db, wo_, w):   # 20.11: сначала «Получил»
-                    n_w += 1
-            _add(out, "/orders", "orange", n_w, "ваши работы — можно делать", "/orders?tab=active")
+                    ok_works.append(w)
+            _add(out, "/orders", "orange", len(ok_works), "ваши работы — можно делать", "/orders?tab=active",
+                 wo=[w.work_order_id for w in ok_works], blk="#works", rows=[f'.work[data-id="{w.id}"]' for w in ok_works])
         if role in MASTERS and role not in ("washer", "detailer"):   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
-            qi = select(func.count()).select_from(WorkOrder).where(
+            qi = select(WorkOrder.id).where(
                 WorkOrder.branch_id == bid, WorkOrder.status == "instock", WorkOrder.mechanic_id == me.id)
             if arrived:
                 qi = qi.where(WorkOrder.id.not_in(list(arrived)))
-            n_in = db.scalar(qi) or 0
-            _add(out, "/orders", "green", n_in, "запчасти на складе — можно начинать", "/orders?tab=parts")
+            ids_ = db.scalars(qi).all()
+            _add(out, "/orders", "green", len(ids_), "запчасти на складе — можно начинать", "/orders?tab=parts",
+                 wo=ids_, blk="#parts")
 
     # 🔴 менеджер просит доступ ко всем нарядам — админу / директору / заму
     if ctx.can("orders.grant_access"):
         from ..models import OrderAccess
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0, "просят доступ ко всем нарядам",
-             "/access-requests")
+             "/access-requests#all", sel=[("/access-requests", ".ac-card.now")])
         from ..models import ClientAccess   # 12.11.2026: менеджер просит доступ к клиенту
         # 20.11.2026 (брат): у «Клиентов» цифра = плитке «Просят доступ»: к одному клиенту + ко всем нарядам (вся база)
         _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(ClientAccess).where(
             ClientAccess.branch_id == bid, ClientAccess.status == "pending")) or 0, "менеджер просит доступ к клиенту",
-             "/access-requests")
+             "/access-requests#clients", sel=[("/access-requests", ".ac-card.now")])
         _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0,
-             "просят доступ ко всем нарядам и клиентам", "/access-requests")
+             "просят доступ ко всем нарядам и клиентам", "/access-requests#all", sel=[("/access-requests", ".ac-card.now")])
         from ..models import OrderReopen   # 11.11.2026: просят открыть закрытый наряд заново
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
             OrderReopen.branch_id == bid, OrderReopen.status == "pending")) or 0, "просят открыть наряд заново",
-             "/access-requests#reopen")
+             "/access-requests#reopen", sel=[("/access-requests", ".ac-card.now")])
 
     # ---------- Готово к выдаче (менеджер) ----------
     if ctx.can("stock.pickup") and not ctx.can("stock.issue"):
@@ -330,11 +362,13 @@ def compute(ctx) -> dict:
              "черновик закупки химии — нажмите «✓ Заказал»", "/wash?tab=buy")
     if ctx.can("wash.view") and wash_queue:
         from ..models import ChemRequest
-        wq = select(func.count()).select_from(WorkOrder).where(WorkOrder.branch_id == bid, WorkOrder.kind == "wash",
-                                                               WorkOrder.status.in_(("ready", "paid")))
+        wq = select(WorkOrder.id).where(WorkOrder.branch_id == bid, WorkOrder.kind == "wash",
+                                        WorkOrder.status.in_(("ready", "paid")))
         if not see_all:
             wq = wq.where(WorkOrder.manager_id == me.id)
-        _add(out, "/wash", "green", db.scalar(wq) or 0, "помыты — позвонить клиенту, оплата и выдача", "/wash?tab=now")
+        ids_ = db.scalars(wq).all()
+        _add(out, "/wash", "green", len(ids_), "помыты — позвонить клиенту, оплата и выдача", "/wash?tab=now",
+             wo=ids_, blk="#money")
         if not ctx.can("stock.issue"):   # у кладовщика — у «Запросов на выдачу»
             _add(out, "/wash", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
                 ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "мойщик просит химию — ждёт кладовщика",
@@ -356,12 +390,15 @@ def compute(ctx) -> dict:
         wait_q = (select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
                   .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")), PurchaseLine.received.is_(False)))
         late = db.scalar(wait_q.where(Purchase.expected_on.is_not(None), Purchase.expected_on < date.today())) or 0
-        _add(out, "/stock", "red", late, "опаздывают — позвонить поставщику", "/stock/receive?tab=late", info=info_new)
-        _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive", info=info_new)
+        _add(out, "/stock", "red", late, "опаздывают — позвонить поставщику", "/stock/receive?tab=late", info=info_new,
+             sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")])
+        _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive?tab=wait",
+             info=info_new, sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")])
     # 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы, сиреневая цифра у «Склада»
     if ctx.can("stock.keep"):
         from . import keep as ksvc
-        _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always", info=info_new)
+        _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always", info=info_new,
+             sel=[("/stock/always", 'tr[data-below="1"]')])
     # 17.11.2026 (брат): в «Закупках» у кладовщика — только свои заказы на склад; цифра — его черновики («Заказал» не нажат)
     if ctx.can("purchases.stock") and not ctx.can("purchases.manage"):
         _add(out, "/purchases", "orange", db.scalar(select(func.count()).select_from(Purchase).where(
@@ -376,9 +413,11 @@ def compute(ctx) -> dict:
         # «Моих заказов», и на «Складе» плитка была, а кружка в меню — нет)
         if ctx.can("parts.pick"):   # 🔴 заказано у поставщика — отменить или пусть приедет (решает запчастист)
             _add(out, "/stock", "red", db.scalar(lq.where(PartLeftover.status == "decide")) or 0,
-                 "клиент отказался — решите с заказом у поставщика", "/stock/leftovers")
+                 "клиент отказался — решите с заказом у поставщика", "/stock/leftovers",
+                 sel=[("/stock/leftovers", '.lo-card[data-st="decide"]')])
         _add(out, "/stock", "orange", db.scalar(lq.where(PartLeftover.status == "stock")) or 0,
              "лишнее после отказа на складе — оставить, вернуть или продать", "/stock/leftovers",
+             sel=[("/stock/leftovers", '.lo-card[data-st="stock"]')],
              info=info_new and not ctx.can("parts.pick"))
 
     # ---------- Мои заказы (запчастист) ----------
@@ -388,7 +427,7 @@ def compute(ctx) -> dict:
         _add(out, "/my-orders", "red", sum(1 for r in rows if r["late"]), "опаздывают", "/my-orders?st=late")
         # 12.11.2026: черновик под наряд не отправлен поставщику — в наряде это «в черновике», кладовщик ждёт
         _add(out, "/my-orders", "orange", len(ssvc.draft_waits(db, bid, me.id)), "черновики под наряды — нажмите «✓ Заказал»",
-             "/my-orders?st=draft")
+             "/my-orders?st=todo")   # 22.11.2026: вкладка «Заказать» = st=todo (st=draft такой вкладки нет)
         # 18.11.2026 (брат): «приняты на склад сегодня» — только для сведения, цифру убрали
 
     # ---------- Разбор: выдача и отправка ----------
@@ -407,7 +446,8 @@ def compute(ctx) -> dict:
             _add(out, "/razbor/prices", "red", rc["new"], "новые детали — утвердить цену", "/razbor/prices?tab=new")
             _add(out, "/razbor/prices", "orange", rc["change"], "просят изменить цену", "/razbor/prices?tab=change")
         if ctx.can("razbor.manage"):
-            _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?f=declined", info=info_rz)
+            _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?v=parts&f=declined",
+                 info=info_rz)
 
     # ---------- «На сайт» (22.11.2026, брат): новые запчасти на продажу ----------
     if ctx.can("razbor.price") or ctx.can("razbor.export"):
@@ -432,12 +472,15 @@ def compute(ctx) -> dict:
         act = [r for r in data["rows"].values() if r["accrued"] > 0 and r["state"] != "paid"]
         link = f"/payroll/weeks?d={start.isoformat()}"
         if ctx.can("payroll.check"):
-            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link)
+            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link,
+                 sel=[("/payroll/weeks", '.pw-user[data-pst="open"]')])
         if approver:
             states = ("open", "checked") if ctx.can("payroll.edit") and role == "admin" else ("checked",)
-            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] in states), "утвердить к выплате", link)
+            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] in states), "утвердить к выплате", link,
+                 sel=[("/payroll/weeks", f'.pw-user[data-pst="{s}"]') for s in states])
         if ctx.can("payroll.pay"):
-            _add(out, "/payroll/weeks", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link)
+            _add(out, "/payroll/weeks", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link,
+                 sel=[("/payroll/weeks", '.pw-user[data-pst="approved"]')])
     # 🔴 20.11.2026: зам просит доступ к «Зарплате сотрудников» — директору
     if ctx.can("payroll.grant"):
         from ..models.payroll import PayrollAccess

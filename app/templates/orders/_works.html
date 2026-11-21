@@ -23,7 +23,7 @@
 
   {% for w in works %}
   {% set mech = people.get(w.mechanic_id) %}
-  <div class="part work" data-ws="{{ w.status }}">
+  <div class="part work" data-id="{{ w.id }}" data-ws="{{ w.status }}">
     <div class="part-main">
       <span class="part-name">{{ w.name }}{% if mech %}<span class="caption work-who">{{ MASTERS.get(mech.role.code, mech.role.name) }} · {{ mech.full_name }}</span>{% elif works|length %}<span class="caption work-who none">исполнитель не выбран</span>{% endif %}</span>
       <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>

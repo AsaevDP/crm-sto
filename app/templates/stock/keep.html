@@ -49,7 +49,7 @@
       <th class="num">Не хватает</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for r in rows %}
-    <tr class="kp-{{ r.st }}">
+    <tr class="kp-{{ r.st }}" data-below="{{ 1 if r.below else 0 }}">
       <td><b>{{ r.c.name if r.c else "" }}</b><div class="caption mono">{{ r.c.brand if r.c }} {{ r.c.article if r.c }}</div>
         {% if r.on_hand != r.free %}<div class="caption">на складе {{ r.on_hand|num }}, в резерве под наряды {{ (r.on_hand - r.free)|num }}</div>{% endif %}</td>
       <td class="num nowrap"><b>{{ r.free|num }}</b></td>

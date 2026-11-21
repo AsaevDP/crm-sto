@@ -36,7 +36,11 @@ def _arrived_badge(client, who, pwd, url):
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.login == who))
         per_wo = arrived_waiting(db, u.branch_id, u.id)
-    assert sum(x["n"] for x in b if x["href"] == "/orders?tab=arrived") == sum(per_wo.values()), who
+    # 22.11.2026: один наряд — кружок ведёт прямо в его «Запчасти», несколько — на плитку «Пришли запчасти»
+    arr = [x for x in b if x["t"].startswith("пришли запчасти")]
+    assert sum(x["n"] for x in arr) == sum(per_wo.values()), who
+    for x in arr:
+        assert x["href"] == "/orders?tab=arrived" or (len(x["wo"]) == 1 and x["href"] == f"/orders/{x['wo'][0]}#parts")
     return per_wo.get(_wo(url).id, 0)
 
 

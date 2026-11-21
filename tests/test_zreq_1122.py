@@ -158,3 +158,28 @@ def test_urgent_part_badges(client):
         db.get(WoPart, part.id).status = "reserved"
         db.commit()
     assert not any("не пришла" in x["t"] for x in red("oleg"))
+
+
+def test_badges_lead_to_the_task(client):
+    """22.11.2026: кружок несёт наряды и блок — один наряд → ссылка сразу в него; несколько → список и каждый наряд."""
+    login(client, "irina", "irina123")
+    b = client.get("/api/notify").json()["badges"]
+    for lst in b.values():
+        for x in lst:
+            assert "wo" in x and "sel" in x
+            if len(x["wo"]) == 1 and x["blk"]:
+                assert x["href"] == f"/orders/{x['wo'][0]}{x['blk']}"
+    approve = next((x for x in b.get("/orders", []) if "согласовать" in x["t"]), None)
+    if approve and len(approve["wo"]) > 1:
+        html = client.get(approve["href"]).text
+        assert all(f'href="/orders/{w}' in html for w in approve["wo"])
+    client.post("/logout")
+    # кладовщик: /api/notify не падает (ошибка 22.11 — локальный import в compute)
+    login(client, "pavel", "pavel123")
+    assert client.get("/api/notify").status_code == 200
+    client.post("/logout")
+    # запчастист: «черновики под наряды» ведут на существующую вкладку «Заказать»
+    login(client, "oleg", "oleg123")
+    for x in client.get("/api/notify").json()["badges"].get("/my-orders", []):
+        assert client.get(x["href"]).status_code == 200 and "st=draft" not in x["href"]
+    client.post("/logout")

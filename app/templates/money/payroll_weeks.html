@@ -76,7 +76,7 @@
 <div class="pw-list">
   {% for u in users %}{% set r = data.rows[u.id] %}
   {% if r.active or users|length == 1 %}
-  <details class="card compact pw-user" id="u-{{ u.id }}" {% if open_user == u.id|string or users|length == 1 %}open{% endif %}>
+  <details class="card compact pw-user" id="u-{{ u.id }}" data-pst="{{ r.pst if r.accrued > 0 and r.state != 'paid' else '' }}" {% if open_user == u.id|string or users|length == 1 %}open{% endif %}>
     <summary class="pw-sum">
       <span class="pw-who"><b>{{ u.full_name }}</b><span class="caption">{{ u.role.name }}{% if r.groups %} · нарядов {{ r.groups|length }}{% endif %}</span></span>
       <span class="pw-cols">

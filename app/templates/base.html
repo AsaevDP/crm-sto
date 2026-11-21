@@ -107,6 +107,7 @@
       const j = await r.json();
       // 12.11.2026: цветные цифры у пунктов меню — красная (срочно), жёлтая (ждут действия), зелёная (готово), рядом
       paint(j.badges || {});
+      window.crmNeed && window.crmNeed(j.badges || {});   // 22.11.2026: бегущая рамка там, где ждёт дело
       badge('.sidebar a[href="/notifications"]', j.unread);
       (j.notes || []).forEach(n => window.crmToast && window.crmToast({
         id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', parts_in: 'Запчасти · пришли', urgent_in: 'Срочно · пришла',

@@ -360,3 +360,61 @@
     }
   });
 })();
+
+// ===== 22.11.2026 (брат): кружок → дело. Бегущая рамка цвета кружка на том, где нужно действовать, пока дело не
+// сделано (цифры приходят с /api/notify каждые 15 с — сделали дело, цифра погасла, рамка ушла). Что обводим:
+//  • плитку-фильтр, на которую ведёт кружок (ссылка с тем же адресом);
+//  • блок по якорю из ссылки (#asks, #now, #zp-sig…);
+//  • на странице кружка — карточки того же цвета (.rim-red / .rim-orange / .rim-green);
+//  • наряды кружка: в списке «Наряды» и на странице кружка — каждый наряд (карточку со ссылкой на него);
+//    в самом наряде — нужный блок (blk) и строки (rows).
+(function () {
+  const ORDER = ['red', 'orange', 'purple', 'green'];
+  const BOX = '.ocard, .card, .rd-row, .ptile, .tile, tr, li';
+  const key = u => { const x = new URL(u, location.origin); return x.pathname + x.search; };
+  function apply(map) {
+    const want = new Map();   // элемент → цвет (самый срочный)
+    const put = (el, c) => { if (!el || el.closest('.sidebar, .tabbar, .more-menu, .toasts')) return;
+      const was = want.get(el); if (!was || ORDER.indexOf(c) < ORDER.indexOf(was)) want.set(el, c); };
+    const main = document.querySelector('main') || document.body;
+    const here = location.pathname, hereFull = here + location.search;
+    Object.entries(map || {}).forEach(([menu, list]) => (list || []).forEach(x => {
+      if (x.info) return;   // «для сведения» — без рамки
+      const links = [x.href, ...(x.also || [])].filter(Boolean);
+      links.forEach(h => {
+        const u = new URL(h, location.origin);
+        // плитки и ссылки на этот же отбор (не сама текущая страница целиком)
+        if (u.search && u.pathname === here) main.querySelectorAll('a[href]').forEach(a => {
+          const href = a.getAttribute('href'); if (!href || href.startsWith('#')) return;
+          const t = new URL(a.href); if (t.pathname !== u.pathname || a.closest('.wo-steps')) return;
+          const tile = a.closest('.ptile, .tile'); if (!tile) return;   // только плитки (не кнопки периода и т. п.)
+          if ([...u.searchParams].every(([k, v]) => t.searchParams.get(k) === v)) put(tile, x.c);
+        });
+        if (u.pathname === here && u.hash) put(document.getElementById(u.hash.slice(1)), x.c);
+        // открыта как раз эта вкладка — обводим её плитку (у выбранной плитки ссылка «снять отбор», по адресу не найти)
+        const cur = new URLSearchParams(location.search);
+        if (u.pathname === here && [...u.searchParams].every(([k, v]) => cur.get(k) === v))
+          main.querySelectorAll('.ptile.on, .tile.on').forEach(el => put(el, x.c));
+        if (u.pathname === here) main.querySelectorAll('.rim.rim-' + x.c).forEach(el => put(el, x.c));
+      });
+      const onTarget = links.some(h => new URL(h, location.origin).pathname === here);
+      (x.wo || []).forEach(id => {
+        if (here === '/orders/' + id) {
+          if (x.blk) put(document.querySelector(x.blk), x.c);
+          (x.rows || []).forEach(s => main.querySelectorAll(s).forEach(el => put(el, x.c)));
+        } else if ((here === '/orders' && menu === '/orders') || onTarget) {
+          main.querySelectorAll(`a[href="/orders/${id}"], a[href^="/orders/${id}#"], a[href^="/orders/${id}?"]`)
+            .forEach(a => put(a.matches('.ocard') ? a : (a.closest(BOX) || a), x.c));
+        }
+      });
+      (x.sel || []).forEach(([p, s]) => { if (p === here || p === hereFull) main.querySelectorAll(s).forEach(el => put(el, x.c)); });
+    }));
+    document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) el.classList.remove('need', 'need-rel', ...ORDER.map(c => 'need-' + c)); });
+    want.forEach((c, el) => {
+      ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
+      el.classList.add('need');
+      if (getComputedStyle(el).position === 'static') el.classList.add('need-rel');
+    });
+  }
+  window.crmNeed = apply;
+})();
