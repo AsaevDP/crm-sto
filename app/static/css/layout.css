@@ -1087,7 +1087,7 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
   background: color-mix(in srgb, var(--red) 14%, transparent); color: color-mix(in srgb, var(--red) 80%, var(--text)); }
 .urg-btn { border: 1px solid var(--separator); background: transparent; color: var(--text-2); border-radius: 8px; padding: 3px 8px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .urg-btn[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
-.part[data-urgent="1"] { box-shadow: inset 3px 0 0 var(--red); padding-left: 8px; }
+.part[data-urgent="1"] { border-left: 4px solid var(--red); border-radius: 10px; padding-left: 10px; }   /* 22.11.2026: полоска с загибом, как на мойке */
 .rc-hint { margin: 0; }
 .rc-done { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-left: 4px solid var(--green); }
 .rc-done .grow { display: grid; gap: 2px; }
@@ -2802,3 +2802,15 @@ body.has-toast-pill .toasts { bottom: calc(134px + env(safe-area-inset-bottom));
 @keyframes need-run { to { --need-a: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .need::after { animation: none; background: var(--need-c); } }
 @media print { .need::after { display: none; } }
+
+/* 22.11.2026 (брат): у окошек со своей цветной полоской слева и у строк — мигает только край, без рамки вокруг */
+.need-edge::after { content: none; }
+.need-edge { animation: need-blink 1.3s ease-in-out infinite; border-left-color: var(--need-c); }
+.need-edge-add { border-left: 4px solid var(--need-c); border-radius: 10px; padding-left: 10px; }
+tr.need-edge { animation: none; }
+tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animation: need-blink-sh 1.3s ease-in-out infinite; }
+@keyframes need-blink { 0%, 100% { border-left-color: var(--need-c); }
+  50% { border-left-color: color-mix(in srgb, var(--need-c) 12%, transparent); } }
+@keyframes need-blink-sh { 0%, 100% { box-shadow: inset 4px 0 0 var(--need-c); }
+  50% { box-shadow: inset 4px 0 0 color-mix(in srgb, var(--need-c) 12%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .need-edge, tr.need-edge > td:first-child { animation: none; } }

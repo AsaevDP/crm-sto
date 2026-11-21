@@ -33,6 +33,7 @@
       <li><b>Дело не в наряде</b> — открывается нужная страница: обведены плитка и строки (запросы на выдачу, зарплата по людям, «Всегда в наличии», запросы доступа, машины в очереди мойки…).</li>
       <li>Рамка <b>бежит по краю</b>, цвет — как у кружка (🔴 🟠 🟣 🟢), и горит, <b>пока дело не сделано</b>. Сделали — цифра гаснет, рамка уходит (обновление раз в 15 секунд).</li>
       <li>«Для сведения» (сиреневая обводка у кружка главного кладовщика) — без рамки: делает другой.</li>
+      <li><b>Одинаково везде (правка после проверки):</b> обводятся только сами окошки и строки — раздел или блок вокруг них не обводится. Плитка-фильтр обводится, только если на странице больше нечего обвести. У окошек с цветной полоской слева (мойка, срочная деталь, пришедшая деталь, работы мастера, склад) — <b>мигает только полоска</b>, без рамки.</li>
     </ul>
     <b>Что нашлось и исправлено по пути</b>
     <ul>
@@ -46,13 +47,15 @@
 
   <h2>Как это выглядит</h2>
   <div class="grid">
-    <figure><img src="01-menedzher-soglasovanie-spisok.jpg" alt=""><figcaption>Менеджер · 🟠4 «согласовать с клиентом»: плитка «Согласование» и каждый из 4 нарядов.</figcaption></figure>
+    <figure><img src="01-menedzher-soglasovanie-spisok.jpg" alt=""><figcaption>Менеджер · 🟠4 «согласовать с клиентом»: каждый из 4 нарядов (зелёные плитки — дела, которых нет на этой вкладке).</figcaption></figure>
     <figure><img src="02-menedzher-naryad-problemy.jpg" alt=""><figcaption>Внутри наряда — блок «Согласование» (и кнопка «Согласовал с клиентом»).</figcaption></figure>
-    <figure><img src="03-slesar-raboty.jpg" alt=""><figcaption>Слесарь · 🟠3 «ваши работы — можно делать»: сразу в наряд, блок «Работы» и каждая работа.</figcaption></figure>
-    <figure><img src="07-menedzher-srochno-naryad24.jpg" alt=""><figcaption>Менеджер · 🔴 «срочная деталь без срока» — наряд 24, «Запчасти».</figcaption></figure>
+    <figure><img src="03-slesar-raboty.jpg" alt=""><figcaption>Слесарь · 🟠3 «ваши работы — можно делать»: сразу в наряд, у каждой работы мигает край.</figcaption></figure>
+    <figure><img src="07-zapchastist-srochno-kray.jpg" alt=""><figcaption>Запчастист · 🔴 срочная деталь: мигает только красная полоска строки (скруглена, как на мойке).</figcaption></figure>
+    <figure><img src="08-zapchastist-prishli-kray.jpg" alt=""><figcaption>Запчастист · 🟢 «пришли запчасти»: зелёный край у пришедшей детали.</figcaption></figure>
+    <figure><img src="09-menedzher-ready-okoshki.jpg" alt=""><figcaption>Менеджер · «Запросы на выдачу»: обведены только окошки, разделы — нет.</figcaption></figure>
     <figure><img src="04-buhgalter-zarplata.jpg" alt=""><figcaption>Бухгалтер · 🟠3 «проверить»: ровно эти 3 человека; 🟢 «выдать» — ниже, зелёным.</figcaption></figure>
-    <figure><img src="05-kladovshik-vydacha.jpg" alt=""><figcaption>Кладовщик · 🔴 «просят выдать» и 🟠 «подготовлено»: плитки и карточки запросов.</figcaption></figure>
-    <figure><img src="06-moyshik-ochered.jpg" alt=""><figcaption>Мойщик · 🟠3 «ждут мойки — ваши»: обведены 3 машины, серые («мыть пока нельзя») — нет.</figcaption></figure>
+    <figure><img src="05-kladovshik-vydacha.jpg" alt=""><figcaption>Кладовщик · 🔴 «просят выдать» и 🟠 «подготовлено»: сами окошки запросов.</figcaption></figure>
+    <figure><img src="06-moyshik-ochered.jpg" alt=""><figcaption>Мойщик · 🟠3 «ждут мойки — ваши»: мигает полоска у 3 машин, серые («мыть пока нельзя») — нет.</figcaption></figure>
   </div>
 
   <h2>Все кружки всех сотрудников</h2>

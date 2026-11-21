@@ -197,8 +197,12 @@ def compute(ctx) -> dict:
         if ctx.can("orders.approve", "parts.pick") or (role in MASTERS and role not in ("washer", "detailer")):
             from .notify import arrived_waiting
             arrived = arrived_waiting(db, bid, me.id)
+            # 22.11.2026 (брат): в наряде мигает край у каждой пришедшей детали
+            arr_rows = db.scalars(select(WoPart.id).join(PurchaseLine, PurchaseLine.wo_part_id == WoPart.id).where(
+                WoPart.work_order_id.in_(list(arrived) or [None]), WoPart.status == "reserved",
+                or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0))).all() if arrived else []
             _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
-                 alone=True, wo=list(arrived), blk="#parts")
+                 alone=True, wo=list(arrived), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in arr_rows])
         if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
             from . import wash as wash_svc
             brd_ = wash_svc.board(db, bid)

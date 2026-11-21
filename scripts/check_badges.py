@@ -17,7 +17,9 @@ from urllib.parse import parse_qsl, urlsplit
 ROOT = Path(__file__).resolve().parent.parent
 src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "data" / "try" / "crm.db"
 dst = ROOT / "data" / "try" / "check.db"
-shutil.copy(src, dst)
+import sqlite3   # безопасная копия, даже если базу сейчас пишет сервер
+with sqlite3.connect(src) as a, sqlite3.connect(dst) as b:
+    a.backup(b)
 os.environ["DATABASE_URL"] = f"sqlite:///{dst.as_posix()}"
 sys.path.insert(0, str(ROOT))
 

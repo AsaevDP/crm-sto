@@ -374,12 +374,13 @@
   const key = u => { const x = new URL(u, location.origin); return x.pathname + x.search; };
   function apply(map) {
     const want = new Map();   // элемент → цвет (самый срочный)
-    const put = (el, c) => { if (!el || el.closest('.sidebar, .tabbar, .more-menu, .toasts')) return;
+    const put = (el, c) => { if (!el || el.closest('.sidebar, .tabbar, .more-menu, .toasts, #nav-back, a.back')) return;
       const was = want.get(el); if (!was || ORDER.indexOf(c) < ORDER.indexOf(was)) want.set(el, c); };
     const main = document.querySelector('main') || document.body;
     const here = location.pathname, hereFull = here + location.search;
     Object.entries(map || {}).forEach(([menu, list]) => (list || []).forEach(x => {
       if (x.info) return;   // «для сведения» — без рамки
+      const local = [], add = el => { if (el) local.push(el); };
       const links = [x.href, ...(x.also || [])].filter(Boolean);
       links.forEach(h => {
         const u = new URL(h, location.origin);
@@ -388,31 +389,42 @@
           const href = a.getAttribute('href'); if (!href || href.startsWith('#')) return;
           const t = new URL(a.href); if (t.pathname !== u.pathname || a.closest('.wo-steps')) return;
           const tile = a.closest('.ptile, .tile'); if (!tile) return;   // только плитки (не кнопки периода и т. п.)
-          if ([...u.searchParams].every(([k, v]) => t.searchParams.get(k) === v)) put(tile, x.c);
+          if ([...u.searchParams].every(([k, v]) => t.searchParams.get(k) === v)) add(tile);
         });
-        if (u.pathname === here && u.hash) put(document.getElementById(u.hash.slice(1)), x.c);
-        // открыта как раз эта вкладка — обводим её плитку (у выбранной плитки ссылка «снять отбор», по адресу не найти)
-        const cur = new URLSearchParams(location.search);
-        if (u.pathname === here && [...u.searchParams].every(([k, v]) => cur.get(k) === v))
-          main.querySelectorAll('.ptile.on, .tile.on').forEach(el => put(el, x.c));
-        if (u.pathname === here) main.querySelectorAll('.rim.rim-' + x.c).forEach(el => put(el, x.c));
+        if (u.pathname === here && u.hash) add(document.getElementById(u.hash.slice(1)));
+        if (u.pathname === here) main.querySelectorAll('.rim.rim-' + x.c).forEach(el => add(el));
       });
       const onTarget = links.some(h => new URL(h, location.origin).pathname === here);
       (x.wo || []).forEach(id => {
         if (here === '/orders/' + id) {
-          if (x.blk) put(document.querySelector(x.blk), x.c);
-          (x.rows || []).forEach(s => main.querySelectorAll(s).forEach(el => put(el, x.c)));
+          if (x.blk) add(document.querySelector(x.blk));
+          (x.rows || []).forEach(s => main.querySelectorAll(s).forEach(el => add(el)));
         } else if ((here === '/orders' && menu === '/orders') || onTarget) {
           main.querySelectorAll(`a[href="/orders/${id}"], a[href^="/orders/${id}#"], a[href^="/orders/${id}?"]`)
-            .forEach(a => put(a.matches('.ocard') ? a : (a.closest(BOX) || a), x.c));
+            .forEach(a => add(a.matches('.ocard') ? a : (a.closest(BOX) || a)));
         }
       });
-      (x.sel || []).forEach(([p, s]) => { if (p === here || p === hereFull) main.querySelectorAll(s).forEach(el => put(el, x.c)); });
+      (x.sel || []).forEach(([p, s]) => { if (p === here || p === hereFull) main.querySelectorAll(s).forEach(el => add(el)); });
+      // 22.11.2026 (брат): есть сами окошки / строки дела — обводим их, плитку-фильтр нет (плитка — только если больше нечего)
+      const items = local.filter(el => !el.matches('.ptile, .tile'));
+      (items.length ? items : local).forEach(el => put(el, x.c));
     }));
-    document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) el.classList.remove('need', 'need-rel', ...ORDER.map(c => 'need-' + c)); });
+    // 22.11.2026 (брат): обводим только сами окошки и строки — блок / раздел вокруг них (якорь #…, блок наряда) не
+    // обводим, если внутри уже есть обведённое
+    const els = [...want.keys()];
+    els.forEach(el => { if (els.some(o => o !== el && el.contains(o))) want.delete(el); });
+    const EDGE = '.part, .work, .wq-card, .lo-card, .rc-group, tr';   // + «Склад»: приход, лишнее, «Всегда в наличии»   // строки и окошки с полоской сбоку — мигает только край
+    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', ...ORDER.map(c => 'need-' + c)];
+    document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) el.classList.remove(...CLS); });
     want.forEach((c, el) => {
       ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
       el.classList.add('need');
+      // окошко со своей цветной полоской слева (мойка, срочная деталь) или строка — мигает край, без рамки вокруг
+      const bl = parseFloat(getComputedStyle(el).borderLeftWidth) || 0;
+      if (bl >= 3 || el.matches(EDGE)) {
+        el.classList.add('need-edge');
+        if (bl < 3 && !el.matches('tr')) el.classList.add('need-edge-add');
+      }
       if (getComputedStyle(el).position === 'static') el.classList.add('need-rel');
     });
   }
