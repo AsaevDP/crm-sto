@@ -51,8 +51,11 @@ EDITABLE = ("created", "diag", "approve", "picking", "waiting", "instock", "work
 
 
 # ======================= Работы и цены =======================
-def _apply_work(ctx: Ctx, w: WoWork, name, pricing, hours, rate, qty, mechanic_id):
+def _apply_work(ctx: Ctx, w: WoWork, name, pricing, hours, rate, qty, mechanic_id, time_h=None):
     w.name = name.strip()[:200] or w.name
+    if time_h is not None:   # 22.11.2026 (брат): «Время на выполнение» — пусто = подсказка (нормо-часы / 1 ч)
+        th = _dec(time_h, "0")
+        w.minutes = int(round(th * 60)) if th > 0 else None
     w.pricing = "fixed" if pricing == "fixed" else "hours"
     # Отрицательные цены и часы не принимаем (отчёт тестировщика: итог 100 вместо 1 000)
     w.hours = None if w.pricing == "fixed" else max(_dec(hours), Decimal(0))
@@ -69,7 +72,8 @@ def _apply_work(ctx: Ctx, w: WoWork, name, pricing, hours, rate, qty, mechanic_i
 
 @router.post("/orders/{order_id}/works")
 def work_add(order_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(...), pricing: str = Form("hours"),
-             hours: str = Form("1"), rate: str = Form(""), qty: str = Form("1"), mechanic_id: str = Form("")):
+             hours: str = Form("1"), rate: str = Form(""), qty: str = Form("1"), mechanic_id: str = Form(""),
+             time_h: str = Form("")):
     ctx.need("orders.approve")
     wo = _order(ctx, order_id)
     if wo.status not in EDITABLE or not name.strip():
@@ -77,7 +81,7 @@ def work_add(order_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(...), 
     w = WoWork(work_order_id=wo.id, name=name, status="todo", is_warranty=wo.warranty == "open")
     if not rate:
         rate = str(st.get(ctx.db, ctx.branch.id, "pricing")["hour_rate"]) if pricing != "fixed" else "0"
-    _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id or (str(wo.mechanic_id) if wo.mechanic_id else ""))
+    _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id or (str(wo.mechanic_id) if wo.mechanic_id else ""), time_h)
     ctx.db.add(w)
     ctx.db.flush()
     msvc.after_change(ctx.db, wo)   # машина была «Готово» — снова в ремонт
@@ -88,7 +92,7 @@ def work_add(order_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(...), 
 @router.post("/orders/{order_id}/works/{work_id}")
 def work_edit(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(""), pricing: str = Form("hours"),
               hours: str = Form("0"), rate: str = Form("0"), qty: str = Form("1"), mechanic_id: str = Form(None),
-              delete: str = Form("")):
+              delete: str = Form(""), time_h: str = Form(None)):
     ctx.need("orders.approve")
     wo = _order(ctx, order_id)
     w = ctx.db.get(WoWork, _uuid(work_id))
@@ -104,7 +108,7 @@ def work_edit(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), name: st
             ctx.db.delete(s)
         ctx.db.delete(w)
     else:
-        _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id)
+        _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id, time_h)
     ctx.db.flush()
     err = msvc.guard_total(ctx.db, wo)
     if err:

@@ -23,6 +23,9 @@
       <span class="part-name">{{ w.name }}{% if mech %}<span class="caption work-who">{{ MASTERS.get(mech.role.code, mech.role.name) }} · {{ mech.full_name }}</span>{% elif works|length %}<span class="caption work-who none">исполнитель не выбран</span>{% endif %}</span>
       <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
     </div>
+    {# 22.11.2026 (брат): время на выполнение — для записи и загрузки; «≈» — менеджер не вписал, взята подсказка #}
+    {% if not flow.wash %}{% set th = (w.minutes / 60) if w.minutes else ((w.hours or 0) * (w.qty or 1) if (w.pricing or "hours") == "hours" and w.hours else 1) %}
+    <div class="caption wk-time-line {{ 'est' if not w.minutes }}" title="{{ 'Время на выполнение' if w.minutes else 'Время не вписано — взято по нормо-часам (у фикса — 1 ч)' }}">⏱ {{ "" if w.minutes else "≈ " }}{{ th|round(2)|num }} ч на выполнение{% if not w.minutes and can_edit_works %} · <span class="wk-time-ask">впишите время</span>{% endif %}</div>{% endif %}
     {% if w.status == "done" and w.done_at %}{% set by = people.get(w.done_by) %}
     <div class="caption work-done-by">✓ Выполнено {{ w.done_at.astimezone().strftime("%d.%m %H:%M") }}{% if by %} · отметил {{ by.short_name }}{% endif %}
       {% if ctx.can("orders.view_all") and wo.status in ("work", "ready") %}

@@ -2365,6 +2365,13 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
 .ld-pct { display: grid; justify-items: end; grid-column: 3; grid-row: 1 / 3; }
 .ld-pct b { font-size: 28px; line-height: 1; color: var(--lc); font-variant-numeric: tabular-nums; }
 .ld-word { font-size: 12px; font-weight: 600; color: var(--lc); white-space: nowrap; }
+/* 22.11.2026: полоса из двух частей — наряды (насыщенно) + записи (светлее) */
+.ld-bar.ld-two { display: flex; }
+.ld-bar.ld-two i { border-radius: 0; flex: none; }
+.ld-bar.ld-two i:first-child { border-radius: 999px 0 0 999px; }
+.ld-bar .ld-wo, .ld-key.ld-wo { background: var(--lc); }
+.ld-bar .ld-rec, .ld-key.ld-rec { background: color-mix(in srgb, var(--lc) 45%, #fff); }
+.ld-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
 .ld-sub { grid-column: 2; grid-row: 2; }
 @media (max-width: 640px) {
   .ld-row { grid-template-columns: 1fr auto; padding: 12px 14px; }
@@ -2374,6 +2381,20 @@ button.rzp-cat { width: 100%; border: 0; background: transparent; font: inherit;
   .ld-pct { grid-row: 1; grid-column: 2; }
   .ld-total-pct b { font-size: 36px; }
 }
+/* 22.11.2026 (брат): «Время на выполнение» у работы; «≈» — не вписано */
+.wk-time { display: grid; gap: 4px; margin-top: 4px; }
+.wk-time-line { margin: -2px 0 2px; color: var(--text); }
+.wk-time-line.est { color: var(--gray); }
+.wk-time-ask { color: var(--orange); font-weight: 600; }
+/* наряды в сетке «Записи»: сплошной — работа мастера, пунктир — «возможно» (согласование, диагностика) */
+.appt.wo-blk { background: color-mix(in srgb, var(--mc) 9%, var(--surface)); border: 1.5px solid color-mix(in srgb, var(--mc) 55%, transparent);
+  border-left-width: 4px; }
+.appt.wo-blk.tent { border-style: dashed; opacity: .7; background: transparent; }
+.appt.wo-blk .appt-t { font-weight: 600; }
+.sc-mx .wo-chip, .wo-chip { display: block; font-size: 12px; padding: 2px 6px; margin: 2px 0; border-radius: 6px; text-decoration: none; color: var(--text);
+  background: color-mix(in srgb, var(--mc, var(--gray)) 12%, transparent); border-left: 3px solid var(--mc, var(--gray)); }
+.wo-chip.tent { opacity: .65; border-left-style: dashed; }
+.wo-off { margin-top: 10px; }
 /* четыре плитки на телефоне: «Инструмент» не обрезается */
 @media (max-width: 480px) { .iss-tiles { gap: 6px; } .iss-tiles .ptile { padding: 8px 8px 9px; } .iss-tiles .ptile-t { font-size: 12px; } }
 @media (max-width: 360px) { .iss-tiles { gap: 4px; } .iss-tiles .ptile { padding: 7px 5px 8px; } .iss-tiles .ptile-t { font-size: 10.5px; } }

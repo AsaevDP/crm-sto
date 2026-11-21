@@ -64,6 +64,10 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
                 can_manage=ctx.can("schedule.manage"), today=date.today(), colors=colors, own_lift=own_lift, bar=bar,
                 per=per, by=by, BY=BY, show="",
                 remind=svc.reminders(db, bid) if ctx.can("schedule.manage") else None)
+    # 22.11.2026 (брат): наряды в календаре — несделанные работы мастеров по открытым нарядам (services/workload.py)
+    from ..services import workload as wl_svc
+    wl = wl_svc.plan(db, bid, osvc.staff_by_role(db, bid, "masters"))
+    base["wo_off"] = [b for b in wl["off"] if b.mech_id in {m.id for m in mechanics}]
     if view in ("week", "month", "custom"):
         d1, d2 = per.d1, per.d2
         if (d2 - d1).days > 92:   # свой период — не больше квартала, чтобы страница не тормозила
@@ -74,8 +78,17 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
         for a in appts:
             by_day.setdefault(svc.local(a.start_at).date(), []).append(a)
         people = {u.id: u for u in mechanics}
-        hours = {d: sum((a.duration_min or 0) for a in by_day.get(d, []) if a.status in ("booked", "arrived")) / 60 for d in days}
-        pl = svc.period_load(db, bid, d1, d2, mechanics, appts)
+        extra = {m.id: wl_svc.minutes_by_day(wl, m.id) for m in mechanics}
+        hours = {d: sum((a.duration_min or 0) for a in by_day.get(d, []) if a.status in ("booked", "arrived")) / 60
+                    + sum(x.get(d, 0) for x in extra.values()) / 60 for d in days}
+        pl = svc.period_load(db, bid, d1, d2, mechanics, appts, extra=extra)
+        wo_by_day = {}   # (мастер, день) → [(Block, минут)] — и сплошные, и «возможно»
+        for d in days:
+            for mid, segs in wl_svc.segments_on(wl, d).items():
+                acc = {}
+                for s, e, b in segs:
+                    acc[b] = acc.get(b, 0) + int((e - s).total_seconds() // 60)
+                wo_by_day[(mid, d)] = list(acc.items())
         cap = max(1, len(mechanics)) * pl["_day_h"]   # часов работы всех мастеров в день
         # Календарь месяца: недели по 7 дней, с понедельника; дни чужого месяца — пустые
         weeks = []
@@ -88,13 +101,15 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
         return ctx.render("schedule/index.html", title="Запись", days=days, by_day=by_day, people=people, hours=hours,
                           load={d: min(100, round(hours[d] * 100 / cap)) for d in days}, pl=pl, weeks=weeks,
                           appts=appts, no_mech=no_mech, day_h=pl["_day_h"], days_off=pl["_off"],
-                          summary=_summary(appts), **base)
+                          summary=_summary(appts), wo_by_day=wo_by_day, **base)
     appts = svc.between(db, bid, day, day, mechanic_id=mine)
     columns = [{"id": m.id, "title": m.short_name, "user": m} for m in mechanics]
     if not mine and (any(a.mechanic_id is None for a in appts) or not columns):
         columns.append({"id": None, "title": "Без мастера", "user": None})  # только если есть такие записи
     g = svc.grid(db, bid, day, columns, appts)
-    load = svc.day_load(db, bid, day, columns, appts)
+    segs = wl_svc.segments_on(wl, day)
+    load = svc.day_load(db, bid, day, columns, appts, extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
+    g["wo_blocks"] = _wo_blocks(g, columns, segs)
     summary = _summary(appts)
     tomorrow = []
     if ctx.can("schedule.manage"):
@@ -102,6 +117,23 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
                     if a.status == "booked"]
     return ctx.render("schedule/index.html", title="Запись", columns=columns, g=g, appts=appts, load=load,
                       summary=summary, tomorrow=tomorrow, people={m.id: m for m in mechanics}, **base)
+
+
+def _wo_blocks(g: dict, columns: list, segs: dict) -> list:
+    """Куски нарядов на сетке дня (22.11.2026): строка и высота по шагу сетки, колонка — мастер."""
+    out, step, h1 = [], g["step"], g["h1"]
+    col_idx = {c["id"]: i for i, c in enumerate(columns)}
+    for mid, lst in segs.items():
+        if mid not in col_idx:
+            continue
+        for s, e, b in lst:
+            mins = int((e - s).total_seconds() // 60)
+            row = ((s.hour - h1) * 60 + s.minute) // step
+            if row < 0 or row >= len(g["slots"]):
+                continue
+            out.append({"b": b, "row": row + 2, "span": max(1, -(-mins // step)), "col": col_idx[mid] + 2,
+                        "time": s.strftime("%H:%M"), "end": e.strftime("%H:%M"), "mins": mins})
+    return out
 
 
 def _summary(appts) -> dict:

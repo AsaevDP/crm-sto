@@ -310,8 +310,12 @@ def move(db: Session, branch_id, wo: WorkOrder, where: str) -> bool:
         return False
     i = order.index(wo)
     j = {"up": i - 1, "down": i + 1, "first": 0, "last": len(order) - 1}[where]
-    if j < 0 or j >= len(order) or j == i:
+    if j < 0 or j >= len(order):
         return False
+    if j == i and where not in ("first", "last"):
+        return False
+    # 22.11.2026: «Первой» / «В конец» закрепляют порядок, даже если машина уже там (раньше ничего не запоминалось,
+    # и машина с ремонта, ждущая мойки дольше, потом вставала перед «первой»)
     order.insert(j, order.pop(i))
     for n, o in enumerate(order, 1):
         o.queue_rank = n

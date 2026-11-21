@@ -7,7 +7,7 @@
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/pult">{{ icon("back") }}Пульт</a><h1 class="large-title">Загрузка мастеров</h1>
-    <p class="footnote" style="margin:0">По записям клиентов · {{ per.label }}</p></div>
+    <p class="footnote" style="margin:0">Наряды в работе + записи клиентов · {{ per.label }}</p></div>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 
@@ -15,7 +15,8 @@
   <div class="ld-total-pct"><b>{{ total.pct }}%</b><span>загрузка СТО</span></div>
   <div class="ld-total-bar"><i style="width:{{ total.pct }}%"></i></div>
   <div class="ld-total-nums">
-    <span><b>{{ total.hours|round(1)|num }}</b> ч записано</span>
+    <span><b>{{ total.wo_h|round(1)|num }}</b> ч по нарядам</span>
+    <span><b>{{ total.rec_h|round(1)|num }}</b> ч записи клиентов</span>
     <span><b>{{ total.free|round(1)|num }}</b> ч свободно</span>
     <span><b>{{ total.n }}</b> записей</span>
     <span><b>{{ rows|length }}</b> мастеров</span>
@@ -26,12 +27,14 @@
   {% for r in rows %}{% set m = r.m %}
   <a class="card ld-row" href="/schedule?p={{ per.kind }}&d={{ per.anchor }}&by=mech" style="--lc:var(--{{ level(r.pct) }});--mc:{{ color_css(colors.get(m.id, 'gray')) }}">
     <span class="ld-who"><i class="ld-dot"></i><span><b>{{ m.full_name }}</b><span class="caption">{{ m.role.name }}</span></span></span>
-    <span class="ld-bar"><i style="width:{{ [r.pct, 2]|max }}%"></i></span>
+    {% set wo_p = [(r.wo_h * 100 / r.cap)|round|int, 100]|min %}{% set rec_p = [r.pct - wo_p, 0]|max %}
+    <span class="ld-bar ld-two"><i class="ld-wo" style="width:{{ wo_p }}%"></i><i class="ld-rec" style="width:{{ rec_p }}%"></i>{% if not r.pct %}<i style="width:2%"></i>{% endif %}</span>
     <span class="ld-pct"><b>{{ r.pct }}%</b><span class="ld-word">{{ word(r.pct) }}</span></span>
-    <span class="ld-sub caption">{{ r.hours|round(1)|num }} из {{ r.cap }} ч · записей {{ r.n }}{% if r.noshow %} · не приехали {{ r.noshow }}{% endif %}</span>
+    <span class="ld-sub caption"><i class="ld-key ld-wo"></i>наряды {{ r.wo_h|round(1)|num }} ч · <i class="ld-key ld-rec"></i>записи {{ r.rec_h|round(1)|num }} ч ({{ r.n }}) · всего {{ r.hours|round(1)|num }} из {{ r.cap }} ч{% if r.noshow %} · не приехали {{ r.noshow }}{% endif %}</span>
   </a>
   {% else %}<div class="card compact"><p class="footnote" style="margin:0">Мастеров нет</p></div>{% endfor %}
 </div>
 <p class="hint" style="margin:10px 4px 0">Рабочий день — {{ day_h }} ч, выходной — {% for x in days_off|sort %}{{ WEEKDAYS[x]|lower }}{{ ", " if not loop.last }}{% else %}нет{% endfor %}.
-  Нажмите на мастера — откроется «Запись» за этот период.</p>
+  Наряды — несделанные работы по «времени на выполнение» (не вписано — по нормо-часам, у фикса 1 ч); согласование и
+  диагностика не считаются. Нажмите на мастера — откроется «Запись» за этот период.</p>
 {% endblock %}

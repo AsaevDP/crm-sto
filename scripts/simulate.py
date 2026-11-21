@@ -687,12 +687,15 @@ def step_price(o, day, hhmm):
             if not j:
                 continue
             master = o.lead if kind == o.kind else rnd.choice(MASTERS_OF[kind])
+            # 22.11.2026 (брат): «Время на выполнение» — реальное время мастера (бывает быстрее или дольше нормы)
+            tm = round((j[2] or 1.0) * rnd.choice((0.75, 0.9, 1.0, 1.2, 1.5)) * 4) / 4 if rnd.random() < 0.85 else ""
             post(o.mgr, f"{o.url}/works/{w.id}", {"name": w.name, "pricing": "fixed" if j[2] is None else "hours",
-                                                   "hours": str(j[2] or 0), "rate": str(j[3]), "qty": "1",
-                                                   "mechanic_id": str(uid(master))}, what="Цена работы и исполнитель")
+                                                   "hours": str(j[2] or 0), "rate": str(j[3]), "qty": "1", "time_h": str(tm),
+                                                   "mechanic_id": str(uid(master))}, what="Цена, время и исполнитель")
         for kind, j in o.extra:
             post(o.mgr, f"{o.url}/works", {"name": j[1], "pricing": "fixed" if j[2] is None else "hours", "hours": str(j[2] or 0),
-                                           "rate": str(j[3]), "qty": "1", "mechanic_id": str(uid(rnd.choice(MASTERS_OF[kind])))},
+                                           "rate": str(j[3]), "qty": "1", "time_h": str(j[2] or 1),
+                                           "mechanic_id": str(uid(rnd.choice(MASTERS_OF[kind])))},
                  what=f"Работа второму мастеру ({kind})")
     o.step = "pick"
 
@@ -1116,7 +1119,9 @@ def quick_wash(day, hh, first=False, services=None, washer=None):
         from app.services import wash as wsvc
         with SessionLocal() as db:
             qq = wsvc.board(db, wo.branch_id)["queue"]
-        R.check(qq and qq[0].o.id == wo.id, "быстрая мойка «первой» — первая в очереди", wo.number)
+        R.check(qq and qq[0].o.id == wo.id, "быстрая мойка «первой» — первая в очереди",
+                wo.number + " · очередь: " + ", ".join(f"{c.o.number[-3:]}(r{c.o.queue_rank}{' серая' if c.blocked else ''})"
+                                                       for c in qq[:6]))
     return o
 
 

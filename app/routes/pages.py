@@ -133,14 +133,19 @@ def load_board(ctx: Ctx = Depends(get_ctx), p: str = "", d: str = "", f: str = "
     per = periods.parse(p, d, f, t, default="day", allowed=("day", "week", "month"))
     mechanics = sorted(staff_by_role(db, bid, "masters"), key=lambda m: m.full_name)
     appts = ssvc.between(db, bid, per.d1, per.d2)
-    pl = ssvc.period_load(db, bid, per.d1, per.d2, mechanics, appts)
+    # 22.11.2026 (брат): + несделанные работы по открытым нарядам (время на выполнение)
+    from ..services import workload as wl_svc
+    wl = wl_svc.plan(db, bid, mechanics)
+    pl = ssvc.period_load(db, bid, per.d1, per.d2, mechanics, appts,
+                          extra={m.id: wl_svc.minutes_by_day(wl, m.id) for m in mechanics})
     rows = [{"m": m, **pl[m.id]} for m in mechanics]
     total_h = sum(r["hours"] for r in rows)
     total_cap = sum(r["cap"] for r in rows) or 1
     return ctx.render("load.html", title="Загрузка мастеров", rows=rows, per=per, bar=periods.Bar(per, "/load", {}),
                       colors=ssvc.mech_colors(staff_by_role(db, bid, "masters")), day_h=pl["_day_h"], days_off=pl["_off"],
                       total={"hours": total_h, "cap": total_cap, "pct": min(100, round(total_h * 100 / total_cap)),
-                             "n": sum(r["n"] for r in rows), "free": max(0, total_cap - total_h)},
+                             "n": sum(r["n"] for r in rows), "free": max(0, total_cap - total_h),
+                             "wo_h": sum(r["wo_h"] for r in rows), "rec_h": sum(r["rec_h"] for r in rows)},
                       WEEKDAYS=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
 
 

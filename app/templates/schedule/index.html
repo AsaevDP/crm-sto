@@ -76,6 +76,7 @@
           {% for d in days %}{% set mins = L.by_day.get(d, 0) %}
           <td class="{{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }}">
             {% for a in by_day.get(d, []) if a.mechanic_id == m.id %}{{ li(a, d, false) }}{% endfor %}
+            {% for b, mins in wo_by_day.get((m.id, d), []) %}<a class="wo-chip {{ 'tent' if b.kind != 'solid' }}" href="/orders/{{ b.wo.id }}" title="{{ b.word }}{{ ' · возможно' if b.kind != 'solid' }}">🔧 {{ b.wo.number[-6:] }} · {{ "" if b.exact else "≈" }}{{ (mins / 60)|round(1)|num }} ч</a>{% endfor %}
             {% if mins %}<span class="sc-h">{{ (mins / 60)|round(1)|num }} ч из {{ day_h }}</span>{% endif %}
           </td>{% endfor %}
           <td class="num nowrap"><b>{{ L.hours|round(1)|num }} ч</b><div class="caption">{{ L.pct }}%</div></td>
@@ -152,6 +153,15 @@
         {% if can_manage %}<button type="button" class="sg-cell {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }};grid-column:{{ loop.index + 1 }}" data-time="{{ s }}" data-mech="{{ c.id or '' }}" aria-label="Записать на {{ s }}, {{ c.title }}"></button>
         {% else %}<div class="sg-cell {{ 'half' if not s.endswith(':00') }}" style="grid-row:{{ r }};grid-column:{{ loop.index + 1 }}"></div>{% endif %}
         {% endfor %}{% endfor %}
+        {# 22.11.2026 (брат): наряды мастера — сплошные (в работе, на складе, запчасти едут ≤3 дней), пунктир — «возможно» #}
+        {% for x in (g.wo_blocks if g.wo_blocks is defined else []) %}{% set b = x.b %}
+        <a class="appt wo-blk {{ 'tent' if b.kind != 'solid' }}" href="/orders/{{ b.wo.id }}" style="grid-row:{{ x.row }} / span {{ x.span }};grid-column:{{ x.col }};--mc:{{ color_css(colors.get(b.mech_id, 'gray')) }}"
+           title="Наряд {{ b.wo.number }} · {{ b.car }} {{ fmt_plate(b.plate) }} · {{ b.word }} · {{ x.time }}–{{ x.end }}{{ '' if b.exact else ' · время ≈ (не вписано)' }}">
+          <span class="appt-t">🔧 {{ x.time }}–{{ x.end }}</span>
+          <b>{{ b.wo.number[-6:] }} · {{ b.car }}</b>
+          {% if x.span > 1 %}<span class="caption">{{ b.word }} · {{ "" if b.exact else "≈" }}{{ (x.mins / 60)|round(1)|num }} ч{% if b.kind != "solid" %} · возможно{% endif %}</span>{% endif %}
+        </a>
+        {% endfor %}
         {% for b in g.blocks %}{% set a = b.a %}
         <a class="appt" data-st="{{ a.status }}" href="?d={{ day }}&p=day&by=mech&edit={{ a.id }}" style="grid-row:{{ b.row }} / span {{ b.span }};grid-column:{{ b.col }};--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}"
            title="{{ b.time }}–{{ b.end }} {{ a.client_name }} {{ a.car }} {{ a.work }}">
@@ -163,7 +173,14 @@
         {% endfor %}
       </div>
     </div>
-    {% if not g.blocks %}<p class="footnote" style="margin:0 4px">На этот день записей нет{% if can_manage %} — нажмите на свободное время в сетке{% endif %}.</p>{% endif %}
+    {% if not g.blocks and not g.wo_blocks %}<p class="footnote" style="margin:0 4px">На этот день записей нет{% if can_manage %} — нажмите на свободное время в сетке{% endif %}.</p>{% endif %}
+    {% endif %}
+    {% if wo_off is defined and wo_off %}
+    <div class="card compact wo-off">
+      <div class="card-h"><span class="headline">Ждут запчасти — вне графика · {{ wo_off|length }}</span>
+        <span class="caption">привезут позже чем через 3 дня или дата не указана</span></div>
+      {% for b in wo_off %}<a class="wo-chip" href="/orders/{{ b.wo.id }}" style="--mc:{{ color_css(colors.get(b.mech_id, 'gray')) }}">🔧 {{ b.wo.number[-6:] }} · {{ b.car }} {{ fmt_plate(b.plate) }}{% set mm = mechanics|selectattr("id", "equalto", b.mech_id)|first %}{% if mm %} · {{ mm.short_name }}{% endif %} · {{ "" if b.exact else "≈" }}{{ (b.minutes / 60)|round(1)|num }} ч · {{ "привезут " ~ b.expected.strftime("%d.%m") if b.expected else "дата не указана" }}</a>{% endfor %}
+    </div>
     {% endif %}
   </section>
 
@@ -177,7 +194,7 @@
         <span class="sc-load-who"><i class="sc-dot"></i><b>{{ m.short_name }}</b></span>
         <span class="loadbar"><i style="width:{{ L.pct }}%"></i></span>
         <span class="caption nowrap sc-load-n"><b>{{ L.pct }}%</b> · {{ L.hours|round(1)|num }} из {{ L.cap }} ч</span>
-        <span class="caption sc-load-sub">записей {{ L.n }}{% if L.noshow %} · не приехали {{ L.noshow }}{% endif %}</span>
+        <span class="caption sc-load-sub">наряды {{ (L.wo_h or 0)|round(1)|num }} ч · записи {{ (L.rec_h or 0)|round(1)|num }} ч ({{ L.n }}){% if L.noshow %} · не приехали {{ L.noshow }}{% endif %}</span>
       </a>
       {% endfor %}
       <p class="hint" style="margin:0">Часы работы: {{ day_h }} ч в день, выходной — {% for x in days_off|sort %}{{ WEEKDAYS[x]|lower }}{{ ", " if not loop.last }}{% else %}нет{% endfor %}.</p>

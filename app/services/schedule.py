@@ -97,7 +97,7 @@ def mech_colors(mechanics) -> dict:
     return {m.id: MECH_COLORS[i % len(MECH_COLORS)] for i, m in enumerate(mechanics)}
 
 
-def period_load(db: Session, branch_id, d1: date, d2: date, mechanics, appts: list[Appointment]) -> dict:
+def period_load(db: Session, branch_id, d1: date, d2: date, mechanics, appts: list[Appointment], extra: dict | None = None) -> dict:
     """Загрузка мастеров за период (11.11.2026): по каждому — записей, часов записано, часов работы
     (рабочие дни × часы дня из настроек), % и минуты по дням (для тепловой карты месяца)."""
     cfg = st.get(db, branch_id, "schedule")
@@ -112,8 +112,14 @@ def period_load(db: Session, branch_id, d1: date, d2: date, mechanics, appts: li
         for a in mine:
             k = local(a.start_at).date()
             by_day[k] = by_day.get(k, 0) + (a.duration_min or 30)
+        rec_h = sum(by_day.values()) / 60
+        # 22.11.2026 (брат): + несделанные работы по нарядам (workload.minutes_by_day) — время мастера занято и ими
+        wo_days = {k: v for k, v in (extra or {}).get(m.id, {}).items() if d1 <= k <= d2}
+        for k, v in wo_days.items():
+            by_day[k] = by_day.get(k, 0) + v
         hours = sum(by_day.values()) / 60
         out[m.id] = {"n": len(mine), "hours": hours, "cap": cap, "pct": min(100, round(hours * 100 / cap)),
+                     "rec_h": rec_h, "wo_h": sum(wo_days.values()) / 60,
                      "by_day": by_day, "noshow": sum(1 for a in appts if a.mechanic_id == m.id and a.status == "noshow")}
     out["_day_h"] = day_h
     out["_off"] = off
@@ -129,7 +135,8 @@ def _busy(appts) -> list[tuple[datetime, datetime]]:
     return sorted(out)
 
 
-def day_load(db: Session, branch_id, d: date, columns: list, appts: list[Appointment], min_gap: int = 60) -> dict:
+def day_load(db: Session, branch_id, d: date, columns: list, appts: list[Appointment], min_gap: int = 60,
+             extra: dict | None = None) -> dict:
     """По каждому мастеру: занято минут, % загрузки рабочего дня, свободные окна (не короче min_gap минут)."""
     cfg = st.get(db, branch_id, "schedule")
     h1, h2 = int(cfg.get("day_start", 8)), int(cfg.get("day_end", 19))
@@ -141,7 +148,7 @@ def day_load(db: Session, branch_id, d: date, columns: list, appts: list[Appoint
     out = {}
     for c in columns:
         mine = [a for a in appts if a.mechanic_id == c["id"]]
-        busy = _busy(mine)
+        busy = sorted(_busy(mine) + [(s, e) for s, e, *_ in (extra or {}).get(c["id"], [])])   # + наряды (22.11.2026)
         booked = sum(int((min(e, end) - max(s, start)).total_seconds() // 60) for s, e in busy if e > start and s < end)
         free, cur = [], max(start, nowl) if d == nowl.date() else start
         if d < nowl.date():

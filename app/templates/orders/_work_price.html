@@ -17,4 +17,8 @@
   </div>
   <input type="hidden" name="rate"><input type="hidden" name="qty">
   <p class="hint pm-sum"></p>
+  {# 22.11.2026 (брат): реальное время на выполнение — для записи и загрузки мастера (нормо-часы — только цена) #}
+  <label class="caption wk-time">Время на выполнение, ч
+    <input class="field" name="time_h" inputmode="decimal" value="{{ ((w.minutes / 60)|round(2)|num) if w and w.minutes else '' }}"
+           placeholder="{{ 'как нормо-часы' if not w or (w.pricing or 'hours') == 'hours' else '1' }}" aria-label="Время на выполнение, часов"></label>
 </div>
