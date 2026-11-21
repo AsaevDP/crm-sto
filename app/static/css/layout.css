@@ -2546,3 +2546,10 @@ dialog .title-2 .zp-st { font-size: 13px; margin-left: 6px; }
 .nm-cols.n3 { grid-template-columns: 40px 50px 58px; justify-content: end; column-gap: 10px; }
 .nm-cols.p3 { grid-template-columns: 56px minmax(84px, max-content) minmax(92px, max-content); justify-content: end; column-gap: 10px; }
 @media (max-width: 380px) { .nm-cols.n5, .nm-cols.n3, .nm-cols.p3 { column-gap: 6px; } }
+/* 22.11.2026 (брат, ещё правее): узкие столбики, плотнее друг к другу */
+.nm-cols.n5 { grid-template-columns: 30px 32px 46px 52px minmax(76px, max-content); column-gap: 8px; }
+.nm-cols.n3 { grid-template-columns: 30px 32px 46px; column-gap: 8px; }
+.nm-cols.p3 { grid-template-columns: 44px minmax(70px, max-content) minmax(80px, max-content); column-gap: 8px; }
+.nm-head { font-size: 11px; }
+.nm-cols.n5 { grid-template-columns: 30px 38px 46px 52px minmax(76px, max-content); }
+.nm-cols.n3 { grid-template-columns: 30px 38px 46px; }
