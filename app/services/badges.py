@@ -436,4 +436,13 @@ def compute(ctx) -> dict:
         rm = sch.reminders(db, bid)
         _add(out, "/schedule", "red", len(rm["late"]), "сегодня не приехали — позвонить", "/schedule/remind#late")
         _add(out, "/schedule", "orange", len(rm["call"]), "завтра записаны — напомнить", "/schedule/remind#call")
+    # 21.11.2026 (брат): мастеру — его записи: 🔴 не приехали и 🟣 новые (до «✓ Видел»), 🟢 приехали (до «Начал»),
+    # 🟠 сегодня ждём
+    elif me.role and me.role.code in MASTERS and ctx.can("schedule.view"):
+        from . import schedule as sch
+        sg = sch.master_signals(db, bid, me.id)
+        _add(out, "/schedule", "red", len(sg["noshow"]), "клиент не приехал — отметьте «Видел»", "/schedule#zp-sig")
+        _add(out, "/schedule", "orange", len(sg["wait"]), "сегодня ждём клиентов", "/schedule#zp-sig")
+        _add(out, "/schedule", "purple", len(sg["new"]), "к вам записали — отметьте «Видел»", "/schedule#zp-sig")
+        _add(out, "/schedule", "green", len(sg["arrived"]), "клиент приехал — начните работу", "/schedule#zp-sig")
     return _compact(out)

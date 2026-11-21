@@ -29,6 +29,10 @@ class Appointment(Entity):
     # 20.11.2026 (брат): «Напомнить о записи» — менеджер позвонил, клиент подтвердил, что приедет
     called_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     called_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 21.11.2026 (брат): мастер нажал «✓ Видел» — запоминаем, ЧТО он видел (мастер | время | статус, schedule.seen_key).
+    # Перенесли время, сменили мастера или клиент «не приехал» — ключ другой, плитка у мастера снова горит.
+    seen_key: Mapped[str] = mapped_column(String(80), default="")
+    seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class MasterQueue(Entity):

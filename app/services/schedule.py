@@ -193,6 +193,57 @@ def reminders(db: Session, branch_id) -> dict:
 LATE_AFTER = timedelta(minutes=15)   # «не приехал» — через 15 минут после времени записи
 
 
+# ---------- 21.11.2026 (брат): сигналы мастеру в «Записи» ----------
+# 🟣 new     — к нему записали (или перенесли / передали ему) — пока не нажал «✓ Видел»;
+# 🟠 wait    — сегодня ждём (записан, ещё не приехал);
+# 🟢 arrived — машина приехала (наряд из записи), а он в этом наряде ещё не нажал «Начал»;
+# 🔴 noshow  — менеджер отметил «не приехал» — пока не нажал «✓ Видел».
+SIGNAL_DAYS = 14   # приехали / не приехали — смотрим за две недели назад
+
+
+def seen_key(a: Appointment) -> str:
+    """Что мастер видел: мастер, время, статус. Изменилось что-то из этого — запись снова «новая» для него."""
+    return f"{a.mechanic_id}|{local(a.start_at):%Y%m%d%H%M}|{a.status}"
+
+
+def is_seen(a: Appointment) -> bool:
+    return bool(a.seen_key) and a.seen_key == seen_key(a)
+
+
+def mark_seen(a: Appointment):
+    from ..db import now
+    a.seen_key, a.seen_at = seen_key(a), now()
+
+
+def master_signals(db: Session, branch_id, user_id) -> dict:
+    from ..models import WorkOrder, WoWorkSession
+    from ..models.orders import WO_ACTIVE
+    today = date.today()
+    start_today, _ = day_range(today, today)
+    q = select(Appointment).where(Appointment.branch_id == branch_id, Appointment.mechanic_id == user_id,
+                                  Appointment.status.in_(("booked", "arrived", "noshow")),
+                                  Appointment.start_at >= start_today - timedelta(days=SIGNAL_DAYS))
+    out = {"new": [], "wait": [], "arrived": [], "noshow": []}
+    for a in db.scalars(q.order_by(Appointment.start_at)):
+        d = local(a.start_at).date()
+        if a.status == "booked" and d >= today:
+            if not is_seen(a):
+                out["new"].append(a)
+            if d == today:
+                out["wait"].append(a)
+        elif a.status == "noshow" and not is_seen(a):
+            out["noshow"].append(a)
+        elif a.status == "arrived" and a.work_order_id:
+            wo = db.get(WorkOrder, a.work_order_id)
+            if not wo or wo.status not in WO_ACTIVE:
+                continue
+            began = db.scalar(select(WoWorkSession.id).where(WoWorkSession.work_order_id == wo.id,
+                                                             WoWorkSession.mechanic_id == user_id).limit(1))
+            if began is None:
+                out["arrived"].append(a)
+    return out
+
+
 def _plate(p: str) -> str:
     return "".join(ch for ch in (p or "").upper() if ch.isalnum())
 

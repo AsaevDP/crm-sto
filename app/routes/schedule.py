@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 
-from ..models import Appointment, Client, Lift, User, Vehicle
+from ..models import Appointment, Client, Lift, User, Vehicle, WorkOrder
 from ..models.schedule import APPT_STATUS
 from ..services import orders as osvc
 from ..services import schedule as svc
@@ -171,6 +171,10 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv=""):
                 new_day=day if view == "day" and day >= today else max(today, d1),
                 can_queue=ctx.can("schedule.queue"), moving=bool(mv) and ctx.can("schedule.manage"),
                 wo_off=[b for b in wl["off"] if b.mech_id in ids])
+    # 21.11.2026 (брат): у мастера плитки — сигналы «что нового у меня» (🟣 новые, 🟠 ждём, 🟢 приехали, 🔴 не приехали)
+    sig = svc.master_signals(db, bid, ctx.user.id) if own and ctx.user.role and ctx.user.role.code in MASTERS else None
+    base.update(sig=sig, new_ids={a.id for a in sig["new"] + sig["noshow"]} if sig else set(),
+                sig_orders={a.work_order_id: db.get(WorkOrder, a.work_order_id) for a in sig["arrived"]} if sig else {})
     if view == "day":
         segs = wl_svc.segments_on(wl, day)
         load = svc.day_load(db, bid, day, [{"id": x.id} for x in shown], appts, min_gap=30,
@@ -385,6 +389,27 @@ def appt_edit(aid: str, ctx: Ctx = Depends(get_ctx), day: str = Form(""), time: 
     _warn_overlap(ctx, a)
     ctx.db.commit()
     return RedirectResponse(_back(back, f"/schedule?d={_day(day)}&view={view}"), status_code=303)
+
+
+@router.post("/schedule/{aid}/seen")
+def appt_seen(aid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """21.11.2026 (брат): мастер «✓ Видел» — новая запись к нему / «не приехал». aid = "all" — все сразу.
+    Отмечает только сам мастер записи (и админ «глазами сотрудника» — от его имени)."""
+    ctx.need("schedule.view")
+    if aid == "all":
+        sig = svc.master_signals(ctx.db, ctx.branch.id, ctx.user.id)
+        todo = sig["new"] + sig["noshow"]
+    else:
+        a = _appt(ctx, aid)
+        if a.mechanic_id != ctx.user.id:
+            raise Forbidden()
+        todo = [a]
+    for a in todo:
+        svc.mark_seen(a)
+    ctx.db.commit()
+    if todo:
+        flash(ctx.request, "Отмечено: видел" + (f" ({len(todo)})" if len(todo) > 1 else ""))
+    return RedirectResponse(_back(back, "/schedule"), status_code=303)
 
 
 @router.post("/schedule/{aid}/status")

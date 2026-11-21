@@ -13,8 +13,8 @@
 {% macro appt_card(x, show_mech=false) %}{% set a = x.a %}{% set mm = people.get(a.mechanic_id) %}
 {% set arr = can_queue and can_manage and a.status == "booked" and not a.work_order_id %}
 {% if arr %}<div class="zp-q">{% endif %}
-<a class="zp-it zp-appt" data-st="{{ a.status }}" href="{{ here }}{{ amp }}edit={{ a.id }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
-  <span class="zp-it-top"><b class="zp-time">{{ x.t }}–{{ x.end }}</b><span class="zp-st" data-st="{{ a.status }}">{{ ST_WORD[a.status] }}</span></span>
+<a class="zp-it zp-appt {{ 'is-new' if a.id in new_ids }}" data-st="{{ a.status }}" href="{{ here }}{{ amp }}edit={{ a.id }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
+  <span class="zp-it-top"><b class="zp-time">{{ x.t }}–{{ x.end }}</b><span class="zp-st" data-st="{{ a.status }}">{% if a.id in new_ids and a.status == "booked" %}Новая · {% endif %}{{ ST_WORD[a.status] }}</span></span>
   <span class="zp-name">{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}</span>
   {% if a.car or a.plate %}<span class="zp-sub">{{ a.car }}{% if a.plate %} · <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}</span>{% endif %}
   {% if a.work %}<span class="zp-sub zp-work">{{ a.work }}</span>{% endif %}
@@ -63,12 +63,50 @@
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 
+{% if sig %}
+{# 21.11.2026 (брат): у мастера плитки горят, пока он не отреагировал: 🟣 и 🔴 — «✓ Видел», 🟢 — «Начал» в наряде #}
+{{ tiles([
+  {"t": "Новые записи", "n": sig.new|length, "s": "к вам записали — отметьте «Видел»", "c": "purple", "href": "#zp-sig"},
+  {"t": "Ждём", "n": sig.wait|length, "s": "сегодня, ещё не приехали", "c": "orange", "href": "#zp-sig"},
+  {"t": "Приехали", "n": sig.arrived|length, "s": "машина у нас — начните работу", "c": "green", "href": "#zp-sig"},
+  {"t": "Не приехали", "n": sig.noshow|length, "s": "отметьте «Видел»", "c": "red", "href": "#zp-sig"},
+], "zp-tiles") }}
+{% set seen_n = sig.new|length + sig.noshow|length %}
+{% if seen_n or sig.wait or sig.arrived %}
+<section class="card compact zp-sig" id="zp-sig">
+  <div class="zp-sig-h"><h2 class="title-3">Что нового у вас</h2>
+    {% if seen_n > 1 %}<form method="post" action="/schedule/all/seen"><input type="hidden" name="back" value="{{ here }}">
+      <button class="btn btn-sm">✓ Видел все ({{ seen_n }})</button></form>{% endif %}</div>
+  {% set rows = [] %}
+  {% for kind, lst, c, word in [("noshow", sig.noshow, "red", "Не приехал"), ("arrived", sig.arrived, "green", "Приехал"),
+                                 ("new", sig.new, "purple", "Новая"), ("wait", sig.wait, "orange", "Ждём сегодня")] %}
+  {% for a in lst if not (kind == "wait" and a.id in new_ids) %}{% set _ = rows.append((kind, a, c, word)) %}{% endfor %}{% endfor %}
+  {% macro sig_row(r) %}{% set kind, a, c, word = r %}{% set s = local(a.start_at) %}
+  <div class="zp-sig-row" style="--sc:var(--{{ c }})">
+    <span class="zp-sig-w">{{ word }}</span>
+    <span class="zp-sig-t"><b class="nowrap">{{ WEEKDAYS[s.weekday()] }} {{ s.strftime("%d.%m %H:%M") }}</b>
+      <span>{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}{% if a.car or a.plate %} · {{ a.car }}{% if a.plate %} <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}{% endif %}</span>
+      {% if a.work %}<span class="caption">{{ a.work }}</span>{% endif %}</span>
+    {% if kind in ("new", "noshow") %}
+    <form method="post" action="/schedule/{{ a.id }}/seen"><input type="hidden" name="back" value="{{ here }}"><button class="btn btn-sm btn-gray">✓ Видел</button></form>
+    {% elif kind == "arrived" %}{% set wo = sig_orders.get(a.work_order_id) %}
+    <a class="btn btn-sm btn-gray" href="/orders/{{ a.work_order_id }}">Открыть наряд{% if wo %} {{ wo.number[-6:] }}{% endif %}</a>
+    {% endif %}
+  </div>
+  {% endmacro %}
+  {% for r in rows[:5] %}{{ sig_row(r) }}{% endfor %}
+  {% if rows|length > 5 %}<details class="zp-sig-more"><summary class="btn btn-sm btn-plain">Показать ещё {{ rows|length - 5 }}</summary>
+    {% for r in rows[5:] %}{{ sig_row(r) }}{% endfor %}</details>{% endif %}
+</section>
+{% endif %}
+{% else %}
 {{ tiles([
   {"t": "Записей", "n": summary.all, "s": "за " ~ ("день" if view == "day" else "неделю" if view == "week" else "период"), "c": "blue"},
   {"t": "Ждём", "n": summary.booked, "s": "ещё не приехали", "c": "orange"},
   {"t": "Приехали", "n": summary.arrived, "s": "машина у нас", "c": "green"},
   {"t": "Не приехали", "n": summary.noshow, "s": "отмечено «не приехал»", "c": "red"},
 ], "zp-tiles") }}
+{% endif %}
 
 <div class="zp-actions">
   {% if can_manage %}
