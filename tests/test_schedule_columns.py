@@ -99,3 +99,60 @@ def test_week_month_one_master_and_weekend(client):
     assert "Суббота Тест" in month and "свободно" in month and "zp-day-new" in month
     assert "Все мастера" in client.get(f"/schedule?p=day&d={sat}").text   # в «Дне» — как было
     client.post("/logout")
+
+
+def test_master_queue_up_down(client):
+    """22.11.2026 (брат): очередь нарядов мастера — ↑ ставит наряд раньше; двигают менеджер / директор / зам / админ,
+    мастер — нет; у записи клиента стрелка открывает карточку «позвоните и договоритесь»."""
+    import uuid
+    from decimal import Decimal
+    from app.db import current_branch_id
+    from app.models import WorkOrder, WoWork
+    from app.services import workload
+    from app.services.orders import staff_by_role
+    from .test_step3 import _create
+    login(client, "irina", "irina123")
+    andrey = _user_id = None
+    with SessionLocal() as db:
+        andrey = db.scalar(select(User).where(User.login == "andrey"))
+    ids = []
+    for n, plate in enumerate(("КА 7001 ОЧ", "КА 7002 ОЧ")):
+        url = _create(client, scenario="A", photos=1, plate=plate, phone=f"050700{n}000").json()["url"]
+        wid = uuid.UUID(url.rsplit("/", 1)[1])
+        with SessionLocal() as db:
+            wo = db.get(WorkOrder, wid)
+            current_branch_id.set(wo.branch_id)
+            wo.status, wo.mechanic_id = "work", andrey.id
+            db.add(WoWork(work_order_id=wid, name=f"Работа {n}", pricing="hours", hours=Decimal("1"), rate=800, qty=1,
+                          price=800, mechanic_id=andrey.id, minutes=60, branch_id=wo.branch_id))
+            db.commit()
+        ids.append(wid)
+
+    def order():
+        with SessionLocal() as db:
+            bid = db.get(WorkOrder, ids[0]).branch_id
+            q = workload.queue_of(workload.plan(db, bid, staff_by_role(db, bid, "masters")), andrey.id)
+            return [b.wo.id for b in q if b.wo.id in ids]
+    before = order()
+    assert len(before) == 2
+    second = before[1]
+    r = client.post(f"/schedule/queue/{second}", data={"mech": str(andrey.id), "where": "up", "back": "/schedule?p=week"},
+                    follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/schedule?p=week"
+    assert order() == [second, before[0]]   # поднятый наряд — раньше
+    with SessionLocal() as db:
+        bid = db.get(WorkOrder, ids[0]).branch_id
+        q = workload.queue_of(workload.plan(db, bid, staff_by_role(db, bid, "masters")), andrey.id)
+        wd = next(b for b in q if b.wo.id == second).segs[0][0].date()   # неделя, где наряд стоит
+    week = client.get(f"/schedule?p=week&d={wd}&m={andrey.id}").text
+    assert "zp-q-b" in week and "/schedule/queue/" in week
+    client.post("/logout")
+    login(client, "andrey", "andrey123")   # мастер очередь не двигает
+    assert "/schedule/queue/" not in client.get(f"/schedule?p=week&d={wd}").text
+    r = client.post(f"/schedule/queue/{second}", data={"mech": str(andrey.id), "where": "down"}, follow_redirects=False)
+    assert r.status_code in (303, 403) and order() == [second, before[0]]
+    client.post("/logout")
+    with SessionLocal() as db:   # убрать за собой: наряды закрыть, чтобы не мешали другим тестам
+        for wid in ids:
+            db.get(WorkOrder, wid).status = "closed"
+        db.commit()

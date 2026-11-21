@@ -16,7 +16,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Appointment, Vehicle, WorkOrder, WoWork, WoWorkSession
+from ..models import Appointment, MasterQueue, Vehicle, WorkOrder, WoWork, WoWorkSession
 from . import settings as st
 from .attendance import _aware, local_tz
 
@@ -49,6 +49,7 @@ class Block:
     plate: str = ""
     car: str = ""
     segs: list = field(default_factory=list)   # [(start, end)] — куски по дням
+    qrank: int | None = None                     # место в очереди мастера (MasterQueue), None — по умолчанию
     expected: date | None = None                 # «ждём запчасти»: когда обещают привезти
 
     @property
@@ -127,14 +128,30 @@ def plan(db: Session, branch_id, masters) -> dict:
     appts = db.scalars(select(Appointment).where(Appointment.branch_id == branch_id, Appointment.status == "booked",
                                                  Appointment.start_at >= now - timedelta(hours=12),
                                                  Appointment.start_at < now + timedelta(days=HORIZON))).all()
+    # 22.11.2026 (брат): очередь мастера — менеджер двигает ↑ ↓ (MasterQueue). С местом — по месту, без места (новые) —
+    # после них, по порядку по умолчанию. «Возможно» (согласование) — всегда после сплошных.
+    ranks = {(q.mechanic_id, q.work_order_id): q.rank for q in db.scalars(select(MasterQueue).where(
+        MasterQueue.branch_id == branch_id, MasterQueue.work_order_id.in_([o.id for o in orders])))}
     for mid, lst in blocks.items():
         busy = sorted((_aware(a.start_at).astimezone(tz), _aware(a.start_at).astimezone(tz) + timedelta(minutes=a.duration_min or 30))
                       for a in appts if a.mechanic_id == mid)
-        lst.sort(key=lambda b: (b.kind != "solid", b.rank))
+        for b in lst:
+            b.qrank = ranks.get((mid, b.wo.id))
+        lst.sort(key=lambda b: (b.kind != "solid", b.qrank is None, b.qrank or 0, b.rank))
         cur = now
         for b in lst:
-            cur = _place(b, max(cur, b.earliest), busy, h1, h2, off_days, today)
+            if b.earliest > cur:
+                # ждёт запчастей: встаёт на день привоза, но остальных за собой не тянет — они заполняют время до него
+                _place(b, b.earliest, busy, h1, h2, off_days, today)
+            else:
+                cur = _place(b, cur, busy, h1, h2, off_days, today)
+            busy = sorted(busy + list(b.segs))
     return {"blocks": blocks, "off": off}
+
+
+def queue_of(p: dict, mid) -> list:
+    """Наряды мастера в порядке очереди (как разложены): [Block] — сплошные, потом «возможно»."""
+    return list(p["blocks"].get(mid, []))
 
 
 def _place(b: Block, cur: datetime, busy: list, h1: int, h2: int, off_days: set, today: date) -> datetime:

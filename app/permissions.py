@@ -24,6 +24,7 @@ PERMISSIONS = [
     ("clients.view", "Клиенты и авто", "Наряды"),
     ("schedule.view", "Запись клиентов: видеть (слесарь — только свою)", "Наряды"),
     ("schedule.manage", "Записывать клиентов на время", "Наряды"),
+    ("schedule.queue", "Менять очередь нарядов мастера (↑ ↓ в «Записи»)", "Наряды"),
     ("lifts.take", "Самому закрепляться за подъёмником", "Наряды"),
     ("parts.pick", "Подбор запчастей в наряд", "Склад и закупки"),
     ("purchases.view", "Видеть закупки", "Склад и закупки"),
@@ -108,7 +109,7 @@ DEFAULT_ROLES = {
     "manager": ("Менеджер", "blue", [
         # 13.11.2026 (брат): менеджер запчасти не добавляет (только выбирает варианты и убирает в архив) — без parts.offer
         "dashboard.view", "orders.view_all", "orders.create", "orders.diagnose", "orders.approve",
-        "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
+        "orders.cancel", "orders.assign", "clients.view", "schedule.view", "schedule.manage", "schedule.queue", "purchases.view", "stock.request_issue", "stock.pickup", "stock.view", "money.view", "money.accept",
         "purchases.by_partsman",   # 19.11.2026 (брат): «Заказы запчастистов» — только посмотреть, когда приедут детали
         # 20.11.2026 (брат): менеджер химию не заказывает (wash.buy — у запчастиста), в «Мойке» — очередь и прайс
         "prices.view_sale", "attendance.view_all", "tools.view", "razbor.view", "razbor.sell", "wash.view", "wash.prices", *_OWN]),
@@ -143,6 +144,7 @@ DEFAULT_ROLES = {
     "director": ("Директор", "purple", [
         "dashboard.view", "reports.view", "reports.finance", "orders.view_all", "clients.view", "schedule.view",
         "schedule.manage",   # 22.11.2026 (брат): директор тоже записывает клиентов, как менеджер
+        "schedule.queue",    # 22.11.2026 (брат): очередь нарядов мастера (↑ ↓) — менеджер, директор, зам, админ
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         # 20.11.2026 (брат): «Зарплата сотрудников» (payroll.view_all) директору — только галочкой админа; утверждать —
         # payroll.approve; заму доступ на срок — payroll.grant
@@ -152,7 +154,7 @@ DEFAULT_ROLES = {
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
-        "schedule.view", "schedule.manage", "purchases.view", "stock.view", "razbor.view", "money.view",
+        "schedule.view", "schedule.manage", "schedule.queue", "purchases.view", "stock.view", "razbor.view", "money.view",
         "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price",
         "payroll.approve",   # 20.11.2026: утверждать — когда директор дал доступ к «Зарплате сотрудников» (на срок)
         "purchases.all", "stock.keep", *_OWN]),

@@ -8,7 +8,11 @@
 {% set here = bar.url(**per.params()) %}
 {% set amp = "&" if "?" in here else "?" %}
 
+{# 22.11.2026 (брат): стрелки ↑ ↓ (кружочки, как на мойке). У наряда — место в очереди мастера; у записи — время
+   согласовано с клиентом, поэтому стрелка открывает карточку записи: «позвоните и договоритесь о новом времени» #}
 {% macro appt_card(x, show_mech=false) %}{% set a = x.a %}{% set mm = people.get(a.mechanic_id) %}
+{% set arr = can_queue and can_manage and a.status == "booked" and not a.work_order_id %}
+{% if arr %}<div class="zp-q">{% endif %}
 <a class="zp-it zp-appt" data-st="{{ a.status }}" href="{{ here }}{{ amp }}edit={{ a.id }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
   <span class="zp-it-top"><b class="zp-time">{{ x.t }}–{{ x.end }}</b><span class="zp-st" data-st="{{ a.status }}">{{ ST_WORD[a.status] }}</span></span>
   <span class="zp-name">{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}</span>
@@ -16,9 +20,15 @@
   {% if a.work %}<span class="zp-sub zp-work">{{ a.work }}</span>{% endif %}
   {% if show_mech or not a.mechanic_id %}<span class="zp-who-s"><i class="zp-dot"></i>{{ mm.short_name if mm else "Без мастера" }}</span>{% endif %}
 </a>
+{% if arr %}<span class="zp-q-btns">
+  <a class="zp-q-b" href="{{ here }}{{ amp }}edit={{ a.id }}&mv=up" title="Раньше — время согласовано с клиентом: откроется запись, позвоните и договоритесь" aria-label="Раньше">↑</a>
+  <a class="zp-q-b" href="{{ here }}{{ amp }}edit={{ a.id }}&mv=down" title="Позже — время согласовано с клиентом: откроется запись, позвоните и договоритесь" aria-label="Позже">↓</a>
+</span></div>{% endif %}
 {% endmacro %}
 
 {% macro wo_card(x, show_mech=false) %}{% set b = x.b %}{% set mm = people.get(b.mech_id) %}
+{% set arr = can_queue and x.mech %}
+{% if arr %}<div class="zp-q">{% endif %}
 <a class="zp-it zp-wo {{ 'tent' if b.kind != 'solid' }}" href="/orders/{{ b.wo.id }}" style="--mc:{{ color_css(colors.get(b.mech_id, 'gray')) }}"
    title="{{ '' if b.exact else 'Время на выполнение не вписано — примерно по нормо-часам' }}">
   <span class="zp-it-top"><b class="zp-time">{{ x.t }}–{{ x.end }}</b><span class="zp-st" data-st="{{ 'tent' if b.kind != 'solid' else 'wo' }}">{{ "возможно" if b.kind != "solid" else "наряд" }}</span></span>
@@ -26,6 +36,12 @@
   <span class="zp-sub">{% if b.plate %}<span class="nowrap">{{ fmt_plate(b.plate) }}</span> · {% endif %}{{ b.word }} · {{ "" if b.exact else "≈" }}{{ (x.mins / 60)|round(1)|num }} ч</span>
   {% if show_mech %}<span class="zp-who-s"><i class="zp-dot"></i>{{ mm.short_name if mm else "" }}</span>{% endif %}
 </a>
+{% if arr %}<span class="zp-q-btns">
+  {% for w, ar, off_ in [("up", "↑", x.q_first), ("down", "↓", x.q_last)] %}
+  <form method="post" action="/schedule/queue/{{ b.wo.id }}"><input type="hidden" name="mech" value="{{ x.mech }}"><input type="hidden" name="where" value="{{ w }}"><input type="hidden" name="back" value="{{ here }}">
+    <button class="zp-q-b" {{ 'disabled' if off_ }} title="{{ ('Раньше — поставить перед предыдущим нарядом' if w == 'up' else 'Позже — после следующего наряда') if not off_ else ('Уже первый' if w == 'up' else 'Уже последний') }}" aria-label="{{ 'Раньше' if w == 'up' else 'Позже' }}">{{ ar }}</button></form>
+  {% endfor %}
+</span></div>{% endif %}
 {% endmacro %}
 
 {% macro free_card(x, d) %}
@@ -103,14 +119,14 @@
   <section class="card compact zp-col {{ 'is-today' if c.d == today }} {{ 'off' if c.off }} {{ 'past' if c.d < today }}" style="--lc:var(--{{ c.lv }})">
     {# 22.11.2026 (брат): нажали на день недели — сразу «Новая запись» на этот день (и выбранного мастера), без перехода #}
     {% set can_new = can_manage and c.d >= today %}
-    {% if can_new %}<button type="button" class="zp-col-h zp-col-new" data-new data-day="{{ c.d }}" data-time="{{ c.first }}" data-mech="{{ pick.id if pick else '' }}" title="Записать клиента на этот день">
-    {% else %}<div class="zp-col-h">{% endif %}
+    {# 22.11.2026 (брат): нажали на день — открывается этот день (у этого мастера); «＋ Записать» — форма записи #}
+    <a class="zp-col-h" href="{{ bar.url(p='day', d=c.d) }}" title="Открыть день">
       <span class="zp-who"><span><b>{{ WEEKDAYS[c.d.weekday()] }}, {{ c.d.day }}</b><span class="caption">{{ MON[c.d.month - 1] }}{% if c.d == today %} · сегодня{% endif %}</span></span></span>
       <span class="zp-pct">{{ c.pct }}%</span>
       <span class="zp-bar"><i style="width:{{ c.pct }}%"></i></span>
       <span class="caption zp-col-sub">{% if c.off %}выходной{% else %}записей {{ c.n }} · {{ c.hours|round(1)|num }} ч{% endif %}</span>
-      {% if can_new %}<span class="zp-add zp-col-sub">{{ "＋ Записать всё равно" if c.off else "＋ Записать" }}</span>{% endif %}
-    {% if can_new %}</button>{% else %}</div>{% endif %}
+    </a>
+    {% if can_new %}<button type="button" class="zp-col-new" data-new data-day="{{ c.d }}" data-time="{{ c.first }}" data-mech="{{ pick.id if pick else '' }}" title="Записать клиента на этот день">{{ "＋ Записать всё равно" if c.off else "＋ Записать" }}</button>{% endif %}
     <div class="zp-list">
       {{ items(c["items"], c.d, not pick and not own) }}
       {% if not c["items"] %}<p class="caption zp-empty">{{ "выходной" if c.off else "записей не было" if c.d < today else "свободно" }}</p>{% endif %}
@@ -118,7 +134,7 @@
   </section>
   {% endfor %}
 </div>
-{% if can_manage %}<p class="hint zp-hint">Нажмите на день — откроется запись на этот день. В выходной свободные часы не предлагаются, но записать можно — «＋ Записать всё равно».</p>{% endif %}
+{% if can_manage %}<p class="hint zp-hint">Нажмите на день — откроется этот день; «＋ Записать» — запись на этот день. Стрелки ↑ ↓ — очередь нарядов мастера. В выходной свободные часы не предлагаются, но записать можно — «＋ Записать всё равно».</p>{% endif %}
 
 {% else %}
 {# ===== Месяц / свой период: календарь ===== #}
@@ -229,6 +245,8 @@
   {% if can_manage %}
   <form class="form" method="post" action="/schedule/{{ e.id }}">
     <h2 class="title-2">Запись клиента <span class="zp-st" data-st="{{ e.status }}">{{ APPT_STATUS[e.status] }}</span></h2>
+    {% if moving %}<div class="hint warn zp-move-hint">Время согласовано с клиентом. Позвоните{% if e.phone %} — <a href="tel:{{ e.phone }}"><b class="nowrap">{{ fmt_phone(e.phone) }}</b></a>{% endif %}, договоритесь о новом
+      времени, впишите его ниже и нажмите «Сохранить».</div>{% endif %}
     {{ appt_fields(e) }}
     <div class="form-row"><button class="btn">Сохранить</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Закрыть</button></div>
   </form>
@@ -283,7 +301,8 @@
   {% endif %}
   // Открытая запись (?edit=) и окна (?free=1) — окошком сразу; закрыли — адрес без них
   const clean = () => { const u = new URL(location.href); ['edit', 'free', 'fd'].forEach(k => u.searchParams.delete(k)); history.replaceState(null, '', u); };
-  const ed = document.getElementById('zp-edit'); if (ed) { ed.showModal(); ed.addEventListener('close', clean); }
+  const ed = document.getElementById('zp-edit'); if (ed) { ed.showModal(); ed.addEventListener('close', () => { clean(); const u = new URL(location.href); u.searchParams.delete('mv'); history.replaceState(null, '', u); });
+    {% if moving %}const tf = ed.querySelector('input[name=time]'); if (tf) { tf.focus(); tf.classList.add('zp-hl'); }{% endif %} }
   {% if open_free %}const fr = document.getElementById('zp-free'); fr.showModal(); fr.addEventListener('close', clean);{% endif %}
 })();
 </script>

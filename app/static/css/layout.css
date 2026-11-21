@@ -2592,3 +2592,19 @@ a.zp-day-a:hover { background: var(--fill-2); }
 @media (max-width: 760px) { .zp-day { min-height: 70px; } .zp-day-free { display: none; } .zp-day-new { padding: 2px 4px; } }
 .zp-day > * { min-width: 0; } @media (max-width: 760px) { .zp-day-w { display: none; } .zp-day-new { font-size: 14px; } }
 .zp-col-new .zp-add { white-space: normal; }
+/* 22.11.2026 (брат): очередь нарядов мастера — кружочки ↑ ↓ справа от карточки (как на мойке) */
+.zp-q { display: flex; gap: 5px; align-items: stretch; min-width: 0; }
+.zp-q > .zp-it { flex: 1 1 auto; min-width: 0; }
+.zp-q-btns { display: flex; flex-direction: column; justify-content: center; gap: 5px; flex: none; }
+.zp-q-btns form { margin: 0; display: contents; }
+.zp-q-b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+  font: 700 14px/1 inherit; text-decoration: none; color: var(--accent); background: var(--surface); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--separator); }
+.zp-q-b:hover { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.zp-q-b:disabled { opacity: .3; cursor: default; background: var(--surface); }
+.zp-cols.week .zp-q { gap: 3px; }
+.zp-cols.week .zp-q-b { width: 20px; height: 20px; font-size: 12px; }
+.zp-col-new { border: 0; background: transparent; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--green); cursor: pointer; text-align: left; }
+.zp-col-new:hover { text-decoration: underline; }
+a.zp-col-h:hover b { color: var(--accent); }
+.zp-move-hint a { color: inherit; }
+input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transparent); }

@@ -91,7 +91,7 @@ def _sorted(items: list) -> list:
 
 @router.get("/schedule")
 def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: str = "", p: str = "", by: str = "",
-             f: str = "", t: str = "", show: str = "", m: str = "", fd: str = "", free: str = ""):
+             f: str = "", t: str = "", show: str = "", m: str = "", fd: str = "", free: str = "", mv: str = ""):
     """Запись (22.11.2026, брат — новый вид «столбиками»). День — столбик на каждого мастера; неделя — столбик на
     каждый день; месяц — календарь. В столбике по времени: записи клиентов, наряды мастера и «свободно» (+ записать).
     Наверху плитки (записей / ждём / приехали / не приехали), кнопки «Новая запись», «Свободные окна», «Напомнить о
@@ -99,10 +99,22 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     ctx.need("schedule.view", "schedule.manage")
     if show in ("future", "past"):
         return _lists(ctx, show, by)
-    return _board(ctx, d, view, edit, p, f, t, m, fd, free)
+    return _board(ctx, d, view, edit, p, f, t, m, fd, free, mv)
 
 
-def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
+def _mark_queue(items: list, wl: dict, mid) -> list:
+    """Наряды в столбике мастера: где стоят в его очереди (первый / последний своего вида) — для стрелок ↑ ↓."""
+    from ..services import workload as wl_svc
+    q = wl_svc.queue_of(wl, mid)
+    for x in items:
+        if x["kind"] == "wo":
+            same = [b.wo.id for b in q if b.kind == x["b"].kind]
+            i = same.index(x["b"].wo.id) if x["b"].wo.id in same else -1
+            x.update(mech=mid, q_first=i <= 0, q_last=i == len(same) - 1 or i < 0)
+    return items
+
+
+def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv=""):
     from ..services import periods
     from ..services import workload as wl_svc
     db, bid = ctx.db, ctx.branch.id
@@ -157,6 +169,7 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
                 open_free=bool(free) and can_manage, level=_level,
                 load_ok=ctx.can("dashboard.view"), people={x.id: x for x in all_masters},
                 new_day=day if view == "day" and day >= today else max(today, d1),
+                can_queue=ctx.can("schedule.queue"), moving=bool(mv) and ctx.can("schedule.manage"),
                 wo_off=[b for b in wl["off"] if b.mech_id in ids])
     if view == "day":
         segs = wl_svc.segments_on(wl, day)
@@ -167,7 +180,7 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
         for x in shown:
             ld = load[x.id]
             items = [_appt_item(a) for a in appts if a.mechanic_id == x.id]
-            items += _wo_items(segs.get(x.id, []))
+            items += _mark_queue(_wo_items(segs.get(x.id, [])), wl, x.id)
             if day.weekday() not in days_off:   # в выходной свободные часы не предлагаем — только «＋ Записать всё равно»
                 items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": x.id} for a, b, mm in _hourly(ld["free"])]
             pct = min(100, round(ld["booked"] * 100 / work_min))
@@ -191,7 +204,7 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
             segs = wl_svc.segments_on(wl, dd)
             items = [_appt_item(a) for a in by_day.get(dd, [])]
             for x in shown:
-                items += [dict(it, mech=x.id) for it in _wo_items(segs.get(x.id, []))]
+                items += _mark_queue(_wo_items(segs.get(x.id, [])), wl, x.id)
             if pick and can_manage and dd >= today and dd.weekday() not in days_off:
                 fr = free_cols(dd, [pick]).get(pick.id, {}).get("free", [])
                 items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": pick.id} for a, b, mm in _hourly(fr)]
@@ -218,6 +231,43 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
 
 
 MON = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+
+
+@router.post("/schedule/queue/{wid}")
+def queue_move(wid: str, ctx: Ctx = Depends(get_ctx), mech: str = Form(...), where: str = Form("up"), back: str = Form("")):
+    """Очередь нарядов мастера (22.11.2026, брат): ↑ — раньше, ↓ — позже (среди нарядов того же вида: сплошные /
+    «возможно»). Записываем место всей очереди мастера — дальше порядок держится, новые наряды встают в конец."""
+    ctx.need("schedule.queue")
+    from ..models import MasterQueue
+    from ..services import workload as wl_svc
+    db, bid = ctx.db, ctx.branch.id
+    wo_id, mid = _uuid(wid), _uuid(mech)
+    masters = osvc.staff_by_role(db, bid, "masters")
+    if mid not in {x.id for x in masters}:
+        raise Forbidden()
+    q = wl_svc.queue_of(wl_svc.plan(db, bid, masters), mid)
+    blk = next((b for b in q if b.wo.id == wo_id), None)
+    if blk:
+        same = [b for b in q if b.kind == blk.kind]
+        i = same.index(blk)
+        j = i - 1 if where == "up" else i + 1
+        if 0 <= j < len(same):
+            same[i], same[j] = same[j], same[i]
+            order = [b.wo.id for b in (same if blk.kind == "solid" else [b for b in q if b.kind == "solid"])]
+            order += [b.wo.id for b in ([b for b in q if b.kind != "solid"] if blk.kind == "solid" else same)]
+            rows = {r.work_order_id: r for r in db.scalars(select(MasterQueue).where(
+                MasterQueue.branch_id == bid, MasterQueue.mechanic_id == mid))}
+            for n, oid in enumerate(order, 1):
+                r = rows.get(oid)
+                if r is None:
+                    db.add(MasterQueue(mechanic_id=mid, work_order_id=oid, rank=n))
+                elif r.rank != n:
+                    r.rank = n
+            db.commit()
+            other = same[i]   # с кем поменялись местами
+            flash(ctx.request, f"Наряд {blk.wo.number[-6:]} — {'раньше' if where == 'up' else 'позже'} "
+                               f"наряда {other.wo.number[-6:]}")
+    return RedirectResponse(_back(back, "/schedule"), status_code=303)
 
 
 def _summary(appts) -> dict:

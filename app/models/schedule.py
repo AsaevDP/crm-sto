@@ -29,3 +29,13 @@ class Appointment(Entity):
     # 20.11.2026 (брат): «Напомнить о записи» — менеджер позвонил, клиент подтвердил, что приедет
     called_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     called_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class MasterQueue(Entity):
+    """Очередь нарядов мастера (22.11.2026, брат): менеджер / директор / зам / админ стрелками ↑ ↓ ставят наряд раньше
+    или позже. rank — место в очереди этого мастера (меньше — раньше); наряда нет в таблице — порядок по умолчанию
+    (в работе → на складе → ждём запчасти → по приёмке). Один наряд у разных мастеров — своё место у каждого."""
+    __tablename__ = "master_queue"
+    mechanic_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"), index=True)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
