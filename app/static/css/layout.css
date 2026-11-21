@@ -2677,3 +2677,8 @@ input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transp
 .zp-sig-more > summary::-webkit-details-marker { display: none; }
 .zp-sig-more[open] > summary { display: none; }
 @media (max-width: 640px) { .zp-sig-row form, .zp-sig-row > .btn { margin-left: auto; } }
+
+/* 21.11.2026 (брат): «🔥 Срочно» — всегда слева от статуса детали в наряде */
+.part-st-box { display: inline-flex; align-items: center; gap: 6px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.part-st-box .inline-form { display: inline; margin: 0; }
+.urg-tag.was { opacity: .6; }

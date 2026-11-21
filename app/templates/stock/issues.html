@@ -84,7 +84,8 @@
     <div class="group-title">Недавно выдано</div>
     <div class="card compact">
       {% for x in done %}
-      <div class="kv"><span><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}</span><b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      {# 21.11.2026 (брат): дата и время — перед номером наряда (справа уезжали за рамку) #}
+      <div class="kv"><span><b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b> · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}</span></div>
       {% else %}<p class="footnote">Пока ничего</p>{% endfor %}
     </div>
   </section>
@@ -155,10 +156,9 @@
     <div class="group-title">Недавно</div>
     <div class="card compact">
       {% for x in t_done %}
-      <div class="kv"><span>{{ "Выдан" if x.r.kind == "issue" else "Сдан" }}: {{ x.tool.name if x.tool else "" }}
+      <div class="kv"><span>{% if x.r.done_at %}<b class="nowrap">{{ x.r.done_at.astimezone().strftime("%d.%m %H:%M") }}</b> · {% endif %}{{ "Выдан" if x.r.kind == "issue" else "Сдан" }}: {{ x.tool.name if x.tool else "" }}
         <span class="caption" style="display:block">{{ x.who.full_name if x.who else "" }}{% if x.by %} · {{ "выдал" if x.r.kind == "issue" else "принял" }} {{ x.by.full_name }}{% endif %}
-          {% if x.r.result == "broken" %} · <span style="color:var(--red)">сломан: {{ x.r.result_note }}</span>{% endif %}</span></span>
-        <b class="nowrap">{{ x.r.done_at.astimezone().strftime("%d.%m %H:%M") if x.r.done_at else "" }}</b></div>
+          {% if x.r.result == "broken" %} · <span style="color:var(--red)">сломан: {{ x.r.result_note }}</span>{% endif %}</span></span></div>
       {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
     </div>
   </section>

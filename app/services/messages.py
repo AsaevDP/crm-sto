@@ -35,7 +35,7 @@ def my_orders(ctx, statuses=ASK_STATUSES) -> list[WorkOrder]:
     q = select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(statuses), or_(
         WorkOrder.mechanic_id == me, WorkOrder.manager_id == me, WorkOrder.partsman_id == me,
         WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me))))
-    return list(ctx.db.scalars(q.order_by(WorkOrder.created_at.desc())))
+    return list(ctx.db.scalars(q.order_by(WorkOrder.number.desc())))   # 21.11.2026: по номеру, большие сверху
 
 
 def team(db: Session, wo: WorkOrder) -> dict:

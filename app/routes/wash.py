@@ -142,7 +142,7 @@ def _my_orders(ctx: Ctx) -> list[WorkOrder]:
     me = ctx.user.id
     return ctx.db.scalars(select(WorkOrder).where(WorkOrder.branch_id == ctx.branch.id, WorkOrder.status.in_(WO_ACTIVE), or_(
         WorkOrder.mechanic_id == me, WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me))))
-        .order_by(WorkOrder.created_at)).all()
+        .order_by(osvc.BY_NUMBER)).all()   # 21.11.2026: выбор машины — по номеру, большие сверху
 
 
 @router.get("/wash/my")

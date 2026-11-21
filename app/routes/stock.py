@@ -1420,7 +1420,7 @@ def _pick_orders(ctx: Ctx) -> list[dict]:
                                 WorkOrder.awaiting_prepay.is_not(True))
     if not ctx.can("orders.view_all") or ctx.user.role.code == "partsman":
         q = q.where(WorkOrder.partsman_id == ctx.user.id)
-    orders = ctx.db.scalars(q.order_by(osvc.FRESH).limit(40)).all()
+    orders = ctx.db.scalars(q.order_by(osvc.BY_NUMBER).limit(40)).all()   # 21.11.2026: по номеру, большие сверху
     vs = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
     from ..models.orders import WO_STATUSES
     return [{"id": o.id, "label": f"{o.number[-6:]} · {vs[o.vehicle_id].make} {vs[o.vehicle_id].model} {osvc.fmt_plate(vs[o.vehicle_id].plate)}"

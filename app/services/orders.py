@@ -159,6 +159,9 @@ def visible_orders_query(ctx):
 
 # 18.11.2026 (брат): плитки нарядов — свежие сверху: по последнему действию (activity_at), у старых — по дате приёмки
 FRESH = func.coalesce(WorkOrder.activity_at, WorkOrder.created_at).desc()
+# 21.11.2026 (брат): в списках-выборах наряда («Попросить под наряд», химия, инструмент, подбор, сообщение) — по номеру,
+# от большего к меньшему. Номер «СТО1-ГГГГ-000032» с нулями — по строке сортируется как число.
+BY_NUMBER = WorkOrder.number.desc()
 
 
 def fresh_key(wo: WorkOrder):

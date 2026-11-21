@@ -97,13 +97,12 @@
     <div class="card compact rd-list">
       {% for d in done %}{% set x = d.x %}
       {% if d.kind == "tool" %}
-      <div class="rd-row"><span class="rd-what">🔧 {{ x.tool.name if x.tool else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% endif %}
-        <span class="caption">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}</span></span>
-        <b class="rd-when">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      {# 21.11.2026 (брат): дата и время — перед номером наряда (справа уезжали за рамку) #}
+      <div class="rd-row"><span class="rd-what"><b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b> · 🔧 {{ x.tool.name if x.tool else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% endif %}
+        <span class="caption">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}</span></span></div>
       {% else %}
-      <div class="rd-row"><span class="rd-what"><a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
-        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption">выдано · {{ ib.full_name }}</span>{% endif %}</span>
-        <b class="rd-when">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b></div>
+      <div class="rd-row"><span class="rd-what"><b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b> · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
+        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption">выдано · {{ ib.full_name }}</span>{% endif %}</span></div>
       {% endif %}
       {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
     </div>
