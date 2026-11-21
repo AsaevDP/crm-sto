@@ -77,3 +77,25 @@ def test_free_time_by_hour_and_week_day_button(client):
     assert f'data-day="{d}"' in week and "zp-col-new" in week and f'data-mech="{andrey}"' in week
     assert "08:00–09:00" in week
     client.post("/logout")
+
+
+def test_week_month_one_master_and_weekend(client):
+    """22.11.2026 (брат): выходные по умолчанию — сб и вс (записать «всё равно» можно); неделя и месяц — только по
+    одному мастеру (без «Все мастера»), не выбран — первый; запись без мастера видна с подписью."""
+    from app.services import settings as st
+    with SessionLocal() as db:
+        u = db.scalar(select(User).where(User.login == "irina"))
+        assert set(st.get(db, u.branch_id, "schedule")["days_off"]) == {5, 6}
+    login(client, "irina", "irina123")
+    d = date.today() + timedelta(days=14)
+    sat = d + timedelta(days=(5 - d.weekday()) % 7)
+    client.post("/schedule", data={"day": sat.isoformat(), "time": "10:00", "duration": "60", "client_name": "Суббота Тест"})
+    for p_ in ("week", "month"):
+        page = client.get(f"/schedule?p={p_}&d={sat}").text
+        assert "Все мастера" not in page and "zp-mchip on" in page, p_
+        assert "Суббота Тест" in page and "Без мастера" in page or p_ == "month", p_
+        assert "всё равно" in page, p_
+    month = client.get(f"/schedule?p=month&d={sat}").text
+    assert "Суббота Тест" in month and "свободно" in month and "zp-day-new" in month
+    assert "Все мастера" in client.get(f"/schedule?p=day&d={sat}").text   # в «Дне» — как было
+    client.post("/logout")

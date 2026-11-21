@@ -14,7 +14,7 @@
   <span class="zp-name">{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}</span>
   {% if a.car or a.plate %}<span class="zp-sub">{{ a.car }}{% if a.plate %} · <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}</span>{% endif %}
   {% if a.work %}<span class="zp-sub zp-work">{{ a.work }}</span>{% endif %}
-  {% if show_mech %}<span class="zp-who-s"><i class="zp-dot"></i>{{ mm.short_name if mm else "Без мастера" }}</span>{% endif %}
+  {% if show_mech or not a.mechanic_id %}<span class="zp-who-s"><i class="zp-dot"></i>{{ mm.short_name if mm else "Без мастера" }}</span>{% endif %}
 </a>
 {% endmacro %}
 
@@ -68,7 +68,8 @@
 
 {% if not own and masters|length > 1 %}
 <nav class="zp-masters" aria-label="Мастер">
-  <a href="{{ bar.url(m='', **per.params()) }}" class="zp-mchip {{ 'on' if not pick }}">Все мастера</a>
+  {# 22.11.2026 (брат): «Все мастера» — только в «Дне»; неделя и месяц — по одному мастеру #}
+  {% if view == "day" %}<a href="{{ bar.url(m='', **per.params()) }}" class="zp-mchip {{ 'on' if not pick }}">Все мастера</a>{% endif %}
   {% for x in masters %}<a href="{{ bar.url(m=x.id, **per.params()) }}" class="zp-mchip {{ 'on' if pick and pick.id == x.id }}" style="--mc:{{ color_css(colors.get(x.id, 'gray')) }}"><i class="zp-dot"></i>{{ x.short_name }}<span class="caption">{{ x.role.name|lower }}</span></a>{% endfor %}
 </nav>
 {% endif %}
@@ -89,6 +90,7 @@
     <div class="zp-list">
       {{ items(c["items"], day) }}
       {% if not c["items"] %}<p class="caption zp-empty">{{ "выходной" if c.off else "на этот день ничего нет" }}</p>{% endif %}
+      {% if c.off and x and can_manage and day >= today %}<button type="button" class="btn btn-sm btn-gray zp-anyway" data-new data-day="{{ day }}" data-mech="{{ x.id }}" title="Выходной, но мастер выйдет — записать можно">＋ Записать всё равно</button>{% endif %}
     </div>
   </section>
   {% endfor %}
@@ -100,14 +102,14 @@
   {% for c in cols %}
   <section class="card compact zp-col {{ 'is-today' if c.d == today }} {{ 'off' if c.off }} {{ 'past' if c.d < today }}" style="--lc:var(--{{ c.lv }})">
     {# 22.11.2026 (брат): нажали на день недели — сразу «Новая запись» на этот день (и выбранного мастера), без перехода #}
-    {% set can_new = can_manage and c.d >= today and not c.off %}
+    {% set can_new = can_manage and c.d >= today %}
     {% if can_new %}<button type="button" class="zp-col-h zp-col-new" data-new data-day="{{ c.d }}" data-time="{{ c.first }}" data-mech="{{ pick.id if pick else '' }}" title="Записать клиента на этот день">
     {% else %}<div class="zp-col-h">{% endif %}
       <span class="zp-who"><span><b>{{ WEEKDAYS[c.d.weekday()] }}, {{ c.d.day }}</b><span class="caption">{{ MON[c.d.month - 1] }}{% if c.d == today %} · сегодня{% endif %}</span></span></span>
       <span class="zp-pct">{{ c.pct }}%</span>
       <span class="zp-bar"><i style="width:{{ c.pct }}%"></i></span>
       <span class="caption zp-col-sub">{% if c.off %}выходной{% else %}записей {{ c.n }} · {{ c.hours|round(1)|num }} ч{% endif %}</span>
-      {% if can_new %}<span class="zp-add zp-col-sub">＋ Записать</span>{% endif %}
+      {% if can_new %}<span class="zp-add zp-col-sub">{{ "＋ Записать всё равно" if c.off else "＋ Записать" }}</span>{% endif %}
     {% if can_new %}</button>{% else %}</div>{% endif %}
     <div class="zp-list">
       {{ items(c["items"], c.d, not pick and not own) }}
@@ -116,7 +118,7 @@
   </section>
   {% endfor %}
 </div>
-{% if not pick and not own and can_manage %}<p class="hint zp-hint">Нажмите на день — откроется запись на этот день. Свободные часы по дням видно, если выбрать одного мастера.</p>{% endif %}
+{% if can_manage %}<p class="hint zp-hint">Нажмите на день — откроется запись на этот день. В выходной свободные часы не предлагаются, но записать можно — «＋ Записать всё равно».</p>{% endif %}
 
 {% else %}
 {# ===== Месяц / свой период: календарь ===== #}
@@ -125,17 +127,23 @@
   {% for wk in weeks %}{% for d in wk %}
   {% if d < d1 or d > d2 %}<div class="zp-day out"></div>
   {% else %}{% set list = by_day.get(d, [])|rejectattr("status", "equalto", "cancel")|list %}{% set pc = pct_day[d] %}
-  <a class="card compact zp-day {{ 'is-today' if d == today }} {{ 'off' if d.weekday() in days_off }} {{ 'past' if d < today }}" href="{{ bar.url(p='day', d=d) }}" style="--lc:var(--{{ level(pc) }})">
-    <span class="zp-day-h"><b>{{ d.day }}</b>{% if mins_day[d] %}<span class="zp-day-pct">{{ pc }}%</span>{% endif %}</span>
+  {% set off_ = d.weekday() in days_off %}{% set fr = free_day.get(d) %}
+  {# 22.11.2026 (брат): месяц по одному мастеру — записи, наряды, «свободно N ч» и «＋ Записать»; число — открыть день #}
+  <div class="card compact zp-day {{ 'is-today' if d == today }} {{ 'off' if off_ }} {{ 'past' if d < today }}" style="--lc:var(--{{ level(pc) }});--mc:{{ color_css(colors.get(pick.id, 'gray') if pick else 'gray') }}">
+    <a class="zp-day-h" href="{{ bar.url(p='day', d=d) }}" title="Открыть день"><b>{{ d.day }}</b>{% if mins_day[d] %}<span class="zp-day-pct">{{ pc }}%</span>{% endif %}</a>
     {% if mins_day[d] %}<span class="zp-bar"><i style="width:{{ pc }}%"></i></span>{% endif %}
-    {% if list or wo_n[d] %}<span class="zp-day-n">{% if list %}<span class="nowrap">записей {{ list|length }}</span>{% endif %}{% if wo_n[d] %}<span class="nowrap">🔧 {{ wo_n[d] }}</span>{% endif %}</span>{% endif %}
-    {% for a in list[:3] %}<span class="zp-day-a" data-st="{{ a.status }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}"><i class="zp-dot"></i><b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or a.car }}</span>{% endfor %}
-    {% if list|length > 3 %}<span class="caption">ещё {{ list|length - 3 }}</span>{% endif %}
-    {% if d.weekday() in days_off and not list %}<span class="caption">выходной</span>{% endif %}
-  </a>{% endif %}
+    {% for a in list[:3] %}<a class="zp-day-a" data-st="{{ a.status }}" href="{{ here }}{{ amp }}edit={{ a.id }}"><b>{{ local(a.start_at).strftime("%H:%M") }}</b> {{ a.client_name or a.car }}</a>{% endfor %}
+    {% if list|length > 3 %}<a class="caption" href="{{ bar.url(p='day', d=d) }}">ещё {{ list|length - 3 }}</a>{% endif %}
+    {% if wo_n[d] %}<span class="zp-day-n"><span class="nowrap">🔧 нарядов {{ wo_n[d] }}</span></span>{% endif %}
+    {% if off_ %}<span class="caption">выходной</span>{% endif %}
+    {% if can_manage and d >= today %}
+    <button type="button" class="zp-day-new" data-new data-day="{{ d }}" data-time="{{ fr.first if fr else '' }}" data-mech="{{ pick.id if pick else '' }}">
+      {% if off_ %}＋<span class="zp-day-w"> всё равно</span>{% elif fr and fr.mins %}<span class="zp-day-free">свободно {{ (fr.mins / 60)|round(1)|num }} ч </span>＋{% else %}<span class="zp-day-w">занят · </span>＋{% endif %}</button>
+    {% endif %}
+  </div>{% endif %}
   {% endfor %}{% endfor %}
 </div>
-<p class="hint zp-hint">Процент — загрузка мастеров в этот день (записи + наряды). Нажмите на день — откроются столбики мастеров.</p>
+<p class="hint zp-hint">Процент — загрузка мастера в этот день (записи + наряды). Число — открыть день, «＋» — записать клиента на этот день.</p>
 {% endif %}
 
 {% if wo_off %}

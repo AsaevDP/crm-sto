@@ -102,7 +102,7 @@ def period_load(db: Session, branch_id, d1: date, d2: date, mechanics, appts: li
     (рабочие дни × часы дня из настроек), % и минуты по дням (для тепловой карты месяца)."""
     cfg = st.get(db, branch_id, "schedule")
     day_h = max(1, int(cfg.get("day_end", 19)) - int(cfg.get("day_start", 8)))
-    off = set(cfg.get("days_off", [6]) or [])
+    off = set(cfg.get("days_off", [5, 6]) or [])
     n_days = sum(1 for i in range((d2 - d1).days + 1) if (d1 + timedelta(days=i)).weekday() not in off)
     cap = max(1, n_days) * day_h
     out = {}

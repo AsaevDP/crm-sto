@@ -58,7 +58,7 @@ class Block:
 
 def _cfg(db, branch_id):
     cfg = st.get(db, branch_id, "schedule")
-    return int(cfg.get("day_start", 8)), int(cfg.get("day_end", 19)), set(cfg.get("days_off", [6]) or [])
+    return int(cfg.get("day_start", 8)), int(cfg.get("day_end", 19)), set(cfg.get("days_off", [5, 6]) or [])
 
 
 def _expected(db: Session, wo: WorkOrder):

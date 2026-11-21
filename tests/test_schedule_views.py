@@ -35,4 +35,4 @@ def test_period_load_counts_hours():
                         status="booked", branch_id=m.branch_id)
         pl = svc.period_load(db, m.branch_id, date(2030, 1, 7), date(2030, 1, 13), [m], [a])
         assert pl[m.id]["hours"] == 3 and pl[m.id]["n"] == 1
-        assert pl[m.id]["cap"] == 6 * pl["_day_h"]   # неделя: 6 рабочих дней (вс — выходной)
+        assert pl[m.id]["cap"] == 5 * pl["_day_h"]   # неделя: 5 рабочих дней (22.11.2026: сб и вс — выходные)

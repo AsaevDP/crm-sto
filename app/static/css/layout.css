@@ -2577,3 +2577,18 @@ button.zp-col-new:hover .zp-add { text-decoration: underline; }
 .zp-free > span:first-child { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .zp-free-w.tent { color: var(--orange); }
 .zp-free > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; } .zp-free .zp-add { white-space: nowrap; flex: none; }
+/* 22.11.2026 (брат): месяц по одному мастеру — клетка дня с «свободно N ч ＋»; выходной — «＋ всё равно» */
+.zp-day { min-height: 128px; }
+a.zp-day-h { color: var(--text); text-decoration: none; }
+a.zp-day-h:hover b { color: var(--accent); }
+a.zp-day-a { color: var(--text); text-decoration: none; padding-left: 6px; box-shadow: inset 3px 0 0 var(--mc); }
+a.zp-day-a:hover { background: var(--fill-2); }
+.zp-day-new { margin-top: auto; border: 0; border-radius: 10px; padding: 4px 8px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  color: var(--green); background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--green) 45%, transparent); text-align: center; white-space: nowrap; }
+.zp-day-new:hover { background: color-mix(in srgb, var(--green) 10%, var(--surface)); }
+.zp-day.off .zp-day-new { color: var(--text-2); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gray) 40%, transparent); }
+.zp-day { grid-template-rows: auto; align-content: stretch; display: flex; flex-direction: column; gap: 4px; }
+.zp-anyway { justify-self: start; }
+@media (max-width: 760px) { .zp-day { min-height: 70px; } .zp-day-free { display: none; } .zp-day-new { padding: 2px 4px; } }
+.zp-day > * { min-width: 0; } @media (max-width: 760px) { .zp-day-w { display: none; } .zp-day-new { font-size: 14px; } }
+.zp-col-new .zp-add { white-space: normal; }

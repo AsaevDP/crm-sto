@@ -116,6 +116,9 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
     own = not can_manage
     masters = [x for x in all_masters if x.id == ctx.user.id] if own else all_masters
     pick = None if own else next((x for x in masters if str(x.id) == m), None)
+    # 22.11.2026 (брат): неделя и месяц — только по одному мастеру (с «Все мастера» путались); не выбран — первый
+    if view != "day" and not own and not pick and masters:
+        pick = masters[0]
     shown = [pick] if pick else masters
     ids = {x.id for x in shown}
     lifts = db.scalars(select(Lift).where(Lift.branch_id == bid, Lift.active.is_(True)).order_by(Lift.number)).all()
@@ -130,7 +133,9 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
     d1, d2 = (day, day) if view == "day" else (per.d1, per.d2)
     if (d2 - d1).days > 92:   # свой период — не больше квартала
         d2 = d1 + timedelta(days=92)
-    appts = [a for a in svc.between(db, bid, d1, d2) if a.mechanic_id in ids or (not pick and not own and not a.mechanic_id)]
+    # записи «без мастера» руководитель видит всегда (и в неделе / месяце одного мастера — с подписью «Без мастера»)
+    appts = [a for a in svc.between(db, bid, d1, d2) if a.mechanic_id in ids or (not own and not a.mechanic_id
+                                                                                  and (not pick or view != "day"))]
     cfg_load = svc.period_load(db, bid, d1, d2, shown, appts,
                                extra={x.id: wl_svc.minutes_by_day(wl, x.id) for x in shown})
     day_h, days_off = cfg_load["_day_h"], cfg_load["_off"]
@@ -163,7 +168,8 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
             ld = load[x.id]
             items = [_appt_item(a) for a in appts if a.mechanic_id == x.id]
             items += _wo_items(segs.get(x.id, []))
-            items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": x.id} for a, b, mm in _hourly(ld["free"])]
+            if day.weekday() not in days_off:   # в выходной свободные часы не предлагаем — только «＋ Записать всё равно»
+                items += [{"kind": "free", "t": a, "end": b, "mins": mm, "mech": x.id} for a, b, mm in _hourly(ld["free"])]
             pct = min(100, round(ld["booked"] * 100 / work_min))
             cols.append({"m": x, "items": _sorted(items), "pct": pct, "lv": _level(pct), "booked": ld["booked"] / 60,
                          "n": sum(1 for a in appts if a.mechanic_id == x.id and a.status != "cancel"),
@@ -201,8 +207,14 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free):
         weeks.append([s + timedelta(days=i) for i in range(7)])
         s += timedelta(days=7)
     wo_n = {dd: len({id(b) for x in shown for _, _, b in wl_svc.segments_on(wl, dd).get(x.id, [])}) for dd in days}
+    # 22.11.2026 (брат): месяц по мастеру — у каждого дня «свободно N ч» и первый свободный час для «＋ Записать»
+    free_day = {}
+    for dd in days:
+        if pick and can_manage and dd >= today and dd.weekday() not in days_off:
+            hrs = _hourly(free_cols(dd, [pick]).get(pick.id, {}).get("free", []))
+            free_day[dd] = {"mins": sum(x[2] for x in hrs), "first": hrs[0][0] if hrs else ""}
     return ctx.render("schedule/index.html", title="Запись", weeks=weeks, by_day=by_day, d1=d1, d2=d2,
-                      pct_day=pct_day, mins_day=mins_day, wo_n=wo_n, **base)
+                      pct_day=pct_day, mins_day=mins_day, wo_n=wo_n, free_day=free_day, **base)
 
 
 MON = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]

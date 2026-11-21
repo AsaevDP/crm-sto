@@ -35,5 +35,5 @@ def test_free_windows_and_call_tomorrow(client):
     client.post(f"/schedule/{aid}/called")
     assert orange() == before - 1   # позвонили — из счёта ушла
     assert "Уже позвонили" in client.get("/schedule/remind").text
-    week = client.get(f"/schedule?d={day}&view=week").text
+    week = client.get(f"/schedule?d={day}&view=week&m={sergey}").text   # 22.11.2026: неделя — по одному мастеру
     assert "Окна Тестовый" in week and "zp-bar" in week

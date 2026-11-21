@@ -96,6 +96,12 @@ def _grant_once(db: Session):
                                                                   RolePermission.permission == perm)):
                     db.delete(rp)
             st.put(db, br.id, "grants_once", {key: True})
+    # 22.11.2026 (брат): выходные по умолчанию — суббота и воскресенье (раньше только вс); в рабочей базе — один раз
+    for br in db.scalars(select(Branch)):
+        if not st.get(db, br.id, "grants_once").get("days_off.sat_sun"):
+            current_branch_id.set(br.id)
+            st.put(db, br.id, "schedule", {"days_off": [5, 6]})
+            st.put(db, br.id, "grants_once", {"days_off.sat_sun": True})
     db.flush()
 
 
