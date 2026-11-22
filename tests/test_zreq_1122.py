@@ -212,3 +212,22 @@ def test_every_badge_has_its_tile(client):
     login(client, "pavel", "pavel123")
     assert "Заказ у поставщика" in client.get("/stock/leftovers").text
     client.post("/logout")
+
+
+def test_print_order_with_work_without_hours(client):
+    """22.11.2026: работа из «✓ Да» по проблеме — часы ещё не вписаны; печать заказ-наряда не падает."""
+    login(client, "irina", "irina123")
+    url = _order_url(_create(client, scenario="B", plate="ВВ 2214 ВВ", phone="0672211224"))
+    client.post("/logout")
+    login(client, "andrey", "andrey123")
+    client.post(f"{url}/findings", data={"text": "Люфт рулевой тяги", "urgency": "soon"}, headers={"x-requested-with": "fetch"})
+    client.post(f"{url}/diag-done")
+    client.post("/logout")
+    login(client, "irina", "irina123")
+    oid = uuid.UUID(url.rsplit("/", 1)[1])
+    with SessionLocal() as db:
+        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == oid))
+    client.post(f"{url}/findings/{f.id}/approval", data={"value": "yes"})
+    r = client.get(f"{url}/print")
+    assert r.status_code == 200 and "Люфт рулевой тяги" in r.text
+    client.post("/logout")
