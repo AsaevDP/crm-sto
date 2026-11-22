@@ -1931,10 +1931,17 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .ow-card .kv { align-items: center; }
 .ow-card .kv b { white-space: normal; text-align: right; }
 .po-todo-card a.card-link { color: inherit; text-decoration: none; display: block; }
+/* 22.11.2026: + время привоза — на ПК поуже названия деталей шли по слогам: до 1200 px поставщик и «Заказал» под названием */
+@media (min-width: 761px) and (max-width: 1200px) {
+  .ow-row { grid-template-columns: minmax(180px, 1fr) auto; }
+  .ow-row .ow-name { grid-column: 1 / -1; }
+}
 @media (max-width: 760px) {
   .ow-row { grid-template-columns: minmax(0, 1fr); }
-  .ow-ord { justify-content: space-between; }
+  .ow-ord { justify-content: space-between; flex-wrap: wrap; }
   .ow-ord .ow-date { flex: 1 1 auto; }
+  .ow-ord .ow-time, .ow-total .ow-time { flex: 0 0 112px; width: 112px; }
+  .ow-ord .btn { flex: 1 1 100%; }
 }
 .po-todo-act { display: grid; gap: 6px; margin-top: 10px; }
 .ow-ord .btn:disabled { opacity: .4; cursor: not-allowed; }
@@ -2874,6 +2881,8 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 .so-line { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 14px; }
 .so-line .grow { min-width: 0; }
 .so-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+.so-acts .btn:disabled { opacity: .45; cursor: not-allowed; }
+.so-buyer a { color: var(--accent); text-decoration: none; }
 .so-api { margin-top: 16px; }
 .so-codes { display: grid; gap: 6px; }
 .so-code-row { grid-template-columns: 1fr 70px 110px; }

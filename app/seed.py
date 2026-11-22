@@ -66,10 +66,9 @@ GRANTS_ONCE = [("grant.manager.by_partsman", "manager", "purchases.by_partsman")
                # 20.11.2026 (брат): химию для мойки заказывает запчастист — у него «Мойка» (химия и закупки)
                ("grant.partsman.wash_view", "partsman", "wash.view"),
                ("grant.partsman.wash_buy", "partsman", "wash.buy"),
-               ("grant.director.schedule_manage", "director", "schedule.manage"),   # 22.11.2026 (брат): записывает клиентов
-               # 22.11.2026 (брат): «Заявки с сайта»
-               ("grant.content.site_orders", "content", "site.orders"), ("grant.headkeeper.site_orders", "headkeeper", "site.orders"),
-               ("grant.director.site_orders", "director", "site.orders"), ("grant.deputy.site_orders", "deputy", "site.orders")]
+               ("grant.director.schedule_manage", "director", "schedule.manage")]   # 22.11.2026 (брат): записывает клиентов
+# Совсем НОВОЕ право (например, site.orders 22.11.2026) сюда не писать: его выдаёт sync_permissions ролям по умолчанию
+# (иначе при запуске на рабочей базе право добавляется дважды и CRM не стартует).
 # Право, которое у роли по умолчанию было, а теперь его быть не должно: снимаем один раз (вернуть руками можно)
 REVOKES_ONCE = [("revoke.manager.wash_buy", "manager", "wash.buy"),   # 20.11.2026 (брат): менеджер химию не заказывает
                 # 20.11.2026 (брат): «Зарплата сотрудников» директору — только когда админ поставит галочку
