@@ -74,6 +74,21 @@ from app.db import Base, SessionLocal, UTCDateTime  # noqa: E402
 from app.main import app  # noqa: E402
 from app import models as M  # noqa: E402
 
+# 23.11.2026 (брат): покрытие — какие кнопки (POST-адреса) и экраны (GET) прогон реально нажал / открыл.
+# В конце отчёта — список того, что ни разу не нажималось.
+HIT = Counter()
+# служебное — не кнопки и не экраны для человека (файлы, отладка, вход/выход сайта)
+SKIP_ROUTES = {"/static", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def _cover(request, call_next):
+    resp = await call_next(request)
+    route = request.scope.get("route")
+    if route is not None and resp.status_code < 500:
+        HIT[(request.method, getattr(route, "path", ""))] += 1
+    return resp
+
 rnd = random.Random(SEED)
 TODAY = date.today()
 START = TODAY - timedelta(days=DAYS)
@@ -168,7 +183,17 @@ class People:
 P = People()
 
 
-def post(who, path, data=None, files=None, what="", fetch=False, ok_json=True):
+def post(who, path, data=None, files=None, what="", fetch=False, ok_json=True, expect_no=False):
+    """expect_no — 23.11.2026: кнопка, которая здесь ДОЛЖНА отказать (красное сообщение — это правильно)."""
+    if expect_no:
+        r = P(who).post(path, data=data or {}, files=files, follow_redirects=True)
+        if r.status_code >= 500:
+            R.fail(who, what or path, path, f"ответ {r.status_code}")
+        elif not FLASH_ERR.search(r.text):
+            R.fail(who, what or path, path, "ждали отказ (красное сообщение) — а прошло")
+        else:
+            R.ok[who] += 1
+        return r
     hdr = {"x-requested-with": "fetch"} if fetch else {}
     try:
         r = P(who).post(path, data=data or {}, files=files, headers=hdr, follow_redirects=not fetch)
@@ -188,6 +213,8 @@ def post(who, path, data=None, files=None, what="", fetch=False, ok_json=True):
             pass
         return r
     m = FLASH_ERR.search(r.text)
+    if m and "Записано, но есть пересечение" in m.group(1):   # 23.11.2026: предупреждение — запись сохранена
+        m = None
     if m:
         R.fail(who, what or path, path, "красное сообщение: " + re.sub(r"<[^>]+>", "", m.group(1)).strip())
     else:
@@ -255,11 +282,15 @@ NAMES = {
     "detail": "Ольга Захарченко",
     "glav": "Сергей Ковальчук",   # 20.11.2026: главный кладовщик — обе зоны склада
 }
-STAFF_EXTRA = []   # больше никого не заводим
-PAIRS = {"oleg": "irina"}
-MANAGERS = ["irina"]
-PARTSMEN = {"irina": ["oleg"]}
-MECHS = ["andrey"]
+# 23.11.2026 (брат): второй менеджер, второй слесарь, второй запчастист — без них не проверить передачу наряда,
+# пары «менеджер ↔ запчастист», «менеджер видит только свои наряды», второго мастера на машине
+STAFF_EXTRA = [("marina", "Марина Ткаченко", "manager"), ("taras", "Тарас Мороз", "mechanic"),
+               ("yuriy", "Юрий Кравчук", "partsman")]
+NAMES.update({lg: nm for lg, nm, _ in STAFF_EXTRA})
+PAIRS = {"oleg": "irina", "yuriy": "marina"}
+MANAGERS = ["irina", "irina", "marina"]   # у Ирины больше машин, у Марины — свои
+PARTSMEN = {"irina": ["oleg"], "marina": ["yuriy", "oleg"]}   # 23.11.2026: у Марины свой запчастист
+MECHS = ["andrey", "andrey", "taras"]   # 23.11.2026: второй слесарь — Тарас
 
 # 20.11.2026 (брат): новая имитация — новый каталог (другие детали, фирмы, артикулы), наряды насыщеннее:
 # у каждой работы по нескольку деталей со склада и под заказ, работ в наряде 2–4, второй мастер чаще.
@@ -385,7 +416,7 @@ def make_clients(n):
     return out
 
 
-CLIENTS = make_clients(42)   # 22.11.2026 (брат): плотнее — 35–40 машин, 50–60 нарядов
+CLIENTS = make_clients(46)   # 23.11.2026: до 50 машин — все кнопки (сколько машин — проверяет final_checks)   # 22.11.2026 (брат): плотнее — 35–40 машин, 50–60 нарядов
 
 
 def free_client(repeat=False):
@@ -425,7 +456,7 @@ def setup():
             if not one(M.StaffCard, M.StaffCard.user_id == u.id):
                 post("admin", f"/settings/users/{u.id}/cards", {"uid": f"77{i:08d}", "label": "пропуск"}, what=f"Карта {u.full_name}")
         # Рабочие места (21.11.2026): подъёмники 1–3, электрик 1, моторист 1, мойка 1, детейлинг 1; остальные выключены
-        places = {("lift", 1): ("Слесарный", "andrey"), ("lift", 2): ("Подвеска", None), ("lift", 3): ("Развал", None),
+        places = {("lift", 1): ("Слесарный", "andrey"), ("lift", 2): ("Подвеска", "taras"), ("lift", 3): ("Развал", None),
                   ("electric", 1): ("", "elektro"), ("motor", 1): ("", "motor"), ("wash", 1): ("", "moyka"),
                   ("detail", 1): ("", "detail")}
         for l in q(M.Lift, order=M.Lift.number):
@@ -1564,7 +1595,7 @@ def prepare_staff():
 def end_of_day(day):
     """Вечер: каждый открыл «Сообщения» — прочитанное за день не висит окошками на следующий."""
     with at(day, "19:20"):
-        for lg in STAFF:
+        for lg in STAFF + tuple(s[0] for s in STAFF_EXTRA):
             get(lg, "/notifications")
 
 
@@ -2122,6 +2153,424 @@ def queue_today(day):
             R.check(after.index(solid[-1]) == len(solid) - 2, "↑ в очереди — наряд встал раньше", lg)
 
 
+# ================================================================ 23.11.2026 (брат): каждая кнопка CRM
+def _first(model, *where, order=None):
+    r = q(model, *where, order=order)
+    return r[0] if r else None
+
+
+def cover_extras(day):
+    """Кнопки, которые обычный ход недели не нажимает: настройки, сотрудники, клиенты, зарплата, склад, разбор,
+    мойка, вход по PIN и карте, «глазами сотрудника». Каждая — там, где её нажал бы человек, и так, чтобы
+    рабочая картина на сегодня осталась (что создали для проверки — то и убрали)."""
+    from app.services.payweek import monday
+    roles = {r.code: r.id for r in q(M.Role)}
+    # ---- вход по PIN и по карте, выход, «глазами сотрудника»
+    with at(day, "07:55"):
+        c = TestClient(app)
+        r = c.post("/login/pin", data={"user_id": str(uid("andrey")), "pin": "1005"}, follow_redirects=False)
+        R.check(r.status_code == 303, "вход по PIN", str(r.status_code))
+        c.post("/logout")
+        card = _first(M.StaffCard, M.StaffCard.user_id == uid("pavel"))
+        if card:
+            r = TestClient(app).post("/login/card", data={"uid": card.uid}, follow_redirects=False)
+            R.check(r.status_code in (200, 303), "вход по карте", str(r.status_code))
+        post("admin", f"/view-as/{uid('andrey')}", what="Глазами сотрудника: Андрей")
+        get("admin", "/orders", what="Наряды глазами Андрея")
+        post("admin", "/view-as/stop", what="Выйти из «глазами сотрудника»")
+        n = _first(M.Notification, M.Notification.user_id == uid("admin"))
+        if n:
+            post("admin", f"/api/notify/{n.id}/read", fetch=True, what="Окошко: прочитано")
+    # ---- сотрудник-стажёр: завести, правка, пароль, карта, уволить, вернуть, снова уволить (будет в «Архиве»)
+    with at(day, "08:10"):
+        post("admin", "/settings/users", {"full_name": "Стажёр Тестовый", "login": "stazher", "role_id": str(roles["mechanic"]),
+                                          "password": "stazher123", "pin": ""}, what="Новый сотрудник")
+        st_ = _first(M.User, M.User.login == "stazher")
+        if st_:
+            post("admin", f"/settings/users/{st_.id}", {"full_name": "Стажёр Тестовый", "login": "stazher",
+                                                       "role_id": str(roles["mechanic"]), "phone": "+380501112233",
+                                                       "hired_on": str(day - timedelta(days=5))}, what="Сотрудник: правка")
+            post("admin", f"/settings/users/{st_.id}/secret", {"password": "stazher123", "pin": "4321"}, what="Пароль и PIN")
+            post("admin", f"/settings/users/{st_.id}/cards", {"uid": "7799990001", "label": "пропуск"}, what="Карта стажёру")
+            cd = _first(M.StaffCard, M.StaffCard.user_id == st_.id)
+            if cd:
+                post("admin", f"/settings/users/{st_.id}/cards/{cd.id}/toggle", what="Карту выключить")
+            get("admin", f"/settings/users/{st_.id}/dismiss", what="Увольнение — экран")
+            post("admin", f"/settings/users/{st_.id}/dismiss", {"reason": "проверка"}, what="Уволить стажёра")
+            get("admin", f"/settings/users/{st_.id}/archive", what="Архив сотрудника")
+            post("admin", f"/settings/users/{st_.id}/rehire", what="Вернуть стажёра")
+            post("admin", f"/settings/users/{st_.id}/dismiss", {"reason": "стажировка закончилась"}, what="Уволить стажёра снова")
+    # ---- настройки (сохраняем то, что уже есть — ничего не ломаем)
+    with at(day, "08:20"):
+        from app.services import settings as st
+        with SessionLocal() as db:
+            br = db.scalar(select(M.Branch))
+            num = st.get(db, br.id, "order_number") or {}
+            code = br.code
+        post("admin", "/settings/numbering", {"template": num.get("template") or "{код}-{год}-{номер}", "code": code or "СТО1",
+                                              "reset_yearly": "1" if num.get("reset_yearly") else ""}, what="Нумерация нарядов")
+        post("admin", "/settings/receive-backup", {"code": "deputy", "on": ""}, what="Приёмка без кладовщика (выкл.)")
+        post("admin", "/settings/keys", {"count": "50"}, what="Ячейки ключей")
+        post("admin", "/settings/labels", {"size": "100x70", "mode": "label", "show_price": "1", "show_cell": "1"}, what="Наклейки и принтер")
+        post("admin", "/settings/points", {"name": "Чёрный вход", "counts": "1"}, what="Точка табеля")
+        post("admin", "/settings/points/unkiosk", what="Снять «киоск» с этого ПК")
+        post("admin", "/api/brands", {"name": "Brembo"}, fetch=True, what="Бренд из окна запчасти")
+        post("admin", "/settings/brands", {"action": "add", "name": "Ferodo Racing"}, what="Бренд: добавить")
+        b = _first(M.Brand, M.Brand.name == "Ferodo Racing")
+        if b:
+            post("admin", "/settings/brands", {"action": "rename", "bid": str(b.id), "name": "Ferodo DS"}, what="Бренд: переименовать")
+            post("admin", "/settings/brands", {"action": "delete", "bid": str(b.id)}, what="Бренд: убрать из списка")
+        r = P("admin").post("/reports/template", json={"header": "СТО «Мотор»", "footer": "", "signer1": "Директор", "signer2": "Бухгалтер"})
+        R.check(r.status_code == 200, "шаблон отчёта сохраняется", str(r.status_code))
+    # ---- зарплата: схемы, группы, оклад, доступ заму, корректировки, выплата
+    with at(day, "08:40"):
+        and_ = uid("andrey")
+        post("admin", f"/settings/payroll/{and_}/lines", {"kind": "percent", "base": "parts_margin", "rate": "1"},
+             what="Схема: добавить строку")
+        ln = _first(M.PaySchemeLine, M.PaySchemeLine.base == "parts_margin", M.PaySchemeLine.rate == 1)
+        if ln:
+            post("admin", f"/settings/payroll/lines/{ln.id}", {"rate": "2"}, what="Схема: поменять ставку")
+            post("admin", f"/settings/payroll/lines/{ln.id}/delete", what="Схема: убрать строку")
+        post("admin", "/settings/payroll/groups", {"name": "Масла и фильтры"}, what="Группа запчастей для схем")
+        g = _first(M.PartGroup, M.PartGroup.name == "Масла и фильтры")
+        cid_ = (_first(M.PartCatalog, M.PartCatalog.section == "to") or _first(M.PartCatalog)).id
+        if g and cid_:
+            post("admin", f"/settings/payroll/groups/{g.id}/items", {"catalog_id": str(cid_)}, what="Группа: добавить позицию")
+            post("admin", f"/settings/payroll/groups/{g.id}/items", {"catalog_id": str(cid_), "remove": "1"}, what="Группа: убрать позицию")
+        post("admin", "/settings/payroll/salary", what="Начислить оклады")
+        post("deputy", "/payroll/access-request", {"reason": "Проверить выплаты мастерам"}, what="Зам просит «Зарплату сотрудников»")
+        pa = _first(M.PayrollAccess, M.PayrollAccess.status == "pending")
+        if pa:
+            post("director", f"/payroll-access/{pa.id}", {"action": "approve", "hours": "24"}, what="Директор: открыть заму на день")
+            post("director", f"/payroll-access/{pa.id}", {"action": "close"}, what="Директор: закрыть доступ досрочно")
+        old = (monday(day) - timedelta(days=14)).isoformat()
+        post("admin", f"/payroll/weeks/{old}/adjust", {"user_id": str(and_), "amount": "300", "kind": "bonus",
+                                                    "note": "за чистоту на посту"}, what="Премия за неделю")
+        acc = _first(M.PayrollAccrual, M.PayrollAccrual.user_id == and_, order=M.PayrollAccrual.created_at.desc())
+        if acc:
+            post("admin", f"/payroll/accruals/{acc.id}", {"amount": str(acc.amount), "reason": "проверил", "action": "save",
+                                                         "d": old}, what="Начисление: правка")
+        post("admin", f"/payroll/account/{and_}", {"pay_method": "card", "pay_account": "5375 4141 0000 1111",
+                                                "pay_bank": "Монобанк"}, what="Реквизиты для выплаты")
+        post("admin", "/payroll/payouts", {"user_id": str(uid("moyka")), "amount": "100", "method": "cash", "note": "аванс"},
+             what="Выплата (аванс)")
+        po = _first(M.PayrollPayout, M.PayrollPayout.note == "аванс")
+        if po:
+            post("admin", f"/payroll/payouts/{po.id}/delete", what="Выплата: удалить (ошиблись)")
+        post("buh", f"/payroll/weeks/{old}/status", {"status": "checked", "note": ""}, what="Проверил всех (старая неделя)")
+    # ---- табель: отметка вручную и удаление
+    with at(day, "08:50"):
+        post("admin", "/timesheet/events", {"user_id": str(uid("buh")), "day": str(day), "at": "08:00", "direction": "in",
+                                            "comment": "забыла карту"}, what="Табель: отметка вручную")
+        ev = _first(M.AttendanceEvent, M.AttendanceEvent.comment == "забыла карту")
+        if ev:
+            post("admin", f"/timesheet/events/{ev.id}/delete", what="Табель: удалить отметку")
+    # ---- клиенты, машины, доступы
+    with at(day, "10:20"):
+        cl = _first(M.Client, M.Client.full_name != "", order=M.Client.created_at)
+        if cl:
+            post("irina", f"/clients/{cl.id}/edit", {"full_name": cl.full_name, "phone": cl.phone}, what="Клиент: правка")
+            post("irina", f"/clients/{cl.id}/note", {"text": "Предпочитает звонок после 17:00"}, what="Клиент: заметка")
+            post("irina", f"/clients/{cl.id}/regular", what="Клиент: постоянный")
+            ev = _first(M.ClientEvent, M.ClientEvent.kind == "recommendation")
+            if ev:
+                post("admin", f"/clients/{ev.client_id}/events/{ev.id}/resolve", what="Рекомендация: сделано")
+            v = _first(M.Vehicle, M.Vehicle.client_id == cl.id)
+            if v:
+                post("irina", f"/vehicles/{v.id}/edit", {"make": v.make, "model": v.model, "plate": v.plate, "year": str(v.year or ""),
+                                                         "vin": v.vin or "", "mileage": str(v.mileage or "")}, what="Машина: правка")
+            post("director", f"/clients/{cl.id}/grant", {"user_id": str(uid("marina")), "hours": "1", "back": f"/clients/{cl.id}"},
+                 what="Дать менеджеру доступ к клиенту")
+        # смена владельца — машина последнего клиента (продал машину)
+        cl2 = _first(M.Client, order=M.Client.created_at.desc())
+        v2 = _first(M.Vehicle, M.Vehicle.client_id == cl2.id) if cl2 else None
+        if v2:
+            post("admin", f"/vehicles/{v2.id}/owner", {"phone": "+380671234500", "name": "Новый Владелец"}, what="Сменить владельца")
+        # Марина: доступ к клиенту → отказ; ко всем нарядам → разрешили на час, закрыли; «решаю сам» — нельзя
+        post("marina", "/clients/access-request", {"reason": "Клиент Ирины звонит, Ирина на обеде"}, what="Марина: доступ к клиенту")
+        ca = _first(M.ClientAccess, M.ClientAccess.user_id == uid("marina"), M.ClientAccess.status == "pending")
+        if ca:
+            post("director", f"/client-access/{ca.id}", {"action": "decline"}, what="Доступ к клиенту: отказать")
+        post("marina", "/orders/access-request", {"reason": "Ирина заболела — веду её машины"}, what="Марина: доступ ко всем нарядам")
+        oa = _first(M.OrderAccess, M.OrderAccess.user_id == uid("marina"), M.OrderAccess.status == "pending")
+        if oa:
+            post("marina", f"/access-requests/{oa.id}/self", expect_no=True, what="«Решаю сам» — ко всем нарядам нельзя")
+            post("director", f"/access-requests/{oa.id}", {"action": "approve", "hours": "1"}, what="Директор: доступ на час")
+            post("director", f"/access-requests/{oa.id}", {"action": "close"}, what="Директор: закрыть доступ")
+    # ---- наряды: фото, предоплата, проблемы (правка / удалить), «на диагностику» / «на согласование», инструмент
+    with at(day, "10:40"):
+        work = [o for o in ACTIVE if o.wo() is not None and o.wo().status == "work"]
+        appr = [o for o in ACTIVE if o.wo() is not None and o.wo().status == "approve"]
+        if work:
+            post(work[0].mgr, f"{work[0].url}/photos", files=photo(1), fetch=True, what="Фото в наряд")
+            tool = _first(M.Tool, M.Tool.holder_id.is_(None), M.Tool.category.notin_(("personal", "spare")))
+            if tool:
+                post("pavel", f"{work[0].url}/tools", {"tool_id": str(tool.id), "user_id": str(work[0].wo().mechanic_id)},
+                     what="Выдать инструмент под наряд (из наряда)")
+        if appr:
+            o = appr[0]
+            post(o.mgr, f"{o.url}/money", {"payment_type": "prepay", "prepay_amount": "1000", "prepay_for": "запчасти под заказ"},
+                 what="Предоплата: 1000 ₴ за запчасти")
+            mech = one(M.User, M.User.id == o.wo().mechanic_id) if o.wo().mechanic_id else None
+            if mech:
+                post(mech.login, f"{o.url}/findings", {"text": "Трещина пыльника ШРУСа", "urgency": "soon"}, fetch=True,
+                     what="Мастер: новая находка")
+                f = _first(M.WoFinding, M.WoFinding.work_order_id == o.id, M.WoFinding.text == "Трещина пыльника ШРУСа")
+                if f:
+                    post(mech.login, f"{o.url}/findings/{f.id}/edit", {"text": "Трещина пыльника внутреннего ШРУСа", "urgency": "soon"},
+                         what="Проблема: исправить")
+                    post(mech.login, f"{o.url}/findings/{f.id}/delete", what="Проблема: удалить (ошибся)")
+        # приёмка без мастера: одна машина «на диагностику», другая — менеджер записал со слов → «на согласование»
+        for k, (mgr, how) in enumerate((("marina", "diag"), ("irina", "approve"))):
+            c = free_client()
+            r = post(mgr, "/orders/new", {"phone": c["phone"], "name": c["name"], "plate": c["plate"], "make": c["make"],
+                                          "model": c["model"], "year": str(c["year"]), "mileage": str(c["km"] + 1000),
+                                          "vin": c["vin"], "scenario": "B", "complaint": "Посмотреть подвеску" if k == 0 else "Скрип справа",
+                                          "partsman_id": str(uid(PARTSMEN[mgr][0])), "mechanic_id": "", "lift_id": "",
+                                          "fuel_level": "50", "intake_items": ["docs"], "intake_token": f"sim-x{k}-{rnd.random()}"},
+                     files=photo(1), what="Приёмка без мастера", fetch=True)
+            if r is None or r.status_code != 200:
+                continue
+            url = r.json()["url"]
+            if how == "diag":
+                post(mgr, f"{url}/to-diag", {"mechanic_id": str(uid("taras")), "lift_id": ""}, what="На диагностику — Тарасу")
+                post("taras", "/lifts/take", {"lift_id": str(one(M.Lift, M.Lift.mechanic_id == uid("taras")).id)}, what="Слесарь: моё место")
+            else:
+                post(mgr, f"{url}/findings", {"text": "Со слов клиента: скрип справа при повороте", "urgency": "soon"}, fetch=True,
+                     what="Менеджер: проблема со слов клиента")
+                post(mgr, f"{url}/to-approve", what="Проблемы записаны → согласование")
+    # ---- запчасти: «нужна» → со склада / заказать, наценка, архив → вернуть, «в наряд» со склада
+    with at(day, "11:00"):
+        appr = [o for o in ACTIVE if o.wo() is not None and o.wo().status == "approve"]
+        if appr:
+            o = appr[-1]
+            pm = one(M.User, M.User.id == o.wo().partsman_id)
+            pm_l = pm.login if pm else "oleg"
+            post(pm_l, f"{o.url}/parts", {"name": "Хомут выпускной", "cost": "120", "qty": "1", "action": "need"}, what="Деталь «нужна»")
+            p_ = _first(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.name == "Хомут выпускной")
+            if p_:
+                post(pm_l, f"{o.url}/parts/{p_.id}/source", {"action": "order"}, what="Нужна → заказать")
+                post(pm_l, f"{o.url}/parts/{p_.id}/markup", {"markup_pct": "45", "cost": "120"}, what="Наценка детали")
+                post(pm_l, f"{o.url}/parts/{p_.id}/delete", {"reason": ""}, what="Убрать деталь в архив")
+                post(pm_l, f"{o.url}/parts/{p_.id}/restore", what="Вернуть из архива")
+            it = _first(M.StockItem, M.StockItem.catalog_id == cat_id(LAMP)) if LAMP else None
+            if it:
+                post(pm_l, f"/stock/items/{it.id}/to-order", {"order_id": str(o.id), "qty": "1"}, what="Склад → в наряд")
+    # ---- склад: категории, «подходит для», «Всегда в наличии», закупка (строка, накладная)
+    with at(day, "11:20"):
+        post("pavel", "/stock/categories", {"section": "repair", "name": "Выхлоп"}, what="Категория склада")
+        sc = _first(M.StockCategory, M.StockCategory.name == "Выхлоп")
+        if sc:
+            post("pavel", f"/stock/categories/{sc.id}", {"action": "rename", "name": "Выхлопная система"}, what="Категория: переименовать")
+        it = _first(M.StockItem, M.StockItem.donor_id.is_(None), order=M.StockItem.created_at)
+        if it:
+            c_ = one(M.PartCatalog, M.PartCatalog.id == it.catalog_id)
+            post("pavel", f"/stock/items/{it.id}/category", {"section": c_.section or "repair", "category": c_.category or "",
+                                                             "subcategory": c_.subcategory or ""}, what="Позиция: категория")
+            post("pavel", f"/stock/items/{it.id}/fits", {"make": "Toyota", "model": "Camry", "year_from": "2012", "year_to": "2018"},
+                 what="Позиция: подходит для")
+            ft = _first(M.PartFit, M.PartFit.catalog_id == it.catalog_id, M.PartFit.make == "Toyota")
+            if ft:
+                post("pavel", f"/stock/items/{it.id}/fits/{ft.id}/delete", what="Подходит для: убрать")
+        k_ = _first(M.StockKeep)
+        if k_:
+            post("pavel", f"/stock/always/{k_.id}", {"min_qty": str(k_.min_qty)}, what="Всегда в наличии: норма")
+        d_ = _first(M.Purchase, M.Purchase.status == "draft", M.Purchase.work_order_id.is_(None))
+        ln = _first(M.PurchaseLine, M.PurchaseLine.purchase_id == d_.id) if d_ else None
+        if ln:
+            who_ = one(M.User, M.User.id == d_.created_by)
+            post(who_.login if who_ else "pavel", f"/purchases/{d_.id}/lines/{ln.id}", {"qty": str(ln.qty), "price": str(ln.price),
+                                                                                       "action": "save"}, what="Закупка: строка")
+        o_ = _first(M.Purchase, M.Purchase.status == "ordered")
+        if o_:
+            post("pavel", f"/purchases/{o_.id}/delivered", {"invoice": "ТТН-77001"}, what="№ накладной у закупки")
+    # ---- инструмент: разложить, карточка, «забрал у окошка», отменить запрос
+    with at(day, "11:40"):
+        sh = _first(M.ToolShelf)
+        tl = _first(M.Tool, M.Tool.shelf_id.is_not(None)) or _first(M.Tool)
+        if sh and tl:
+            post("pavel", "/tools/place", {"shelf_id": str(sh.id), "tool": [str(tl.id)]}, what="Разложить по полкам")
+            post("pavel", f"/tools/{tl.id}", {"action": "save", "name": tl.name, "category": tl.category or "shared",
+                                              "condition": getattr(tl, "condition", "") or "ok"},
+                 files=[("photo", ("tool.jpg", PHOTOS[0].read_bytes(), "image/jpeg"))], what="Инструмент: карточка с фото")
+        wk = [o for o in ACTIVE if o.wo() is not None and o.wo().status in ("work", "instock", "waiting")]
+        # общий инструмент без запросов — заводим два новых в шкаф (на старые уже есть запросы на сегодня)
+        for nm in ("Тестер аккумуляторов", "Набор щупов"):
+            post("pavel", "/tools", {"name": nm, "category": "electric", "cost": "1800", "place": "Шкаф 1"}, what=f"Инструмент: завести «{nm}»")
+        free_t = [t for t in q(M.Tool, M.Tool.holder_id.is_(None), M.Tool.name.in_(("Тестер аккумуляторов", "Набор щупов")))]
+        wo_t = _first(M.WorkOrder, M.WorkOrder.status.in_(("work", "instock", "waiting")), M.WorkOrder.mechanic_id == uid("andrey"))
+        if wo_t and len(free_t) >= 2:
+            url_t = f"/orders/{wo_t.id}"
+            m_ = one(M.User, M.User.id == wo_t.mechanic_id)
+            mgr_t = one(M.User, M.User.id == wo_t.manager_id)
+            if m_ and mgr_t:
+                post(m_.login, f"{url_t}/tool-requests", {"tool_id": str(free_t[0].id)}, what="Попросить инструмент (заберёт менеджер)")
+                tr = _first(M.ToolRequest, M.ToolRequest.status == "new", M.ToolRequest.tool_id == free_t[0].id)
+                if tr:
+                    post("pavel", f"/tool-requests/{tr.id}/ready", what="Инструмент: готово к выдаче")
+                    post(mgr_t.login, f"/tool-requests/{tr.id}/pickup", what="Менеджер: забрал у окошка — выдано")
+                post(m_.login, f"{url_t}/tool-requests", {"tool_id": str(free_t[1].id)}, what="Попросить ещё инструмент")
+                tr2 = _first(M.ToolRequest, M.ToolRequest.status == "new", M.ToolRequest.tool_id == free_t[1].id)
+                if tr2:
+                    post("pavel", f"/tool-requests/{tr2.id}/cancel", what="Кладовщик: отменил запрос (мастер передумал)")
+    # ---- разбор: справочник, службы доставки, донор, деталь (перенести, списать, удалить), продажа с экрана «Продажи»
+    with at(day, "12:10"):
+        post("dmitro", "/razbor/refs", {"action": "make_add", "name": "Peugeot"}, what="Разбор: марка")
+        mk = _first(M.RazborMake, M.RazborMake.name == "Peugeot")
+        if mk:
+            post("dmitro", "/razbor/refs", {"action": "make_rename", "rid": str(mk.id), "name": "Peugeot (FR)"}, what="Разбор: переименовать марку")
+            post("dmitro", "/razbor/refs", {"action": "make_del", "rid": str(mk.id)}, what="Разбор: удалить марку")
+        post("dmitro", "/razbor/carriers", {"name": "Делівері", "kind": "post", "phone": "0800 500 000"}, what="Служба доставки")
+        dn = _first(M.Donor)
+        if dn:
+            post("dmitro", f"/razbor/donors/{dn.id}", {"make": dn.make, "model": dn.model, "vin": dn.vin or "", "year": str(dn.year or ""),
+                                                      "mileage": str(dn.mileage or ""), "purchase_price": str(dn.purchase_price or 0),
+                                                      "expenses": str(dn.expenses or 0), "notes": "Двигатель на запчасти"},
+                 what="Донор: правка")
+        parts = [i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None)) if (i.price_state or "") == "" and free_qty(i.catalog_id) > 0]
+        if len(parts) >= 3:
+            post("dmitro", f"/razbor/parts/{parts[0].id}/move", {"catsub": "", "back": "/razbor"}, what="Деталь разбора: перенести")
+            post("dmitro", f"/razbor/parts/{parts[1].id}/writeoff", {"qty": "1", "reason": "Треснула при снятии"}, what="Деталь разбора: списать")
+        if dn:
+            post("dmitro", f"/razbor/donors/{dn.id}/parts", {"name": "Заглушка бампера (тест)", "price": "150", "qty": "1"},
+                 what="Деталь для удаления")
+            tmp = _first(M.StockItem, M.StockItem.donor_id == dn.id, order=M.StockItem.created_at.desc())
+            if tmp:
+                post("dmitro", f"/razbor/parts/{tmp.id}/delete", {"back": "/razbor"}, what="Деталь разбора: удалить")
+        sale_it = [i for i in parts[2:] if free_qty(i.catalog_id) > 0]
+        if sale_it:
+            post("dmitro", "/razbor/sales/new", {"item_id": str(sale_it[0].id), "qty": "1", "buyer_name": "Покупатель Тест",
+                                                 "buyer_phone": "+380631112233", "delivery": "pickup", "price": str(sale_it[0].sale_price),
+                                                 "pay_method": "cash", "mode": "reserve"}, what="Продажа с экрана «Продажи»")
+    # ---- мойка: прайс, бокс, химия (отмена), очередь (↑ / ↓)
+    with at(day, "12:30"):
+        post("irina", "/wash/prices", {"name": "Чистка дисков", "kind": "wash", "price_car": "250", "minutes": "20"}, what="Прайс мойки: услуга")
+        bx = _first(M.WashBox)
+        if bx:
+            post("irina", f"/wash/boxes/{bx.id}", {"name": bx.name or "Мойка 1", "active": "1"}, what="Бокс мойки")
+        chem_ask("moyka")
+        chem_ask("moyka")
+        cr = _first(M.ChemRequest, M.ChemRequest.status == "new", order=M.ChemRequest.created_at.desc())
+        if cr:
+            post("moyka", f"/wash/requests/{cr.id}/cancel", what="Мойщик: отменил запрос химии")
+        cr2 = _first(M.ChemRequest, M.ChemRequest.status == "new", order=M.ChemRequest.created_at.desc())
+        if cr2:
+            post("pavel", f"/chem/{cr2.id}/decline", {"reason": "Нет на складе — заказали"}, what="Кладовщик: отказать в химии")
+        from app.services import wash as wsvc
+        with SessionLocal() as db:
+            qq = wsvc.board(db, db.scalar(select(M.Branch.id)))["queue"]
+            ids = [c.o.id for c in qq]
+        if len(ids) >= 3:
+            post("irina", f"/wash/{ids[2]}/move", {"where": "up"}, what="Очередь мойки: выше")
+            post("irina", f"/wash/{ids[1]}/up", what="Очередь мойки: ↑")
+    # ---- передача наряда, «открыть заново», гарантия, мастер просит деталь со склада
+    with at(day, "12:35"):
+        appr = [o for o in ACTIVE if o.wo() is not None and o.wo().status == "approve" and o.mgr == "irina"]
+        if appr:
+            o = appr[0]
+            wo = o.wo()
+            post("irina", f"{o.url}/assign", {"partsman_id": str(wo.partsman_id or ""), "mechanic_id": str(wo.mechanic_id or ""),
+                                              "lift_id": "", "manager_id": str(uid("marina"))}, what="Передать наряд Марине")
+            post("marina", f"{o.url}/handover-ack", what="Марина: ✓ Принял наряд")
+            o.mgr = "marina"
+        closed = q(M.WorkOrder, M.WorkOrder.status == "closed", M.WorkOrder.manager_id == uid("irina"),
+                   order=M.WorkOrder.closed_at.desc())
+        busy = {r.work_order_id for r in q(M.OrderReopen, M.OrderReopen.status == "pending")}
+        closed = [w for w in closed if w.id not in busy]
+        if len(closed) >= 2:
+            a, b = closed[0], closed[1]
+            post("irina", f"/orders/{a.id}/reopen-request", {"reason": "Клиент просит добавить работу"}, what="Попросить открыть заново")
+            ra = _first(M.OrderReopen, M.OrderReopen.work_order_id == a.id, M.OrderReopen.status == "pending")
+            if ra:
+                # сегодня (суббота) директора и зама по табелю нет — менеджер может решить сам (наряд закрыт ≤ суток)
+                post("irina", f"/reopen-requests/{ra.id}/self", what="«Директора нет — решаю сам»")
+                if one(M.OrderReopen, M.OrderReopen.id == ra.id).status == "pending":
+                    post("director", f"/reopen-requests/{ra.id}", {"action": "decline"}, what="Директор: отказать открыть заново")
+            post("irina", f"/orders/{b.id}/warranty-request", {"reason": "Через неделю снова стук спереди"}, what="Ремонт по гарантии: запрос")
+            rb = _first(M.OrderReopen, M.OrderReopen.work_order_id == b.id, M.OrderReopen.status == "pending")
+            if rb:
+                post("director", f"/reopen-requests/{rb.id}", {"action": "approve"}, what="Директор: открыть по гарантии")
+                post("irina", f"/orders/{b.id}/warranty-done", {"action": "reject", "result": "Повреждение после ДТП — не гарантия"},
+                     what="Не гарантийный случай")
+        wk = [o for o in ACTIVE if o.wo() is not None and o.wo().status in ("work", "instock", "waiting") and o.wo().mechanic_id == uid("andrey")]
+        it = [i for i in q(M.StockItem, M.StockItem.donor_id.is_(None)) if free_qty(i.catalog_id) > 0]
+        if wk and it:
+            post("andrey", "/messages/ask", {"item_id": str(it[0].id), "order_id": str(wk[0].id), "qty": "1",
+                                             "text": "Нужна ещё одна"}, what="Мастер: попросить деталь со склада")
+            m = _first(M.OrderMessage, M.OrderMessage.kind == "part", M.OrderMessage.status == "pending",
+                       order=M.OrderMessage.created_at.desc())
+            if m:
+                post(wk[0].mgr, f"/messages/{m.id}/decide", {"action": "decline", "answer": "Клиент не согласовал",
+                                                             "back": "/ready"}, what="Менеджер: отказать в детали")
+    # ---- «Запись»: мастер отметил «Видел»
+    with at(day, "12:40"):
+        ap = _first(M.Appointment, M.Appointment.mechanic_id == uid("elektro"), M.Appointment.seen_key == "")
+        if ap:
+            post("elektro", f"/schedule/{ap.id}/seen", {"back": "/schedule"}, what="Запись: «Видел»")
+
+
+def screen_tour():
+    """23.11.2026 (брат): каждый экран CRM под каждым сотрудником — открывается без ошибки (403 «нет доступа» — норма)."""
+    import re as _re
+    br = one(M.Branch)
+    ids = {
+        "order_id": (_first(M.WorkOrder, M.WorkOrder.status == "work") or _first(M.WorkOrder)).id,
+        "client_id": _first(M.Client).id, "user_id": uid("andrey"), "uid": uid("andrey"),
+        "d": (TODAY - timedelta(days=TODAY.weekday() + 7)).isoformat(), "pid": _first(M.Purchase).id,
+        "photo_id": (_first(M.WoPhoto) or _first(M.StockPhoto)).id if (_first(M.WoPhoto) or _first(M.StockPhoto)) else None,
+        "role_id": _first(M.Role).id, "tid": _first(M.Tool).id if _first(M.Tool) else None,
+        "cid": _first(M.ToolCheck).id if _first(M.ToolCheck) else None,
+        "did": _first(M.Donor).id if _first(M.Donor) else None,
+        "iid": (_first(M.StockItem, M.StockItem.donor_id.is_not(None)) or _first(M.StockItem)).id,
+        "item_id": _first(M.StockItem, M.StockItem.donor_id.is_(None)).id, "fmt": "json",
+        "wo_id": (_first(M.Purchase, M.Purchase.work_order_id.is_not(None)) or _first(M.Purchase)).work_order_id,
+    }
+    # файлы фото — первые из папок разбора и инструмента
+    from app.services import razbor as _rz
+    from app.services import tools as _tl
+
+    def _file(d):
+        try:
+            return next((p.name for p in Path(d).iterdir() if p.is_file()), None)
+        except OSError:
+            return None
+    files = {"razbor": _file(_rz.PHOTO_DIR), "tools": _file(_tl.TOOL_PHOTO_DIR)}
+    urls = []
+    for r in app.routes:
+        if "GET" not in (getattr(r, "methods", None) or ()) or r.path in SKIP_ROUTES or r.path in ("/notifications", "/login"):
+            continue
+        path = r.path
+        if "{name}" in path:
+            fn = files["razbor" if "razbor" in path else "tools"]
+            if not fn:
+                continue
+            path = path.replace("{name}", fn)
+        ok = True
+        for p in _re.findall(r"\{(\w+)\}", path):
+            v = ids.get(p)
+            if v is None:
+                ok = False
+                break
+            path = path.replace("{" + p + "}", str(v))
+        if ok:
+            urls.append(path)
+    logins = list(STAFF) + [s[0] for s in STAFF_EXTRA]
+    bad = []
+    for login in logins:
+        for u in urls:
+            try:
+                r = P(login).get(u)
+            except Exception as e:
+                bad.append((login, u, f"{type(e).__name__}: {e}"[:200]))
+                continue
+            if r.status_code >= 500:
+                bad.append((login, u, str(r.status_code)))
+    for login, u, why in bad:
+        R.fail(login, "экран " + u, u, "не открылся: " + why)
+    print(f"\nОбход экранов: {len(urls)} экранов × {len(logins)} сотрудников, ошибок {len(bad)}")
+    _ = br
+
+
 def run():
     t0 = _time.time()
     prepare_staff()
@@ -2220,6 +2669,7 @@ def run():
             site_today(day)
             schedule_next_week(day)
             queue_today(day)
+            cover_extras(day)   # 23.11.2026: каждая кнопка CRM
             check_badges()
             break
         end_of_day(day)
@@ -2324,10 +2774,11 @@ def final_checks():
         # 20.11.2026 (брат): машин на СТО 20–30 (машины разбора не считаются)
         cars = db.scalar(select(func.count(func.distinct(M.WorkOrder.vehicle_id))))
         orders = db.scalar(select(func.count()).select_from(M.WorkOrder))
-        R.check(30 <= cars <= 45 and 45 <= orders <= 70, "машин на СТО 30–45, нарядов 45–70 (плотно)", f"машин {cars}, нарядов {orders}")
+        R.check(30 <= cars <= 55 and 45 <= orders <= 90, "машин на СТО 30–55 (брат: до 50, +10 %), нарядов 45–90", f"машин {cars}, нарядов {orders}")
         print(f"\nМашин: {cars}, нарядов: {orders}")
     # Каждый экран каждого сотрудника открывается
     menu_pages()
+    screen_tour()   # 23.11.2026: все экраны CRM под всеми сотрудниками
 
 
 def menu_pages():
@@ -2391,6 +2842,19 @@ def write_report(sec):
     for login, b in BADGES.items():
         items = [f"{href}: " + "; ".join(v) for href, v in b.items()]
         out.append(f"- **{NAMES.get(login, login)}** (`{login}`): " + (" · ".join(items) if items else "— ничего"))
+    # 23.11.2026 (брат): покрытие кнопок и экранов
+    all_routes = sorted({(m, r.path) for r in app.routes if hasattr(r, "methods") and r.path not in SKIP_ROUTES
+                         for m in (r.methods or ()) if m in ("GET", "POST")})
+    posts = [x for x in all_routes if x[0] == "POST"]
+    gets = [x for x in all_routes if x[0] == "GET"]
+    miss_p = [p for m, p in posts if not HIT[("POST", p)]]
+    miss_g = [p for m, p in gets if not HIT[("GET", p)]]
+    out += ["", "## Покрытие кнопок и экранов", "",
+            f"Кнопок (POST) всего {len(posts)}, нажато {len(posts) - len(miss_p)}; экранов (GET) всего {len(gets)}, "
+            f"открыто {len(gets) - len(miss_g)}.", "", "### Кнопки, которые ни разу не нажимались", ""]
+    out += [f"- `{p}`" for p in miss_p] or ["Все нажаты."]
+    out += ["", "### Экраны, которые ни разу не открывались", ""]
+    out += [f"- `{p}`" for p in miss_g] or ["Все открыты."]
     (SIM / "report.md").write_text("\n".join(out), encoding="utf-8")
     print("\n".join(out[:12]))
     print(f"Отчёт: {SIM / 'report.md'}")

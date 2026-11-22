@@ -7,7 +7,8 @@
   <thead><tr><th>Наименование</th><th class="num">Кол-во</th><th class="num">Цена, ₴</th><th class="num">Сумма, ₴</th></tr></thead>
   {% for w in works %}
   <tr><td>{{ w.name }}</td>
-    <td class="num">{% if w.pricing == "hours" %}{{ (w.hours * w.qty)|num }} н/ч{% else %}{{ w.qty|num }}{% endif %}</td>
+    {# 23.11.2026: работа из «✓ Да» по проблеме — часы ещё не вписаны (пусто): печать не падает, просто кол-во #}
+    <td class="num">{% if w.pricing == "hours" and w.hours %}{{ (w.hours * w.qty)|num }} н/ч{% else %}{{ w.qty|num }}{% endif %}</td>
     <td class="num">{{ (w.rate)|money }}</td><td class="num">{{ (w.price)|money }}</td></tr>
   {% else %}<tr><td colspan="4" class="muted">—</td></tr>{% endfor %}
 </table>

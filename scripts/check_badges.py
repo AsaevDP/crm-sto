@@ -28,7 +28,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
 
 USERS = ["admin", "director", "deputy", "irina", "oleg", "pavel", "dmitro", "glav", "andrey", "elektro", "motor",
-         "moyka", "detail", "buh"]
+         "moyka", "detail", "buh", "marina", "taras", "yuriy"]
 COLOR = {"red": "🔴", "orange": "🟠", "purple": "🟣", "green": "🟢"}
 
 
