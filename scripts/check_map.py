@@ -27,7 +27,7 @@ from app import models as M  # noqa: E402
 from app.models.orders import WO_STATUSES  # noqa: E402
 from app.permissions import effective_permissions, menu_for  # noqa: E402
 
-BASE = "http://localhost:8810"
+BASE = ""   # ссылки внутри CRM: карта открывается по адресу /karta
 DOT = {"red": "🔴", "orange": "🟠", "purple": "🟣", "green": "🟢"}
 ORDER = ["admin", "director", "deputy", "irina", "marina", "oleg", "yuriy", "pavel", "glav", "dmitro", "andrey", "taras",
          "elektro", "motor", "moyka", "detail", "buh"]
@@ -57,7 +57,9 @@ def main():
             badges = c.get("/api/notify").json().get("badges", {})
             role = u.role.name if u.role else ""
             out.append(f'<section class="card"><h2>{e(u.full_name)} <span class="role">{e(role)}</span></h2>'
-                       f'<p class="login">Вход: <b>{e(lg)}</b> / <b>{e(lg)}123</b></p>')
+                       f'<form class="login" method="post" action="/login"><input type="hidden" name="login" value="{e(lg)}">'
+                       f'<input type="hidden" name="password" value="{e(lg)}123">'
+                       f'<button>Войти под ним</button> <span class="muted">логин <b>{e(lg)}</b> / пароль <b>{e(lg)}123</b></span></form>')
             items = []
             for menu, lst in badges.items():
                 for x in lst:
@@ -85,15 +87,18 @@ body{{font-family:-apple-system,"Segoe UI",sans-serif;margin:0;background:#f5f5f
 main{{max-width:1100px;margin:0 auto;padding:28px 18px 60px}} h1{{font-size:26px;margin:0 0 4px}}
 .sub{{color:#6e6e73;margin:0 0 18px}} .card{{background:#fff;border-radius:16px;padding:16px 20px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,.06)}}
 h2{{font-size:19px;margin:0}} .role{{font-size:13px;color:#6e6e73;font-weight:500}} h3{{font-size:14px;margin:12px 0 6px;color:#3a3a3c}}
-.login{{margin:4px 0 0;font-size:14px}} ul{{margin:0;padding-left:20px}} li{{margin:3px 0;font-size:14px}}
+.login{{margin:6px 0 0;font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}}
+.login button{{border:0;border-radius:10px;padding:7px 14px;background:#0071e3;color:#fff;font:inherit;font-weight:600;cursor:pointer}} ul{{margin:0;padding-left:20px}} li{{margin:3px 0;font-size:14px}}
 p{{font-size:14px;line-height:1.6}} a{{color:#0071e3;text-decoration:none}} a:hover{{text-decoration:underline}}
 .muted{{color:#8e8e93}} table{{border-collapse:collapse;width:100%;font-size:14px;background:#fff;border-radius:12px;overflow:hidden}}
 td{{padding:7px 10px;border-bottom:1px solid #ececf0;vertical-align:top}}</style></head><body><main>
 <h1>Карта проверки CRM</h1>
 <p class="sub">Собрано {datetime.now():%d.%m.%Y %H:%M} из рабочей базы · машин {n_cars}, нарядов {len(orders)} ·
-CRM должна быть запущена (run.bat). Ссылки открываются в браузере — сначала войдите под нужным сотрудником.</p>
-<div class="card"><b>Как проверять:</b> войдите под сотрудником → нажмите каждую строку «Горит сегодня» (откроется место дела,
-оно мигает) → сделайте действие → цифра в меню гаснет. Потом пройдите «Все разделы». Наряды на всех этапах — таблица внизу.</div>
+Открыта прямо в CRM: адрес <b>/karta</b>.</p>
+<div class="card"><b>Как проверять:</b> 1) у нужного сотрудника нажмите «Войти под ним» — откроется CRM под ним;
+2) вернитесь на карту (адрес <b>/karta</b> или кнопка «Назад» браузера) и нажимайте строки «Горит сегодня» — каждая открывается
+в новой вкладке прямо на месте дела, оно мигает; 3) сделайте действие — цифра в меню гаснет; 4) пройдите «Все разделы».
+Наряды на всех этапах — таблица внизу.</div>
 {''.join(out)}
 <h2 style="margin-top:28px">Наряды по этапам — какую машину открыть</h2>
 <table>{''.join(rows)}</table>

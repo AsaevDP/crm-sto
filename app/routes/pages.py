@@ -113,6 +113,18 @@ def _staff_groups(ctx, staff, presence) -> list[dict]:
     return [g for g in groups if g["rows"]]
 
 
+@router.get("/karta")
+def check_map(ctx: Ctx = Depends(get_ctx)):
+    """23.11.2026 (брат): «Карта проверки» прямо в CRM — открывается в браузере как обычная страница (файл в
+    проводнике открывался кодом). Собирает scripts/check_map.py → docs/karta-proverki.html. Видит любой вошедший."""
+    from pathlib import Path
+    from fastapi.responses import FileResponse, HTMLResponse
+    p = Path(__file__).resolve().parents[2] / "docs" / "karta-proverki.html"
+    if not p.exists():
+        return HTMLResponse("<p>Карта проверки ещё не собрана: scripts/check_map.py</p>", status_code=404)
+    return FileResponse(p, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
+
+
 @router.get("/keys")
 def keys_board(ctx: Ctx = Depends(get_ctx)):
     """21.11.2026 (брат): «Ячейки ключей» с «Пульта» — та же таблица, что в «Настройках», только посмотреть
