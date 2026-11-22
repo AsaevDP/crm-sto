@@ -9,7 +9,8 @@
       <h1 class="title-1">{{ r.c.name }}</h1>
       <div class="subhead">{{ i.donor_make }} {{ i.donor_model }}{% if i.donor_year %} · {{ i.donor_year }}{% endif %}{% if r.d and r.d.engine %} · {{ r.d.engine }}{% endif %}</div></div>
     <div class="ov-actions"><b class="price-big">{{ (i.sale_price)|money(0) }} ₴</b>
-      <span class="chip chip-lg" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if i.publish_on_site %}<span class="tag">на сайте</span>{% endif %}
+      <span class="chip chip-lg" data-rs="{{ r.state }}">{{ ST[r.state] }}</span>{% if i.publish_on_site %}<span class="tag">на сайте</span>{% elif r.state == "stock" %}<span class="tag" style="color:var(--orange)">нет на сайте</span>
+      {% if ctx.can("razbor.manage", "razbor.export") %}<form method="post" action="/razbor/parts/{{ i.id }}/to-site" style="display:contents"><button class="btn btn-sm btn-tinted" id="btn-to-site">＋ На сайт</button></form>{% endif %}{% endif %}
       <a class="btn btn-sm btn-gray" href="/stock/labels?ids={{ i.id }}" target="_blank" title="Наклейка со штрихкодом {{ i.barcode or '' }}">🏷 Наклейка</a></div>
   </div>
 </header>

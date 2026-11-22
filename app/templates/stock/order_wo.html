@@ -2,6 +2,7 @@
 {# «Заказ по наряду» (13.11.2026, брат). Запчастист видит ОДИН список деталей по машине: у каждой свой поставщик
    (в одном наряде их может быть сколько угодно) и своя кнопка «Заказал». «Один поставщик на весь наряд» — подставить
    сразу во все. Заказанная деталь сразу у кладовщика в «Приходе»; ниже — что уже заказано, по поставщикам. #}
+{% from "stock/_exp_time.html" import time_select with context %}
 {% block content %}
 {% set back = "/my-orders" if ctx.can("purchases.mine") else "/purchases/by-partsman" %}
 {% set sup_ids = suppliers|map(attribute="id")|list %}
@@ -46,7 +47,7 @@
       </form>
       <form method="post" action="/purchase-lines/{{ r.l.id }}/ordered" class="ow-ord">
         <input type="hidden" name="back" value="/my-orders/wo/{{ wo.id }}">
-        <input class="field ow-date" type="date" name="expected_on" min="{{ today.isoformat() }}" title="Когда привезут (необязательно)" aria-label="Когда привезут">
+        <input class="field ow-date" type="date" name="expected_on" min="{{ today.isoformat() }}" title="Когда привезут (необязательно)" aria-label="Когда привезут">{{ time_select() }}
         <button class="btn btn-sm" {% if not r.sup %}disabled title="Сначала выберите поставщика"{% endif %}>Заказал</button>
       </form>
       {% else %}
@@ -59,11 +60,11 @@
   {% if can_order and todo|length > 1 %}
   <form method="post" action="/my-orders/wo/{{ wo.id }}/ordered" class="ow-total">
     <input type="hidden" name="back" value="/my-orders/wo/{{ wo.id }}">
-    <span class="caption">Привезут <input class="field ow-date" type="date" name="expected_on" min="{{ today.isoformat() }}" aria-label="Когда привезут"></span>
+    <span class="caption">Привезут <input class="field ow-date" type="date" name="expected_on" min="{{ today.isoformat() }}" aria-label="Когда привезут">{{ time_select() }}</span>
     <button class="btn">✓ Заказал всё · {{ todo|length }}</button>
   </form>
   {% endif %}
-  <p class="footnote" style="margin:8px 0 0">«Заказал» — деталь сразу у кладовщика в «Приходе». Дата «привезут» — одна на всех деталей этого поставщика в наряде.</p>
+  <p class="footnote" style="margin:8px 0 0">«Заказал» — деталь сразу у кладовщика в «Приходе». Дата и время «привезут» — одни на всех деталей этого поставщика в наряде.</p>
 </div>
 {% endif %}
 
@@ -71,7 +72,7 @@
 {% for g in done %}
 <div class="card compact ow-card">
   <div class="card-h"><span class="headline">{{ g.sup.name if g.sup else "Поставщик не указан" }}</span>
-    <span class="caption">{% for p in g.ps %}{% if p.expected_on %}привезут {{ p.expected_on.strftime("%d.%m") }}{% if p.status in ("ordered", "partial") and p.expected_on < today %} — опаздывает{% endif %}{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}</span></div>
+    <span class="caption">{% for p in g.ps %}{% if p.expected_on %}привезут {{ exp_label(p) }}{% if exp_late(p) %} — опаздывает{% endif %}{% if not loop.last %} · {% endif %}{% endif %}{% endfor %}</span></div>
   {% for r in g.rows %}
   <div class="kv"><span><b style="color:var(--text)">{{ r.c.name if r.c else "" }}</b> <span class="caption mono">{{ r.c.brand if r.c else "" }} {{ r.c.article if r.c else "" }}</span></span>
     <b class="nowrap">{{ r.l.got|num }} из {{ r.l.qty|num }} ·

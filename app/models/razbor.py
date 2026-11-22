@@ -165,3 +165,49 @@ class SiteNewPhoto(Entity):
     __tablename__ = "site_new_photos"
     site_new_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("site_new.id", ondelete="CASCADE"), index=True)
     file: Mapped[str] = mapped_column(String(255))
+
+
+# 22.11.2026 (брат): «Заявки с сайта» — покупатель оформил заказ на сайте (или звонок / письмо, вписали руками)
+ORDER_DELIVERY = {"np": "Нова Пошта", "courier": "Курьер", "pickup": "Заберёт лично"}
+ORDER_PAY = {"cod": "Наложенный платёж", "card": "Оплата на карту", "on_pickup": "При получении"}
+SITE_ORDER_STATUS = {"new": "Новая", "accepted": "Принята", "declined": "Отказ"}
+
+
+class SiteOrder(Entity):
+    """Заявка с сайта: покупатель, способ получения, оплата. «Принять» — каждая деталь в резерв под покупателя
+    (UsedSale, откуда = сайт) → дальше обычная «Выдача и отправка». «Отказать» — с причиной."""
+    __tablename__ = "site_orders"
+    number: Mapped[int] = mapped_column(Integer, default=0, index=True)          # З-0001
+    last_name: Mapped[str] = mapped_column(String(80), default="")
+    first_name: Mapped[str] = mapped_column(String(80), default="")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    delivery: Mapped[str] = mapped_column(String(10), default="np")              # ORDER_DELIVERY
+    city: Mapped[str] = mapped_column(String(80), default="")                    # Нова Пошта: город
+    np_branch: Mapped[str] = mapped_column(String(80), default="")               # Нова Пошта: отделение / почтомат
+    address: Mapped[str] = mapped_column(String(200), default="")                # курьер: адрес
+    pay: Mapped[str] = mapped_column(String(10), default="cod")                  # ORDER_PAY
+    comment: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(10), default="manual")            # site — прислал сайт, manual — вписали
+    status: Mapped[str] = mapped_column(String(10), default="new", index=True)   # SITE_ORDER_STATUS
+    answer: Mapped[str] = mapped_column(Text, default="")                        # причина отказа
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+
+    @property
+    def code(self) -> str:
+        return f"З-{self.number:04d}"
+
+    @property
+    def buyer(self) -> str:
+        return f"{self.last_name} {self.first_name}".strip()
+
+
+class SiteOrderLine(Entity):
+    """Строка заявки: код детали с сайта (Р-0001 — б/у, Н-0001 — новая), сколько, цена с сайта."""
+    __tablename__ = "site_order_lines"
+    site_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("site_orders.id", ondelete="CASCADE"), index=True)
+    code: Mapped[str] = mapped_column(String(20), default="")
+    name: Mapped[str] = mapped_column(String(200), default="")      # как назвал сайт (для сверки)
+    qty: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=1)
+    price: Mapped[Decimal] = mapped_column(MONEY, default=0)        # за всё количество, 0 — по нашей цене
+    sale_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)   # резерв после «Принять»

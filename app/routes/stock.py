@@ -646,7 +646,7 @@ def _wo_board(ctx: Ctx, ps: list, st: str, day=None, drafts: bool = False):
             if p.status in svc.OPEN:
                 counts["wait"] += len(left)
                 counts["partial"] += len(left) if p.status == "partial" else 0
-                counts["late"] += len(left) if p.expected_on and p.expected_on < today else 0
+                counts["late"] += len(left) if svc.is_late(p) else 0
             got = [l for l in lines if l.received and got_at(l, p) >= since]
             counts["arrived"] += len(got)
             if st == "todo":
@@ -654,7 +654,7 @@ def _wo_board(ctx: Ctx, ps: list, st: str, day=None, drafts: bool = False):
             if st == "arrived":
                 show = [(l, got_at(l, p)) for l in got]
             elif p.status not in svc.OPEN or (st == "partial" and p.status != "partial") \
-                    or (st == "late" and not (p.expected_on and p.expected_on < today)):
+                    or (st == "late" and not svc.is_late(p)):
                 continue
             else:   # в работе — вся закупка: что пришло (✓) и что ждём
                 show = [(l, got_at(l, p) if l.received else ordered_at(l, p)) for l in lines]
@@ -672,7 +672,7 @@ def _wo_board(ctx: Ctx, ps: list, st: str, day=None, drafts: bool = False):
             g["rows"].append(r)
             g["when"] = max(g["when"], when)
             g["urgent"] |= r["urgent"] and not l.received
-            g["late"] |= bool(not l.received and p.status != "draft" and p.expected_on and p.expected_on < today)
+            g["late"] |= bool(not l.received and p.status != "draft" and svc.is_late(p))
             g["nosup"] += 1 if p.status == "draft" and not p.supplier_id else 0
             if r["buyer"] and r["buyer"].short_name not in g["buyers"]:
                 g["buyers"].append(r["buyer"].short_name)
@@ -878,7 +878,8 @@ def _line(ctx: Ctx, lid: str) -> tuple[PurchaseLine, Purchase]:
 
 
 @router.post("/purchase-lines/{lid}/ordered")
-def purchase_line_ordered(lid: str, ctx: Ctx = Depends(get_ctx), back: str = Form(""), expected_on: str = Form("")):
+def purchase_line_ordered(lid: str, ctx: Ctx = Depends(get_ctx), back: str = Form(""), expected_on: str = Form(""),
+                          expected_time: str = Form("")):
     """«Заказал» по одной детали (13.11.2026, брат): она сразу — в накладную у кладовщика в «Приходе».
     Без поставщика — нельзя. Дата «привезут» — одна на всех деталей этого поставщика в наряде."""
     db = ctx.db
@@ -888,7 +889,7 @@ def purchase_line_ordered(lid: str, ctx: Ctx = Depends(get_ctx), back: str = For
     if p.status != "draft":
         return _to(to)
     cat = db.get(PartCatalog, line.catalog_id)
-    target = svc.order_line(db, line, ctx.user.id, _date(expected_on))
+    target = svc.order_line(db, line, ctx.user.id, _date(expected_on), expected_time)
     if target is None:
         flash(ctx.request, f"«{cat.name if cat else 'Деталь'}»: выберите, у кого заказали — без поставщика «Заказал» нельзя", "error")
         return _to(to)
@@ -974,7 +975,8 @@ def order_by_wo_supplier(wo_id: str, ctx: Ctx = Depends(get_ctx), supplier_id: s
 
 
 @router.post("/my-orders/wo/{wo_id}/ordered")
-def order_by_wo_all(wo_id: str, ctx: Ctx = Depends(get_ctx), expected_on: str = Form(""), back: str = Form("")):
+def order_by_wo_all(wo_id: str, ctx: Ctx = Depends(get_ctx), expected_on: str = Form(""), back: str = Form(""),
+                    expected_time: str = Form("")):
     """«✓ Заказал всё» по наряду: каждая деталь — в накладную своего поставщика. Если у какой-то нет поставщика —
     ничего не заказываем и говорим, у какой."""
     ctx.need("purchases.manage")
@@ -989,7 +991,7 @@ def order_by_wo_all(wo_id: str, ctx: Ctx = Depends(get_ctx), expected_on: str = 
         return _to(f"/my-orders/wo/{wo.id}")
     sups = set()
     for p in svc.wo_drafts(db, ctx.branch.id, wo.id):
-        t = svc.order_draft(db, p, ctx.user.id, _date(expected_on))
+        t = svc.order_draft(db, p, ctx.user.id, _date(expected_on), expected_time)
         sups.add(t.supplier_id)
     db.commit()
     flash(ctx.request, f"Заказано: {len(lines)} поз. у поставщиков: {len(sups)} — кладовщик видит в «Приходе»" if lines
@@ -1008,7 +1010,7 @@ def _date(v: str):
 @router.post("/purchases/{pid}")
 def purchase_save(pid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form(""), supplier_new: str = Form(""),
                   supplier_invoice: str = Form(""), note: str = Form(""), action: str = Form("save"),
-                  expected_on: str = Form(""), supplier_phone: str = Form("")):
+                  expected_on: str = Form(""), supplier_phone: str = Form(""), expected_time: str = Form("")):
     p = _purchase(ctx, pid)
     _need_manage(ctx, p)
     db = ctx.db
@@ -1037,6 +1039,7 @@ def purchase_save(pid: str, ctx: Ctx = Depends(get_ctx), supplier_id: str = Form
             s.phone = supplier_phone.strip()[:40]
     p.supplier_invoice, p.note = supplier_invoice.strip()[:80], note.strip()
     p.expected_on = _date(expected_on)
+    p.expected_time = svc.clean_time(expected_time) if p.expected_on else ""   # 22.11.2026: время привоза
     if action == "ordered" and p.status == "draft":
         has_lines = db.scalar(select(func.count()).select_from(PurchaseLine).where(PurchaseLine.purchase_id == p.id))
         if not has_lines:
@@ -2518,7 +2521,7 @@ def _recv_pick(p: Purchase, tab: str, today) -> bool:
     if tab == "partial":
         return p.status == "partial"
     if tab == "late":
-        return bool(p.expected_on and p.expected_on < today)
+        return svc.is_late(p)
     return True
 
 
@@ -2546,7 +2549,7 @@ def _receive_lines(ctx: Ctx, who: str = "", tab: str = "wait"):
         g["rows"].sort(key=lambda r: (not r["urgent"], r["wo"] is None, r["wo"].number if r["wo"] else "",
                                       r["c"].name if r["c"] else ""))
         g["urgent"] = any(r["urgent"] for r in g["rows"])
-        g["late"] = any(p.expected_on and p.expected_on < today for p in g["ps"])
+        g["late"] = any(svc.is_late(p) for p in g["ps"])
     groups.sort(key=lambda g: (not g["urgent"], g["sup"].name if g["sup"] else "я"))
     return groups
 
@@ -2592,7 +2595,7 @@ def _recv_counts(ctx: Ctx, who: str = "") -> dict:
             PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))) or 0
         c["wait"] += n
         c["partial"] += n if p.status == "partial" else 0
-        c["late"] += n if p.expected_on and p.expected_on < today else 0
+        c["late"] += n if svc.is_late(p) else 0
     c["got"] = len(_received_invoices(ctx, who))
     return c
 

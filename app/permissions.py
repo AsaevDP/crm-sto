@@ -58,6 +58,8 @@ PERMISSIONS = [
     ("razbor.view", "Видеть разбор (б/у)", "Разбор"),
     ("razbor.manage", "Заводить б/у детали", "Разбор"),
     ("razbor.export", "Экспорт для сайта", "Разбор"),
+    # 22.11.2026 (брат): заявки покупателей с сайта — принять (детали в резерв) или отказать
+    ("site.orders", "Заявки с сайта: принять / отказать", "Разбор"),
     ("razbor.sell", "Продажа б/у: резерв под покупателя, «продано»", "Разбор"),
     # 20.11.2026 (брат): склад — две зоны со своими окошками. Б/у под наряд выдаёт кладовщик разбора
     ("razbor.issue", "Выдача б/у деталей под наряд («Готово к выдаче», «Выдано»)", "Разбор"),
@@ -125,14 +127,14 @@ DEFAULT_ROLES = {
     # новый склад (stock.manage / stock.issue) — зона обычного кладовщика
     "content": ("Кладовщик-контентщик", "teal", [
         "stock.view", "stock.receive", "razbor.view", "razbor.manage", "razbor.export", "razbor.sell",
-        "razbor.issue", "razbor.stock", "prices.view_sale", *_OWN]),
+        "razbor.issue", "razbor.stock", "prices.view_sale", "site.orders", *_OWN]),
     # 20.11.2026 (брат): главный кладовщик — обе зоны (склад новых + разбор) и инструмент. Работают втроём — контролирует
     # и подменяет (цифры по табелю: кладовщик зоны на работе — «для сведения»); один на всё — все обязанности на нём
     "headkeeper": ("Главный кладовщик", "orange", [
         "orders.view_all", "purchases.view", "purchases.by_partsman", "stock.view", "stock.manage", "stock.issue",
         "stock.receive", "purchases.stock", "stock.keep", "tools.view", "tools.manage",
         "razbor.view", "razbor.manage", "razbor.export", "razbor.sell", "razbor.issue", "razbor.stock", "prices.view_sale",
-        *_OWN]),
+        "site.orders", *_OWN]),
     "mechanic": ("Слесарь", "green", _MASTER),
     # 12.11.2026 (брат): автоэлектрик и моторист — как слесарь (свои работы в наряде, запчасти, сообщения)
     "electrician": ("Автоэлектрик", "yellow", _MASTER),
@@ -150,14 +152,14 @@ DEFAULT_ROLES = {
         # payroll.approve; заму доступ на срок — payroll.grant
         "attendance.view_all", "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
         "payroll.advance", "payroll.approve", "payroll.grant",
-        "wash.view", "wash.buy", "wash.prices", "razbor.price", "purchases.all", "stock.keep", *_OWN]),
+        "wash.view", "wash.buy", "wash.prices", "razbor.price", "purchases.all", "stock.keep", "site.orders", *_OWN]),
     # Заместитель: операционные отчёты и загрузка, без прибыли/себестоимости; может записывать и согласовывать
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "schedule.queue", "purchases.view", "stock.view", "razbor.view", "money.view",
         "prices.view_sale", "attendance.view_all", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price",
         "payroll.approve",   # 20.11.2026: утверждать — когда директор дал доступ к «Зарплате сотрудников» (на срок)
-        "purchases.all", "stock.keep", *_OWN]),
+        "purchases.all", "stock.keep", "site.orders", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа
     "accountant": ("Бухгалтер", "teal", [
         "reports.view", "money.view", "attendance.view_all", "payroll.view_all", "payroll.check", "payroll.pay",
@@ -200,6 +202,8 @@ MENU = [
     ("/razbor/prices", "Цены разбора", "money", ["razbor.price"]),
     # 22.11.2026 (брат): «На сайт» — новые запчасти на продажу (отказы клиентов, «На продажу» со склада) и б/у разбора
     ("/site", "На сайт", "globe", ["razbor.export", "razbor.price"]),
+    # 22.11.2026 (брат): заявки покупателей с сайта — кладовщик разбора, главный кладовщик, директор, зам, админ
+    ("/site/orders", "Заявки с сайта", "inbox", ["site.orders"]),
     ("/money", "Деньги", "money", ["money.view"]),
     ("/timesheet", "Табель", "clock", ["attendance.view_all", "attendance.view_own"]),
     # 20.11.2026 (брат): два пункта — «Моя зарплата» (у каждого, кто получает зарплату) и «Зарплата сотрудников»

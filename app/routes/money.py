@@ -242,6 +242,11 @@ def payment_add(order_id: str, ctx: Ctx = Depends(get_ctx), amount: str = Form(.
     if err:
         flash(ctx.request, err, "error")
         return _to(f"/orders/{order_id}")
+    if a == 0:   # 22.11.2026 (брат, наряд 21): клиент оплатил заранее — 0 ₴ отмечает «Оплачено», платежа нет
+        msvc.confirm_paid(ctx.db, wo)
+        ctx.db.commit()
+        flash(ctx.request, "Оплачено заранее — наряд оплачен, можно выдавать авто")
+        return _to(f"/orders/{order_id}#money")
     from sqlalchemy.exc import IntegrityError
     try:
         msvc.add_payment(ctx.db, wo, a, method, purpose, receipt_no, comment, token)

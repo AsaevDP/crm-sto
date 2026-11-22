@@ -914,6 +914,9 @@ def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False, dups_ok:
         event(db, wo, "approval", summary)
         back = "ready" if prev == "work" and works and all(w.status == "done" for w in works) else prev
         set_status(db, wo, back, summary + ". Новое не согласовано — продолжаем, где остановились")
+        if back == "ready":   # 22.11.2026: всё уже оплачено заранее — сразу «Оплачено» (как после последней работы)
+            from . import money
+            money.mark_paid_if_settled(db, wo)
         return ""
     if works or parts:
         if not wo.partsman_id and parts:

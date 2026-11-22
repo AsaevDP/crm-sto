@@ -1,0 +1,7 @@
+{# 22.11.2026 (брат): время привоза — из общего списка (у поставщиков развозка по часам, расписания нет) #}
+{% macro time_select(value="", form=None) -%}
+<select class="field ow-time" name="expected_time" aria-label="Во сколько привезут" title="Во сколько привезут (необязательно)"{% if form %} form="{{ form }}"{% endif %}>
+  <option value="">время</option>
+  {% for t in EXPECT_TIMES %}<option value="{{ t }}" {% if t == value %}selected{% endif %}>{{ t }}</option>{% endfor %}
+</select>
+{%- endmacro %}

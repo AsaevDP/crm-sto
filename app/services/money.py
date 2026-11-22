@@ -85,14 +85,35 @@ def refresh_prepay(db: Session, wo: WorkOrder):
         wo.awaiting_prepay = False
 
 
+def zero_ok(t: "Totals", wo: WorkOrder) -> bool:
+    """22.11.2026 (брат, наряд 21): «оплата 0 ₴» — только если клиент уже платил (предоплата / оплата заранее), остатка нет
+    и машина готова. Ничего не платил — 0 не пропускаем."""
+    return t.paid > 0 and t.due <= 0 and wo.status == "ready"
+
+
+def confirm_paid(db: Session, wo: WorkOrder) -> bool:
+    """Провели 0 ₴ после оплаты заранее: платёж не создаём, наряд → «Оплачено» (и зарплата). True — получилось."""
+    t = totals(db, wo)
+    if not zero_ok(t, wo):
+        return False
+    osvc.event(db, wo, "payment", f"Оплачено заранее: {t.paid} ₴ — остатка нет, наряд оплачен")
+    mark_paid_if_settled(db, wo)
+    return wo.status == "paid"
+
+
 def check_payment(db: Session, wo: WorkOrder, amount: Decimal, purpose: str) -> str:
     """Можно ли принять оплату. Переплату не принимаем: сдачу кассир отдаёт сам."""
     t = totals(db, wo)
     old_debt = wo.status == "closed" and t.due > 0   # старый долг (выдан с долгом до 11.11.2026) — погасить можно
     if wo.status in FROZEN and not old_debt:
         return "Наряд оплачен или закрыт — оплату сюда принять нельзя"
+    if amount == 0 and zero_ok(t, wo):
+        return ""
     if amount <= 0:
-        return "Сумма должна быть больше нуля"
+        return ("Сумма должна быть больше нуля" if t.paid <= 0 else
+                "Сумма должна быть больше нуля. 0 ₴ можно провести, когда работы готовы и всё уже оплачено")
+    if purpose != "prepay" and t.due <= 0 and t.paid > 0:   # 22.11.2026 (брат, наряд 21): клиент заплатил заранее
+        return f"Клиент уже оплатил всё ({t.paid} ₴). Проведите 0 ₴ — наряд станет «Оплачено», и можно выдавать авто"
     if purpose == "prepay":
         # Предоплата бывает раньше цен: не больше договорённой суммы (или остатка, если он больше)
         agreed = money(wo.prepay_amount) - t.paid if wo.payment_type == "prepay" and wo.prepay_amount else D0

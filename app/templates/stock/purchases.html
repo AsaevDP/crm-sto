@@ -63,7 +63,7 @@
       <td class="num nowrap">{% if p.status != "arrived" and s.got_names %}{{ s.got }} из {{ s.n }}{% else %}{{ s.n }}{% endif %}</td>
       <td class="num">{{ s.orders or "—" }}</td>
       {% if cost_ok %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
-      <td class="nowrap">{% if p.expected_on %}<span class="{{ 'late' if p.status in ('ordered','partial') and p.expected_on < today }}">{{ p.expected_on.strftime("%d.%m") }}</span>{% elif p.status in ("ordered","partial") %}<span class="caption">не указано</span>{% else %}—{% endif %}</td>
+      <td class="nowrap">{% if p.expected_on %}<span class="{{ 'late' if exp_late(p) }}">{{ exp_label(p) }}</span>{% elif p.status in ("ordered","partial") %}<span class="caption">не указано</span>{% else %}—{% endif %}</td>
     </tr>
     {% else %}<tr><td colspan="8" class="footnote">Здесь пусто{% if tab == "draft" %} — нажмите «Новая закупка» или «Заказать» в наряде{% endif %}</td></tr>{% endfor %}
     </tbody>

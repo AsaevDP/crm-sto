@@ -14,7 +14,7 @@
   </form>
   <div class="ov-actions">
     <a class="btn btn-sm" href="/razbor/sales">🛒 Продажи и отправки{% if n_sales.reserved + n_sales.sent %} · {{ n_sales.reserved + n_sales.sent }}{% endif %}</a>
-    {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/shipping">📦 Выдача и отправка</a>{% endif %}
+    {# 22.11.2026 (брат): «Выдача и отправка» — пункт меню (там цифры); здесь — только журнал продаж #}
     {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/refs">Марки и категории</a>{% endif %}
     {% if ctx.can("razbor.stock") and not ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки</a>{% endif %}
     {# 22.11.2026 (брат): всё для сайта (б/у и новые, выгрузка) — в разделе «На сайт» #}
@@ -35,7 +35,7 @@
 {% from "_tiles.html" import tiles as tiles_m with context %}
 {% set ST = [] %}
 {% for key, title, color, sub in [("unapproved", "Не утверждено", "orange", "ждёт цены директора"), ("declined", "Отказано", "red", "цену не утвердили"),
-    ("stock", "В наличии", "green", "можно продать"), ("reserved", "В резерве", "yellow", "отложено покупателю"),
+    ("stock", "В наличии", "green", "можно продать"), ("nosite", "Нет на сайте", "orange" if tiles.nosite else "gray", "в наличии, не выложено"), ("reserved", "В резерве", "yellow", "отложено покупателю"),
     ("sent", "Отправлено", "purple", "в пути к покупателю"), ("sold", "Продано", "blue", "деньги получены"),
     ("service", "В наряды СТО", "teal", "ушло в ремонт"), ("out", "Нет в наличии", "gray", "продано, в наряде, списано")] %}
 {% set n = tiles[key] if key != "out" else tiles.sold + tiles.service + tiles.writeoff + tiles.out %}
@@ -130,6 +130,13 @@
         <b class="nowrap rzp-price">{{ r.i.sale_price|money(0) }} ₴</b>
         <span class="chip" data-rs="{{ r.state }}">{{ ITEM_STATES[r.state] }}</span>
       </a>
+      {# 22.11.2026 (брат): в наличии, но не на сайте — пометка и «＋ На сайт» одним нажатием #}
+      {% if r.state == "stock" and not r.i.publish_on_site %}
+      <form class="rzp-site" method="post" action="/razbor/parts/{{ r.i.id }}/to-site" data-id="{{ r.i.id }}">
+        <span class="caption" style="color:var(--orange)">нет на сайте</span>
+        {% if ctx.can("razbor.manage", "razbor.export") %}<input type="hidden" name="back" value="{{ link() }}"><button class="btn btn-sm btn-tinted">＋ На сайт</button>{% endif %}
+      </form>
+      {% endif %}
       {% endfor %}{% endfor %}
     </div>
     {% else %}

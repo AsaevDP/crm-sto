@@ -242,6 +242,17 @@ def item_states(db: Session, branch_id, items, bal=None) -> dict:
     return out
 
 
+def nosite_count(db: Session, branch_id) -> int:
+    """22.11.2026 (брат): деталей разбора «Нет на сайте» — цена утверждена, есть свободная, галочки «на сайт» нет."""
+    from ..models import PartCatalog, StockItem
+    items = db.scalars(select(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id).where(
+        StockItem.branch_id == branch_id, PartCatalog.kind == "used", StockItem.publish_on_site.is_not(True))).all()
+    if not items:
+        return 0
+    st = item_states(db, branch_id, items)
+    return sum(1 for v in st.values() if v == "stock")
+
+
 # ---------- Справочники: марки → модели, категории → подкатегории (11.11.2026) ----------
 SUBCATS = {
     "Двигатель и навесное": ["Двигатель в сборе", "ГБЦ и клапана", "Турбина", "Генератор", "Стартер", "Впуск и выпуск", "Топливная система"],

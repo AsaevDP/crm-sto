@@ -1871,8 +1871,10 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .warranty-close[open] { flex: 1 1 100%; }
 /* Разбор: плитки ровными рядами — 6 / 3×2 / 2×3, без «4 + 2» (12.11.2026) */
 /* 20.11.2026: состояния «Разбора» — 8 плиток ровно: по 4 в ряд, на широком экране все в один ряд, на телефоне по 2 */
-.pult-tiles.rz-state-tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (min-width: 1700px) { .pult-tiles.rz-state-tiles { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+/* 22.11.2026: 9 плиток (+ «Нет на сайте») — 3 / 5 / 9 в ряд */
+.pult-tiles.rz-state-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (min-width: 1100px) { .pult-tiles.rz-state-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (min-width: 1700px) { .pult-tiles.rz-state-tiles { grid-template-columns: repeat(9, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .pult-tiles.rz-state-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .pult-tiles.rz-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (min-width: 1100px) { .pult-tiles.rz-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
@@ -2861,3 +2863,30 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
   text-decoration: none; font-size: 14px; line-height: 1.3; }
 .nb-menu a:hover { background: var(--fill); }
 .nb-menu .nbadge { position: static; flex: none; margin: 0; }
+
+/* 22.11.2026 (брат): «Заявки с сайта» */
+.so-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); margin-top: 12px; }
+.so-card { display: grid; gap: 6px; align-content: start; }
+.so-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.so-code { font-size: 17px; }
+.so-comment { font-size: 14px; color: var(--text-2); }
+.so-lines { border-top: 0.5px solid var(--separator); padding-top: 4px; }
+.so-line { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 14px; }
+.so-line .grow { min-width: 0; }
+.so-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+.so-api { margin-top: 16px; }
+.so-codes { display: grid; gap: 6px; }
+.so-code-row { grid-template-columns: 1fr 70px 110px; }
+.so-np[hidden], .so-courier[hidden] { display: none !important; }
+
+/* 22.11.2026 (брат): время привоза рядом с датой */
+.ow-time { width: 92px; min-height: 34px; flex: none; }
+
+/* 22.11.2026 (брат): деталь разбора в наличии, но не на сайте — пометка и «＋ На сайт» под строкой */
+.rzp-site { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: -2px 0 6px; }
+.rzp-site .btn { min-height: 28px; }
+
+/* 22.11.2026 (брат, наряд 21): строка оплаты — описание, под ним сумма справа (сумма не вылезает за рамку) */
+.pay-line { display: flex; flex-direction: column; gap: 2px; padding: 5px 0; border-bottom: 0.5px solid var(--separator); }
+.pay-line:last-child { border-bottom: 0; }
+.pay-line > b { align-self: flex-end; font-weight: 500; font-size: 14px; }

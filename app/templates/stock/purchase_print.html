@@ -10,7 +10,7 @@
   <tr><th style="width:28%">Заказал</th><td>{{ buyer.full_name if buyer else "—" }}{% if buyer %} · {{ buyer.role.name|lower }}{% endif %}</td></tr>
   <tr><th>Поставщик</th><td>{{ supplier.name if supplier else "не указан" }}{% if supplier and supplier.phone %} · {{ supplier.phone }}{% endif %}</td></tr>
   {% if wo %}<tr><th>Под наряд</th><td>{{ wo.number }}{% if v %} · {{ v.make }} {{ v.model }} {{ fmt_plate(v.plate) }}{% endif %}</td></tr>{% endif %}
-  <tr><th>Привезут</th><td>{{ p.expected_on.strftime("%d.%m.%Y") if p.expected_on else "срок не указан" }}</td></tr>
+  <tr><th>Привезут</th><td>{{ (p.expected_on.strftime("%d.%m.%Y") ~ (" к " ~ p.expected_time if p.expected_time else "")) if p.expected_on else "срок не указан" }}</td></tr>
   <tr><th>Состояние</th><td>{{ state }}</td></tr>
   {% if p.note %}<tr><th>Примечание</th><td>{{ p.note }}</td></tr>{% endif %}
 </table>

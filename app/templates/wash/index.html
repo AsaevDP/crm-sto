@@ -42,7 +42,7 @@
 {% set _ = T.append({"t": "Изменить очередь", "n": qasks|length, "c": "red" if qasks else "gray", "s": "просит мойщик", "href": "/wash?tab=asksq", "on": tab == "asksq", "zero": not qasks}) %}
 {% endif %}
 {% set _ = T.append({"t": "Химия", "n": items|length, "c": "purple", "s": "позиций на складе", "href": "/wash?tab=chem", "on": tab == "chem"}) %}
-{% set _ = T.append({"t": "Просят", "n": asks|length, "c": "orange", "s": "ждут кладовщика", "href": "/wash?tab=asks", "on": tab == "asks", "zero": not asks}) %}
+{% set _ = T.append({"t": "Просят", "n": asks|length, "c": "purple", "s": "ждут кладовщика · для сведения", "href": "/wash?tab=asks", "on": tab == "asks", "zero": not asks}) %}
 {% if buy_ok %}
 {% set _ = T.append({"t": "Заканчивается", "n": low|length, "c": "red" if low else "green", "s": "пора заказать", "href": "/wash?tab=chem", "zero": not low}) %}
 {% set _ = T.append({"t": "Закупка для мойки", "n": n_open, "c": "teal", "s": "заказы химии в работе", "href": "/wash?tab=buy", "on": tab == "buy", "zero": not n_open}) %}
@@ -162,7 +162,7 @@
       <td><span class="chip" data-s="{{ {'draft': 'created', 'ordered': 'waiting', 'delivered': 'diag', 'partial': 'picking', 'arrived': 'ready'}[p.status] }}">{{ {'draft': 'черновик', 'ordered': 'заказано', 'delivered': 'привезли', 'partial': 'неполная', 'arrived': '✓ на складе'}[p.status] }}</span></td>
       <td class="num">{{ s.n }}</td>
       {% if ctx.can("prices.view_purchase") or ctx.can("wash.buy") %}<td class="num nowrap">{{ s.total|money }} ₴</td>{% endif %}
-      <td class="nowrap">{{ p.expected_on.strftime("%d.%m") if p.expected_on else "—" }}</td>
+      <td class="nowrap">{{ exp_label(p) or "—" }}</td>
     </tr>
     {% else %}<tr><td colspan="7" class="footnote">Закупок химии пока не было — нажмите «Заказать химию».</td></tr>{% endfor %}
     </tbody>

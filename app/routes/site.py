@@ -150,6 +150,151 @@ async def sell(sid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     return _to("/site?t=new&f=site")
 
 
+# ======================= «Заявки с сайта» (22.11.2026, брат) =======================
+ORDER_TABS = {"new": ("Новые", "red", "принять или отказать"), "accepted": ("Приняты", "green", "детали в резерве"),
+              "declined": ("Отказ", "gray", "с причиной")}
+
+
+def _so(ctx: Ctx, oid: str):
+    from ..models import SiteOrder
+    o = ctx.db.get(SiteOrder, _uuid(oid))
+    if not o or o.branch_id != ctx.branch.id:
+        raise Forbidden()
+    return o
+
+
+@router.get("/site/orders")
+def orders_page(ctx: Ctx = Depends(get_ctx), tab: str = ""):
+    ctx.need("site.orders")
+    from ..models import SiteOrder, User
+    from ..models.razbor import ORDER_DELIVERY, ORDER_PAY
+    from ..services import settings as st_
+    from ..services import site_orders as sosvc
+    db, bid = ctx.db, ctx.branch.id
+    allo = db.scalars(select(SiteOrder).where(SiteOrder.branch_id == bid).order_by(SiteOrder.number.desc()).limit(300)).all()
+    counts = {k: sum(1 for o in allo if o.status == k) for k in ORDER_TABS}
+    if tab not in ORDER_TABS:
+        tab = "new" if counts["new"] or not allo else "accepted"
+    shown = [o for o in allo if o.status == tab]
+    people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == bid))}
+    api_key = st_.get(db, bid, "site_api").get("key", "") if ctx.user.role.code == "admin" else ""
+    return ctx.render("site/orders.html", title="Заявки с сайта", tab=tab, TABS=ORDER_TABS, counts=counts,
+                      orders=[{"o": o, "lines": sosvc.lines_of(db, bid, o)} for o in shown], people=people,
+                      DELIVERY=ORDER_DELIVERY, PAY=ORDER_PAY, fmt_phone=osvc.fmt_phone, api_key=api_key,
+                      is_admin=ctx.user.role.code == "admin")
+
+
+def _order_form(form) -> tuple[dict, list[dict]]:
+    data = {k: str(form.get(k, "")) for k in ("last_name", "first_name", "phone", "delivery", "city", "np_branch",
+                                              "address", "pay", "comment")}
+    codes, qtys, prices = form.getlist("code"), form.getlist("qty"), form.getlist("price")
+    lines = [{"code": str(c), "qty": str(qtys[i]) if i < len(qtys) else "1", "price": str(prices[i]) if i < len(prices) else ""}
+             for i, c in enumerate(codes) if str(c).strip()]
+    return data, lines
+
+
+@router.post("/site/orders")
+async def orders_add(request: Request, ctx: Ctx = Depends(get_ctx)):
+    """«＋ Заявка с сайта» — вписать руками (пока сайт не присылает сам: письмо, звонок с сайта)."""
+    ctx.need("site.orders")
+    from ..services import site_orders as sosvc
+    data, lines = _order_form(await request.form())
+    res = sosvc.create(ctx.db, ctx.branch.id, data, lines, "manual")
+    if isinstance(res, list):
+        flash(ctx.request, "Заполните: " + ", ".join(res), "error")
+        return _to("/site/orders?tab=new")
+    ctx.db.commit()
+    flash(ctx.request, f"Заявка {res.code} добавлена — проверьте детали и примите")
+    return _to("/site/orders?tab=new")
+
+
+@router.post("/site/orders/{oid}/accept")
+def orders_accept(oid: str, ctx: Ctx = Depends(get_ctx)):
+    ctx.need("site.orders")
+    from ..services import site_orders as sosvc
+    o = _so(ctx, oid)
+    err = sosvc.accept(ctx.db, ctx.branch.id, o, ctx.user.id)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+        return _to("/site/orders?tab=new")
+    ctx.db.commit()
+    flash(ctx.request, f"Заявка {o.code} принята — детали в резерве, дальше «Выдача и отправка»")
+    return _to("/site/orders?tab=accepted")
+
+
+@router.post("/site/orders/{oid}/decline")
+def orders_decline(oid: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
+    ctx.need("site.orders")
+    from ..services import site_orders as sosvc
+    o = _so(ctx, oid)
+    err = sosvc.decline(ctx.db, o, reason, ctx.user.id)
+    if err:
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"Заявка {o.code}: отказ")
+    return _to("/site/orders?tab=new")
+
+
+@router.post("/site/orders/{oid}/lines/{lid}/delete")
+def orders_line_delete(oid: str, lid: str, ctx: Ctx = Depends(get_ctx)):
+    """Покупатель согласился без этой детали (нет в наличии) — убрать её из заявки."""
+    ctx.need("site.orders")
+    from ..services import site_orders as sosvc
+    o = _so(ctx, oid)
+    sosvc.remove_line(ctx.db, o, _uuid(lid))
+    ctx.db.commit()
+    return _to("/site/orders?tab=new")
+
+
+@router.post("/site/orders/api-key")
+def orders_api_key(ctx: Ctx = Depends(get_ctx)):
+    """Ключ для сайта (только админ): с ним сайт присылает заявки. Новый ключ — старый перестаёт работать."""
+    if ctx.user.role.code != "admin":
+        raise Forbidden()
+    import secrets
+    from ..services import settings as st_
+    st_.put(ctx.db, ctx.branch.id, "site_api", {"key": secrets.token_urlsafe(24)})
+    ctx.db.commit()
+    flash(ctx.request, "Новый ключ для сайта создан — передайте его разработчику сайта")
+    return _to("/site/orders")
+
+
+@router.post("/api/site/orders")
+async def api_site_order(request: Request):
+    """Сайт присылает заявку (JSON). Заголовок X-Site-Key — ключ из «Заявок с сайта» (создаёт админ).
+    {"last_name", "first_name", "phone", "delivery": np|courier|pickup, "city", "np_branch", "address",
+     "pay": cod|card|on_pickup, "comment", "items": [{"code": "Р-0001", "qty": 1, "price": 1200, "name": "…"}]}"""
+    from fastapi.responses import JSONResponse
+
+    from ..db import SessionLocal, current_branch_id, current_user_id
+    from ..models import Setting
+    from ..services import site_orders as sosvc
+    key = (request.headers.get("x-site-key") or "").strip()
+    if len(key) < 20:
+        return JSONResponse({"ok": False, "error": "нет ключа"}, status_code=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "нужен JSON"}, status_code=400)
+    with SessionLocal() as db:
+        row = next((s for s in db.scalars(select(Setting).where(Setting.key == "site_api"))
+                    if (s.value or {}).get("key") == key), None)
+        if not row:
+            return JSONResponse({"ok": False, "error": "неверный ключ"}, status_code=401)
+        current_branch_id.set(row.branch_id)
+        current_user_id.set(None)
+        items = body.get("items") if isinstance(body.get("items"), list) else []
+        res = sosvc.create(db, row.branch_id, {k: str(body.get(k) or "") for k in (
+            "last_name", "first_name", "phone", "delivery", "city", "np_branch", "address", "pay", "comment")},
+            [{k: str(i.get(k) or "") for k in ("code", "qty", "price", "name")} for i in items if isinstance(i, dict)], "site")
+        if isinstance(res, list):
+            return JSONResponse({"ok": False, "error": "не заполнено: " + ", ".join(res)}, status_code=400)
+        db.commit()
+        return {"ok": True, "number": res.code}
+
+
 @router.post("/stock/items/{iid}/to-site")
 def offer(iid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("1")):
     """«На продажу» из карточки склада (кладовщик, главный кладовщик, директор, зам, админ)."""

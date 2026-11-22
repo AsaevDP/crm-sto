@@ -2,6 +2,7 @@
    (группы по наряду). Запчасть · сколько · ₴ за шт · под наряд / поставщик · ячейка · № накладной · «Пришло».
    Без № накладной не принимается (в строке или общий у «Принять всё»). Принято — строка показывает ✓, ТТН и ячейку.
    other: "wo" — колонка «Под наряд» (в «Приходе»), "sup" — колонка «Поставщик» (в «Заказах запчастистов»). #}
+{% from "stock/_exp_time.html" import time_select %}
 {% macro rcv_head(other, can) %}
 <thead><tr><th>Запчасть</th><th class="num">Шт</th><th class="num" title="Цена за штуку из накладной — обязательно">₴ за шт</th>
   <th>{{ "Под наряд" if other == "wo" else "Поставщик" }}</th><th>Ячейка</th><th>№ накладной</th>{% if can %}<th></th>{% endif %}</tr></thead>
@@ -66,7 +67,7 @@
         {% for s in suppliers %}<option value="{{ s.id }}" {% if r.sup and s.id == r.sup.id %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
         <option value="__new">＋ Новый поставщик…</option></select>
     </form>{% else %}{{ r.sup.name if r.sup else "не выбран" }}{% endif %}</td>
-  <td>{% if can and r.sup %}<input class="field ow-date" type="date" name="expected_on" form="ord-{{ l.id }}" min="{{ today.isoformat() }}" aria-label="Когда привезут" title="Когда привезут (необязательно)">{% endif %}</td>
+  <td>{% if can and r.sup %}<input class="field ow-date" type="date" name="expected_on" form="ord-{{ l.id }}" min="{{ today.isoformat() }}" aria-label="Когда привезут" title="Когда привезут (необязательно)">{{ time_select(form="ord-" ~ l.id) }}{% endif %}</td>
   <td class="nowrap">{% if can %}{% if r.sup %}
     <form id="ord-{{ l.id }}" method="post" action="/purchase-lines/{{ l.id }}/ordered" style="margin:0">
       <input type="hidden" name="back" value="{{ back }}"><button class="btn btn-sm">Заказал</button></form>

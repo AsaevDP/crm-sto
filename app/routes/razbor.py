@@ -79,7 +79,7 @@ def _item_rows(ctx: Ctx, items):
 
 
 RZ_FILTERS = {"": "Все", "stock": "В наличии", "reserved": "Резерв", "sent": "Отправлено", "sold": "Продано",
-              "service": "В наряды СТО", "out": "Нет в наличии", "site": "На сайте"}
+              "service": "В наряды СТО", "out": "Нет в наличии", "site": "На сайте", "nosite": "Нет на сайте"}
 
 
 # ======================= Склад разбора: марка → модель → категория =======================
@@ -107,8 +107,12 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
     tiles = {k: sum(1 for r in all_rows if r["state"] == k) for k in ITEM_STATES}
     tiles["stock_sum"] = sum((r["i"].sale_price * max(r["b"]["on_hand"], 0) for r in all_rows if r["state"] in ("stock", "reserved")), Decimal(0))
     tiles["site"] = sum(1 for r in all_rows if r["i"].publish_on_site and r["state"] == "stock")
+    # 22.11.2026 (брат): «Нет на сайте» — утверждена, в наличии, а галочки «на сайт» нет (забыли, вернули, сняли)
+    tiles["nosite"] = sum(1 for r in all_rows if not r["i"].publish_on_site and r["state"] == "stock")
     if f == "site":
         rows = [r for r in rows if r["i"].publish_on_site and r["state"] == "stock"]
+    elif f == "nosite":
+        rows = [r for r in rows if not r["i"].publish_on_site and r["state"] == "stock"]
     elif f == "out":
         rows = [r for r in rows if r["state"] in ("sold", "service", "writeoff", "out")]
     elif f in ITEM_STATES:
@@ -808,6 +812,21 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     ctx.db.commit()
     flash(request, "Сохранено")
     return _to(f"/razbor/parts/{iid}")
+
+
+@router.post("/razbor/parts/{iid}/to-site")
+def part_to_site(iid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """22.11.2026 (брат): «＋ На сайт» одним нажатием — у детали, которой нет на сайте («Нет на сайте»)."""
+    ctx.need("razbor.manage", "razbor.export")
+    from ..services import razbor_price as rp
+    i = _item(ctx, iid)
+    if rp.blocked(i):
+        flash(ctx.request, "Цена ещё не утверждена директором — на сайт пока нельзя", "error")
+    else:
+        i.publish_on_site = True
+        ctx.db.commit()
+        flash(ctx.request, f"{i.code} — на сайте")
+    return _to(back if back.startswith("/razbor") else f"/razbor/parts/{iid}")
 
 
 # ======================= Утверждение цен разбора (18.11.2026, брат) =======================

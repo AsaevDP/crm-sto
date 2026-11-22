@@ -104,6 +104,20 @@ from .permissions import MASTERS, WASHERS, is_master  # noqa: E402
 templates.env.globals.update(MASTERS=MASTERS, WASHERS=WASHERS, is_master=is_master)
 
 
+def _exp_label(p):   # 22.11.2026 (брат): «привезут 24.11 к 14:00»
+    from .services.stock import expected_label
+    return expected_label(p)
+
+
+def _exp_late(p):
+    from .services.stock import is_late
+    return is_late(p)
+
+
+from .services.stock import EXPECT_TIMES  # noqa: E402
+templates.env.globals.update(exp_label=_exp_label, exp_late=_exp_late, EXPECT_TIMES=EXPECT_TIMES)
+
+
 @dataclass
 class Ctx:
     request: Request

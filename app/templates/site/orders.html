@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "_tiles.html" import tiles %}
+{# «Заявки с сайта» (22.11.2026, брат): покупатель оформил заказ на сайте — фамилия, имя, телефон, детали, получение
+   (Нова Пошта / курьер / заберёт лично), оплата. «✓ Принять» — детали в резерв под покупателя (откуда = сайт) → дальше
+   «Выдача и отправка». «Отказать» — с причиной. Пока сайт не присылает сам — «＋ Заявка с сайта» (вписать руками). #}
+{% block content %}
+<header class="page-head">
+  <div><h1 class="large-title">Заявки с сайта</h1>
+    <p class="footnote" style="margin:0">Покупатель заказал на сайте — принять (детали в резерв) или отказать</p></div>
+  <div class="ov-actions">
+    <button class="btn btn-sm" type="button" onclick="document.getElementById('so-add').showModal()">{{ icon("plus") }}Заявка с сайта</button>
+    <a class="btn btn-sm btn-gray" href="/razbor/shipping">Выдача и отправка</a></div>
+</header>
+
+{{ tiles([
+  {"t": TABS.new[0], "n": counts.new, "s": TABS.new[2], "c": "red" if counts.new else "gray", "href": "/site/orders?tab=new", "on": tab == "new"},
+  {"t": TABS.accepted[0], "n": counts.accepted, "s": TABS.accepted[2], "c": "green", "href": "/site/orders?tab=accepted", "on": tab == "accepted"},
+  {"t": TABS.declined[0], "n": counts.declined, "s": TABS.declined[2], "c": "gray", "href": "/site/orders?tab=declined", "on": tab == "declined"},
+], "so-tiles") }}
+
+<div class="so-list">
+{% for x in orders %}{% set o = x.o %}
+<section class="card compact so-card rim rim-{{ 'red' if o.status == 'new' else ('green' if o.status == 'accepted' else 'gray') }}" id="so{{ o.id }}" data-st="{{ o.status }}"
+         style="--rim:var(--{{ 'red' if o.status == 'new' else ('green' if o.status == 'accepted' else 'gray') }})">
+  <div class="so-head">
+    <b class="so-code">{{ o.code }}</b>
+    <span class="caption">{{ o.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ "прислал сайт" if o.source == "site" else "вписали вручную" }}</span>
+  </div>
+  <div class="so-buyer">
+    <b>{{ o.buyer }}</b> · <a href="tel:+{{ o.phone }}" class="nowrap">{{ fmt_phone(o.phone) }}</a>
+  </div>
+  <div class="caption so-dlv">{{ DELIVERY.get(o.delivery) }}{% if o.delivery == "np" %}: {{ o.city }}, {{ o.np_branch }}{% elif o.delivery == "courier" %}: {{ o.address }}{% endif %}
+    · {{ PAY.get(o.pay) }}</div>
+  {% if o.comment %}<div class="so-comment">«{{ o.comment }}»</div>{% endif %}
+
+  <div class="so-lines">
+    {% for r in x.lines %}
+    <div class="so-line {{ 'bad' if not r.ok }}">
+      <span class="grow"><span class="mono">{{ r.l.code }}</span> · {{ r.name }}{% if r.l.qty != 1 %} × {{ r.l.qty|num }}{% endif %}
+        {% if not r.ok %}<span class="caption" style="color:var(--red)"> — {{ r.why }}</span>{% endif %}</span>
+      <b class="nowrap">{{ (r.l.price if r.l.price > 0 else r.price)|money(0) }} ₴</b>
+      {% if o.status == "new" and not r.ok %}
+      <form method="post" action="/site/orders/{{ o.id }}/lines/{{ r.l.id }}/delete" onsubmit="return confirm('Убрать {{ r.l.code }} из заявки? Покупатель согласился без неё')">
+        <button class="btn btn-plain btn-sm">Убрать</button></form>{% endif %}
+    </div>
+    {% else %}<p class="caption" style="margin:0">Деталей не осталось — откажите или впишите заявку заново</p>
+    {% endfor %}
+  </div>
+
+  {% if o.status == "new" %}
+  <div class="so-acts">
+    <form method="post" action="/site/orders/{{ o.id }}/accept"><button class="btn btn-sm" id="btn-so-{{ o.id }}" {% if not x.lines or x.lines|selectattr("ok", "equalto", false)|list %}disabled title="Есть детали, которых нет в наличии"{% endif %}>✓ Принять — в резерв</button></form>
+    <details class="work-edit"><summary class="btn btn-sm btn-gray">Отказать…</summary>
+      <form class="form dense" method="post" action="/site/orders/{{ o.id }}/decline" style="margin-top:6px">
+        <input class="field" name="reason" required placeholder="Причина: нет в наличии, не дозвонились, передумал…">
+        <button class="btn btn-sm btn-gray">Отказать</button></form></details>
+  </div>
+  {% elif o.status == "accepted" %}
+  <div class="caption">Принял(а) {{ people[o.decided_by].short_name if people.get(o.decided_by) else "" }} {{ o.decided_at.astimezone().strftime("%d.%m %H:%M") if o.decided_at else "" }} — в «Выдаче и отправке»</div>
+  {% else %}
+  <div class="caption">Отказ: {{ o.answer }} · {{ people[o.decided_by].short_name if people.get(o.decided_by) else "" }}</div>
+  {% endif %}
+</section>
+{% else %}
+<div class="card compact"><p class="footnote" style="margin:0">{{ "Новых заявок нет." if tab == "new" else "Пусто." }}</p></div>
+{% endfor %}
+</div>
+
+{% if is_admin %}
+<details class="card compact so-api">
+  <summary class="headline">Для разработчика сайта</summary>
+  <p class="footnote">Сайт присылает заявку запросом <span class="mono">POST /api/site/orders</span> (JSON) с заголовком
+    <span class="mono">X-Site-Key</span>. Поля: last_name, first_name, phone, delivery (np / courier / pickup), city, np_branch,
+    address, pay (cod / card / on_pickup), comment, items: [{code: «Р-0001» или «Н-0001», qty, price}].</p>
+  <p class="footnote">Ключ: {% if api_key %}<span class="mono" data-copy="{{ api_key }}">{{ api_key }}</span>{% else %}ещё не создан{% endif %}</p>
+  <form method="post" action="/site/orders/api-key" {% if api_key %}onsubmit="return confirm('Создать новый ключ? Старый перестанет работать')"{% endif %}>
+    <button class="btn btn-sm btn-gray">{{ "Новый ключ" if api_key else "Создать ключ" }}</button></form>
+</details>
+{% endif %}
+
+<dialog id="so-add" class="sheet">
+  <form method="post" action="/site/orders" class="form">
+    <h2 class="title-2">Заявка с сайта</h2>
+    <div class="form-row"><label>Фамилия *<input class="field" name="last_name" maxlength="80"></label>
+      <label>Имя *<input class="field" name="first_name" maxlength="80"></label></div>
+    <label>Телефон *<input class="field" name="phone" inputmode="tel" placeholder="+38 0__ ___ __ __" required></label>
+    <div class="so-codes">
+      <span class="caption">Детали — код с сайта (Р-0001 б/у, Н-0001 новые), количество, цена с сайта (пусто — наша цена)</span>
+      {% for _ in range(3) %}<div class="form-row so-code-row"><input class="field mono" name="code" placeholder="Р-0001" {% if loop.first %}required{% endif %}>
+        <input class="field" name="qty" value="1" inputmode="decimal" aria-label="Количество">
+        <input class="field" name="price" inputmode="decimal" placeholder="цена" aria-label="Цена"></div>{% endfor %}
+    </div>
+    <label>Как получить<select class="field" name="delivery" id="so-dlv">
+      {% for k, v in DELIVERY.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <div class="form-row so-np"><label>Город<input class="field" name="city"></label><label>Отделение / почтомат<input class="field" name="np_branch"></label></div>
+    <label class="so-courier" hidden>Адрес доставки<input class="field" name="address"></label>
+    <label>Оплата<select class="field" name="pay">{% for k, v in PAY.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    <label>Комментарий покупателя<textarea class="field" name="comment" rows="2"></textarea></label>
+    <div class="form-row"><button class="btn">Добавить заявку</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
+  </form>
+</dialog>
+<script>
+(function () {
+  const sel = document.getElementById('so-dlv'); if (!sel) return;
+  const f = () => { const v = sel.value;
+    document.querySelector('.so-np').hidden = v !== 'np'; document.querySelector('.so-courier').hidden = v !== 'courier'; };
+  sel.addEventListener('change', f); f();
+})();
+</script>
+{% endblock %}

@@ -378,7 +378,8 @@ def compute(ctx) -> dict:
         _add(out, "/wash", "green", len(ids_), "помыты — позвонить клиенту, оплата и выдача", "/wash?tab=now",
              wo=ids_, blk="#money", rows=["#btn-pay", "#btn-handover"], tile=['Очередь'], btn="blue")
         if not ctx.can("stock.issue"):   # у кладовщика — у «Запросов на выдачу»
-            _add(out, "/wash", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
+            # 22.11.2026 (брат): менеджеру — для сведения (химию выдаёт кладовщик, менеджер не обязан нести) → сиреневая
+            _add(out, "/wash", "purple", db.scalar(select(func.count()).select_from(ChemRequest).where(
                 ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "мойщик просит химию — ждёт кладовщика",
                  "/wash?tab=asks", tile=['Просят'])
         # 🔴 19.11.2026: мойщик просит изменить очередь — ждёт ответа менеджера
@@ -397,7 +398,12 @@ def compute(ctx) -> dict:
         # 18.11.2026: ждём приход — оранжевым (подготовиться принять); опаздывают (прошла дата «привезут») — красным
         wait_q = (select(func.count()).select_from(PurchaseLine).join(Purchase, Purchase.id == PurchaseLine.purchase_id)
                   .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")), PurchaseLine.received.is_(False)))
-        late = db.scalar(wait_q.where(Purchase.expected_on.is_not(None), Purchase.expected_on < date.today())) or 0
+        # 22.11.2026 (брат): с временем привоза — опаздывает, когда прошло обещанное время (без времени — день)
+        from . import stock as _st
+        late_ids = [p.id for p in db.scalars(select(Purchase).where(
+            Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")), Purchase.expected_on.is_not(None),
+            Purchase.expected_on <= date.today())) if _st.is_late(p)]
+        late = db.scalar(wait_q.where(Purchase.id.in_(late_ids))) or 0 if late_ids else 0
         _add(out, "/stock", "red", late, "опаздывают — позвонить поставщику", "/stock/receive?tab=late", info=info_new,
              sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Опаздывают', 'Приход'])
         _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive?tab=wait",
@@ -464,6 +470,11 @@ def compute(ctx) -> dict:
         if ctx.can("razbor.manage"):
             _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?v=parts&f=declined",
                  info=info_rz, tile=['Отказано'])
+    # 🟠 22.11.2026 (брат): в наличии, но не выложено на сайт — «＋ На сайт»
+    if ctx.can("razbor.manage"):
+        from . import razbor as rz_svc
+        _add(out, "/razbor", "orange", rz_svc.nosite_count(db, bid), "нет на сайте — выложить («＋ На сайт»)",
+             "/razbor?v=parts&f=nosite", info=info_rz, tile=['Нет на сайте'], sel=[("/razbor", ".rzp-site")])
 
     # ---------- «На сайт» (22.11.2026, брат): новые запчасти на продажу ----------
     if ctx.can("razbor.price") or ctx.can("razbor.export"):
@@ -474,6 +485,12 @@ def compute(ctx) -> dict:
         if ctx.can("razbor.export"):
             _add(out, "/site", "red", sc["declined"], "директор отказал — посмотреть причину", "/site?t=new&f=declined", sel=[("/site", '.sn-row[data-stage="declined"]')], tile=['Отказано'])
             _add(out, "/site", "orange", sc["nophoto"], "на сайте без фото — добавить фото", "/site?t=new&f=site", sel=[("/site", '.sn-row[data-nophoto="1"]')], tile=['На сайте'])
+
+    # 🔴 22.11.2026 (брат): «Заявки с сайта» — новые, принять или отказать
+    if ctx.can("site.orders"):
+        from . import site_orders as so_svc
+        _add(out, "/site/orders", "red", so_svc.count_new(db, bid), "новые заявки с сайта — принять или отказать",
+             "/site/orders?tab=new", tile=['Новые'], sel=[("/site/orders", '.so-card[data-st="new"]')])
 
     # ---------- Зарплата: прошлая неделя ждёт проверки / утверждения ----------
     # 20.11.2026 (брат): цифры — у «Зарплаты сотрудников»: бухгалтеру 🟠 проверить / 🟢 выдать; директору (и заму, пока у

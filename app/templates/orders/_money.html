@@ -18,7 +18,8 @@
 
   {% if payments %}
   <details><summary class="caption">Оплаты · {{ payments|length }}</summary>
-    {% for p in payments %}<div class="kv"><span>{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}{% if p.purpose == "refund" and p.comment %} · {{ p.comment }}{% endif %}{% if people.get(p.created_by) %} · {{ "оформил(а)" if p.purpose == "refund" else "принял(а)" }} {{ people[p.created_by].short_name }}{% endif %}</span><b {% if p.amount < 0 %}style="color:var(--red)"{% endif %}>{{ (p.amount)|money }}</b></div>{% endfor %}
+    {# 22.11.2026 (брат, наряд 21): сумма — отдельной строкой под текстом, иначе вылезает за рамку #}
+    {% for p in payments %}<div class="pay-line"><span class="caption">{{ p.created_at.astimezone().strftime("%d.%m %H:%M") }} · {{ PAY_PURPOSES.get(p.purpose) }} · {{ PAY_METHODS.get(p.method) }}{% if p.receipt_no %} · чек {{ p.receipt_no }}{% endif %}{% if p.purpose == "refund" and p.comment %} · {{ p.comment }}{% endif %}{% if people.get(p.created_by) %} · {{ "оформил(а)" if p.purpose == "refund" else "принял(а)" }} {{ people[p.created_by].short_name }}{% endif %}</span><b class="nowrap" {% if p.amount < 0 %}style="color:var(--red)"{% endif %}>{{ (p.amount)|money }} ₴</b></div>{% endfor %}
   </details>
   {% endif %}
 
@@ -36,7 +37,11 @@
       <label>Назначение<select class="field" name="purpose">
         {% for k, v in PAY_IN.items() %}<option value="{{ k }}" {% if k == ('prepay' if wo.awaiting_prepay else 'full') %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
       <button class="btn btn-sm">Провести оплату</button>
+      {% if t.paid > 0 and t.due <= 0 %}
+      <p class="hint" style="margin:0">Клиент уже оплатил {{ (t.paid)|money }} ₴ — проведите <b>0 ₴</b>: наряд станет «Оплачено», и можно выдавать авто.</p>
+      {% else %}
       <p class="hint" style="margin:0">Больше остатка не принимаем — сдачу отдайте клиенту.</p>
+      {% endif %}
     </form>
   </details>
 

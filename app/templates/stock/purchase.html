@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_brand.html" import brand_select %}
+{% from "stock/_exp_time.html" import time_select %}
 {# Закупка (11.11.2026): весь заказ у поставщика — таблицей. Строки добавить / вставить списком / убрать / перенести
    в другой черновик. Пока заказ едет, строки можно поправить (поставщик что-то заменил). Приход частями. #}
 {% block content %}
@@ -14,7 +15,7 @@
   {% else %}<a class="back" href="/purchases?tab={{ {'draft': 'draft', 'ordered': 'wait', 'delivered': 'wait', 'partial': 'partial', 'arrived': 'arrived'}[p.status] }}">{{ icon("back") }}Закупки</a>{% endif %}
   <div class="ov-title">
     <div><h1 class="title-1">{% if p.kind == "chem" %}🧴 {% endif %}{{ supplier.name if supplier else "Закупка без поставщика" }}</h1>
-      <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div>
+      <div class="subhead">создана {{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.ordered_on %} · заказана {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ exp_label(p) }}{% endif %}{% if p.supplier_invoice %} · счёт {{ p.supplier_invoice }}{% endif %}{% if supplier and supplier.phone %} · <a href="tel:{{ supplier.phone }}">{{ supplier.phone }}</a>{% endif %}</div>
       <div class="subhead">Заказал: <b>{{ buyer.full_name if buyer else "—" }}</b>
         {%- set po = orders.get(p.work_order_id) %}{% if po %}{% set pv = vehicles.get(po.vehicle_id) %} · под наряд <a href="/orders/{{ po.id }}">{{ po.number }}</a>{% if pv %} ({{ pv.make }} {{ pv.model }} {{ fmt_plate(pv.plate) }}){% endif %}{% elif not p.work_order_id %} · на склад и под разные наряды{% endif %}</div></div>
     <span class="pu-head-r"><span class="chip chip-lg" data-s="{{ CHIP[p.status] }}">{{ PURCHASE_STATUS[p.status] }}</span>
@@ -31,7 +32,7 @@
 {% set n_left = lines|length - n_got %}
 <section class="card compact rcv-bar">
   <span class="rcv-bar-t"><b>{{ "Неполная поставка" if p.status == "partial" else "Ждём" }}</b>
-    <span class="caption">{% if p.status == "partial" %}принято {{ n_got }} из {{ lines|length }}, остальное ждём{% else %}заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ p.expected_on.strftime("%d.%m") }}{% endif %}{% endif %}</span></span>
+    <span class="caption">{% if p.status == "partial" %}принято {{ n_got }} из {{ lines|length }}, остальное ждём{% else %}заказано{% if p.ordered_on %} {{ p.ordered_on.strftime("%d.%m") }}{% endif %}{% if p.expected_on %} · привезут {{ exp_label(p) }}{% if exp_late(p) %} — опаздывает{% endif %}{% endif %}{% endif %}</span></span>
   {% if recv %}
   <form method="post" action="/purchases/{{ p.id }}/receive" class="rcv-bar-f"
         onsubmit="return confirm('Принять {{ 'на склад' if n_left == 1 else 'все ' ~ n_left ~ ' поз. на склад' }}?')">
@@ -63,6 +64,7 @@
       <label class="caption">Телефон<input class="field" name="supplier_phone" value="{{ supplier.phone if supplier else '' }}" inputmode="tel" placeholder="+380…"></label>
       <label class="caption">№ счёта / заказа<input class="field" name="supplier_invoice" value="{{ p.supplier_invoice }}" placeholder="у поставщика"></label>
       <label class="caption">Привезут<input class="field" type="date" name="expected_on" value="{{ p.expected_on.isoformat() if p.expected_on else '' }}"></label>
+      <label class="caption">Во сколько{{ time_select(p.expected_time or "") }}</label>
       <label class="caption pu-note">Заметка<input class="field" name="note" value="{{ p.note }}" placeholder="например: доставка до 16:00"></label>
     </div>
     <div class="form-row pu-head-btns">

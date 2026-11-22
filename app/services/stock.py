@@ -430,7 +430,8 @@ def set_line_supplier(db: Session, line: PurchaseLine, supplier_id) -> Purchase 
             src.supplier_id = supplier_id
             return src
         target = Purchase(branch_id=src.branch_id, status="draft", supplier_id=supplier_id, kind=src.kind or "",
-                          work_order_id=src.work_order_id, created_by=src.created_by, expected_on=src.expected_on)
+                          work_order_id=src.work_order_id, created_by=src.created_by, expected_on=src.expected_on,
+                          expected_time=src.expected_time)
         db.add(target)
         db.flush()
     line.purchase_id = target.id
@@ -438,7 +439,58 @@ def set_line_supplier(db: Session, line: PurchaseLine, supplier_id) -> Purchase 
     return target
 
 
-def order_line(db: Session, line: PurchaseLine, user_id, expected_on=None) -> Purchase | None:
+EXPECT_TIMES = [f"{h:02d}:{m:02d}" for h in range(8, 21) for m in (0, 30) if not (h == 20 and m == 30)]
+
+
+def clean_time(v) -> str:
+    """22.11.2026 (брат): время привоза — только из общего списка (08:00 … 20:00 через 30 мин), иначе пусто."""
+    v = str(v or "").strip()[:5]
+    return v if v in EXPECT_TIMES else ""
+
+
+def set_expected(p: Purchase, expected_on=None, expected_time: str = ""):
+    """Дата и время привоза. Новая дата без времени — время сбрасываем (относилось к прежней дате)."""
+    if expected_on:
+        if expected_on != p.expected_on:
+            p.expected_time = ""
+        p.expected_on = expected_on
+    t = clean_time(expected_time)
+    if t and p.expected_on:
+        p.expected_time = t
+
+
+def expected_dt(p: Purchase):
+    """Когда обещали привезти (местное время): дата + время, без времени — конец дня. None — срок не указан."""
+    from datetime import datetime, time
+    if not p.expected_on:
+        return None
+    t = clean_time(p.expected_time)
+    return datetime.combine(p.expected_on, time(int(t[:2]), int(t[3:])) if t else time(23, 59))
+
+
+def is_late(p: Purchase, now_local=None) -> bool:
+    """Опаздывает: заказано / неполная поставка и обещанное время прошло (без времени — день прошёл)."""
+    from datetime import datetime
+    if p.status not in ("ordered", "partial"):
+        return False
+    when = expected_dt(p)
+    if not when:
+        return False
+    if now_local is None:
+        from .attendance import local_tz
+        now_local = datetime.now(local_tz()).replace(tzinfo=None)
+    return now_local > when
+
+
+def expected_label(p: Purchase) -> str:
+    """«24.11 к 14:00» / «24.11» / ''."""
+    if not p.expected_on:
+        return ""
+    t = clean_time(p.expected_time)
+    return p.expected_on.strftime("%d.%m") + (f" к {t}" if t else "")
+
+
+def order_line(db: Session, line: PurchaseLine, user_id, expected_on=None, expected_time: str = "") -> Purchase | None:
     """«Заказал» по детали: строка — в заказанную накладную этого наряда у этого поставщика (пока кладовщик не отметил
     ничего не принял — в ту же, иначе новая) и сразу видна кладовщику в «Приходе». Без поставщика — нельзя (None)."""
     from datetime import date as _d
@@ -458,13 +510,12 @@ def order_line(db: Session, line: PurchaseLine, user_id, expected_on=None) -> Pu
         else:
             target = Purchase(branch_id=src.branch_id, status="ordered", ordered_on=_d.today(), supplier_id=src.supplier_id,
                               kind=src.kind or "", work_order_id=src.work_order_id, created_by=src.created_by,
-                              expected_on=src.expected_on, note=src.note)
+                              expected_on=src.expected_on, expected_time=src.expected_time, note=src.note)
             db.add(target)
             db.flush()
     line.purchase_id = target.id
     line.ordered_at, line.ordered_by = line.ordered_at or now(), user_id
-    if expected_on:
-        target.expected_on = expected_on
+    set_expected(target, expected_on, expected_time)
     if src is not target:
         _drop_if_empty(db, src)
     return target
@@ -484,7 +535,7 @@ def set_draft_supplier(db: Session, p: Purchase, supplier_id) -> Purchase:
     return target
 
 
-def order_draft(db: Session, p: Purchase, user_id, expected_on=None) -> Purchase | None:
+def order_draft(db: Session, p: Purchase, user_id, expected_on=None, expected_time: str = "") -> Purchase | None:
     """Весь черновик заказан («✓ Заказал всё»): он и становится накладной; если у этого поставщика по наряду
     накладная уже едет (кладовщик по ней ещё ничего не принял) — строки туда. Без поставщика — None."""
     from datetime import date as _d
@@ -499,8 +550,7 @@ def order_draft(db: Session, p: Purchase, user_id, expected_on=None) -> Purchase
         l.ordered_at, l.ordered_by = l.ordered_at or now(), user_id
     if target is p:
         p.status, p.ordered_on = "ordered", _d.today()
-    if expected_on:
-        target.expected_on = expected_on
+    set_expected(target, expected_on, expected_time)
     if target is not p:
         _drop_if_empty(db, p)
     return target
@@ -1099,7 +1149,7 @@ def partsman_lines(db: Session, branch_id, uid=None, days: int = 60) -> list[dic
             st = "partial"
         else:
             st = "wait"
-        late = st in ("wait", "partial") and p.expected_on is not None and p.expected_on < today
+        late = st in ("wait", "partial") and is_late(p)
         raw.append((l, p, st, late))
     parts = {x.id: x for x in db.scalars(select(WoPart).where(WoPart.id.in_([l.wo_part_id for l, *_ in raw if l.wo_part_id])))}
     wo_ids = {x.work_order_id for x in parts.values()} | {p.work_order_id for _, p, *_ in raw if p.work_order_id}
