@@ -98,7 +98,7 @@
   {% endif %}
   {% if can_approve %}
   {# 13.11.2026 (брат): согласование — одной кнопкой в блоке «Запчасти», после «Подбор завершён» у запчастиста #}
-  <a class="btn btn-gray btn-block" href="#parts" data-goto="diag">{{ "Подбор готов → согласовать в «Запчастях»" if wo.picked_at or not wo.partsman_id else "Запчасти: ждём подбор" }}</a>
+  <a class="btn btn-gray btn-block" href="#parts" data-goto="diag">{{ "Запчастист не назначен → «Запчасти»" if not wo.partsman_id else ("Подбор готов → согласовать в «Запчастях»" if wo.picked_at else "Запчасти: ждём подбор") }}</a>
   <p class="hint" style="margin:6px 0 0">«Да» — сразу работа (цена и мастер — в блоке «Работы»), «Нет» — рекомендация в карте клиента.
     После звонка клиенту — «Согласовал с клиентом» в блоке «Запчасти».</p>
   {% endif %}

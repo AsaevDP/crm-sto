@@ -367,8 +367,13 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
             c = next((c for c in brd["queue"] + brd["doing"] if c.o.id == wo.id), None)
             on_wash = {"pos": c.pos if c and c.stage == "queue" else 0,
                        "who": ", ".join(u.short_name for u in c.who) if c and c.stage == "doing" else ""}
+    # 22.11.2026: новая проблема во время ремонта (мастера продолжают согласованное) и что ещё не заказано у поставщика
+    ap_round = svc.approve_round(db, wo)
+    ap_fresh = [p for p in parts if p.status not in PART_OFF and (
+        p.status in ("need", "option") or (ap_round["entered"] and p.created_at >= ap_round["entered"]))] if ap_round["again"] else []
+    draft_parts = stock_svc.draft_part_ids(db, [p.id for p in parts if p.status == "ordered"])
     flow = svc.flow(wo, mc.short_name if mc else "", pm.short_name if pm else "", len(findings), len(works), n_done,
-                    options_open, on_wash=on_wash)
+                    options_open, on_wash=on_wash, again=ap_round["again"], to_order=len(draft_parts))
     is_manager = ctx.can("orders.approve")
     # Кто ведёт и кто что делал (11.11.2026)
     from ..services import order_feed
@@ -429,7 +434,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         left_parts=money_svc.not_issued_parts(db, wo) if wo.status in ("ready", "paid") else [],
         reopen=_reopen_state(ctx, wo),
         order_msgs=_order_msgs(ctx, wo),
-        draft_parts=stock_svc.draft_part_ids(db, [p.id for p in parts if p.status == "ordered"]),
+        draft_parts=draft_parts, ap_round=ap_round, ap_fresh=ap_fresh,
         handed=_handed(ctx, wo),
         extra=extra, diag_state=hsvc.diag_state(db, wo) if wo.status == "diag" or extra else [],
         readonly=hsvc.read_only(ctx, wo),

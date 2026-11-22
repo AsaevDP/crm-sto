@@ -227,21 +227,47 @@ def work_owner(wo: WorkOrder, w: WoWork):
     return w.mechanic_id or wo.mechanic_id
 
 
+AGAIN_FROM = ("work", "instock", "waiting", "picking", "ready")
+
+
+def approve_round(db: Session, wo: WorkOrder) -> dict:
+    """Текущий круг согласования: откуда наряд пришёл и когда. again=True — во время ремонта нашли новую проблему
+    (машина уже была в работе / ждала запчасти). {"prev", "entered", "again"}."""
+    if wo.status != "approve":
+        return {"prev": None, "entered": None, "again": False}
+    last = db.scalar(select(WoStatusHistory).where(WoStatusHistory.work_order_id == wo.id, WoStatusHistory.to_status == "approve")
+                     .order_by(WoStatusHistory.created_at.desc()).limit(1))
+    prev, entered = (last.from_status, last.created_at) if last else (None, None)
+    return {"prev": prev, "entered": entered, "again": prev in AGAIN_FROM}
+
+
 def can_start_work(db: Session, wo: WorkOrder, w: WoWork) -> bool:
     """Можно ли нажимать «Начал / Пауза / Выполнено» по этой работе (12.11.2026, живой прогон).
     Наряд «В работе» — да. Пока ждём запчасти ведущего мастера, второй мастер (мойщик, электрик…) может делать свою
-    работу, если под неё запчасти не нужны или уже выданы."""
+    работу, если под неё запчасти не нужны или уже выданы.
+    22.11.2026 (брат): во время ремонта нашли новую проблему — наряд снова «Согласование», но мастера продолжают уже
+    согласованные работы (как будто наряд там, откуда пришёл). Работы из новой проблемы — только после согласования."""
     from ..models import WoPart
-    if wo.status == "work":
+    if wo.status == "approve":
+        r = approve_round(db, wo)
+        if not r["again"] or (r["entered"] and w.created_at and w.created_at >= r["entered"]):
+            return False
+        prev = r["prev"]
+        if prev in ("work", "ready"):
+            return True
+        status = prev
+    else:
+        status = wo.status
+    if status == "work":
         return True
-    if wo.status not in ("picking", "waiting", "instock"):
+    if status not in ("picking", "waiting", "instock"):
         return False
     lead = not w.mechanic_id or w.mechanic_id == wo.mechanic_id
     if lead:
         # 19.11.2026 (брат): часть запчастей пришла и выдана — ведущий мастер начинает с тем, что есть (запчасти ещё
         # едут). Только после согласования (не «Подбор»), и если что-то уже выдано. Последнюю работу не завершить,
         # пока не выдано всё (`unfinished_parts_block`).
-        if wo.status == "picking" or db.scalar(select(WoPart.id).where(
+        if status == "picking" or db.scalar(select(WoPart.id).where(
                 WoPart.work_order_id == wo.id, WoPart.status.in_(("issued", "installed"))).limit(1)) is None:
             return False
     return db.scalar(select(WoPart.id).where(WoPart.wo_work_id == w.id, WoPart.status.in_(
@@ -651,14 +677,16 @@ def paired_partsman(db: Session, manager_id, partsmen: list):
 
 
 # ---------- Шаги наряда и «что сделать сейчас» (11.11.2026) ----------
-STEPS = [("Приём", "blue"), ("Проблемы", "purple"), ("Согласование", "orange"), ("Запчасти", "yellow"),
+# 22.11.2026 (брат): подбор запчастей идёт ВНУТРИ согласования (цена клиенту — сразу с запчастями), а шаг 4 — это
+# заказ у поставщика и привоз на склад. Подписи шагов — по тому, что на них на самом деле происходит.
+STEPS = [("Приём", "blue"), ("Проблемы", "purple"), ("Подбор и согласование", "orange"), ("Заказ и привоз", "yellow"),
          ("Ремонт", "teal"), ("Выдача", "green")]
 STEP_OF = {"created": 0, "diag": 1, "approve": 2, "picking": 3, "waiting": 3, "instock": 3, "work": 4,
            "ready": 5, "paid": 5, "closed": 6}
 
 
 def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_works: int = 0, n_done: int = 0,
-         options_open: int = 0, on_wash: dict | None = None) -> dict:
+         options_open: int = 0, on_wash: dict | None = None, again: bool = False, to_order: int = 0) -> dict:
     """Полоса шагов наверху наряда и подсказка: что сейчас сделать и кому."""
     if (wo.kind or "") == "wash":
         return _wash_flow(wo, mech, n_works, n_done)
@@ -679,7 +707,16 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
     elif s == "diag":
         title, text, color = (f"Диагностика · {mech}", "Слесарь записывает проблемы с фото. Закончит — «Диагностика готова», "
                               "и наряд придёт менеджеру на согласование.", "purple")
-    elif s == "approve" and not wo.picked_at and wo.partsman_id:
+    elif s == "approve" and again:   # 22.11.2026: новая проблема во время ремонта — машина не стоит
+        title, text, color = ("Новая проблема — согласуйте с клиентом",
+                              f"Мастера продолжают уже согласованные работы. "
+                              + (f"{partsman.capitalize()} подбирает запчасти к новому, " if wo.partsman_id and not wo.picked_at else "")
+                              + "менеджер звонит клиенту и жмёт «Согласовал с клиентом» (или «запчасти не нужны»).", "yellow")
+    elif s == "approve" and not wo.partsman_id:   # 22.11.2026: без запчастиста — не «Подбор готов»
+        title, text, color = ("Запчастист не назначен",
+                              "Назначьте запчастиста в «Кто и где» — он подберёт запчасти. Если запчасти не нужны — "
+                              "согласуйте с клиентом работы и нажмите «Согласовал — запчасти не нужны».", "yellow")
+    elif s == "approve" and not wo.picked_at:
         title, text, color = (f"Подбор · {partsman} и работы · менеджер",
                               f"{partsman.capitalize()} подбирает запчасти (со склада, заказать, варианты фирм), менеджер "
                               "составляет работы и цены. Закончит подбор — «Подбор завершён», и можно звонить клиенту.", "yellow")
@@ -692,6 +729,10 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
                               "orange")
     elif s == "picking":
         title, text, color = (f"Подбор запчастей · {partsman}", "Со склада или под заказ. Закончит — «Подбор завершён».", "orange")
+    elif s == "waiting" and to_order:   # 22.11.2026: в черновике — поставщику ещё не заказано
+        title, text, color = (f"Заказ запчастей · {partsman}",
+                              f"Ещё не заказано у поставщика: {to_order} поз. {partsman.capitalize()} заказывает в «Моих "
+                              "заказах» и ставит дату привоза.", "orange")
     elif s == "waiting":
         title, text, color = "Ждём запчасти от поставщика", "Придут на склад — наряд сам перейдёт дальше.", "orange"
     elif s == "instock":
@@ -877,6 +918,10 @@ def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False, dups_ok:
     if works or parts:
         if not wo.partsman_id and parts:
             return "Назначьте запчастиста — согласованное уйдёт ему в заказ"
+        # 22.11.2026: без запчастиста никто ничего не подбирал — согласовать можно, только если запчасти не нужны
+        if not wo.partsman_id and works and not no_parts:
+            return ("Запчастист не назначен — запчасти никто не подбирал. Назначьте его в «Кто и где» или нажмите "
+                    "«Согласовал — запчасти не нужны»")
         if wo.partsman_id and not wo.picked_at and not (no_parts and not fresh):
             return ("Запчастист ещё не закончил подбор — дождитесь «Подбор завершён»"
                     + ("" if fresh else ". Если запчасти не нужны — «Согласовал — запчасти не нужны»"))

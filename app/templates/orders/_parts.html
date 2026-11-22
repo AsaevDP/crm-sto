@@ -213,7 +213,14 @@
   {# 13.11.2026 (брат): менеджер запчасти не добавляет — выбирает варианты, лишнее убирает в архив и согласует с клиентом #}
   {% if can_approve %}
   <div class="approve-box">
-    {% if not wo.picked_at and wo.partsman_id %}
+    {% if ap_round.again %}
+    <p class="hint warn" style="margin:0 0 8px">Во время ремонта нашли новую проблему. Мастера продолжают уже согласованные
+      работы — согласуйте с клиентом только новое.</p>
+    {% endif %}
+    {% if not wo.partsman_id %}
+    <p class="hint warn" style="margin:0 0 8px">Запчастист не назначен — запчасти никто не подбирает. Назначьте его в «Кто и где»
+      или, если запчасти не нужны, — «Согласовал — запчасти не нужны».</p>
+    {% elif not wo.picked_at %}
     <p class="hint warn" style="margin:0 0 8px">⏳ Ждём подбор у {{ people.get(wo.partsman_id).short_name if people.get(wo.partsman_id) else "запчастиста" }}.
       Пока составьте работы и цены.</p>
     {% endif %}
@@ -230,7 +237,7 @@
       <p class="hint" style="margin:6px 0 0">Проблемы «Да» — работы, «Нет» — рекомендации в карте клиента. Запчасти со склада — в резерве,
         остальные уйдут запчастисту в заказ.</p>
     </form>
-    {% if not wo.picked_at and wo.partsman_id and not parts %}
+    {% if not wo.picked_at and (not wo.partsman_id or not parts or (ap_round.again and not ap_fresh)) %}
     <form method="post" action="/orders/{{ wo.id }}/approval-done" style="margin-top:8px"><input type="hidden" name="no_parts" value="1">
       <button class="btn btn-gray btn-block">Согласовал — запчасти не нужны</button></form>
     {% endif %}
