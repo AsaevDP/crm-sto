@@ -42,16 +42,20 @@ def rows(db: Session, branch_id) -> list[dict]:
         mn = Decimal(k.min_qty or 0)
         have = free[k.catalog_id]
         missing = max(mn - have - transit[k.catalog_id] - draft[k.catalog_id], D0)
+        # 23.11.2026 (брат): «Едет или на грани» путало — теперь отдельно: заказано (ниже нормы, но едет / в черновике)
+        # и почти на норме (норма есть, но запас меньше нормы + 20 % — только для сведения, без цифры в меню)
         if have < mn and missing > 0:
             st = "red"        # ниже нормы и не заказано
-        elif have < mn or have < mn * Decimal("1.2"):
-            st = "yellow"     # ниже нормы, но уже едет / в черновике, или почти на норме
+        elif have < mn:
+            st = "ordered"    # ниже нормы, недостающее уже едет / в черновике
+        elif have < mn * Decimal("1.2"):
+            st = "near"       # норма есть, запас на грани
         else:
             st = "ok"
         out.append({"k": k, "c": c, "min": mn, "on_hand": on_hand[k.catalog_id], "free": have,
                     "transit": transit[k.catalog_id], "draft": draft[k.catalog_id], "missing": missing, "st": st,
                     "below": have < mn})
-    order = {"red": 0, "yellow": 1, "ok": 2}
+    order = {"red": 0, "ordered": 1, "near": 2, "ok": 3}
     out.sort(key=lambda r: (order[r["st"]], (r["c"].name if r["c"] else "").lower()))
     return out
 

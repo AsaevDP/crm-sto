@@ -42,7 +42,8 @@ def test_manager_sees_own_orders_and_asks_access(client):
             assert db.scalar(select(Notification).where(Notification.user_id == _uid(who), Notification.kind == "access_req"))
     client.post("/logout")
     _as(client, "director")
-    assert _badges(client, "/orders").get("red", 0) >= 1
+    # 23.11.2026 (брат): просьба о доступе — кружок у «Клиентов» (у «Нарядов» дубль убран)
+    assert _badges(client, "/clients").get("red", 0) >= 1
     page = client.get("/access-requests").text
     assert "Ирина на больничном" in page and "неделю" in page
     client.post(f"/access-requests/{a.id}", data={"action": "approve", "hours": "2"})

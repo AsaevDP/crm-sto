@@ -1614,7 +1614,8 @@ def stock_xlsx(ctx: Ctx = Depends(get_ctx), q: str = "", only: str = "", sec: st
 def _keep_data(ctx: Ctx):
     from ..services import keep as ksvc
     rows = ksvc.rows(ctx.db, ctx.branch.id)
-    return rows, {"red": sum(r["st"] == "red" for r in rows), "yellow": sum(r["st"] == "yellow" for r in rows),
+    return rows, {"red": sum(r["st"] == "red" for r in rows), "ordered": sum(r["st"] == "ordered" for r in rows),
+                  "near": sum(r["st"] == "near" for r in rows),
                   "ok": sum(r["st"] == "ok" for r in rows), "below": sum(r["below"] for r in rows)}
 
 

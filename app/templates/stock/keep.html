@@ -16,7 +16,8 @@
 
 <div class="pult-tiles pu-tiles kp-tiles">
   <span class="ptile {{ 'zero' if not cnt.red }}" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Не хватает</span><b>{{ cnt.red }}</b><span class="ptile-s">ниже нормы, не заказано</span></span>
-  <span class="ptile {{ 'zero' if not cnt.yellow }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Едет или на грани</span><b>{{ cnt.yellow }}</b><span class="ptile-s">заказано или почти норма</span></span>
+  <span class="ptile {{ 'zero' if not cnt.ordered }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Заказано</span><b>{{ cnt.ordered }}</b><span class="ptile-s">ниже нормы, но уже едет</span></span>
+  <span class="ptile {{ 'zero' if not cnt.near }}" style="--tc:{{ color_css('yellow') }}"><span class="ptile-t">Почти на норме</span><b>{{ cnt.near }}</b><span class="ptile-s">запас меньше нормы + 20 %</span></span>
   <span class="ptile {{ 'zero' if not cnt.ok }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">В порядке</span><b>{{ cnt.ok }}</b><span class="ptile-s">не меньше нормы</span></span>
   <span class="ptile" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Всего в списке</span><b>{{ rows|length }}</b><span class="ptile-s">ниже нормы: {{ cnt.below }}</span></span>
 </div>

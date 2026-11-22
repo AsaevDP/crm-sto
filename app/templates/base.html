@@ -95,7 +95,21 @@
       list.forEach(x => {
         const b = document.createElement('span');
         b.className = 'nbadge nb-' + x.c + (x.info ? ' nb-info' : ''); b.textContent = x.n; b.title = x.t;
-        b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); location.href = x.href; });
+        b.addEventListener('click', e => {
+          e.preventDefault(); e.stopPropagation();
+          // 23.11.2026 (брат): в одном кружке дела из разных мест — меню «куда перейти», а не только первое
+          const go = (x.go || []).filter((g, i, a) => a.findIndex(o => o.href === g.href) === i);
+          if (go.length < 2) { location.href = x.href; return; }
+          document.querySelectorAll('.nb-menu').forEach(m => m.remove());
+          const m = document.createElement('div'); m.className = 'nb-menu'; m.setAttribute('role', 'menu');
+          go.forEach(g => { const a = document.createElement('a'); a.href = g.href; a.setAttribute('role', 'menuitem');
+            a.innerHTML = `<span class="nbadge nb-${x.c}">${g.n}</span><span></span>`; a.lastChild.textContent = g.t; m.appendChild(a); });
+          document.body.appendChild(m);
+          const r = b.getBoundingClientRect();
+          m.style.left = Math.min(r.left, innerWidth - m.offsetWidth - 8) + 'px';
+          m.style.top = (r.bottom + m.offsetHeight + 6 > innerHeight ? r.top - m.offsetHeight - 6 : r.bottom + 6) + 'px';
+          setTimeout(() => document.addEventListener('click', function off(ev) { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
+        });
         box.appendChild(b);
       });
     });

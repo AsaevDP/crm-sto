@@ -1995,7 +1995,8 @@ tr.low td { background: color-mix(in srgb, var(--red) 5%, transparent); }
 .kp-frow .grow { flex: 1 1 220px; min-width: 0; }
 .kp-min { width: 72px; text-align: right; display: inline-block; }
 .kp-table tr.kp-red td { background: color-mix(in srgb, var(--red) 8%, transparent); }
-.kp-table tr.kp-yellow td { background: color-mix(in srgb, var(--orange) 8%, transparent); }
+.kp-table tr.kp-ordered td { background: color-mix(in srgb, var(--orange) 8%, transparent); }
+.kp-table tr.kp-near td { background: color-mix(in srgb, var(--yellow) 6%, transparent); }   /* 23.11.2026: «почти на норме» — для сведения */
 .kp-miss { color: var(--red); }
 .kp-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
@@ -2623,7 +2624,7 @@ input.zp-hl { box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 55%, transp
 .sn-tiles { margin-bottom: 12px; }
 .sn-list { display: grid; gap: 10px; }
 .sn-row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; grid-template-areas: "ph main nums" "ph acts acts"; gap: 6px 14px;
-  align-items: start; box-shadow: var(--shadow-1), inset 4px 0 0 var(--tc, var(--separator)); color: var(--text); text-decoration: none; }
+  align-items: start; box-shadow: var(--shadow-1); border-left: 4px solid var(--tc, var(--separator)); color: var(--text); text-decoration: none; }
 .sn-used { grid-template-areas: "ph main nums"; }
 .sn-ph { grid-area: ph; width: 84px; height: 84px; border-radius: 12px; background: var(--fill-2); display: grid; place-items: center; overflow: hidden; }
 .sn-ph img { width: 100%; height: 100%; object-fit: cover; }
@@ -2805,12 +2806,12 @@ body.has-toast-pill .toasts { bottom: calc(134px + env(safe-area-inset-bottom));
 
 /* 22.11.2026 (брат): у окошек со своей цветной полоской слева и у строк — мигает только край, без рамки вокруг */
 .need-edge::after { content: none; }
-.need-edge { animation: need-blink 1.3s ease-in-out infinite; border-left-color: var(--need-c); }
+.need-edge { animation: need-blink 1.3s ease-in-out infinite; border-left-color: var(--edge-c, var(--need-c)); }
 .need-edge-add { border-left: 4px solid var(--need-c); border-radius: 10px; padding-left: 10px; }
 tr.need-edge { animation: none; }
 tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animation: need-blink-sh 1.3s ease-in-out infinite; }
-@keyframes need-blink { 0%, 100% { border-left-color: var(--need-c); }
-  50% { border-left-color: color-mix(in srgb, var(--need-c) 12%, transparent); } }
+@keyframes need-blink { 0%, 100% { border-left-color: var(--edge-c, var(--need-c)); }
+  50% { border-left-color: color-mix(in srgb, var(--edge-c, var(--need-c)) 12%, transparent); } }
 @keyframes need-blink-sh { 0%, 100% { box-shadow: inset 4px 0 0 var(--need-c); }
   50% { box-shadow: inset 4px 0 0 color-mix(in srgb, var(--need-c) 12%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .need-edge, tr.need-edge > td:first-child { animation: none; } }
@@ -2822,11 +2823,14 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
   background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform: skewX(-20deg);
   animation: need-btn-shine 2.4s ease-in-out infinite; }
 @keyframes need-btn-glow {
-  0% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 4px color-mix(in srgb, var(--blue) 45%, transparent); }
-  70% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 16px color-mix(in srgb, var(--blue) 0%, transparent); }
-  100% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 16px color-mix(in srgb, var(--blue) 0%, transparent); } }
+  0% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--need-btn-c, var(--blue)), 0 0 0 4px color-mix(in srgb, var(--need-btn-c, var(--blue)) 45%, transparent); }
+  70% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--need-btn-c, var(--blue)), 0 0 0 16px color-mix(in srgb, var(--need-btn-c, var(--blue)) 0%, transparent); }
+  100% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--need-btn-c, var(--blue)), 0 0 0 16px color-mix(in srgb, var(--need-btn-c, var(--blue)) 0%, transparent); } }
 @keyframes need-btn-shine { 0% { left: -60%; } 60%, 100% { left: 120%; } }
-@media (prefers-reduced-motion: reduce) { .need-btn, .need-btn::before { animation: none; } .need-btn { box-shadow: 0 0 0 2px var(--blue); } }
+@media (prefers-reduced-motion: reduce) { .need-btn, .need-btn::before { animation: none; } .need-btn { box-shadow: 0 0 0 2px var(--need-btn-c, var(--blue)); } }
+/* блик идёт под текстом и цифрами кнопки — не затмевает их */
+.need-btn > * { position: relative; z-index: 1; }
+.need-btn::before { z-index: 0; }
 
 /* 23.11.2026 (брат): цветная плитка с делом — мигает только её верхняя полоска (вместо рамки по краю). Цвет полоски —
    цвет плитки (--tc); если у плитки цвета нет — цвет кружка. */
@@ -2836,3 +2840,24 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
   0%, 100% { box-shadow: var(--shadow-1), inset 0 4px 0 var(--tc, var(--need-c)); }
   50% { box-shadow: var(--shadow-1), inset 0 4px 0 color-mix(in srgb, var(--tc, var(--need-c)) 10%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .need-top { animation: none; } }
+
+/* 23.11.2026 (брат): единый стиль во всей CRM — окошки дел с цветной полоской слева (как на мойке), без рамки по контуру.
+   «Запросы на выдачу», «Мои запросы», «Напомнить о записи»… (.rim). Серые «для сведения» — серая полоска. */
+.card.compact.rim { box-shadow: var(--shadow-2); border-left: 4px solid var(--rim); }
+.card.compact.rim-gray { box-shadow: var(--shadow-2); border-left-color: color-mix(in srgb, var(--gray) 55%, transparent); }
+#parts .card.compact.rim { box-shadow: none; }
+/* выбранная плитка — без рамки вокруг (её путали с подсветкой дела): просто темнее */
+.ptile.on, .st-mini .ptile.on, .iss-tiles .ptile.on { outline: none; background: color-mix(in srgb, var(--tc) 26%, var(--surface)); }
+.ptile.on .ptile-t { color: color-mix(in srgb, var(--tc) 85%, var(--text)); }
+/* «Зарплата сотрудников»: у человека с делом — полоска слева цветом этапа (проверить / утвердить / выдать) */
+.pw-user[data-pst="open"] { border-left: 4px solid var(--orange); }
+.pw-user[data-pst="checked"] { border-left: 4px solid var(--purple); }
+.pw-user[data-pst="approved"] { border-left: 4px solid var(--green); }
+
+/* 23.11.2026 (брат): меню склеенного кружка — «куда перейти» (у пункта меню больше трёх кружков) */
+.nb-menu { position: fixed; z-index: 90; min-width: 240px; max-width: min(360px, calc(100vw - 16px)); display: grid; gap: 2px;
+  padding: 6px; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-3); }
+.nb-menu a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; color: var(--text);
+  text-decoration: none; font-size: 14px; line-height: 1.3; }
+.nb-menu a:hover { background: var(--fill); }
+.nb-menu .nbadge { position: static; flex: none; margin: 0; }

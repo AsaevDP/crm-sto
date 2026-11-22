@@ -159,9 +159,9 @@ def test_always_in_stock(client):
                                              Purchase.note.like("%Всегда в наличии%")))
         dl = db.scalar(select(PurchaseLine).where(PurchaseLine.purchase_id == d.id))
         assert dl.qty == 4 and dl.catalog_id == line.catalog_id and dl.price == 500
-    # Уже в черновике — больше не «не хватает» (жёлтая), повторно заказывать нечего
+    # Уже в черновике — больше не «не хватает», а «заказано» (23.11.2026: было «едет или на грани»), повторно заказывать нечего
     page = client.get("/stock/always").text
-    assert "kp-yellow" in page and "в черновике 4" in page
+    assert "kp-ordered" in page and "в черновике 4" in page
     # Ведут список кладовщик, директор, зам; запчастист — нет
     _as(client, "oleg")
     assert client.post("/stock/always", data={"catalog_id": str(line.catalog_id), "min_qty": "9"}).status_code == 403

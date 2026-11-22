@@ -374,6 +374,7 @@
   const key = u => { const x = new URL(u, location.origin); return x.pathname + x.search; };
   function apply(map) {
     const want = new Map();   // элемент → цвет (самый срочный)
+    const btnColor = new Map();   // 23.11.2026: кнопке — свой цвет перелива (x.btn: «Согласовал с клиентом» — синий)
     const put = (el, c) => { if (!el || el.closest('.sidebar, .tabbar, .more-menu, .toasts, #nav-back, a.back')) return;
       const was = want.get(el); if (!was || ORDER.indexOf(c) < ORDER.indexOf(was)) want.set(el, c); };
     const main = document.querySelector('main') || document.body;
@@ -391,14 +392,17 @@
           const tile = a.closest('.ptile, .tile'); if (!tile) return;   // только плитки (не кнопки периода и т. п.)
           if ([...u.searchParams].every(([k, v]) => t.searchParams.get(k) === v)) add(tile);
         });
-        if (u.pathname === here && u.hash) add(document.getElementById(u.hash.slice(1)));
+        // заголовок группы по якорю (#all, #clients…) не обводим — только окошки / карточки
+        if (u.pathname === here && u.hash) { const h = document.getElementById(u.hash.slice(1)); if (h && !h.matches('.group-title, h1, h2, h3, .title-2, .title-3')) add(h); }
         if (u.pathname === here) main.querySelectorAll('.rim.rim-' + x.c).forEach(el => add(el));
       });
       const onTarget = links.some(h => new URL(h, location.origin).pathname === here);
       // 23.11.2026 (брат): своя плитка кружка (по названию) — на странице кружка и в его разделе меню мигает всегда
       if ((x.tile || []).length && (onTarget || here === menu))
         main.querySelectorAll('.ptile').forEach(t => { const nm = (t.querySelector('.ptile-t')?.textContent || '').trim();
-          if (x.tile.includes(nm)) add(t); });
+          // 23.11.2026 (брат): плитка с нулём не мигает никогда (на «Записи» мигала «Не приехали 0»)
+          const num = parseInt(((t.querySelector('b') || {}).textContent || '').replace(/\D/g, ''), 10) || 0;
+          if (x.tile.includes(nm) && num > 0) add(t); });
       (x.wo || []).forEach(id => {
         if (here === '/orders/' + id) {
           // 23.11.2026 (брат): есть кнопка / строка дела — обводим её, весь блок нет (квадратная рамка блока раздражает)
@@ -411,7 +415,7 @@
         }
       });
       (x.sel || []).forEach(([p, s]) => { if (p === here || p === hereFull) main.querySelectorAll(s).forEach(el => add(el)); });
-      local.forEach(el => put(el, x.c));
+      local.forEach(el => { put(el, x.c); if (x.btn) btnColor.set(el, 'var(--' + x.btn + ')'); });
     }));
     // 22.11.2026 (брат): обводим только сами окошки и строки — блок / раздел вокруг них (якорь #…, блок наряда) не
     // обводим, если внутри уже есть обведённое
@@ -419,17 +423,19 @@
     els.forEach(el => { if (els.some(o => o !== el && el.contains(o))) want.delete(el); });
     const EDGE = '.part, .work, .wq-card, .lo-card, .rc-group, tr';   // + «Склад»: приход, лишнее, «Всегда в наличии»   // строки и окошки с полоской сбоку — мигает только край
     const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', 'need-top', ...ORDER.map(c => 'need-' + c)];
-    document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) el.classList.remove(...CLS); });
+    document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) { el.classList.remove(...CLS); el.style.removeProperty('--edge-c'); } });
     want.forEach((c, el) => {
       ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
       el.classList.add('need');
       // окошко со своей цветной полоской слева (мойка, срочная деталь) или строка — мигает край, без рамки вокруг
       const bl = parseFloat(getComputedStyle(el).borderLeftWidth) || 0;
       // 23.11.2026 (брат): кнопка, которую надо нажать («Согласовал с клиентом», «Подбор завершён»…) — синий перелив
-      if (el.matches('.btn, button, summary.btn')) { el.classList.add('need-btn'); return; }
+      if (el.matches('.btn, button, summary.btn')) { el.classList.add('need-btn'); el.style.setProperty('--need-btn-c', btnColor.get(el) || 'var(--need-c)'); return; }
       // 23.11.2026 (брат): цветная плитка — мигает её верхняя полоска, рамки вокруг нет
       if (el.matches('.ptile')) { el.classList.add('need-top'); return; }
       if (bl >= 3 || el.matches(EDGE)) {
+        // 23.11.2026 (брат): своя полоска мигает своим цветом (сиреневая «утвердить» — сиреневым), без своей — цветом кружка
+        if (bl >= 3 && !el.classList.contains('need-edge')) el.style.setProperty('--edge-c', getComputedStyle(el).borderLeftColor);
         el.classList.add('need-edge');
         if (bl < 3 && !el.matches('tr')) el.classList.add('need-edge-add');
       }
@@ -437,4 +443,19 @@
     });
   }
   window.crmNeed = apply;
+})();
+
+// ===== 23.11.2026 (брат): левое меню не прыгает наверх при переходе на другую страницу =====
+// Запоминаем прокрутку меню (и самого меню, и его прокручиваемой части) перед уходом, на новой странице ставим обратно.
+(function sideScroll() {
+  const KEY = 'crm-side-scroll';
+  const boxes = () => [...document.querySelectorAll('.sidebar, .sidebar *')].filter(el => {
+    const s = getComputedStyle(el); return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight; });
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(KEY) || '[]');
+    boxes().forEach((el, i) => { if (saved[i]) el.scrollTop = saved[i]; });
+  } catch (e) {}
+  const save = () => { try { sessionStorage.setItem(KEY, JSON.stringify(boxes().map(el => el.scrollTop))); } catch (e) {} };
+  window.addEventListener('pagehide', save);
+  document.addEventListener('click', e => { if (e.target.closest('.sidebar a')) save(); }, true);
 })();

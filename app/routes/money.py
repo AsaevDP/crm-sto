@@ -479,6 +479,16 @@ def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = "")
                               pending=pa.pending(ctx.db, ctx.user.id), can_grant=ctx.can("payroll.grant"))
         ctx.need("payroll.view_own")
         return _to("/payroll/my")
+    if not d:
+        # 23.11.2026 (брат): из меню — неделя, где есть незаконченные дела (проверить / утвердить / выдать), а не пустая
+        # текущая; кружок в меню ведёт туда же. Дел нет — текущая неделя, как раньше.
+        from datetime import date as _date, timedelta as _td
+        from ..services import payweek as _pw
+        from ..services.staff import staff_for_period
+        prev = _pw.monday(_date.today()) - _td(days=7)
+        data = _pw.week_data(ctx.db, ctx.branch.id, prev, staff_for_period(ctx.db, ctx.branch.id, prev))
+        if any(r["accrued"] > 0 and r["state"] != "paid" for r in data["rows"].values()):
+            return _to(f"/payroll/weeks?d={prev.isoformat()}")
     return _weeks_page(ctx, d, open_user, mine=False)
 
 

@@ -19,7 +19,7 @@ ALL_ROLES = ("admin", "director", "deputy")
 
 
 def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False, info: bool = False,
-         wo=None, blk: str = "", rows=None, sel=None, tile=None):
+         wo=None, blk: str = "", rows=None, sel=None, tile=None, btn: str = ""):
     """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды).
     info — 19.11.2026 (брат): «для сведения» (вы следите, делает другой) — цифра с сиреневой обводкой; с цифрами
     «действие ваше» того же цвета не складывается.
@@ -44,7 +44,7 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     else:
         lst.append({"c": color, "n": int(n), "t": title + (" (для сведения)" if info else ""), "href": link or href,
                     "alone": alone, "info": info, "wo": wo, "blk": blk, "rows": list(rows or []),
-                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or [])})
+                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn})
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
@@ -55,6 +55,7 @@ def _merge_marks(a: dict, b: dict) -> None:
     a["rows"] = a.get("rows", []) + b.get("rows", [])
     a["sel"] = a.get("sel", []) + [list(s) for s in b.get("sel", [])]
     a["tile"] = list(dict.fromkeys(a.get("tile", []) + b.get("tile", [])))
+    a["btn"] = a.get("btn") or b.get("btn", "")
     a.setdefault("also", []).append(b.get("href", ""))
 
 
@@ -75,6 +76,9 @@ def _compact(out: dict) -> dict:
                              and bool(m.get("info")) == bool(x.get("info"))
                              and not m.get("alone") and not x.get("alone")), None)
                 if same:
+                    # 23.11.2026 (брат): склеенный кружок ведёт в несколько мест — при нажатии меню «куда перейти»
+                    same.setdefault("go", [{"t": same["t"], "href": same["href"], "n": same["n"]}])
+                    same["go"] += x.get("go") or [{"t": x["t"], "href": x["href"], "n": x["n"]}]
                     same["n"] += x["n"]
                     same["t"] += f" · {x['t']}"
                     _merge_marks(same, x)
@@ -165,7 +169,7 @@ def compute(ctx) -> dict:
                 WorkOrder.branch_id == bid, WorkOrder.mechanic_id == me.id,
                 or_(WorkOrder.status == "created", (WorkOrder.status == "diag") & WorkOrder.lead_diag_at.is_(None)))).all()
             _add(out, "/orders", "red", len(ids_lead) + len(ids_extra), "новые — посмотреть", "/orders?tab=intake",
-                 wo=[*ids_lead, *ids_extra], blk="#problems", rows=["#btn-diag-done", "#btn-add-finding"], tile=['Приём и диагностика'])
+                 wo=[*ids_lead, *ids_extra], blk="#problems", rows=["#btn-diag-done", "#btn-add-finding"], tile=['Приём и диагностика'], btn="blue")
         # 🔴 13.11.2026: мне передали наряд (менеджеру, мастеру, запчастисту) — горит, пока не нажал «✓ Принял»
         from .handover import pending_orders
         # 19.11.2026: у мойщика «Наряды» = очередь мойки — там блок «Вам передали»
@@ -177,7 +181,7 @@ def compute(ctx) -> dict:
         if ctx.can("orders.approve"):
             ids_ = ids_status("approve", field=None if see_all else WorkOrder.manager_id)
             _add(out, "/orders", "orange", len(ids_), "согласовать с клиентом", "/orders?tab=approve", wo=ids_,
-                 blk="#problems", rows=["#btn-approve-done"], tile=['Согласование'])
+                 blk="#problems", rows=["#btn-approve-done"], tile=['Согласование'], btn="blue")
         if ctx.can("parts.pick") and not ctx.can("orders.approve"):
             # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»
             qp = select(WorkOrder.id).where(
@@ -187,11 +191,11 @@ def compute(ctx) -> dict:
                 qp = qp.where(WorkOrder.partsman_id == me.id)
             ids_ = db.scalars(qp).all()
             _add(out, "/orders", "orange", len(ids_), "подобрать запчасти", "/orders?tab=approve", wo=ids_, blk="#parts",
-                 rows=["#btn-picked"], tile=['Согласование'])
+                 rows=["#btn-picked"], tile=['Согласование'], btn="blue")
         if ctx.can("orders.approve"):
             ids_ = ids_status("ready", field=None if see_all else WorkOrder.manager_id)
             _add(out, "/orders", "green", len(ids_), "готовы к выдаче клиенту", "/orders?tab=ready", wo=ids_, blk="#money",
-                 rows=["#btn-pay", "#btn-handover"], tile=['Готовы к выдаче'])
+                 rows=["#btn-pay", "#btn-handover"], tile=['Готовы к выдаче'], btn="blue")
         # 🟢 12.11.2026: пришли запчасти по закупке и ждут выдачи — менеджеру, запчастисту и всем мастерам наряда.
         # Цифра = сколько запчастей. Гаснет, когда кладовщик выдал мастеру. Отдельной цифрой — не смешивается с нарядами.
         arrived = {}
@@ -204,7 +208,7 @@ def compute(ctx) -> dict:
                 WoPart.work_order_id.in_(list(arrived) or [None]), WoPart.status == "reserved",
                 or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0))).all() if arrived else []
             _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
-                 alone=True, wo=list(arrived), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in arr_rows] + ["#btn-request-issue"], tile=['Пришли запчасти'])
+                 alone=True, wo=list(arrived), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in arr_rows] + ["#btn-request-issue"], tile=['Пришли запчасти'], btn="blue")
         if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
             from . import wash as wash_svc
             brd_ = wash_svc.board(db, bid)
@@ -235,22 +239,20 @@ def compute(ctx) -> dict:
                 qi = qi.where(WorkOrder.id.not_in(list(arrived)))
             ids_ = db.scalars(qi).all()
             _add(out, "/orders", "green", len(ids_), "запчасти на складе — можно начинать", "/orders?tab=parts",
-                 wo=ids_, blk="#parts", rows=["#btn-request-issue"], tile=['Запчасти'])
+                 wo=ids_, blk="#parts", rows=["#btn-request-issue"], tile=['Запчасти'], btn="blue")
 
     # 🔴 менеджер просит доступ ко всем нарядам — админу / директору / заму
     if ctx.can("orders.grant_access"):
         from ..models import OrderAccess
-        _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
-            OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0, "просят доступ ко всем нарядам",
-             "/access-requests#all", sel=[("/access-requests", ".ac-card.now")], tile=['Ко всем нарядам'])
+        # 23.11.2026 (брат): просьбы о доступе (ко всем нарядам и к клиенту) — кружок только у «Клиентов», без дубля у «Нарядов»
         from ..models import ClientAccess   # 12.11.2026: менеджер просит доступ к клиенту
         # 20.11.2026 (брат): у «Клиентов» цифра = плитке «Просят доступ»: к одному клиенту + ко всем нарядам (вся база)
         _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(ClientAccess).where(
             ClientAccess.branch_id == bid, ClientAccess.status == "pending")) or 0, "менеджер просит доступ к клиенту",
-             "/access-requests#clients", sel=[("/access-requests", ".ac-card.now")], tile=['К клиенту'])
+             "/access-requests#clients", sel=[("/access-requests", ".ac-card.now")], tile=['К клиенту', 'Просят доступ'])
         _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(OrderAccess).where(
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0,
-             "просят доступ ко всем нарядам и клиентам", "/access-requests#all", sel=[("/access-requests", ".ac-card.now")], tile=['Ко всем нарядам'])
+             "просят доступ ко всем нарядам и клиентам", "/access-requests#all", sel=[("/access-requests", ".ac-card.now")], tile=['Ко всем нарядам', 'Просят доступ'])
         from ..models import OrderReopen   # 11.11.2026: просят открыть закрытый наряд заново
         _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
             OrderReopen.branch_id == bid, OrderReopen.status == "pending")) or 0, "просят открыть наряд заново",
@@ -347,12 +349,12 @@ def compute(ctx) -> dict:
             from ..models import ToolRequest
             tq = select(func.count()).select_from(ToolRequest).where(ToolRequest.branch_id == bid, ToolRequest.status == "new")
             _add(out, "/tools", "red", db.scalar(tq.where(ToolRequest.kind == "issue")) or 0, "просят инструмент — выдать",
-                 "/stock/issues?tab=tools", info=info_new, tile=['Инструмент'])
+                 "/stock/issues?tab=tools", info=info_new, tile=['Инструмент', 'Просят / сдают'])
             _add(out, "/tools", "orange", db.scalar(tq.where(ToolRequest.kind == "return")) or 0, "сдают инструмент — принять",
-                 "/stock/issues?tab=tools", info=info_new, tile=['Инструмент'])
+                 "/stock/issues?tab=tools", info=info_new, tile=['Инструмент', 'Просят / сдают'])
             _add(out, "/tools", "orange", db.scalar(select(func.count()).select_from(ToolRequest).where(
                 ToolRequest.branch_id == bid, ToolRequest.status == "ready", ToolRequest.kind == "issue")) or 0,
-                 "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools", info=info_new, tile=['Инструмент'])
+                 "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools", info=info_new, tile=['Инструмент', 'Просят / сдают'])
         # 19.11.2026 (брат): «готово — ещё не выдано» снова горит оранжевым (18.11 убирали) — пока не нажато «Выдано»
 
     # ---------- Мойка (18.11.2026, брат) ----------
@@ -374,7 +376,7 @@ def compute(ctx) -> dict:
             wq = wq.where(WorkOrder.manager_id == me.id)
         ids_ = db.scalars(wq).all()
         _add(out, "/wash", "green", len(ids_), "помыты — позвонить клиенту, оплата и выдача", "/wash?tab=now",
-             wo=ids_, blk="#money", rows=["#btn-pay", "#btn-handover"], tile=['Очередь'])
+             wo=ids_, blk="#money", rows=["#btn-pay", "#btn-handover"], tile=['Очередь'], btn="blue")
         if not ctx.can("stock.issue"):   # у кладовщика — у «Запросов на выдачу»
             _add(out, "/wash", "orange", db.scalar(select(func.count()).select_from(ChemRequest).where(
                 ChemRequest.branch_id == bid, ChemRequest.status == "new")) or 0, "мойщик просит химию — ждёт кладовщика",
@@ -397,14 +399,14 @@ def compute(ctx) -> dict:
                   .where(Purchase.branch_id == bid, Purchase.status.in_(("ordered", "partial")), PurchaseLine.received.is_(False)))
         late = db.scalar(wait_q.where(Purchase.expected_on.is_not(None), Purchase.expected_on < date.today())) or 0
         _add(out, "/stock", "red", late, "опаздывают — позвонить поставщику", "/stock/receive?tab=late", info=info_new,
-             sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Опаздывают'])
+             sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Опаздывают', 'Приход'])
         _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive?tab=wait",
-             info=info_new, sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Ждём'])
+             info=info_new, sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Ждём', 'Приход'])
     # 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы, сиреневая цифра у «Склада»
     if ctx.can("stock.keep"):
         from . import keep as ksvc
         _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always", info=info_new,
-             sel=[("/stock/always", 'tr[data-below="1"]')], tile=['Не хватает', 'Едет или на грани'])
+             sel=[("/stock/always", 'tr[data-below="1"]')], tile=['Не хватает', 'Заказано', 'Всегда в наличии'])
     # 17.11.2026 (брат): в «Закупках» у кладовщика — только свои заказы на склад; цифра — его черновики («Заказал» не нажат)
     if ctx.can("purchases.stock") and not ctx.can("purchases.manage"):
         _add(out, "/purchases", "orange", db.scalar(select(func.count()).select_from(Purchase).where(
@@ -420,11 +422,11 @@ def compute(ctx) -> dict:
         if ctx.can("parts.pick"):   # 🔴 заказано у поставщика — отменить или пусть приедет (решает запчастист)
             _add(out, "/stock", "red", db.scalar(lq.where(PartLeftover.status == "decide")) or 0,
                  "клиент отказался — решите с заказом у поставщика", "/stock/leftovers",
-                 sel=[("/stock/leftovers", '.lo-card[data-st="decide"]')], tile=['Заказ у поставщика'])
+                 sel=[("/stock/leftovers", '.lo-card[data-st="decide"]')], tile=['Заказ у поставщика', 'Лишнее после отказов'])
         _add(out, "/stock", "orange", db.scalar(lq.where(PartLeftover.status == "stock")) or 0,
              "лишнее после отказа на складе — оставить, вернуть или продать", "/stock/leftovers",
              sel=[("/stock/leftovers", '.lo-card[data-st="stock"]')],
-             info=info_new and not ctx.can("parts.pick"), tile=['На складе — решить'])
+             info=info_new and not ctx.can("parts.pick"), tile=['На складе — решить', 'Лишнее после отказов'])
 
     # ---------- Мои заказы (запчастист) ----------
     if ctx.can("purchases.mine") and not ctx.can("purchases.by_partsman"):
@@ -457,8 +459,8 @@ def compute(ctx) -> dict:
         from . import razbor_price as rp
         rc = rp.counts(db, bid)
         if ctx.can("razbor.price"):
-            _add(out, "/razbor/prices", "red", rc["new"], "новые детали — утвердить цену", "/razbor/prices?tab=new", tile=['Новые детали'])
-            _add(out, "/razbor/prices", "orange", rc["change"], "просят изменить цену", "/razbor/prices?tab=change", tile=['Изменение цены'])
+            _add(out, "/razbor/prices", "red", rc["new"], "новые детали — утвердить цену", "/razbor/prices?tab=new", sel=[("/razbor/prices", '.rp-row[data-kind="new"], .rp-car.wait')], tile=['Новые детали'])
+            _add(out, "/razbor/prices", "orange", rc["change"], "просят изменить цену", "/razbor/prices?tab=change", sel=[("/razbor/prices", '.rp-row[data-kind="change"]')], tile=['Изменение цены'])
         if ctx.can("razbor.manage"):
             _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?v=parts&f=declined",
                  info=info_rz, tile=['Отказано'])
@@ -468,10 +470,10 @@ def compute(ctx) -> dict:
         from . import site as site_svc
         sc = site_svc.counts(db, bid, sync=False)
         if ctx.can("razbor.price"):
-            _add(out, "/site", "red", sc["wait"], "новые на продажу — утвердить цену", "/site?t=new&f=wait", tile=['Ждут утверждения'])
+            _add(out, "/site", "red", sc["wait"], "новые на продажу — утвердить цену", "/site?t=new&f=wait", sel=[("/site", '.sn-row[data-stage="wait"]')], tile=['Ждут утверждения'])
         if ctx.can("razbor.export"):
-            _add(out, "/site", "red", sc["declined"], "директор отказал — посмотреть причину", "/site?t=new&f=declined", tile=['Отказано'])
-            _add(out, "/site", "orange", sc["nophoto"], "на сайте без фото — добавить фото", "/site?t=new&f=site", tile=['На сайте'])
+            _add(out, "/site", "red", sc["declined"], "директор отказал — посмотреть причину", "/site?t=new&f=declined", sel=[("/site", '.sn-row[data-stage="declined"]')], tile=['Отказано'])
+            _add(out, "/site", "orange", sc["nophoto"], "на сайте без фото — добавить фото", "/site?t=new&f=site", sel=[("/site", '.sn-row[data-nophoto="1"]')], tile=['На сайте'])
 
     # ---------- Зарплата: прошлая неделя ждёт проверки / утверждения ----------
     # 20.11.2026 (брат): цифры — у «Зарплаты сотрудников»: бухгалтеру 🟠 проверить / 🟢 выдать; директору (и заму, пока у
@@ -505,8 +507,8 @@ def compute(ctx) -> dict:
     if ctx.can("schedule.manage"):
         from . import schedule as sch
         rm = sch.reminders(db, bid)
-        _add(out, "/schedule", "red", len(rm["late"]), "сегодня не приехали — позвонить", "/schedule/remind#late", tile=['Не приехали'])
-        _add(out, "/schedule", "orange", len(rm["call"]), "завтра записаны — напомнить", "/schedule/remind#call", tile=['Завтра'])
+        _add(out, "/schedule", "red", len(rm["late"]), "сегодня не приехали — позвонить", "/schedule/remind#late", sel=[("/schedule", "#btn-remind")], btn="red", tile=['Не приехали'])
+        _add(out, "/schedule", "orange", len(rm["call"]), "завтра записаны — напомнить", "/schedule/remind#call", sel=[("/schedule", "#btn-remind")], tile=['Завтра'])
     # 21.11.2026 (брат): мастеру — его записи: 🔴 не приехали и 🟣 новые (до «✓ Видел»), 🟢 приехали (до «Начал»),
     # 🟠 сегодня ждём
     elif me.role and me.role.code in MASTERS and ctx.can("schedule.view"):

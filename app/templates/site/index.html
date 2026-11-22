@@ -29,7 +29,7 @@
 
 <div class="sn-list">
 {% for r in rows %}{% set s = r.s %}{% set c = r.c %}{% set stg = STAGES[r.stage] %}
-<section class="card compact sn-row" id="sn{{ s.id }}" style="--tc:var(--{{ stg[1] }})">
+<section class="card compact sn-row" id="sn{{ s.id }}" data-stage="{{ r.stage }}" data-nophoto="{{ 1 if r.stage == 'site' and not r.photos else 0 }}" style="--tc:var(--{{ stg[1] }})">
   <div class="sn-ph">{% if r.photos %}<img src="/razbor/files/{{ r.photos[0].file.split('/')[-1] }}" alt="">{% else %}<span class="caption">нет фото</span>{% endif %}</div>
   <div class="sn-main">
     <div class="sn-top"><b class="sn-code">{{ s.code }}</b> <b>{{ c.name if c else "?" }}</b>
