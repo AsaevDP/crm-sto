@@ -2827,3 +2827,12 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
   100% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 16px color-mix(in srgb, var(--blue) 0%, transparent); } }
 @keyframes need-btn-shine { 0% { left: -60%; } 60%, 100% { left: 120%; } }
 @media (prefers-reduced-motion: reduce) { .need-btn, .need-btn::before { animation: none; } .need-btn { box-shadow: 0 0 0 2px var(--blue); } }
+
+/* 23.11.2026 (брат): цветная плитка с делом — мигает только её верхняя полоска (вместо рамки по краю). Цвет полоски —
+   цвет плитки (--tc); если у плитки цвета нет — цвет кружка. */
+.need-top::after { content: none; }
+.need-top { animation: need-top-blink 1.3s ease-in-out infinite; }
+@keyframes need-top-blink {
+  0%, 100% { box-shadow: var(--shadow-1), inset 0 4px 0 var(--tc, var(--need-c)); }
+  50% { box-shadow: var(--shadow-1), inset 0 4px 0 color-mix(in srgb, var(--tc, var(--need-c)) 10%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .need-top { animation: none; } }

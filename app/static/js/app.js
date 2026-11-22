@@ -416,7 +416,7 @@
     const els = [...want.keys()];
     els.forEach(el => { if (els.some(o => o !== el && el.contains(o))) want.delete(el); });
     const EDGE = '.part, .work, .wq-card, .lo-card, .rc-group, tr';   // + «Склад»: приход, лишнее, «Всегда в наличии»   // строки и окошки с полоской сбоку — мигает только край
-    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', ...ORDER.map(c => 'need-' + c)];
+    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', 'need-top', ...ORDER.map(c => 'need-' + c)];
     document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) el.classList.remove(...CLS); });
     want.forEach((c, el) => {
       ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
@@ -425,6 +425,8 @@
       const bl = parseFloat(getComputedStyle(el).borderLeftWidth) || 0;
       // 23.11.2026 (брат): кнопка, которую надо нажать («Согласовал с клиентом», «Подбор завершён»…) — синий перелив
       if (el.matches('.btn, button, summary.btn')) { el.classList.add('need-btn'); return; }
+      // 23.11.2026 (брат): цветная плитка — мигает её верхняя полоска, рамки вокруг нет
+      if (el.matches('.ptile')) { el.classList.add('need-top'); return; }
       if (bl >= 3 || el.matches(EDGE)) {
         el.classList.add('need-edge');
         if (bl < 3 && !el.matches('tr')) el.classList.add('need-edge-add');
