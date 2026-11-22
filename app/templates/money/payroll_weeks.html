@@ -71,9 +71,20 @@
   {% endif %}
 </div>
 
+{# 23.11.2026 (брат): плитки дел по людям — к ним ведут кружки в меню (мигают, пока есть дело) #}
+{% set ns_ = namespace(open=0, checked=0, approved=0) %}
+{% for u in users %}{% set r = data.rows[u.id] %}{% if r.accrued > 0 and r.state != 'paid' %}
+  {% if r.pst == "open" %}{% set ns_.open = ns_.open + 1 %}{% elif r.pst == "checked" %}{% set ns_.checked = ns_.checked + 1 %}{% elif r.pst == "approved" %}{% set ns_.approved = ns_.approved + 1 %}{% endif %}
+{% endif %}{% endfor %}
+<div class="pult-tiles pw-tiles pw-state-tiles">
+  <a class="ptile {{ 'zero' if not ns_.open }}" href="#pw-list" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Проверить</span><b>{{ ns_.open }}</b><span class="ptile-s">ждут проверки бухгалтера</span></a>
+  <a class="ptile {{ 'zero' if not ns_.checked }}" href="#pw-list" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Утвердить</span><b>{{ ns_.checked }}</b><span class="ptile-s">проверено — утверждает директор</span></a>
+  <a class="ptile {{ 'zero' if not ns_.approved }}" href="#pw-list" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдать</span><b>{{ ns_.approved }}</b><span class="ptile-s">утверждено — к выдаче</span></a>
+</div>
+
 {% set ST_CHIP = {"none": ("created", "нечего выдавать"), "open": ("prepay", "ждёт проверки"), "checked": ("diag", "проверено"),
                   "approved": ("waiting", "утверждено"), "paid": ("paid", "✓ выдано")} %}
-<div class="pw-list">
+<div class="pw-list" id="pw-list">
   {% for u in users %}{% set r = data.rows[u.id] %}
   {% if r.active or users|length == 1 %}
   <details class="card compact pw-user" id="u-{{ u.id }}" data-pst="{{ r.pst if r.accrued > 0 and r.state != 'paid' else '' }}" {% if open_user == u.id|string or users|length == 1 %}open{% endif %}>

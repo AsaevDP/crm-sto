@@ -12,6 +12,11 @@
   </nav>
 </header>
 
+{# 23.11.2026 (брат): плитки дел — к ним ведут кружки в меню #}
+<div class="pult-tiles vs-tiles">
+  <a class="ptile {{ 'zero' if not n_decide }}" href="/stock/leftovers?tab=open" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Заказ у поставщика</span><b>{{ n_decide }}</b><span class="ptile-s">решает запчастист</span></a>
+  <a class="ptile {{ 'zero' if not n_stock }}" href="/stock/leftovers?tab=open" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">На складе — решить</span><b>{{ n_stock }}</b><span class="ptile-s">оставить, вернуть или продать</span></a>
+</div>
 <div class="lo-list">
   {% for x in rows %}{% set lo = x.lo %}{% set st = STATUS[lo.status] %}
   <div class="card compact lo-card" data-st="{{ lo.status }}">

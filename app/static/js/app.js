@@ -379,13 +379,13 @@
     const main = document.querySelector('main') || document.body;
     const here = location.pathname, hereFull = here + location.search;
     Object.entries(map || {}).forEach(([menu, list]) => (list || []).forEach(x => {
-      if (x.info) return;   // «для сведения» — без рамки
+      // 23.11.2026 (брат): «для сведения» тоже подсвечивается — горит кружок, значит мигает и плитка
       const local = [], add = el => { if (el) local.push(el); };
       const links = [x.href, ...(x.also || [])].filter(Boolean);
       links.forEach(h => {
         const u = new URL(h, location.origin);
         // плитки и ссылки на этот же отбор (не сама текущая страница целиком)
-        if (u.search && u.pathname === here) main.querySelectorAll('a[href]').forEach(a => {
+        if (!(x.tile || []).length && u.search && u.pathname === here) main.querySelectorAll('a[href]').forEach(a => {
           const href = a.getAttribute('href'); if (!href || href.startsWith('#')) return;
           const t = new URL(a.href); if (t.pathname !== u.pathname || a.closest('.wo-steps')) return;
           const tile = a.closest('.ptile, .tile'); if (!tile) return;   // только плитки (не кнопки периода и т. п.)
@@ -395,6 +395,10 @@
         if (u.pathname === here) main.querySelectorAll('.rim.rim-' + x.c).forEach(el => add(el));
       });
       const onTarget = links.some(h => new URL(h, location.origin).pathname === here);
+      // 23.11.2026 (брат): своя плитка кружка (по названию) — на странице кружка и в его разделе меню мигает всегда
+      if ((x.tile || []).length && (onTarget || here === menu))
+        main.querySelectorAll('.ptile').forEach(t => { const nm = (t.querySelector('.ptile-t')?.textContent || '').trim();
+          if (x.tile.includes(nm)) add(t); });
       (x.wo || []).forEach(id => {
         if (here === '/orders/' + id) {
           // 23.11.2026 (брат): есть кнопка / строка дела — обводим её, весь блок нет (квадратная рамка блока раздражает)
@@ -407,9 +411,7 @@
         }
       });
       (x.sel || []).forEach(([p, s]) => { if (p === here || p === hereFull) main.querySelectorAll(s).forEach(el => add(el)); });
-      // 22.11.2026 (брат): есть сами окошки / строки дела — обводим их, плитку-фильтр нет (плитка — только если больше нечего)
-      const items = local.filter(el => !el.matches('.ptile, .tile'));
-      (items.length ? items : local).forEach(el => put(el, x.c));
+      local.forEach(el => put(el, x.c));
     }));
     // 22.11.2026 (брат): обводим только сами окошки и строки — блок / раздел вокруг них (якорь #…, блок наряда) не
     // обводим, если внутри уже есть обведённое

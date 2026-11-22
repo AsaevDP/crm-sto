@@ -426,6 +426,8 @@ def leftovers_page(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     ctx.db.commit()   # «приедет на склад» → приехало: статус обновился
     rows = [x for x in allrows if (x["lo"].status in lsvc.OPEN) == (tab == "open")][:200]
     return ctx.render("stock/leftovers.html", title="Лишнее после отказов", rows=rows, tab=tab, STATUS=lsvc.STATUS,
+                      n_decide=sum(1 for x in allrows if x["lo"].status == "decide"),
+                      n_stock=sum(1 for x in allrows if x["lo"].status == "stock"),
                       n_open=sum(1 for x in allrows if x["lo"].status in lsvc.OPEN),
                       n_done=sum(1 for x in allrows if x["lo"].status not in lsvc.OPEN),
                       can=ctx.can("parts.pick", "stock.manage"), can_order=ctx.can("parts.pick"), fmt_plate=osvc.fmt_plate,

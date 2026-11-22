@@ -8,6 +8,13 @@
 </header>
 <p class="footnote" style="margin:0 4px">Менеджер видит только наряды, которые ведёт. Если нужно увидеть все (коллега заболел, клиент звонит по чужому наряду) —
   он просит здесь, а вы разрешаете на время. Срок вышел — снова только свои.</p>
+{# 23.11.2026 (брат): плитки запросов — к ним ведут кружки в меню (мигают, пока ждут решения) #}
+<div class="pult-tiles vs-tiles">
+  <a class="ptile {{ 'zero' if not pending }}" href="#all" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Ко всем нарядам</span><b>{{ pending|length }}</b><span class="ptile-s">вся база клиентов на время</span></a>
+  <a class="ptile {{ 'zero' if not c_pending }}" href="#clients" style="--tc:{{ color_css('red') }}"><span class="ptile-t">К клиенту</span><b>{{ c_pending|length }}</b><span class="ptile-s">один клиент</span></a>
+  <a class="ptile {{ 'zero' if not reopens }}" href="#reopen" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Открыть заново</span><b>{{ reopens|length }}</b><span class="ptile-s">или ремонт по гарантии</span></a>
+  {% if ctx.can("payroll.grant") %}<a class="ptile {{ 'zero' if not pay_pending }}" href="#payroll" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Зарплата</span><b>{{ pay_pending|length }}</b><span class="ptile-s">доступ заму</span></a>{% endif %}
+</div>
 
 <div class="cl-grid">
   <section class="ov-col on">

@@ -183,3 +183,32 @@ def test_badges_lead_to_the_task(client):
     for x in client.get("/api/notify").json()["badges"].get("/my-orders", []):
         assert client.get(x["href"]).status_code == 200 and "st=draft" not in x["href"]
     client.post("/logout")
+
+
+def test_every_badge_has_its_tile(client):
+    """23.11.2026 (брат): горит кружок — на его странице есть его плитка (по названию), и на ней не 0."""
+    import re
+    for who in ("irina", "oleg", "pavel", "andrey", "buh", "director"):
+        login(client, who, who + "123")
+        for menu, lst in client.get("/api/notify").json()["badges"].items():
+            for x in lst:
+                if not x.get("tile"):
+                    continue
+                page = menu if x["href"].count("/") == 2 and x["href"].startswith("/orders/") else x["href"].split("#")[0]
+                html = client.get(page).text
+                spans = re.findall(r'class="ptile[^"]*"[^>]*>\s*<span class="ptile-t">([^<]+)</span>\s*<b[^>]*>([^<]*)</b>', html)
+                got = [int(re.sub(r"\D", "", n) or 0) for t, n in spans if t.strip() in x["tile"]]
+                assert got and sum(got) > 0, (who, x["t"], x["tile"], spans)
+        client.post("/logout")
+    # новые плитки на страницах без плиток
+    login(client, "buh", "buh123")
+    html = client.get("/payroll/weeks").text
+    assert all(t in html for t in ("Проверить", "Утвердить", "Выдать"))
+    client.post("/logout")
+    login(client, "director", "director123")
+    html = client.get("/access-requests").text
+    assert all(t in html for t in ("Ко всем нарядам", "К клиенту", "Открыть заново"))
+    client.post("/logout")
+    login(client, "pavel", "pavel123")
+    assert "Заказ у поставщика" in client.get("/stock/leftovers").text
+    client.post("/logout")

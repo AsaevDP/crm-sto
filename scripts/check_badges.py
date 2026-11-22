@@ -93,8 +93,55 @@ def check(c, x) -> tuple[str, str]:
     return ", ".join(found), ""
 
 
+TILE_RE = re.compile(r'<a\b([^>]*\bclass="[^"]*\bptile\b[^"]*"[^>]*)>(.*?)</a>', re.S)
+
+
+def tiles_of(html: str) -> list[dict]:
+    out = []
+    for attrs, body in TILE_RE.findall(html):
+        m = re.search(r'href="([^"]*)"', attrs)
+        n = re.search(r"<b[^>]*>\s*([\d\s ]+)\s*</b>", body)
+        t = re.sub(r"<[^>]+>", " ", body)
+        out.append({"href": html_unescape(m.group(1)) if m else "", "n": int(re.sub(r"\D", "", n.group(1))) if n else None,
+                    "t": " ".join(t.split())[:40]})
+    return out
+
+
+def tile_check(c, x) -> str:
+    """23.11.2026 (брат): горит кружок — на его странице обязательно есть своя плитка (она мигает), число совпадает.
+    → '' если всё хорошо, иначе текст ошибки; для страниц без плиток (наряд, «Запись») — ''."""
+    u = urlsplit(x["href"])
+    if x.get("tile"):   # 23.11.2026: своя плитка по названию — на странице кружка (или в его разделе, если ведёт в наряд)
+        page = x["menu"] if (u.path.startswith("/orders/") and u.path.count("/") == 2) else (f"{u.path}?{u.query}" if u.query else u.path)
+        html = c.get(page).text
+        spans = re.findall(r'class="ptile[^"]*"[^>]*>\s*<span class="ptile-t">([^<]+)</span>\s*<b[^>]*>([^<]*)</b>', html)
+        found = [(t.strip(), n) for t, n in spans if t.strip() in x["tile"]]
+        if not found:
+            return f"на {page} нет плитки {x['tile']} (есть: {', '.join(t for t, _ in spans[:8])})"
+        nums = [int(re.sub(r"\D", "", n) or 0) for _, n in found]
+        if sum(nums) == 0:
+            return f"плитка {found} = 0, а кружок = {x['n']}"
+        return f"ok · плитка {'+'.join(t for t, _ in found)} = {'+'.join(map(str, nums))}, кружок = {x['n']}"
+    if u.path.startswith("/orders/") and u.path.count("/") == 2:
+        return ""   # ведёт прямо в наряд — там плиток нет, обводится блок / строка
+    html = c.get(f"{u.path}?{u.query}" if u.query else u.path).text
+    ts = tiles_of(html)
+    if not ts:
+        return ""
+    q = dict(parse_qsl(u.query))
+    match = [t for t in ts if urlsplit(t["href"]).path in ("", u.path)
+             and all(dict(parse_qsl(urlsplit(t["href"]).query)).get(k) == v for k, v in q.items())] if q else []
+    if not match:
+        return f"нет плитки для «{x['href']}» (плитки: {', '.join(t['t'] for t in ts[:6])})"
+    t = match[0]
+    if t["n"] is not None and t["n"] != x["n"] and not x.get("also"):
+        return f"плитка «{t['t']}» = {t['n']}, кружок = {x['n']}"
+    return ""
+
+
 def main():
     rows, bad = [], 0
+    strict = "--tiles" in sys.argv
     with TestClient(app) as c:
         for login in USERS:
             c.post("/logout")
@@ -107,6 +154,16 @@ def main():
                 rows.append(f"| {login} | — | кружков нет | | |")
             for menu, lst in badges.items():
                 for x in lst:
+                    if strict:
+                        x["menu"] = menu
+                        err = tile_check(c, x)
+                        if err.startswith("ok"):
+                            rows.append(f"| {login} | {menu} {COLOR[x['c']]}{x['n']} | {x['t']} | `{x['href']}` | ✓ {err[5:]} |")
+                            continue
+                        bad += bool(err)
+                        rows.append(f"| {login} | {menu} {COLOR[x['c']]}{x['n']} | {x['t']} | `{x['href']}` | "
+                                    f"{'❌ ' + err if err else '✓'} |")
+                        continue
                     if x.get("info"):
                         rows.append(f"| {login} | {menu} {COLOR[x['c']]}{x['n']} | {x['t']} | `{x['href']}` | для сведения — без рамки |")
                         continue
