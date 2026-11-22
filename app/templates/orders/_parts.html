@@ -203,7 +203,7 @@
   {% endif %}
   {% endif %}
   {% if can_pick and (wo.status == "picking" or (wo.status == "approve" and not wo.picked_at)) %}
-  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block">Подбор завершён</button>
+  <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block" id="btn-picked">Подбор завершён</button>
     {% if wo.status == "approve" %}<p class="hint" style="margin:6px 0 0">Менеджер получит сообщение и согласует с клиентом. Заказ поставщику — после согласования, он придёт в «Мои заказы».</p>{% endif %}</form>
   {% endif %}
   {% if wo.status == "approve" and wo.picked_at %}
@@ -226,7 +226,7 @@
         <label class="dup-ok"><input type="checkbox" name="dups_ok" value="1"> Да, клиент берёт все</label>
       </div>
       {% endif %}
-      <button class="btn btn-block">Согласовал с клиентом</button>
+      <button class="btn btn-block" id="btn-approve-done">Согласовал с клиентом</button>
       <p class="hint" style="margin:6px 0 0">Проблемы «Да» — работы, «Нет» — рекомендации в карте клиента. Запчасти со склада — в резерве,
         остальные уйдут запчастисту в заказ.</p>
     </form>
@@ -282,7 +282,7 @@
     {{ parts_coming|map(attribute="name")|join(", ") }} — последнюю работу закрыть нельзя, пока их не выдадут.</p>{% endif %}
   <form class="note-form" method="post" action="/orders/{{ wo.id }}/issue-request">
     <input class="field" name="comment" placeholder="Комментарий кладовщику (необязательно)">
-    <button class="btn btn-sm">Запросить выдачу{% if parts_coming %} того, что есть{% endif %}</button>
+    <button class="btn btn-sm" id="btn-request-issue">Запросить выдачу{% if parts_coming %} того, что есть{% endif %}</button>
   </form>
   {% elif parts_coming and wo.status in ("waiting", "instock", "work") %}
   <p class="caption" style="margin:4px 0 0">Ещё нет на складе: {{ parts_coming|map(attribute="name")|join(", ") }}.

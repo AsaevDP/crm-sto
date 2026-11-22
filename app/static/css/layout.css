@@ -2814,3 +2814,16 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 @keyframes need-blink-sh { 0%, 100% { box-shadow: inset 4px 0 0 var(--need-c); }
   50% { box-shadow: inset 4px 0 0 color-mix(in srgb, var(--need-c) 12%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .need-edge, tr.need-edge > td:first-child { animation: none; } }
+/* 23.11.2026 (брат): кнопка, которую ждёт дело («Согласовал с клиентом», «Подбор завершён», «Принять оплату»…) —
+   синий «перелив»: мягкое мигающее синее свечение вокруг и блик, бегущий по кнопке. Рамка-кольцо у кнопки не рисуется. */
+.need-btn::after { content: none; }
+.need-btn { position: relative; overflow: hidden; animation: need-btn-glow 1.5s ease-out infinite; }
+.need-btn::before { content: ""; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; pointer-events: none;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform: skewX(-20deg);
+  animation: need-btn-shine 2.4s ease-in-out infinite; }
+@keyframes need-btn-glow {
+  0% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 4px color-mix(in srgb, var(--blue) 45%, transparent); }
+  70% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 16px color-mix(in srgb, var(--blue) 0%, transparent); }
+  100% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--blue), 0 0 0 16px color-mix(in srgb, var(--blue) 0%, transparent); } }
+@keyframes need-btn-shine { 0% { left: -60%; } 60%, 100% { left: 120%; } }
+@media (prefers-reduced-motion: reduce) { .need-btn, .need-btn::before { animation: none; } .need-btn { box-shadow: 0 0 0 2px var(--blue); } }

@@ -397,8 +397,10 @@
       const onTarget = links.some(h => new URL(h, location.origin).pathname === here);
       (x.wo || []).forEach(id => {
         if (here === '/orders/' + id) {
-          if (x.blk) add(document.querySelector(x.blk));
-          (x.rows || []).forEach(s => main.querySelectorAll(s).forEach(el => add(el)));
+          // 23.11.2026 (брат): есть кнопка / строка дела — обводим её, весь блок нет (квадратная рамка блока раздражает)
+          const rowEls = (x.rows || []).flatMap(s => [...main.querySelectorAll(s)]).filter(el => el.offsetParent !== null || el.tagName === 'SUMMARY');
+          if (rowEls.length) rowEls.forEach(el => add(el));
+          else if (x.blk) add(document.querySelector(x.blk));
         } else if ((here === '/orders' && menu === '/orders') || onTarget) {
           main.querySelectorAll(`a[href="/orders/${id}"], a[href^="/orders/${id}#"], a[href^="/orders/${id}?"]`)
             .forEach(a => add(a.matches('.ocard') ? a : (a.closest(BOX) || a)));
@@ -414,13 +416,15 @@
     const els = [...want.keys()];
     els.forEach(el => { if (els.some(o => o !== el && el.contains(o))) want.delete(el); });
     const EDGE = '.part, .work, .wq-card, .lo-card, .rc-group, tr';   // + «Склад»: приход, лишнее, «Всегда в наличии»   // строки и окошки с полоской сбоку — мигает только край
-    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', ...ORDER.map(c => 'need-' + c)];
+    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', ...ORDER.map(c => 'need-' + c)];
     document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) el.classList.remove(...CLS); });
     want.forEach((c, el) => {
       ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
       el.classList.add('need');
       // окошко со своей цветной полоской слева (мойка, срочная деталь) или строка — мигает край, без рамки вокруг
       const bl = parseFloat(getComputedStyle(el).borderLeftWidth) || 0;
+      // 23.11.2026 (брат): кнопка, которую надо нажать («Согласовал с клиентом», «Подбор завершён»…) — синий перелив
+      if (el.matches('.btn, button, summary.btn')) { el.classList.add('need-btn'); return; }
       if (bl >= 3 || el.matches(EDGE)) {
         el.classList.add('need-edge');
         if (bl < 3 && !el.matches('tr')) el.classList.add('need-edge-add');

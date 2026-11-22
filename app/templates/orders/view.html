@@ -67,7 +67,7 @@
 
   {% if can_diag %}
   <details class="add-finding" {% if (wo.status == "diag" or can_route) and not findings %}open{% endif %}>
-    <summary class="btn btn-tinted btn-block">{{ icon("plus") }}{{ "Записать проблему" if wo.status == "created" else "Добавить проблему" }}</summary>
+    <summary class="btn btn-tinted btn-block" id="btn-add-finding">{{ icon("plus") }}{{ "Записать проблему" if wo.status == "created" else "Добавить проблему" }}</summary>
     <form class="form" id="ffind" style="margin-top:10px">
       <textarea class="field" name="text" rows="2" placeholder="{{ 'Со слов клиента: «Скрипят тормоза спереди»' if wo.status == 'created' else 'Что нашли: «Течь масла с прокладки клапанной крышки»' }}" required></textarea>
       <div class="segmented seg-wide" id="urg">
@@ -88,7 +88,7 @@
 
   {% if can_finish_diag %}
   <form method="post" action="/orders/{{ wo.id }}/diag-done" onsubmit="return {{ 'true' if findings else 'confirm(\'Проблем не найдено — отправить менеджеру?\')' }}">
-    <button class="btn btn-block">{% if diag_state|length > 1 %}Моя диагностика готова{% else %}{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}{% endif %}</button>
+    <button class="btn btn-block" id="btn-diag-done">{% if diag_state|length > 1 %}Моя диагностика готова{% else %}{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}{% endif %}</button>
   </form>
   {% endif %}
   {% if can_route and findings %}

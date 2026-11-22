@@ -25,7 +25,7 @@
   {% if can_money %}
   {% if wo.status not in ("paid",) %}
   <details class="add-finding" {% if wo.status == "ready" and t.due > 0 %}open{% endif %}>
-    <summary class="btn btn-block btn-sm">Принять оплату</summary>
+    <summary class="btn btn-block btn-sm" id="btn-pay">Принять оплату</summary>
     <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/payments" style="margin-top:8px">
       <input type="hidden" name="token" value="{{ pay_token }}">
       <div class="form-row"><label>Сумма, ₴<input class="field" name="amount" inputmode="decimal" value="{{ '%.2f'|format(t.due if t.due > 0 else 0) }}" required></label>
@@ -62,7 +62,7 @@
 
   {% if wo.status == "paid" or (wo.status == "ready" and t.due <= 0) %}
   <details class="add-finding" open>
-    <summary class="btn btn-block btn-sm" style="background:var(--green);color:#fff">Выдать авто клиенту</summary>
+    <summary class="btn btn-block btn-sm" id="btn-handover" style="background:var(--green);color:#fff">Выдать авто клиенту</summary>
     <form class="form dense one-shot" method="post" action="/orders/{{ wo.id }}/close" style="margin-top:8px">
       <div class="headline" style="font-size:14px">Отметки при выдаче автомобиля</div>
       <div class="radio-list">

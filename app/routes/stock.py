@@ -428,7 +428,7 @@ def leftovers_page(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     return ctx.render("stock/leftovers.html", title="Лишнее после отказов", rows=rows, tab=tab, STATUS=lsvc.STATUS,
                       n_open=sum(1 for x in allrows if x["lo"].status in lsvc.OPEN),
                       n_done=sum(1 for x in allrows if x["lo"].status not in lsvc.OPEN),
-                      can=ctx.can("parts.pick", "stock.manage"), fmt_plate=osvc.fmt_plate,
+                      can=ctx.can("parts.pick", "stock.manage"), can_order=ctx.can("parts.pick"), fmt_plate=osvc.fmt_plate,
                       show_cost=ctx.can("prices.view_purchase"))
 
 
@@ -440,6 +440,11 @@ def leftovers_decide(lid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("
     lo = ctx.db.get(PartLeftover, _uuid(lid))
     if not lo or lo.branch_id != ctx.branch.id:
         raise Forbidden()
+    # 23.11.2026 (брат): заказ у поставщика («Отменил у поставщика» / «Пусть приедет») — только запчастист;
+    # кладовщик решает только с тем, что уже лежит на складе
+    if lo.status == "decide" and not ctx.can("parts.pick"):
+        flash(ctx.request, "Заказ у поставщика решает запчастист", "error")
+        return _to("/stock/leftovers")
     err = lsvc.decide(ctx.db, lo, ctx.user, action, note)
     if err:
         ctx.db.rollback()

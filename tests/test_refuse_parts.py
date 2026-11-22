@@ -147,6 +147,17 @@ def test_refuse_after_approval_ordered_and_arrived(client):
         lo_ball = db.scalar(select(PartLeftover).where(PartLeftover.wo_part_id == ball.id))
         lever_line = lo_lever.purchase_line_id
     assert lo_lever.status == lo_ball.status == "decide"
+    # 23.11.2026 (брат): кладовщик заказ у поставщика не решает — кнопок нет, и сервер не пускает
+    client.post("/logout")
+    login(client, "pavel", "pavel123")
+    page = client.get("/stock/leftovers").text
+    assert "Отменил у поставщика" not in page and "Решает запчастист" in page
+    client.post(f"/stock/leftovers/{lo_lever.id}", data={"action": "cancel"})
+    client.post(f"/stock/leftovers/{lo_ball.id}", data={"action": "to_stock"})
+    with SessionLocal() as db:
+        assert db.get(PartLeftover, lo_lever.id).status == db.get(PartLeftover, lo_ball.id).status == "decide"
+    client.post("/logout")
+    login(client, "oleg", "oleg123")
     client.post(f"/stock/leftovers/{lo_lever.id}", data={"action": "cancel"})
     client.post(f"/stock/leftovers/{lo_ball.id}", data={"action": "to_stock", "note": "Поставщик не принимает отказ"})
     with SessionLocal() as db:

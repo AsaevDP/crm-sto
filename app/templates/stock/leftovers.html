@@ -25,7 +25,10 @@
     {% if x.by %}<div class="caption">решил {{ x.by.full_name }}{% if lo.decided_at %} · {{ lo.decided_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}{% if lo.note %} · {{ lo.note }}{% endif %}</div>{% endif %}
     {% if can %}
     <div class="lo-acts">
-      {% if lo.status == "decide" %}
+      {% if lo.status == "decide" and not can_order %}
+      {# 23.11.2026 (брат): заказ у поставщика решает только запчастист — кладовщик видит, но не отменяет #}
+      <span class="caption">Решает запчастист: отменить у поставщика или пусть приедет на склад.</span>
+      {% elif lo.status == "decide" %}
       <form method="post" action="/stock/leftovers/{{ lo.id }}"><input type="hidden" name="action" value="cancel"><button class="btn btn-sm">Отменил у поставщика</button></form>
       <form method="post" action="/stock/leftovers/{{ lo.id }}" class="lo-note"><input type="hidden" name="action" value="to_stock"><input type="hidden" name="note">
         <button class="btn btn-sm btn-gray">Отменить нельзя — пусть приедет на склад</button></form>

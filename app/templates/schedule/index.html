@@ -82,7 +82,7 @@
                                  ("new", sig.new, "purple", "Новая"), ("wait", sig.wait, "orange", "Ждём сегодня")] %}
   {% for a in lst if not (kind == "wait" and a.id in new_ids) %}{% set _ = rows.append((kind, a, c, word)) %}{% endfor %}{% endfor %}
   {% macro sig_row(r) %}{% set kind, a, c, word = r %}{% set s = local(a.start_at) %}
-  <div class="zp-sig-row" style="--sc:var(--{{ c }})">
+  <div class="zp-sig-row" data-k="{{ kind }}" style="--sc:var(--{{ c }})">
     <span class="zp-sig-w">{{ word }}</span>
     <span class="zp-sig-t"><b class="nowrap">{{ WEEKDAYS[s.weekday()] }} {{ s.strftime("%d.%m %H:%M") }}</b>
       <span>{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}{% if a.car or a.plate %} · {{ a.car }}{% if a.plate %} <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}{% endif %}</span>
