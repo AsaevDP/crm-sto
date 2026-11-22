@@ -180,7 +180,8 @@ def compute(ctx) -> dict:
              wo=[] if washer_ else handed, blk="#ho-accept", tile=[] if washer_ else ['Мне передали'])   # у мойщика плиток нет — блок «Вам передали»
         if ctx.can("orders.approve"):
             ids_ = ids_status("approve", field=None if see_all else WorkOrder.manager_id)
-            _add(out, "/orders", "orange", len(ids_), "согласовать с клиентом", "/orders?tab=approve", wo=ids_,
+            # 22.11.2026 (брат): красная — дело менеджера, пока не согласует, работа стоит
+            _add(out, "/orders", "red", len(ids_), "согласовать с клиентом", "/orders?tab=approve", wo=ids_,
                  blk="#problems", rows=["#btn-approve-done"], tile=['Согласование'], btn="blue")
         if ctx.can("parts.pick") and not ctx.can("orders.approve"):
             # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»
