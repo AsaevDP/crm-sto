@@ -16,6 +16,7 @@ from ..config import COOKIE_SECURE, SECRET_KEY
 from ..db import current_branch_id, current_user_id, get_db
 from ..models import AccessPoint, AttendanceEvent, User
 from ..services import attendance as svc
+from ..services import lateness as late_svc
 from ..services import settings as st
 from ..services.staff import staff_for_period
 from ..web import Ctx, Forbidden, accent_style, flash, get_ctx, templates
@@ -114,6 +115,44 @@ def _month(m: str):
         return t.year, t.month
 
 
+def _alerts(ctx: Ctx, only: User | None = None) -> dict:
+    """24.11.2026 (брат): окошки табеля. lt_me — свои (опоздания, ⚠ не отметились), lt_boss — руководству."""
+    me = ctx.user
+    mine = late_svc.for_user(ctx.db, ctx.branch.id, me) if (only is None or only.id == me.id) else None
+    boss = late_svc.for_boss(ctx.db, ctx.branch.id, me) if ctx.can("attendance.alerts") else []
+    if only is not None:
+        boss = [f for f in boss if f.user.id == only.id]
+    return {"lt_me": mine, "lt_boss": boss, "lt_kind": late_svc.KIND_NAME, "lt_min": late_svc.fmt_min}
+
+
+@router.post("/timesheet/ack")
+def ack(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), kind: str = Form(...),
+        side: str = Form("self"), back: str = Form("/timesheet#late")):
+    """«Принял к сведению»: self — сотрудник о своём опоздании; boss — руководство (кто-то один за всех)."""
+    uid = _uuid(user_id)
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        raise Forbidden()
+    if side == "self":
+        if uid != ctx.user.id or kind != "late":
+            raise Forbidden()
+    else:
+        ctx.need("attendance.alerts")
+        if uid == ctx.user.id:
+            raise Forbidden()   # о себе руководитель не решает — примет другой
+        u = ctx.db.get(User, uid)
+        if not u or u.branch_id != ctx.branch.id:
+            raise Forbidden()
+        if kind == "late" and not (ctx.user.role.code == "admin" and u.role.code in late_svc.LEADERS):
+            raise Forbidden()
+    if not late_svc.ack(ctx.db, ctx.branch.id, ctx.user, uid, d, kind, side):
+        raise Forbidden()
+    ctx.db.commit()
+    flash(ctx.request, "Принято к сведению" if side == "boss" else "Принято. Больше не опаздывайте")
+    return RedirectResponse(back if back.startswith("/timesheet") else "/timesheet", status_code=303)
+
+
 @router.get("/timesheet")
 def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str = "", d: str = ""):
     ctx.need("attendance.view_all", "attendance.view_own")
@@ -136,24 +175,29 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str =
         target = ctx.db.get(User, _uuid(user))
     if target:
         grid = svc.month_grid(ctx.db, ctx.branch.id, [target], y, mo)[target.id]
+        lt = _alerts(ctx, only=target)
+        late_days = {f.day.day for f in late_svc.flags(ctx.db, ctx.branch.id, [target]) if f.kind == "late"
+                     and f.day.year == y and f.day.month == mo} if target.role.code != "admin" else set()
         return ctx.render("attendance/user.html", title="Табель", u=target, grid=grid, y=y, mo=mo, n_days=n_days,
                           month_name=MONTHS[mo], prev=prev, nxt=nxt, see_all=see_all, date=date, bar=bar,
-                          total=sum(d.minutes for d in grid.values()), can_edit=ctx.user.role.code == "admin",
+                          total=sum(d.minutes for d in grid.values()), can_edit=ctx.can("attendance.edit"),
+                          can_delete=ctx.user.role.code == "admin", late_days=late_days, **lt,
                           local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
     grid = svc.month_grid(ctx.db, ctx.branch.id, staff, y, mo)
     now_on = svc.on_site_now(ctx.db, ctx.branch.id, staff)
     weekends = {d for d in range(1, n_days + 1) if date(y, mo, d).weekday() >= 5}
+    lt = _alerts(ctx)
     return ctx.render("attendance/month.html", title="Табель", staff=staff, grid=grid, now_on=now_on, y=y, mo=mo,
-                      n_days=n_days, month_name=MONTHS[mo], prev=prev, nxt=nxt, weekends=weekends, bar=bar,
+                      n_days=n_days, month_name=MONTHS[mo], prev=prev, nxt=nxt, weekends=weekends, bar=bar, **lt,
                       today=date.today(), local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
 
 
 @router.post("/timesheet/events")
 def event_add(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), at: str = Form(...),
               direction: str = Form("in"), comment: str = Form("")):
-    """Ручная отметка (забыл карту, не отметил уход) — только главный админ, с комментарием."""
-    if ctx.user.role.code != "admin":
-        raise Forbidden()
+    """Ручная отметка (забыл карту, не отметил уход) — с комментарием. 24.11.2026 (брат): вписывают бухгалтер,
+    директор, зам и админ (право attendance.edit; раньше только главный админ)."""
+    ctx.need("attendance.edit")
     u = ctx.db.get(User, _uuid(user_id))
     if not u or u.branch_id != ctx.branch.id or direction not in ("in", "out"):
         raise Forbidden()

@@ -19,7 +19,7 @@ ALL_ROLES = ("admin", "director", "deputy")
 
 
 def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False, info: bool = False,
-         wo=None, blk: str = "", rows=None, sel=None, tile=None, btn: str = ""):
+         wo=None, blk: str = "", rows=None, sel=None, tile=None, btn: str = "", big: bool = False, shape: str = ""):
     """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды).
     info — 19.11.2026 (брат): «для сведения» (вы следите, делает другой) — цифра с сиреневой обводкой; с цифрами
     «действие ваше» того же цвета не складывается.
@@ -47,7 +47,8 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     else:
         lst.append({"c": color, "n": int(n), "t": item["t"], "href": link or href,
                     "alone": alone, "info": info, "wo": wo, "blk": blk, "rows": list(rows or []),
-                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn, "go": [item]})
+                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn, "go": [item],
+                    "big": big, "shape": shape})   # 24.11.2026: big — крупнее (опоздание), shape="warn" — ⚠ вместо цифры
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
@@ -326,13 +327,19 @@ def compute(ctx) -> dict:
 
     # ---------- Готово к выдаче (менеджер) ----------
     if ctx.can("stock.pickup") and not ctx.can("stock.issue"):
-        n = 0
+        from ..models import IssueRequestLine
+        n, take_wo, take_ids = 0, [], []
         for r, wo in db.execute(select(IssueRequest, WorkOrder).join(WorkOrder, WorkOrder.id == IssueRequest.work_order_id)
                                 .where(IssueRequest.branch_id == bid, IssueRequest.status == "ready")):
             if wo.manager_id == me.id or r.created_by == me.id:
                 n += 1
-        # 🟠 23.11.2026 (брат, было 🟢): кладовщик подготовил — менеджеру забрать у окошка и отнести мастеру
-        _add(out, "/ready", "orange", n, "кладовщик подготовил — забрать у окошка", "/ready#mine", tile=['Забрать у окошка'])
+                take_wo.append(wo.id)
+                take_ids += db.scalars(select(IssueRequestLine.wo_part_id).where(IssueRequestLine.request_id == r.id)).all()
+        # 🔴 24.11.2026 (брат, наряд 27; было 🟠, ещё раньше 🟢): кладовщик подготовил — менеджеру забрать у окошка и
+        # отнести мастеру: это его дело, красным. В наряде мигают ВСЕ детали подготовленного запроса (раньше мигали
+        # только приехавшие по закупке — кружок «Пришли запчасти», взятые с полки не мигали)
+        _add(out, "/ready", "red", n, "кладовщик подготовил — забрать у окошка", "/ready#mine", tile=['Забрать у окошка'],
+             wo=take_wo, rows=[f'.part[data-id="{i}"]' for i in dict.fromkeys(take_ids) if i])
         # 🔴 20.11.2026 (брат, наряд 60): мастер просит со склада под мой наряд — согласовать / отказать
         from . import messages as msg_svc
         _add(out, "/ready", "red", len(msg_svc.my_pending(ctx)), "мастер просит со склада — согласуйте", "/ready#asks", tile=['Согласовать'])
@@ -343,15 +350,16 @@ def compute(ctx) -> dict:
         wait_wo = db.scalars(select(IssueRequest.work_order_id).join(
             WorkOrder, WorkOrder.id == IssueRequest.work_order_id).where(
             IssueRequest.branch_id == bid, IssueRequest.status == "new", WorkOrder.manager_id == me.id)).all()
-        _add(out, "/ready", "orange", len(wait_wo), "запчасти — ждут кладовщика", "/ready#waiting", tile=['Ждут кладовщика'],
-             wo=wait_wo, rows=['.part[data-asked="1"]'])
+        # 🟣 24.11.2026 (брат, наряд 27; было 🟠): ждут кладовщика — для сведения, от менеджера ничего не зависит
+        _add(out, "/ready", "purple", len(wait_wo), "запчасти — ждут кладовщика", "/ready#waiting", tile=['Ждут кладовщика'],
+             info=True, wo=wait_wo, rows=['.part[data-asked="1"]'])
         tq = select(func.count()).select_from(ToolRequest).join(WorkOrder, WorkOrder.id == ToolRequest.work_order_id).where(
             ToolRequest.branch_id == bid, ToolRequest.kind == "issue", WorkOrder.manager_id == me.id)
         # 19.11.2026 (брат): инструмент — как запчасти, только у «Запросов на выдачу» (там же «Выдано»);
         # у «Инструмента» цифр нет (сиреневую «для сведения» убрали)
-        _add(out, "/ready", "orange", db.scalar(tq.where(ToolRequest.status == "new")) or 0,
-             "инструмент — ждёт кладовщика", "/ready#waiting", tile=['Ждут кладовщика', 'Инструмент'])
-        _add(out, "/ready", "orange", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
+        _add(out, "/ready", "purple", db.scalar(tq.where(ToolRequest.status == "new")) or 0,
+             "инструмент — ждёт кладовщика", "/ready#waiting", info=True, tile=['Ждут кладовщика', 'Инструмент'])
+        _add(out, "/ready", "red", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
              "инструмент подготовлен — забрать у окошка и отнести мастеру", "/ready#tools", tile=['Забрать у окошка'])
 
     # ---------- Мои запросы на выдачу (мастер, 12.11.2026) ----------
@@ -430,6 +438,27 @@ def compute(ctx) -> dict:
                 ToolRequest.branch_id == bid, ToolRequest.status == "ready", ToolRequest.kind == "issue")) or 0,
                  "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools", info=info_new, tile=['Инструмент', 'Просят / сдают'])
         # 19.11.2026 (брат): «готово — ещё не выдано» снова горит оранжевым (18.11 убирали) — пока не нажато «Выдано»
+
+    # ---------- Инструмент после закрытия наряда (24.11.2026, брат) ----------
+    # Общий инструмент под наряд, наряд закрыт / отменён, а инструмент у мастера. Мастеру: 🔴 сдать (красная «Сдаю»),
+    # нажал «Сдаю» — 🟠 до «Принял» / «Вернул» кладовщика. Руководству (кладовщик, главный, менеджер — свои наряды,
+    # директор, зам) — 🟠 «не сдали»; кладовщику без уже нажатых «Сдаю» (те — в «сдают инструмент — принять»).
+    if ctx.can("tools.view_own", "tools.view"):
+        from . import tools as tools_svc
+        mine_late = tools_svc.after_close(db, bid, holder_id=me.id)
+        my_page = f"/tools/staff/{me.id}"
+        _add(out, "/tools", "red", sum(1 for x in mine_late if not x["ret"]),
+             "наряд закрыт — сдайте инструмент в чистом и исправном виде", my_page + "#late", alone=True,
+             sel=[(my_page, ".btn-ret-late")])
+        _add(out, "/tools", "orange", sum(1 for x in mine_late if x["ret"]),
+             "инструмент сдаёте — ждёт кладовщика", my_page + "#late", alone=True, sel=[(my_page, ".ret-wait-late")])
+        if ctx.can("tools.view"):
+            keeper = ctx.can("tools.manage")
+            late_all = tools_svc.after_close(db, bid, manager_id=None if (keeper or ctx.can("orders.grant_access", "staff.dismiss")
+                                                                            or role in ALL_ROLES) else me.id)
+            n = sum(1 for x in late_all if not (keeper and x["ret"]) and x["tool"].holder_id != me.id)
+            _add(out, "/tools", "orange", n, "наряд закрыт, инструмент не сдан", "/tools#late",
+                 sel=[("/tools", ".tl-late-row:not(.tl-late-ret)" if keeper else ".tl-late-row")], tile=['Не сдали после наряда'])
 
     # ---------- Мойка (18.11.2026, брат) ----------
     wash_queue = ctx.can("orders.create", "orders.approve", "orders.view_all")   # 20.11.2026: запчастисту — только химия
@@ -626,4 +655,21 @@ def compute(ctx) -> dict:
              sel=[("/schedule", '.zp-sig-row[data-k~="new"]')], tile=['Новые записи'])
         _add(out, "/schedule", "green", len(sg["arrived"]), "клиент приехал — начните работу", "/schedule#zp-sig",
              sel=[("/schedule", '.zp-sig-row[data-k="arrived"]')], tile=['Приехали'])
+    # ---------- Табель: опоздания и пропущенные отметки (24.11.2026, брат) ----------
+    if ctx.can("attendance.view_own", "attendance.view_all"):
+        from . import lateness as late_svc
+        mine = late_svc.for_user(db, bid, me)
+        # 🔴 крупнее остальных: опоздали — прочитать и «Принял к сведению»
+        _add(out, "/timesheet", "red", len(mine["new"]), "вы опоздали — прочитайте и примите к сведению",
+             "/timesheet#late", alone=True, big=True, sel=[("/timesheet", ".lt-card.lt-new")], tile=['Опоздание'])
+        # ⚠ не отметились (уход / приход) — сообщить бухгалтеру или директору, время впишут вручную
+        _add(out, "/timesheet", "orange", len(mine["warn"]), "вы не отметились — сообщите бухгалтеру или директору",
+             "/timesheet#late", alone=True, shape="warn", sel=[("/timesheet", ".lt-card.lt-warn")], tile=['Нет отметки'])
+        # 🟠 опозданий за эту неделю (принятые к сведению) — горит до конца недели
+        _add(out, "/timesheet", "orange", len(mine["week"]), "опозданий на этой неделе", "/timesheet#late",
+             alone=True, tile=['Опозданий за неделю'])
+        if ctx.can("attendance.alerts"):
+            boss = late_svc.for_boss(db, bid, me)
+            _add(out, "/timesheet", "red", len(boss), "сотрудник не отметился или не пришёл — примите к сведению",
+                 "/timesheet#boss", alone=True, sel=[("/timesheet", ".lt-card.lt-boss")], tile=['Принять к сведению'])
     return _compact(out)

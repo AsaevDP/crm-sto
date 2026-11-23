@@ -285,6 +285,28 @@ def out_on_orders(db: Session, branch_id) -> list[dict]:
     return out
 
 
+CLOSED_WO = ("closed", "cancel")
+
+
+def after_close(db: Session, branch_id, holder_id=None, manager_id=None) -> list[dict]:
+    """24.11.2026 (брат): общий инструмент под наряд, наряд закрыт или отменён, а инструмент всё ещё у мастера.
+    Личный и запасной не считаем (сдаются только при увольнении). {tool, wo, ret} — ret: открытый «Сдаю» или None.
+    Мастеру: без «Сдаю» — 🔴, нажал «Сдаю» — 🟠 до «Принял» / «Вернул» кладовщика."""
+    from ..models import ToolRequest, WorkOrder
+    q = (select(Tool, WorkOrder).join(WorkOrder, WorkOrder.id == Tool.work_order_id)
+         .where(Tool.branch_id == branch_id, Tool.holder_id.is_not(None), ~personal_filter(),
+                Tool.status.not_in(("lost", "written_off")), WorkOrder.status.in_(CLOSED_WO)))
+    if holder_id:
+        q = q.where(Tool.holder_id == holder_id)
+    if manager_id:
+        q = q.where(WorkOrder.manager_id == manager_id)
+    rows = db.execute(q.order_by(Tool.inv_no)).all()
+    rets = {r.tool_id: r for r in db.scalars(select(ToolRequest).where(
+        ToolRequest.tool_id.in_([t.id for t, _ in rows] or [None]), ToolRequest.kind == "return",
+        ToolRequest.status.in_(OPEN)))} if rows else {}
+    return [{"tool": t, "wo": o, "ret": rets.get(t.id)} for t, o in rows]
+
+
 def holding(db: Session, user_id) -> list[Tool]:
     return db.scalars(select(Tool).where(Tool.holder_id == user_id, Tool.status.not_in(("lost", "written_off")))
                       .order_by(Tool.inv_no)).all()

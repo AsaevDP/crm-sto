@@ -6,6 +6,7 @@
   <h1 class="large-title">Табель</h1>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
+{% include "attendance/_alerts.html" %}
 {% set on = namespace(n=0, out=0, none=0, mins=0, open=0) %}
 {% for s in staff %}{% set e = now_on[s.id] %}{% if e and e.direction == "in" %}{% set on.n = on.n + 1 %}{% elif e %}{% set on.out = on.out + 1 %}{% else %}{% set on.none = on.none + 1 %}{% endif %}
   {% for d, day in grid[s.id].items() %}{% set on.mins = on.mins + day.minutes %}{% if day.open and not (today.year == y and today.month == mo and today.day == d) %}{% set on.open = on.open + 1 %}{% endif %}{% endfor %}{% endfor %}

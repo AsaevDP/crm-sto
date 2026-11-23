@@ -119,10 +119,12 @@
       box.innerHTML = '';
       list.forEach(x => {
         const b = document.createElement('span');
-        b.className = 'nbadge nb-' + x.c + (x.info ? ' nb-info' : ''); b.textContent = x.n;
+        // 24.11.2026 (брат): табель — опоздание крупнее (nb-big), «не отметились» — треугольник с «!» (nb-warn)
+        const kind = 'nb-' + x.c + (x.info ? ' nb-info' : '') + (x.big ? ' nb-big' : '') + (x.shape === 'warn' ? ' nb-warn' : '');
+        b.className = 'nbadge ' + kind; b.textContent = x.shape === 'warn' ? '!' : x.n;
         b.title = (x.go && x.go.length ? x.go : [x]).map(g => cap(g.t)).join(' · ');
-        b.addEventListener('click', e => nbMenu(e, b, (x.go && x.go.length ? x.go : [{ t: x.t, href: x.href, n: x.n }]),
-                                                'nb-' + x.c + (x.info ? ' nb-info' : '')));
+        b.addEventListener('click', e => nbMenu(e, b, (x.go && x.go.length ? x.go : [{ t: x.t, href: x.href, n: x.n }])
+                                                .map(g => x.shape === 'warn' ? { ...g, n: '!' } : g), kind));
         box.appendChild(b);
       });
     });

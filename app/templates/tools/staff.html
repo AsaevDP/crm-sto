@@ -12,6 +12,15 @@
     {% endif %}
   </div>
 </header>
+{# 24.11.2026 (брат): наряд закрыт, а общий инструмент не сдан — только уведомление; у такого инструмента «Сдаю» красная #}
+{% set n_late = temp|selectattr("id", "in", late_ids)|list|length %}
+{% if n_late %}
+<div class="card compact rim rim-red tl-late-note" id="late">
+  <div class="headline">🔧 Наряд закрыт — сдайте инструмент</div>
+  <p class="subhead" style="margin:4px 0 0">{{ "Инструмент нужно сдать" if is_me else "Нужно сдать" }} кладовщику в чистом и исправном виде.
+    Не сдано: {{ n_late }} шт{% if is_me %} — нажмите красную «Сдаю» и отнесите к окошку{% endif %}.</p>
+</div>
+{% endif %}
 <div class="cl-grid fill tools-grid">
   <section class="ov-col on">
     <div class="tablewrap">
@@ -37,12 +46,14 @@
           {# 21.11.2026 (брат): как в наряде — мастер «✓ Получил» / «Сдаю»; кладовщик «Вернул» (или примет «Сдаю» в
              «Запросах на выдачу → Инструмент») #}
           {% set rr = returning.get(t.id) %}{% set ur = unrecv.get(t.id) %}
-          <td class="num">{% if rr %}<span class="chip nowrap" data-s="waiting">сдаёт · ждёт кладовщика</span>
+          {% set is_late = t.id in late_ids %}
+          <td class="num">{% if rr %}<span class="chip nowrap {{ 'ret-wait-late' if is_late }}" data-s="waiting">сдаёт · ждёт кладовщика</span>
             {% if ctx.can("tools.manage") %}<a class="btn btn-sm" href="/stock/issues?tab=tools">Принять</a>{% endif %}
             {% elif is_me and ur %}
             <form method="post" action="/tool-requests/{{ ur.id }}/received?back=/tools/staff/{{ u.id }}"><button class="btn btn-sm">✓ Получил</button></form>
             {% elif is_me %}
-            <form method="post" action="/tools/{{ t.id }}/return-request?back=/tools/staff/{{ u.id }}"><button class="btn btn-sm btn-tinted">Сдаю</button></form>
+            <form method="post" action="/tools/{{ t.id }}/return-request?back=/tools/staff/{{ u.id }}">
+              <button class="btn btn-sm {{ 'btn-ret-late' if is_late else 'btn-tinted' }}">Сдаю</button></form>
             {% elif ctx.can("tools.manage") %}
             <form method="post" action="/tools/{{ t.id }}/returned?back=/tools/staff/{{ u.id }}"
                   onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')">

@@ -27,10 +27,29 @@
       ("Просят / сдают", T.reqs + T.ready, ("просят: " ~ T.reqs ~ " · готово: " ~ T.ready) if T.reqs and T.ready
         else "готово — не выдано" if T.ready else "ждут кладовщика",
         "red" if T.reqs else "orange" if T.ready else "purple", "/stock/issues?tab=tools"),
+      ("Не сдали после наряда", late|length, "наряд закрыт, инструмент у мастера", "orange" if late else "gray", "/tools#late"),
       ("Проверки", pending|length, "идут сейчас", "gray", "/tools?view=staff#checks")] %}
   <a class="ptile {{ 'zero' if not n }}" href="{{ href }}" style="--tc:{{ color_css(color) }}"><span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
   {% endfor %}
 </div>
+
+{# 24.11.2026 (брат): наряд закрыт / отменён, а общий инструмент у мастера — кто не сдал. Мастеру горит 🔴 «Сдаю» #}
+{% if late %}
+<section class="card compact rim rim-orange tl-late" id="late">
+  <div class="card-h"><span class="headline">Не сдали инструмент после закрытия наряда · {{ late|length }}</span></div>
+  {% for x in late %}{% set t = x.tool %}{% set w = late_people.get(t.holder_id) %}
+  <div class="kv tl-late-row {{ 'tl-late-ret' if x.ret }}" style="align-items:center;gap:10px">
+    <span><a class="mono" href="/tools/{{ t.id }}">{{ t.inv_no }}</a> {{ t.name }}
+      <span class="caption">· <a href="/tools/staff/{{ t.holder_id }}">{{ w.full_name if w else "—" }}</a>
+        · наряд <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> {{ "отменён" if x.wo.status == "cancel" else "закрыт" }}{% if x.wo.closed_at %} {{ x.wo.closed_at.astimezone().strftime("%d.%m") }}{% endif %}</span></span>
+    {% if x.ret %}<span class="chip nowrap" data-s="waiting">сдаёт · ждёт кладовщика</span>
+    {% else %}<span class="chip nowrap" data-s="cancel">не сдал</span>{% endif %}
+    {% if manage %}<form method="post" action="/tools/{{ t.id }}/returned?back=/tools%23late"
+          onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')"><button class="btn btn-sm btn-tinted">Вернул</button></form>{% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 
 <nav class="segmented tl-views" aria-label="Как показать">
   {% for k, v in VIEWS.items() %}<a href="/tools?view={{ k }}" aria-pressed="{{ (view == k)|lower }}">{{ v }}</a>{% endfor %}

@@ -146,7 +146,17 @@ def arrived_parts(db: Session, branch_id, user_id, mode: str, part_ids: bool = F
                     WoPart.id.in_(in_req(or_(IssueRequest.status == "ready",
                                              and_(IssueRequest.status == "issued", IssueRequest.received_at.is_(None))))))
     if part_ids:   # для мигающего края у каждой такой детали в наряде
-        return list(dict.fromkeys(db.scalars(q.with_only_columns(WoPart.id))))
+        ids = list(dict.fromkeys(db.scalars(q.with_only_columns(WoPart.id))))
+        if mode != "ask" and ids:
+            # 24.11.2026 (брат, наряд 27): мигают ВСЕ детали этих запросов на выдачу, и взятые с полки склада —
+            # раньше только приехавшие по закупке (из 10 мигали 4)
+            reqs = select(IssueRequestLine.request_id).where(IssueRequestLine.wo_part_id.in_(ids))
+            ids = list(dict.fromkeys(ids + list(db.scalars(
+                select(IssueRequestLine.wo_part_id).join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id)
+                .where(IssueRequestLine.request_id.in_(reqs), or_(
+                    IssueRequest.status == "ready",
+                    and_(IssueRequest.status == "issued", IssueRequest.received_at.is_(None))))))))
+        return [i for i in ids if i]
     return {wid: n for wid, n in db.execute(q.group_by(WoPart.work_order_id))}
 
 

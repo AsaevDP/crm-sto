@@ -1,0 +1,62 @@
+{# 24.11.2026 (брат): опоздания и пропущенные отметки (services/lateness.py).
+   Свои: 🔴 опоздание → «Принял к сведению» → 🟠 счёт за неделю; ⚠ не отметились — сообщить бухгалтеру или директору.
+   Руководству: 🔴 не пришёл / не отметил уход (админу — ещё опоздание директора, зама) → «Принял к сведению». #}
+{% from "_tiles.html" import tiles with context %}
+{% set me_lt = lt_me or {"new": [], "week": [], "warn": []} %}
+{% if me_lt.new or me_lt.warn or me_lt.week %}
+<section class="lt-wrap" id="late">
+  {{ tiles([
+    {"t": "Опоздание", "n": me_lt.new|length, "c": "red" if me_lt.new else "gray", "s": "прочитать и принять к сведению", "href": "#late"},
+    {"t": "Нет отметки", "n": me_lt.warn|length, "c": "orange" if me_lt.warn else "gray", "s": "сообщите бухгалтеру или директору", "href": "#late"},
+    {"t": "Опозданий за неделю", "n": me_lt.week|length, "c": "orange" if me_lt.week else "gray", "s": "с понедельника"}]) }}
+  <div class="lt-grid">
+    {% for f in me_lt.new %}
+    <div class="card compact rim rim-red lt-card lt-new">
+      <div class="lt-t">⏰ Вы опоздали</div>
+      <div class="subhead">{{ f.text() }}</div>
+      <p class="footnote" style="margin:4px 0 0">Опаздывать нельзя. Рабочий день начинается в {{ f.start.strftime("%H:%M") }}.</p>
+      <form method="post" action="/timesheet/ack">
+        <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+        <input type="hidden" name="kind" value="late"><input type="hidden" name="side" value="self">
+        <button class="btn btn-sm">Принял к сведению, опаздывать больше не буду</button></form>
+    </div>
+    {% endfor %}
+    {% for f in me_lt.warn %}
+    <div class="card compact rim rim-orange lt-card lt-warn">
+      <div class="lt-t"><span class="lt-warn-ico">!</span>{{ "Вы не отметили уход" if f.kind == "no_out" else "Нет отметки прихода" }}</div>
+      <div class="subhead">{{ f.text() }}</div>
+      <p class="footnote" style="margin:4px 0 0">Сообщите бухгалтеру или директору — время {{ "ухода" if f.kind == "no_out" else "прихода" }}
+        впишут в табель вручную. Знак погаснет, когда впишут.</p>
+    </div>
+    {% endfor %}
+    {% if me_lt.week %}
+    <div class="card compact rim rim-orange lt-card">
+      <div class="lt-t">Опозданий на этой неделе: {{ me_lt.week|length }}</div>
+      {% for f in me_lt.week|sort(attribute="day") %}<div class="caption">{{ f.text() }}</div>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% if lt_boss %}
+<section class="lt-wrap" id="boss">
+  {{ tiles([{"t": "Принять к сведению", "n": lt_boss|length, "c": "red", "s": "не пришли, не отметили уход", "href": "#boss"}]) }}
+  <div class="lt-grid">
+    {% for f in lt_boss %}
+    <div class="card compact rim rim-red lt-card lt-boss">
+      <div class="lt-t">{{ lt_kind[f.kind] }} · {{ f.user.full_name }}</div>
+      <div class="caption">{{ f.user.role.name }}</div>
+      <div class="subhead">{{ f.text() }}</div>
+      <form method="post" action="/timesheet/ack" class="btn-row" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+        <input type="hidden" name="kind" value="{{ f.kind }}"><input type="hidden" name="side" value="boss">
+        <input type="hidden" name="back" value="/timesheet#boss">
+        <button class="btn btn-sm">✓ Принял к сведению</button>
+        {% if f.kind != "late" and ctx.can("attendance.edit") %}
+        <a class="btn btn-sm btn-gray" href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}&fday={{ f.day.isoformat() }}#manual">Вписать время</a>{% endif %}
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

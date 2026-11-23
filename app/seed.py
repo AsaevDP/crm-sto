@@ -4,6 +4,8 @@
 Запускается автоматически при старте, если база пустая.
 Справочник прав синхронизируется при каждом старте.
 """
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -66,7 +68,11 @@ GRANTS_ONCE = [("grant.manager.by_partsman", "manager", "purchases.by_partsman")
                # 20.11.2026 (брат): химию для мойки заказывает запчастист — у него «Мойка» (химия и закупки)
                ("grant.partsman.wash_view", "partsman", "wash.view"),
                ("grant.partsman.wash_buy", "partsman", "wash.buy"),
-               ("grant.director.schedule_manage", "director", "schedule.manage")]   # 22.11.2026 (брат): записывает клиентов
+               ("grant.director.schedule_manage", "director", "schedule.manage"),   # 22.11.2026 (брат): записывает клиентов
+               # 24.11.2026 (брат): время ухода / прихода вручную вписывают бухгалтер, директор, зам (раньше только админ)
+               ("grant.director.att_edit", "director", "attendance.edit"),
+               ("grant.deputy.att_edit", "deputy", "attendance.edit"),
+               ("grant.accountant.att_edit", "accountant", "attendance.edit")]
 # Совсем НОВОЕ право (например, site.orders 22.11.2026) сюда не писать: его выдаёт sync_permissions ролям по умолчанию
 # (иначе при запуске на рабочей базе право добавляется дважды и CRM не стартует).
 # Право, которое у роли по умолчанию было, а теперь его быть не должно: снимаем один раз (вернуть руками можно)
@@ -104,6 +110,11 @@ def _grant_once(db: Session):
             current_branch_id.set(br.id)
             st.put(db, br.id, "schedule", {"days_off": [5, 6]})
             st.put(db, br.id, "grants_once", {"days_off.sat_sun": True})
+    # 24.11.2026 (брат): опоздания и пропущенные отметки считаем с первого запуска (старую историю не трогаем)
+    for br in db.scalars(select(Branch)):
+        if not st.get(db, br.id, "attendance").get("alerts_from"):
+            current_branch_id.set(br.id)
+            st.put(db, br.id, "attendance", {"alerts_from": date.today().isoformat()})
     db.flush()
 
 

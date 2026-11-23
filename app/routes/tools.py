@@ -179,7 +179,12 @@ def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = "", cat: 
     shelves = [(x["s"], f'{c["c"].name} · {x["s"].name}') for c in cabs for x in c["shelves"]]
     spares = sorted([t for t in all_rows if t.is_spare], key=lambda t: (t.holder_id is not None, t.name))
     no_shelf = [t for t in all_rows if not t.shelf_id and not t.is_personal and t.status not in ("lost",)]
+    # 24.11.2026 (брат): «Не сдали после закрытия наряда» — менеджеру только по своим нарядам
+    sees_all = ctx.can("tools.manage", "orders.grant_access", "staff.dismiss") or ctx.user.role.code in ("admin", "director", "deputy")
+    late = svc.after_close(db, ctx.branch.id, manager_id=None if sees_all else ctx.user.id)
+    late_people = {u.id: u for u in db.scalars(select(User).where(User.id.in_([x["tool"].holder_id for x in late] or [None])))}
     return ctx.render("tools/list.html", title="Инструмент", rows=rows, q=q, holder=holder, cat=cat, staff=staff,
+                      late=late, late_people=late_people,
                       people=people, summary=summary, pending=pending, TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS,
                       CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES, cat_counts=cat_counts,
                       n_all=len(all_rows), n_personal=cat_counts.get("personal", 0), wo_nums={**wo_nums, **ov["wo_nums"]},
@@ -456,7 +461,10 @@ def staff_tools(uid: str, ctx: Ctx = Depends(get_ctx)):
     unrecv = {r.tool_id: r for r in ctx.db.scalars(select(ToolRequest).where(
         ToolRequest.tool_id.in_(ids), ToolRequest.kind == "issue", ToolRequest.status == "done",
         ToolRequest.received_at.is_(None)))}
+    # 24.11.2026 (брат): общий инструмент, наряд которого уже закрыт / отменён — уведомление и красная «Сдаю»
+    late_ids = {t.id for t in temp if t.work_order_id in orders and orders[t.work_order_id].status in svc.CLOSED_WO}
     return ctx.render("tools/staff.html", returning=returning, unrecv=unrecv, title=f"Инструмент: {u.full_name}", u=u, tools=tools, checks=checks,
+                      late_ids=late_ids,
                       personal=[t for t in tools if t.is_personal], temp=temp, orders=orders, vehicles=vehicles,
                       work_names=work_names, total=sum((t.cost for t in tools), Decimal(0)), TOOL_STATUS=TOOL_STATUS,
                       CHECK_KINDS=CHECK_KINDS, CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES,

@@ -6,6 +6,7 @@
     <h1 class="large-title">{{ "Мой табель" if u.id == user.id else u.full_name }}</h1></div>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
+{% include "attendance/_alerts.html" %}
 <div class="stats">
   <div class="stat"><span class="footnote">Дней на работе</span><b>{{ grid.values()|selectattr("minutes")|list|length }}</b></div>
   <div class="stat"><span class="footnote">Часов за месяц</span><b>{{ (total / 60)|round(1)|num }}</b></div>
@@ -18,12 +19,12 @@
       <div class="ts-day">
         <div class="kv"><span><b>{{ "%02d"|format(d) }}.{{ "%02d"|format(mo) }}</b> · {{ ["пн","вт","ср","чт","пт","сб","вс"][date(y, mo, d).weekday()] }}
           · {{ day.first_in.strftime("%H:%M") if day.first_in else "—" }}–{{ day.last_out.strftime("%H:%M") if day.last_out else ("сейчас" if day.open else "—") }}</span>
-          <b>{{ day.hours|num }} ч{% if day.open and not (date.today() == date(y, mo, d)) %} <span class="chip" data-s="cancel">нет ухода</span>{% endif %}</b></div>
+          <b>{% if d in late_days %}<span class="chip" data-s="cancel">опоздание</span> {% endif %}{{ day.hours|num }} ч{% if day.open and not (date.today() == date(y, mo, d)) %} <span class="chip" data-s="cancel">нет ухода</span>{% endif %}</b></div>
         {% if can_edit %}
         <div class="ts-events">{% for e in day.events %}
           <form method="post" action="/timesheet/events/{{ e.id }}/delete" class="ts-ev"><span class="tag">{{ "↘ пришёл" if e.direction == "in" else "↗ ушёл" }} {{ local(e).strftime("%H:%M") }}</span>
             <span class="caption">{{ "вручную" if e.method == "manual" else "карта" }}{% if e.comment %}: {{ e.comment }}{% endif %}</span>
-            <button class="btn btn-plain btn-sm" style="color:var(--red)" onclick="return confirm('Удалить отметку?')">×</button></form>
+            {% if can_delete %}<button class="btn btn-plain btn-sm" style="color:var(--red)" onclick="return confirm('Удалить отметку?')">×</button>{% endif %}</form>
         {% endfor %}</div>
         {% endif %}
       </div>
@@ -33,10 +34,10 @@
   </section>
   <section class="ov-col on">
     {% if can_edit %}
-    <form class="card compact form dense" method="post" action="/timesheet/events">
-      <div class="card-h"><span class="headline">Ручная отметка</span><span class="tag">только главный админ</span></div>
+    <form class="card compact form dense" method="post" action="/timesheet/events" id="manual">
+      <div class="card-h"><span class="headline">Ручная отметка</span><span class="tag">бухгалтер, директор, зам, админ</span></div>
       <input type="hidden" name="user_id" value="{{ u.id }}">
-      <div class="form-row three"><input class="field" type="date" name="day" value="{{ date.today() }}" required><input class="field" type="time" name="at" value="18:00" required>
+      <div class="form-row three"><input class="field" type="date" name="day" value="{{ (request.query_params.get('fday') if request is defined else '') or date.today() }}" required><input class="field" type="time" name="at" value="18:00" required>
         <select class="field" name="direction"><option value="in">Пришёл</option><option value="out" selected>Ушёл</option></select></div>
       <input class="field" name="comment" placeholder="Причина: забыл карту, не отметил уход… *" required>
       <button class="btn btn-sm">Добавить отметку</button>

@@ -188,7 +188,8 @@ def test_manager_picks_up_tool_for_master(client):
 
     login(client, "irina", "irina123")
     b = client.get("/api/notify").json()["badges"]
-    assert any(x["c"] == "orange" and "инструмент" in x["t"] for x in b.get("/ready", []))
+    # 24.11.2026 (брат): ждёт кладовщика — 🟣 для сведения (было 🟠)
+    assert any(x["c"] == "purple" and x["info"] and "инструмент" in x["t"] for x in b.get("/ready", []))
     assert not b.get("/tools")   # сиреневую «для сведения» убрали
     page = client.get("/ready").text
     assert "Съёмник (менеджер видит)" in page and f"/tool-requests/{rid}/pickup" not in page
@@ -207,7 +208,7 @@ def test_manager_picks_up_tool_for_master(client):
 
     login(client, "irina", "irina123")
     b = client.get("/api/notify").json()["badges"]
-    assert any(x["c"] == "orange" and "забрать у окошка" in x["t"] for x in b.get("/ready", []))   # 23.11.2026: 🟠 (было 🟢)
+    assert any(x["c"] == "red" and "забрать у окошка" in x["t"] for x in b.get("/ready", []))   # 24.11.2026: 🔴 (было 🟠, 🟢)
     assert not b.get("/tools")
     page = client.get("/ready").text
     assert f"/tool-requests/{rid}/pickup" in page and "Отнести мастеру" in page

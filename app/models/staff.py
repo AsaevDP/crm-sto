@@ -105,3 +105,16 @@ class AttendanceEvent(Entity):
     at: Mapped[datetime] = mapped_column(UTCDateTime(), default=now)
     method: Mapped[str] = mapped_column(String(10), default="card")  # card / manual
     comment: Mapped[str] = mapped_column(Text, default="")
+
+
+class AttendanceAck(Entity):
+    """24.11.2026 (брат): «Принял к сведению» по табелю. Опоздание / прогул / нет отметки ухода считаются из отметок
+    на лету (services/lateness.py), здесь — только кто и что уже увидел.
+    side: self — сам сотрудник (опоздание), boss — руководство (бухгалтер, директор, зам, админ: прогул, нет ухода,
+    опоздание директора или зама — только админ). Достаточно одного руководителя — у остальных тоже гаснет."""
+    __tablename__ = "attendance_acks"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)   # о ком
+    day: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(10))       # late / absent / no_out
+    side: Mapped[str] = mapped_column(String(10))       # self / boss
+    acked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
