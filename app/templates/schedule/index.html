@@ -78,16 +78,22 @@
     {% if seen_n > 1 %}<form method="post" action="/schedule/all/seen"><input type="hidden" name="back" value="{{ here }}">
       <button class="btn btn-sm">✓ Видел все ({{ seen_n }})</button></form>{% endif %}</div>
   {% set rows = [] %}
+  {# 23.11.2026 (брат): запись на сегодня, которую мастер ещё не видел, — одной оранжевой строкой «Ждём сегодня · новая»
+     с «✓ Видел» (раньше показывалась только сиреневой «Новая» в конце списка, и оранжевую цифру было не найти).
+     Порядок: не приехал → приехал → ждём сегодня → новые на будущее. #}
+  {% set wait_ids = sig.wait|map(attribute="id")|list %}
   {% for kind, lst, c, word in [("noshow", sig.noshow, "red", "Не приехал"), ("arrived", sig.arrived, "green", "Приехал"),
-                                 ("new", sig.new, "purple", "Новая"), ("wait", sig.wait, "orange", "Ждём сегодня")] %}
-  {% for a in lst if not (kind == "wait" and a.id in new_ids) %}{% set _ = rows.append((kind, a, c, word)) %}{% endfor %}{% endfor %}
+                                 ("wait", sig.wait, "orange", "Ждём сегодня"), ("new", sig.new, "purple", "Новая")] %}
+  {% for a in lst if not (kind == "new" and a.id in wait_ids) %}
+  {% if kind == "wait" and a.id in new_ids %}{% set _ = rows.append(("wait new", a, c, "Ждём сегодня · новая")) %}
+  {% else %}{% set _ = rows.append((kind, a, c, word)) %}{% endif %}{% endfor %}{% endfor %}
   {% macro sig_row(r) %}{% set kind, a, c, word = r %}{% set s = local(a.start_at) %}
   <div class="zp-sig-row" data-k="{{ kind }}" style="--sc:var(--{{ c }})">
     <span class="zp-sig-w">{{ word }}</span>
     <span class="zp-sig-t"><b class="nowrap">{{ WEEKDAYS[s.weekday()] }} {{ s.strftime("%d.%m %H:%M") }}</b>
       <span>{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}{% if a.car or a.plate %} · {{ a.car }}{% if a.plate %} <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}{% endif %}</span>
       {% if a.work %}<span class="caption">{{ a.work }}</span>{% endif %}</span>
-    {% if kind in ("new", "noshow") %}
+    {% if kind in ("new", "noshow", "wait new") %}
     <form method="post" action="/schedule/{{ a.id }}/seen"><input type="hidden" name="back" value="{{ here }}"><button class="btn btn-sm btn-gray">✓ Видел</button></form>
     {% elif kind == "arrived" %}{% set wo = sig_orders.get(a.work_order_id) %}
     <a class="btn btn-sm btn-gray" href="/orders/{{ a.work_order_id }}">Открыть наряд{% if wo %} {{ wo.number[-6:] }}{% endif %}</a>

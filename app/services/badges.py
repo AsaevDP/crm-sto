@@ -573,9 +573,9 @@ def compute(ctx) -> dict:
         _add(out, "/schedule", "red", len(sg["noshow"]), "клиент не приехал — отметьте «Видел»", "/schedule#zp-sig",
              sel=[("/schedule", '.zp-sig-row[data-k="noshow"]')], tile=['Не приехали'])
         _add(out, "/schedule", "orange", len(sg["wait"]), "сегодня ждём клиентов", "/schedule#zp-sig",
-             sel=[("/schedule", '.zp-sig-row[data-k="wait"]')], tile=['Ждём'])
+             sel=[("/schedule", '.zp-sig-row[data-k~="wait"]')], tile=['Ждём'])
         _add(out, "/schedule", "purple", len(sg["new"]), "к вам записали — отметьте «Видел»", "/schedule#zp-sig",
-             sel=[("/schedule", '.zp-sig-row[data-k="new"]')], tile=['Новые записи'])
+             sel=[("/schedule", '.zp-sig-row[data-k~="new"]')], tile=['Новые записи'])
         _add(out, "/schedule", "green", len(sg["arrived"]), "клиент приехал — начните работу", "/schedule#zp-sig",
              sel=[("/schedule", '.zp-sig-row[data-k="arrived"]')], tile=['Приехали'])
     return _compact(out)
