@@ -38,7 +38,8 @@
 </div>
 {% endif %}
 
-<div class="pult-tiles {{ 'pu-tiles' if mode == 'mine' else 'st-mini' }}">
+{# 23.11.2026 (брат): этапы — такие же плитки, как люди сверху (раньше маленькие «таблетки» st-mini) #}
+<div class="pult-tiles vs-tiles {{ 'pu-tiles' if mode == 'mine' }}">
   {% for k, (title_, color, sub) in TABS.items() %}
   <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="{{ base }}?st={{ k }}{{ uq }}" style="--tc:{{ color_css(color) }}">
     <span class="ptile-t">{{ title_ }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>

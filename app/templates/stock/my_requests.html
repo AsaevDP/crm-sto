@@ -60,7 +60,8 @@
 {% block content %}
 <header class="page-head">
   <div><h1 class="large-title">Мои запросы на выдачу</h1></div>
-  {# плитки — те же цвета, что цифра в меню; нажал — прокрутка к своей колонке #}
+</header>
+  {# 23.11.2026 (брат): плитки — слева под заголовком, как во всей CRM. Плитки — те же цвета, что цифра в меню; нажал — прокрутка к своей колонке #}
   <nav class="pult-tiles iss-tiles mr-tiles" aria-label="Что просил">
     {% for c in cols %}{% set n = c.n_take + c.n_wait %}
     <a class="ptile {{ 'zero' if not n }}" href="#col-{{ c.key }}" style="--tc:{{ color_css(c.color) }}">
@@ -69,7 +70,6 @@
       <span class="ptile-s">{{ bits|join(" · ") if bits else "ничего не ждёт" }}</span></a>
     {% endfor %}
   </nav>
-</header>
 {% if cols|length > 1 %}
 <p class="footnote mr-sub">Кладовщик собрал — «готово у окошка»: подойдите и заберите. Выдали — нажмите «✓ Получил»: без этого «Начал»
   не нажимается. Попросить — в наряде («Запросить выдачу», «Попросить инструмент») или «Склад» → деталь → «Попросить под наряд».</p>

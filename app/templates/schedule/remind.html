@@ -22,11 +22,12 @@
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/schedule">{{ icon("back") }}Запись</a><h1 class="large-title">Напомнить о записи</h1></div>
+</header>
+  {# 23.11.2026 (брат): плитки — слева под заголовком, как во всей CRM #}
   <nav class="pult-tiles iss-tiles" aria-label="Кому звонить">
     <a class="ptile {{ 'zero' if not r.late }}" href="#late" style="--tc:{{ color_css('red' if r.late else 'gray') }}"><span class="ptile-t">Не приехали</span><b>{{ r.late|length }}</b><span class="ptile-s">сегодня, время прошло</span></a>
     <a class="ptile {{ 'zero' if not r.call }}" href="#call" style="--tc:{{ color_css('orange' if r.call else 'gray') }}"><span class="ptile-t">Завтра</span><b>{{ r.call|length }}</b><span class="ptile-s">позвонить сегодня</span></a>
   </nav>
-</header>
 <div class="rd-stack">
   <section class="rd-sec" id="late">
     <div class="group-title">Сегодня не приехали — позвоните, едет ли · {{ r.late|length }}</div>
