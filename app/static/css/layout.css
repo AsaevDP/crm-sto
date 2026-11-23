@@ -1628,7 +1628,11 @@ a.stat:hover { background: color-mix(in srgb, var(--tc) 17%, var(--surface)); }
 /* Плитки-фильтры (макрос tiles в _tiles.html): нажатая — с обводкой */
 .ptile.on { outline: 2px solid var(--tc); outline-offset: 1px; }
 .vs-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-@media (min-width: 1200px) { .ord-tiles { grid-template-columns: repeat(8, minmax(0, 1fr)); } }/* Шапка раздела: заголовок, поиск, кнопки — в одну линию, на телефоне переносится */
+@media (min-width: 1200px) { .ord-tiles { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+/* 23.11.2026 (брат): плитки «Нарядов» в два ряда; второй ряд — плитки того же размера, прижаты влево */
+.ord-rows { display: grid; gap: 10px; }
+.ord-tiles-2 { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+@media (min-width: 1200px) { .ord-tiles-2 { grid-template-columns: repeat(8, minmax(0, 1fr)); } }/* Шапка раздела: заголовок, поиск, кнопки — в одну линию, на телефоне переносится */
 .page-head { gap: 12px 16px; }
 .vs-search { flex: 1 1 320px; max-width: 520px; }
 .vs-search .field.search, .vs-search .field { width: 100%; flex: 1; }
