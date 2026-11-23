@@ -41,7 +41,7 @@
     {% else %}<div class="card compact"><p class="footnote" style="margin:0">Подготовленного нет</p></div>{% endfor %}
     <div class="group-title">Недавно · 7 дней</div>
     <div class="card compact">
-      {% for d in chem_done %}<div class="kv"><span>{{ d.r.decided_at.astimezone().strftime("%d.%m %H:%M") if d.r.decided_at else "" }} · {{ d.who.short_name if d.who else "" }} · {{ d.c.name if d.c else "" }}{% if d.r.status == "declined" %} <span class="caption">— отказ</span>{% endif %}</span>
+      {% for d in chem_done %}<div class="kv"><span>{{ d.r.decided_at.astimezone().strftime("%d.%m %H:%M") if d.r.decided_at else "" }} · {{ d.who.short_name if d.who else "" }} · {{ d.c.name if d.c else "" }}{% if d.r.status == "declined" %} <span class="caption">— отказ</span>{% elif d.r.status == "issued" and not d.r.received_at %} <span class="caption">· ждёт подтверждения</span>{% endif %}</span>
         <b class="nowrap">{{ d.r.issued_qty|num if d.r.status == "issued" else "—" }}</b></div>
       {% else %}<p class="footnote" style="margin:0">Пока пусто.</p>{% endfor %}
     </div>

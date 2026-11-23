@@ -2152,13 +2152,15 @@ def my_requests_data(ctx: Ctx) -> dict:
             wo = db.get(WorkOrder, m.work_order_id)
             out["asks"].append({"m": m, "wo": wo, "v": db.get(Vehicle, wo.vehicle_id) if wo else None,
                                 "c": db.get(PartCatalog, m.catalog_id) if m.catalog_id else None})
-        from ..models import Tool
-        for r in db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id, ToolRequest.user_id == me)
-                            .order_by(ToolRequest.created_at.desc()).limit(60)):
-            if r.status != "new" and (r.done_at or r.updated_at) < since:
-                continue
-            wo = db.get(WorkOrder, r.work_order_id) if r.work_order_id else None
-            out["tools"].append({"r": r, "tool": db.get(Tool, r.tool_id), "wo": wo})
+    # инструмент — у всех мастеров, и у мойщика / детейлера (23.11.2026: полировальная машинка, круги)
+    from ..models import Tool
+    for r in db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id, ToolRequest.user_id == me)
+                        .order_by(ToolRequest.created_at.desc()).limit(60)):
+        unrecv = r.kind == "issue" and r.status == "done" and not r.received_at
+        if r.status != "new" and not unrecv and (r.done_at or r.updated_at) < since:
+            continue
+        wo = db.get(WorkOrder, r.work_order_id) if r.work_order_id else None
+        out["tools"].append({"r": r, "tool": db.get(Tool, r.tool_id), "wo": wo})
     if ctx.can("chem.ask"):
         from ..services import chem as csvc
         out["chem"] = csvc.requests(db, ctx.branch.id, who=me, days=14)
@@ -2187,6 +2189,7 @@ def my_requests_columns(ctx: Ctx, data: dict) -> tuple[list, list]:
     if ctx.can("stock.request_issue"):
         cols["parts"] = {"key": "parts", "title": "Запчасти", "hint": "новые — у окошка склада"}
         cols["razbor"] = {"key": "razbor", "title": "Б/у · разбор", "hint": "у окошка разбора"}
+    if ctx.can("stock.request_issue") or data["tools"]:   # 23.11.2026: мойщику — когда ему выдали инструмент
         cols["tools"] = {"key": "tools", "title": "Инструмент", "hint": "общий, из шкафа"}
     if ctx.can("chem.ask"):
         cols["chem"] = {"key": "chem", "title": "Химия", "hint": "для мойки"}
@@ -2199,6 +2202,7 @@ def my_requests_columns(ctx: Ctx, data: dict) -> tuple[list, list]:
             continue
         if r.id in data["recv_ok"] or r.status == "ready":
             col["take"].append(("part", x))
+            col["n_recv"] += r.id in data["recv_ok"]
         elif r.status == "new":
             col["wait"].append(("part", x))
         else:
@@ -2228,7 +2232,10 @@ def my_requests_columns(ctx: Ctx, data: dict) -> tuple[list, list]:
         r = x["r"]
         if "chem" not in cols:
             break
-        if r.status == "ready":
+        if r.status == "issued" and not r.received_at:   # 23.11.2026: выдали — «✓ Получил»
+            cols["chem"]["take"].append(("chem", x))
+            cols["chem"]["n_recv"] += 1
+        elif r.status == "ready":
             cols["chem"]["take"].append(("chem", x))
         elif r.status == "new":
             cols["chem"]["wait"].append(("chem", x))
@@ -2236,7 +2243,8 @@ def my_requests_columns(ctx: Ctx, data: dict) -> tuple[list, list]:
             hist.append(("chem", x, r.decided_at or r.updated_at))
     for c in cols.values():
         c["n_take"], c["n_wait"] = len(c["take"]), len(c["wait"]) + len(c["ask"])
-        c["color"] = "green" if c["n_take"] else "orange" if c["n_wait"] else "gray"
+        # 23.11.2026: «подтвердить получение» — красная плитка (как цифра)
+        c["color"] = "red" if c["n_recv"] else "green" if c["n_take"] else "orange" if c["n_wait"] else "gray"
     hist.sort(key=lambda h: h[2], reverse=True)
     return list(cols.values()), hist[:40]
 

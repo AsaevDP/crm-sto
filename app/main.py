@@ -43,6 +43,8 @@ async def lifespan(_app):
         split_mixed_open(db)   # 20.11.2026: открытые запросы, где вместе новые и б/у, — на две зоны
         from .services import receipt as receipt_svc
         receipt_svc.fill_old(db)  # 20.11.2026: выданное раньше — «получено» (один раз), чтобы «Начал» не встал
+        from .services import chem as chem_svc
+        chem_svc.fill_old(db)     # 23.11.2026: химия, выданная раньше, — «получено» (один раз)
         from sqlalchemy import select
         from .models import Branch
         from .services import brands

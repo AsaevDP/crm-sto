@@ -146,10 +146,50 @@ def issue(db: Session, r: ChemRequest, user: User, qty: Decimal | None = None) -
                                                    Notification.read_at.is_(None),
                                                    Notification.title.endswith(c.name if c else ""))):
         n.read_at = now()   # выдали — «готово, подойдите» больше не нужно
-    if who and not was_ready:   # выдали сразу (человек стоял рядом) — сообщение для истории
-        nsvc.send(db, [who.id], "chem_ok", f"Химия выдана: {c.name if c else ''}", f"{qty.normalize():f} шт",
+    if who:   # 23.11.2026 (брат): выдали — подтвердите «Получил» (горит, пока не нажал)
+        nsvc.send(db, [who.id], "chem_ok", f"Химия выдана — подтвердите «Получил»: {c.name if c else ''}",
+                  f"{qty.normalize():f} шт" + (" · было готово у окошка" if was_ready else ""),
                   "/my-requests?tab=chem", skip=user.id)
     return ""
+
+
+def receive(db: Session, r: ChemRequest, user: User) -> str:
+    """23.11.2026 (брат): «✓ Получил» — химия у того, кто просил. Ошибка или ''."""
+    if r.status != "issued" or r.received_at:
+        return "Уже подтверждено"
+    if r.created_by != user.id and user.role.code != "admin":
+        return "Подтверждает тот, кто просил химию"
+    r.received_at, r.received_by = now(), user.id
+    from ..models import Notification
+    c = db.get(PartCatalog, r.catalog_id)
+    for n in db.scalars(select(Notification).where(Notification.user_id == r.created_by,
+                                                   Notification.kind.in_(("chem_ok", "chem_issued")),
+                                                   Notification.read_at.is_(None),
+                                                   Notification.title.endswith(c.name if c else ""))):
+        n.read_at = now()
+    return ""
+
+
+def unreceived_for(db: Session, branch_id, user_id) -> list[ChemRequest]:
+    """Выданная химия, которую человек ещё не подтвердил."""
+    return db.scalars(select(ChemRequest).where(ChemRequest.branch_id == branch_id, ChemRequest.created_by == user_id,
+                                                ChemRequest.status == "issued", ChemRequest.received_at.is_(None))).all()
+
+
+def fill_old(db: Session):
+    """Один раз (23.11.2026): химия, выданная раньше, — «получено», чтобы у мойщиков не загорелись старые выдачи."""
+    from ..db import current_branch_id
+    from ..models import Branch
+    from . import settings as st
+    for br in db.scalars(select(Branch)):
+        if st.get(db, br.id, "grants_once").get("chem.fill_old"):
+            continue
+        current_branch_id.set(br.id)
+        for r in db.scalars(select(ChemRequest).where(ChemRequest.branch_id == br.id, ChemRequest.status == "issued",
+                                                      ChemRequest.received_at.is_(None))):
+            r.received_at, r.received_by = r.decided_at or r.updated_at, r.created_by
+        st.put(db, br.id, "grants_once", {"chem.fill_old": True})
+    db.flush()
 
 
 def cancel(db: Session, r: ChemRequest):

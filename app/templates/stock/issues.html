@@ -85,7 +85,7 @@
     <div class="card compact">
       {% for x in done %}
       {# 21.11.2026 (брат): дата и время — перед номером наряда (справа уезжали за рамку) #}
-      <div class="kv"><span><b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b> · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}</span></div>
+      <div class="kv"><span><b class="nowrap">{{ (x.r.issued_at or x.r.updated_at).astimezone().strftime("%d.%m %H:%M") }}</b> · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}{% if x.r.status == "issued" and not x.r.received_at %} <span class="caption">· ждёт подтверждения мастера</span>{% endif %}</span></div>
       {% else %}<p class="footnote">Пока ничего</p>{% endfor %}
     </div>
   </section>

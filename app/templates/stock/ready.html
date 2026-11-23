@@ -99,10 +99,10 @@
       {% if d.kind == "tool" %}
       {# 21.11.2026 (брат): дата и время — перед номером наряда (справа уезжали за рамку) #}
       <div class="rd-row"><span class="rd-what"><b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b> · 🔧 {{ x.tool.name if x.tool else "" }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number[-6:] }}</a>{% endif %}
-        <span class="caption">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}</span></span></div>
+        <span class="caption">у {{ x.who.full_name if x.who else "" }}{% if x.by %} · выдал {{ x.by.full_name }}{% endif %}{% if x.r.kind == "issue" and not x.r.received_at %} · ждёт подтверждения мастера{% endif %}</span></span></div>
       {% else %}
       <div class="rd-row"><span class="rd-what"><b class="nowrap">{{ d.at.astimezone().strftime("%d.%m %H:%M") }}</b> · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> · {{ x.lines|map(attribute="name")|join(", ") }}
-        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption">выдано · {{ ib.full_name }}</span>{% endif %}</span></div>
+        {% set ib = people.get(x.r.issued_by) %}{% if ib %}<span class="caption">выдано · {{ ib.full_name }}{% if not x.r.received_at %} · ждёт подтверждения мастера{% endif %}</span>{% endif %}</span></div>
       {% endif %}
       {% else %}<p class="footnote" style="margin:0">Пока ничего</p>{% endfor %}
     </div>

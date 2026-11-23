@@ -385,6 +385,15 @@ async def tool_edit(tid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
                  wo=None if t.is_personal else wo, work=None if t.is_personal else work)
         if was_spare:   # запасной выдали взамен сломанного/утерянного — теперь это личный инструмент слесаря
             t.category = "personal"
+        if u and u.id != ctx.user.id:
+            # 23.11.2026 (брат): выдали из карточки (полировальная машинка мойщику и т. п.) — человек подтверждает
+            # «✓ Получил», как при выдаче по запросу; до этого у него красная цифра
+            from ..db import now as _now
+            from ..models import ToolRequest
+            ctx.db.add(ToolRequest(tool_id=t.id, user_id=u.id, kind="issue", status="done", done_by=ctx.user.id,
+                                   done_at=_now(), work_order_id=None if t.is_personal else (wo.id if wo else None),
+                                   wo_work_id=None if t.is_personal else (work.id if work else None),
+                                   comment="Выдан кладовщиком из карточки инструмента"))
         flash(request, (f"Выдан: {u.full_name}" + (" — теперь это его личный инструмент" if was_spare else ""))
               if u else "Возвращён на склад инструмента")
         ctx.db.commit()

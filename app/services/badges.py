@@ -173,15 +173,23 @@ def compute(ctx) -> dict:
             _add(out, "/orders", "red", len(ids_lead) + len(ids_extra), "диагностика — записать проблемы", "/orders?tab=intake",
                  wo=[*ids_lead, *ids_extra], blk="#problems", rows=["#btn-diag-done", "#btn-diag-mgr", "#btn-add-finding"],
                  tile=['Приём и диагностика'], btn="blue")
-        if role in MASTERS and role not in ("washer", "detailer"):
-            # 🔴 23.11.2026 (брат, наряд 25): выдали запчасти / инструмент под наряд — мастер подтверждает «✓ Получил».
-            # Цифра у «Нарядов», ведёт в наряд к кнопке; пока не подтвердил, «Начал» по его работам серая
+        if role in MASTERS:
+            # 🔴 23.11.2026 (брат, наряд 25): выдали под машину запчасти / инструмент / химию — мастер подтверждает
+            # «✓ Получил». Цифра у «Нарядов», ведёт в наряд к кнопке; пока не подтвердил запчасти, «Начал» серая.
+            # Мойщику / детейлеру «Наряды» — очередь мойки: ведёт туда, машина обведена, кнопка — в его наряде мойки
             from . import receipt as _rc
-            rc_wo = [wo.id for _, wo in _rc.for_master(db, bid, me.id)]
+            from . import chem as _chem
+            washer_ = role in ("washer", "detailer")
+            rc_wo = [] if washer_ else [wo.id for _, wo in _rc.for_master(db, bid, me.id)]
             rc_wo += [r.work_order_id for r in _rc.tools_for_master(db, bid, me.id) if r.work_order_id]
+            rc_wo += [r.work_order_id for r in _chem.unreceived_for(db, bid, me.id) if r.work_order_id]
             rc_wo = list(dict.fromkeys(rc_wo))
-            _add(out, "/orders", "red", len(rc_wo), "Подтвердить получение — выдали запчасти или инструмент",
-                 "/orders?tab=active", wo=rc_wo, blk="#parts", rows=[".btn-recv"], tile=['На СТО'], btn="blue")
+            if washer_:
+                _add(out, "/orders", "red", len(rc_wo), "Подтвердить получение — выдали химию или инструмент для машины",
+                     "/wash/queue", sel=[("/wash/queue", ".wq-card.rcv")])
+            else:
+                _add(out, "/orders", "red", len(rc_wo), "Подтвердить получение — выдали запчасти или инструмент",
+                     "/orders?tab=active", wo=rc_wo, blk="#parts", rows=[".btn-recv"], tile=['На СТО'], btn="blue")
         if ctx.can("orders.approve"):
             # 🔴 23.11.2026 (брат): шаг «Проблемы» — дело менеджера: после приёмки (записать со слов клиента или отправить
             # на диагностику) и когда мастер закончил диагностику, а проблемы «впишет менеджер»
@@ -340,12 +348,16 @@ def compute(ctx) -> dict:
              "инструмент — ждёт кладовщика", "/my-requests?tab=tools", tile=['Ждут кладовщика', 'Инструмент'])
         _add(out, "/my-requests", "orange", db.scalar(cq.where(ChemRequest.status == "new")) or 0,
              "химия — ждёт кладовщика", "/my-requests?tab=chem", tile=['Химия'])
-        # 🟢 20.11.2026 (брат): выдали — подтвердите «✓ Получил» (запчасти: до этого «Начал» не нажимается)
+        # 🔴 23.11.2026 (брат): выдали БЕЗ машины (в запас: полировальная машинка, банка химии на несколько машин) —
+        # «Подтвердить получение» здесь. Выданное под машину — у «Нарядов» (одно дело — один кружок, дублей нет)
         from . import receipt as rsvc
-        _add(out, "/my-requests", "green", len(rsvc.for_master(db, bid, me.id)),
-             "запчасти выданы — подтвердите «Получил»", "/my-requests?tab=parts", tile=['Запчасти', 'Б/у · разбор'])
-        _add(out, "/my-requests", "green", len(rsvc.tools_for_master(db, bid, me.id)),
-             "инструмент выдан — подтвердите «Получил»", "/my-requests?tab=tools", tile=['Инструмент'])
+        from . import chem as _chem
+        t_free = [r for r in rsvc.tools_for_master(db, bid, me.id) if not r.work_order_id]
+        c_free = [r for r in _chem.unreceived_for(db, bid, me.id) if not r.work_order_id]
+        _add(out, "/my-requests", "red", len(t_free), "Подтвердить получение — выдали инструмент", "/my-requests?tab=tools",
+             tile=['Инструмент'], sel=[("/my-requests", "#col-tools .btn-recv")])
+        _add(out, "/my-requests", "red", len(c_free), "Подтвердить получение — выдали химию", "/my-requests?tab=chem",
+             tile=['Химия'], sel=[("/my-requests", "#col-chem .btn-recv")])
 
     # ---------- Запросы на выдачу (кладовщик) ----------
     if ctx.can("stock.issue", "tools.manage", "razbor.issue"):

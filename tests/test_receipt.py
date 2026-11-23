@@ -35,14 +35,16 @@ def _issued_tool(client, name, plate, phone):
 
 
 def _green(client):
-    """Сколько в зелёной цифре у «Моих запросов» (база в тестах общая — сравниваем «до / после»)."""
-    return sum(x["n"] for x in _badges(client, "/my-requests") if x["c"] == "green")
+    """23.11.2026: выданное под наряд — 🔴 «Подтвердить получение» у «Нарядов» (было 🟢 у «Моих запросов»).
+    Сколько нарядов в этой цифре (база в тестах общая — сравниваем «до / после»)."""
+    return sum(g["n"] for x in _badges(client, "/orders") if x["c"] == "red"
+               for g in x.get("go", []) if "Подтвердить получение" in g["t"])
 
 
 def test_master_confirms_tool_and_tiles(client):
     tool, rid, url = _issued_tool(client, "Съёмник (получил)", "КА 2001 КА", "0502001000")
     login(client, "andrey", "andrey123")
-    assert any(x["c"] == "green" and "подтвердите" in x["t"] for x in _badges(client, "/my-requests"))
+    assert any(x["c"] == "red" and "Подтвердить получение" in x["t"] for x in _badges(client, "/orders"))
     before = _green(client)
     page = client.get("/my-requests?tab=tools").text
     assert "ptile" in page and "подтвердить:" in page and f"/tool-requests/{rid}/received" in page

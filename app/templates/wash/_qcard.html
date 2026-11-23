@@ -3,7 +3,10 @@
    19.11.2026: в очереди и машины с ремонта («🔧 с ремонта»); серая — мыть пока нельзя (c.blocked — почему);
    красная строка — мойщик просит поставить машину первой (c.asked). #}
 {% macro qcard(c, mode) -%}
-<div class="card compact wq-card{{ ' wq-blocked' if c.blocked }}{{ ' wq-asked' if c.asked }}" data-st="{{ mode }}" id="q{{ c.o.id }}">
+{% set rcv = rcv_ids is defined and c.o.id in rcv_ids %}
+<div class="card compact wq-card{{ ' wq-blocked' if c.blocked }}{{ ' wq-asked' if c.asked }}{{ ' rcv' if rcv }}" data-st="{{ mode }}" id="q{{ c.o.id }}">
+  {# 23.11.2026 (брат): выдали мне химию / инструмент под эту машину — подтвердить «Получил» (кнопка в наряде мойки) #}
+  {% if rcv %}<a class="chip chip-say" data-s="receipt" href="/orders/{{ c.o.id }}#recv" style="margin-bottom:6px">Подтвердить получение · {{ me.short_name if me is defined else "" }}</a>{% endif %}
   <div class="wq-top">
     {% if mode == "queue" %}<span class="wq-pos" title="Место в очереди">{{ c.pos }}</span>{% endif %}
     <a class="wq-car" href="/orders/{{ c.o.id }}">

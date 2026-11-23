@@ -18,6 +18,14 @@
 </header>
 
 {% set n_done = works|selectattr("status", "equalto", "done")|list|length %}
+{# 23.11.2026 (брат): выдали химию / инструмент под эту машину — подтвердить «Получил» #}
+{% for x in rcv %}
+<div class="wo-now" id="recv" style="--sc:var(--red)">
+  <div class="grow"><b>Подтвердите получение: {{ x.name }}</b><span class="wo-now-t">{{ "Химия" if x.kind == "chem" else "Инструмент" }} выдан{{ "а" if x.kind == "chem" }} под эту машину{% if x.kind == "chem" %} · {{ x.qty|num }} шт{% endif %}.</span></div>
+  <form class="wo-now-acts one-shot" method="post" action="{{ ('/chem/' ~ x.r.id ~ '/received') if x.kind == 'chem' else ('/tool-requests/' ~ x.r.id ~ '/received?back=/orders/' ~ wo.id) }}">
+    {% if x.kind == "chem" %}<input type="hidden" name="back" value="/orders/{{ wo.id }}">{% endif %}<button class="btn btn-recv">✓ Получил</button></form>
+</div>
+{% endfor %}
 {% if handed %}
 <div class="wo-now" style="--sc:var(--red)">
   <div class="grow"><b>Вам передали эту машину</b><span class="wo-now-t">Нажмите «Принял» — красная цифра в меню погаснет.</span></div>

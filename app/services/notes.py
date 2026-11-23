@@ -42,6 +42,9 @@ def is_done(db: Session, n: Notification, user) -> bool:
                                                                          WoPart.status == "reserved"))
     if k == "picked":   # подбор готов — менеджеру согласовать
         return wo is not None and wo.status != "approve"
+    if k == "chem_ok":   # 23.11.2026: химия выдана — пока не нажал «Получил»
+        from . import chem as _chem
+        return not _chem.unreceived_for(db, bid, user.id)
     if k == "diag_to_mgr":   # 23.11.2026: мастер закончил — менеджеру вписать проблемы и «На согласование»
         return wo is not None and wo.status != "diag"
     if k == "new_problem":   # 23.11.2026: новая проблема — пока наряд на согласовании (запчастисту — пока не подобрал)

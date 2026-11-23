@@ -228,6 +228,30 @@ def chem_issue(rid: str, ctx: Ctx = Depends(get_ctx), qty: str = Form("")):
     return _to("/stock/issues?tab=chem")
 
 
+def _my_unreceived_wo(db, bid, me) -> set:
+    """23.11.2026 (брат): машины, под которые мне выдали химию / инструмент, а я не нажал «Получил»."""
+    from ..services import receipt as rsvc
+    ids = {r.work_order_id for r in csvc.unreceived_for(db, bid, me.id) if r.work_order_id}
+    ids |= {r.work_order_id for r in rsvc.tools_for_master(db, bid, me.id) if r.work_order_id}
+    return ids
+
+
+@router.post("/chem/{rid}/received")
+def chem_received(rid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """23.11.2026 (брат): мойщик / детейлер — «✓ Получил» выданную химию."""
+    r = ctx.db.get(ChemRequest, _uuid(rid))
+    if not r or r.branch_id != ctx.branch.id:
+        raise Forbidden()
+    err = csvc.receive(ctx.db, r, ctx.user)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Получение химии подтверждено")
+    return _to(back if back.startswith("/") and not back.startswith("//") else "/my-requests?tab=chem")
+
+
 @router.post("/chem/{rid}/decline")
 def chem_decline(rid: str, ctx: Ctx = Depends(get_ctx), reason: str = Form("")):
     ctx.need("stock.issue")
@@ -434,7 +458,7 @@ def wash_queue(ctx: Ctx = Depends(get_ctx)):
     handed = [db.get(WorkOrder, i) for i in pending_orders(db, bid, me.id)]
     handed_v = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in handed])))} if handed else {}
     return ctx.render("wash/queue.html", title="Мойка · очередь", brd=brd, mine_now=mine_now, nxt=nxt,
-                      handed=handed, handed_v=handed_v, me=me,
+                      handed=handed, handed_v=handed_v, me=me, rcv_ids=_my_unreceived_wo(db, bid, me),
                       # 20.11.2026: в «Следующая» — только мои услуги (мойщику мойка, детейлеру детейлинг)
                       my_works=lambda c: [w for w in c.works if w.status != "done"
                                           and (w in wsvc.own_works(c, me) or w in wsvc.free_works(c, me))],
@@ -592,9 +616,16 @@ def washer_order_view(ctx: Ctx, wo: WorkOrder):
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
     box = db.get(WashBox, wo.wash_box_id) if wo.wash_box_id else None
     c = db.get(Client, wo.client_id)
+    # 23.11.2026 (брат): выдали мне химию / инструмент под эту машину — «✓ Получил» прямо здесь
+    from ..models import Tool, ToolRequest
+    from ..services import receipt as rsvc
+    rcv = [{"kind": "chem", "r": r, "name": (db.get(PartCatalog, r.catalog_id).name if r.catalog_id else "Химия"),
+            "qty": r.issued_qty or r.qty} for r in csvc.unreceived_for(db, ctx.branch.id, me.id) if r.work_order_id == wo.id]
+    rcv += [{"kind": "tool", "r": r, "name": (db.get(Tool, r.tool_id).name if r.tool_id else "Инструмент"), "qty": 1}
+            for r in rsvc.tools_for_master(db, ctx.branch.id, me.id) if r.work_order_id == wo.id]
     return ctx.render("wash/order.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), client=c,
                       works=mine, others=others, photos=photos, pauses=pauses, is_wash=is_wash, take_c=take_c,
-                      qc=qc, start_err=start_err, handed=handed,
+                      qc=qc, start_err=start_err, handed=handed, rcv=rcv,
                       own_ok={w.id for w in mine if osvc.work_owner(wo, w) == me.id and osvc.can_start_work(db, wo, w)
                               and not start_err},
                       people=people, box=box, CLASSES=wsvc.CLASSES, fmt_plate=osvc.fmt_plate, fmt_min=wsvc.fmt_min,

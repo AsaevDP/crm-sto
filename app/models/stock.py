@@ -297,6 +297,9 @@ class ChemRequest(Entity):
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     reason: Mapped[str] = mapped_column(String(200), default="")
+    # 23.11.2026 (брат): выдали — мойщик / детейлер подтверждает «✓ Получил» (работу не блокирует, банка на несколько машин)
+    received_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    received_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class PartLeftover(Entity):
