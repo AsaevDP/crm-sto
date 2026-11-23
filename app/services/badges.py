@@ -211,22 +211,35 @@ def compute(ctx) -> dict:
         _add(out, "/orders", "red", len(handed), "вам передали наряд — нажмите «Принял»",
              "/wash/queue#handed" if washer_ else "/orders?tab=handed",
              wo=[] if washer_ else handed, blk="#ho-accept", tile=[] if washer_ else ['Мне передали'])   # у мойщика плиток нет — блок «Вам передали»
+        # 23.11.2026 (брат): согласование по шагам — Работы (менеджер) → Подбор (запчастист) → Звонок (менеджер).
+        # Кружки загораются по очереди; одновременно — только «впишите работы» (🔴 менеджеру) и «скоро подбор»
+        # (🟠 запчастисту).
+        from .orders import approve_phase
         if ctx.can("orders.approve"):
-            ids_ = ids_status("approve", field=None if see_all else WorkOrder.manager_id)
+            ap = [db.get(WorkOrder, i) for i in ids_status("approve", field=None if see_all else WorkOrder.manager_id)]
+            ids_w = [o.id for o in ap if approve_phase(o) == "works"]
+            ids_c = [o.id for o in ap if approve_phase(o) == "call"]
+            _add(out, "/orders", "red", len(ids_w), "впишите работы и цены — отправьте на подбор", "/orders?tab=approve",
+                 wo=ids_w, blk="#works", rows=["#btn-works-sent"], tile=['Согласование'], btn="blue")
             # 22.11.2026 (брат): красная — дело менеджера, пока не согласует, работа стоит
-            _add(out, "/orders", "red", len(ids_), "согласовать с клиентом", "/orders?tab=approve", wo=ids_,
-                 blk="#problems", rows=["#btn-approve-done"], tile=['Согласование'], btn="blue")
+            _add(out, "/orders", "red", len(ids_c), "подбор готов — звоните клиенту, согласуйте", "/orders?tab=approve",
+                 wo=ids_c, blk="#works", rows=['.work[data-appr="pending"]', "#btn-approve-done"], tile=['Согласование'],
+                 btn="blue")
         if ctx.can("parts.pick") and not ctx.can("orders.approve"):
-            # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»
-            qp = select(WorkOrder.id).where(
-                WorkOrder.branch_id == bid, or_(WorkOrder.status == "picking",
-                                                (WorkOrder.status == "approve") & WorkOrder.picked_at.is_(None)))
+            # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»; 23.11.2026 — после того,
+            # как менеджер записал работы
+            qp = select(WorkOrder).where(WorkOrder.branch_id == bid, WorkOrder.status.in_(("picking", "approve")))
             if not see_all:
                 qp = qp.where(WorkOrder.partsman_id == me.id)
-            ids_ = db.scalars(qp).all()
+            mine = db.scalars(qp).all()
+            ids_ = [o.id for o in mine if o.status == "picking" or approve_phase(o) == "picking"]
+            soon = [o.id for o in mine if o.status == "approve" and approve_phase(o) == "works"]
             # 23.11.2026 (брат): красная — пока не подобрал, менеджер не может звонить клиенту (работа стоит)
             _add(out, "/orders", "red", len(ids_), "подобрать запчасти", "/orders?tab=approve", wo=ids_, blk="#parts",
                  rows=["#btn-picked"], tile=['Согласование'], btn="blue")
+            # 🟠 проблемы записаны, менеджер пишет работы — скоро подбор (подготовиться)
+            _add(out, "/orders", "orange", len(soon), "скоро подбор — менеджер пишет работы", "/orders?tab=approve",
+                 wo=soon, blk="#parts", rows=["#parts-wait-works"], tile=['Согласование'])
         if ctx.can("orders.approve"):
             ids_ = ids_status("ready", field=None if see_all else WorkOrder.manager_id)
             _add(out, "/orders", "green", len(ids_), "готовы к выдаче клиенту", "/orders?tab=ready", wo=ids_, blk="#money",
@@ -469,6 +482,19 @@ def compute(ctx) -> dict:
              sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Опаздывают', 'Приход'])
         _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive?tab=wait",
              info=info_new, sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Ждём', 'Приход'])
+    # 23.11.2026 (брат): кладовщику по нарядам (своя зона склада) — 🟠 «согласовано — подготовить к выдаче» (гаснет, когда
+    # мастер запросил выдачу или выдали) и 🟣 для сведения «отложено со склада под наряд» (гаснет после «Получил» мастера)
+    if ctx.can("stock.issue", "razbor.issue"):
+        from . import keeper_watch as kw
+        zones = kw.zones_for(db, me)
+        prep, held = kw.prepare(db, bid, zones), kw.held(db, bid, zones)
+        # цифра — сколько нарядов (не деталей), как у остальных кружков по нарядам
+        _add(out, "/stock", "orange", len(prep), "согласовано — подготовить к выдаче",
+             "/stock/reserved#prep", alone=True, sel=[("/stock/reserved", '.kv[data-prep="1"]')],
+             tile=['Подготовить к выдаче', 'В резерве'])
+        _add(out, "/stock", "purple", len(held), "отложено со склада под наряд — ждём «Получил» мастера",
+             "/stock/reserved#held", alone=True, info=True, sel=[("/stock/reserved", '.kv[data-held="1"]')],
+             tile=['Отложено под наряды'])
     # 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы, сиреневая цифра у «Склада»
     if ctx.can("stock.keep"):
         from . import keep as ksvc

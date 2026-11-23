@@ -37,25 +37,25 @@ def test_new_problem_masters_keep_working(client):
     assert client.post(f"{url}/works/{w1.id}/state", data={"action": "done"}).status_code in (200, 303)
     assert client.post(f"{url}/works/{w2.id}/state", data={"action": "start"}).status_code in (200, 303)
     page = client.get(url).text
-    assert "Новая проблема — согласуйте с клиентом" in page
+    assert "Новая проблема — менеджер пишет работы" in page   # 23.11.2026: круг заново — сначала работы
     client.post("/logout")
 
-    # Менеджер: «Да» по новому — новую работу мастер начать не может, пока не согласовано
+    # Менеджер пишет работу к новому — мастер начать её не может, пока не согласовано
     login(client, "irina", "irina123")
-    with SessionLocal() as db:
-        from app.models import WoFinding
-        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == _wo(url).id))
-    client.post(f"{url}/findings/{f.id}/approval", data={"value": "yes"})
+    client.post(f"{url}/works", data={"name": "Замена сальника", "pricing": "fixed", "rate": "400", "qty": "1"})
     page = client.get(url).text
-    assert "Согласовал — запчасти не нужны" in page   # старые запчасти не мешают кнопке
+    assert "Работы записаны — запчасти не нужны" in page   # старые запчасти не мешают кнопке
     client.post("/logout")
     login(client, "andrey", "andrey123")
-    new = next(w for w in _works(url) if w.finding_id == f.id)
+    new = next(w for w in _works(url) if w.name == "Замена сальника")
+    assert new.approval == "pending"
     assert client.post(f"{url}/works/{new.id}/state", data={"action": "start"}).status_code == 403
     client.post("/logout")
 
     login(client, "irina", "irina123")
-    client.post(f"{url}/approval-done", data={"no_parts": "1"})
+    client.post(f"{url}/works-sent", data={"no_parts": "1"})
+    client.post(f"{url}/works/{new.id}/approval", data={"value": "yes"}, headers={"x-requested-with": "fetch"})
+    client.post(f"{url}/approval-done")
     assert _wo(url).status == "work"
 
 
@@ -67,13 +67,13 @@ def test_no_partsman_is_not_picked(client):
     client.post(f"{url}/to-approve")
     wo = _wo(url)
     assert wo.status == "approve" and wo.partsman_id is None
+    client.post(f"{url}/works", data={"name": "Ремонт подвески", "pricing": "fixed", "rate": "900", "qty": "1"})
     page = client.get(url).text
     assert "Запчастист не назначен" in page and "Подбор готов →" not in page
-    with SessionLocal() as db:
-        from app.models import WoFinding
-        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == wo.id))
-    client.post(f"{url}/findings/{f.id}/approval", data={"value": "yes"})
+    client.post(f"{url}/works-sent")
+    assert _wo(url).works_sent_at is None    # без запчастиста на подбор не отправить
+    client.post(f"{url}/works-sent", data={"no_parts": "1"})
+    w = _works(url)[0]
+    client.post(f"{url}/works/{w.id}/approval", data={"value": "yes"}, headers={"x-requested-with": "fetch"})
     client.post(f"{url}/approval-done")
-    assert _wo(url).status == "approve"      # без запчастиста и без «запчасти не нужны» — нельзя
-    client.post(f"{url}/approval-done", data={"no_parts": "1"})
     assert _wo(url).status == "work"

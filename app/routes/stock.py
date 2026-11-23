@@ -52,7 +52,9 @@ PICK_STATUSES = ("approve", "picking", "waiting", "instock", "work")   # 13.11.2
 
 
 def _can_pick(ctx: Ctx, wo: WorkOrder) -> bool:
+    # 23.11.2026 (брат): на согласовании подбор — только после «Работы записаны → на подбор» у менеджера
     return (ctx.can("parts.pick") and wo.status in PICK_STATUSES and not wo.awaiting_prepay
+            and not (wo.status == "approve" and not wo.works_sent_at)
             and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
 
 
@@ -1462,8 +1464,22 @@ def stock_reserved(ctx: Ctx = Depends(get_ctx)):
         g["rows"].append({"p": p, "qty": left[(p_id, s_id)], "loc": locs.get(it.location_id, "") if it else ""})
     out = sorted(groups.values(), key=lambda g: osvc.fresh_key(g["o"]), reverse=True)
     from ..models.orders import WO_STATUSES
+    # 23.11.2026 (брат): кладовщику своей зоны — что подготовить к выдаче (согласовано, запроса ещё нет) и что отложено
+    # со склада под наряд (до «Получил» мастера). Выданное, но не подтверждённое — отдельным блоком.
+    from ..services import keeper_watch as kw
+    zones = kw.zones_for(db, ctx.user)
+    prep_map = kw.prepare(db, bid, zones)
+    prep_ids = {p for v in prep_map.values() for p in v}
+    held_map = kw.held(db, bid, zones)
+    held_ids = {p for v in held_map.values() for p in v}
+    given = [p for p in db.scalars(select(WoPart).where(WoPart.id.in_(held_ids), WoPart.status.in_(("issued", "installed"))))] if held_ids else []
+    gorders = {o.id: o for o in db.scalars(select(WorkOrder).where(WorkOrder.id.in_({p.work_order_id for p in given})))} if given else {}
     return ctx.render("stock/reserved.html", title="В резерве", groups=out, STATUSES=WO_STATUSES, fmt_plate=osvc.fmt_plate,
-                      n=sum(len(g["rows"]) for g in out))
+                      n=sum(len(g["rows"]) for g in out), prep_ids=prep_ids, held_ids=held_ids,
+                      n_prep_wo=len(prep_map), n_held_wo=len(held_map),
+                      given=[{"p": p, "o": gorders.get(p.work_order_id), "mech": people.get(gorders[p.work_order_id].mechanic_id)
+                              if p.work_order_id in gorders else None} for p in given],
+                      zones=zones)
 
 
 def _pick_orders(ctx: Ctx) -> list[dict]:

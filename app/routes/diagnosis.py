@@ -147,7 +147,7 @@ def diag_done(order_id: str, ctx: Ctx = Depends(get_ctx), by_manager: str = Form
             return _back(order_id)
         if all_done:
             n = len(ctx.db.scalars(select(WoFinding.id).where(WoFinding.work_order_id == wo.id)).all())
-            svc.finish_diagnosis(ctx.db, wo, n)
+            svc.finish_diagnosis(ctx.db, wo, n, ctx.user)
             flash(ctx.request, "Диагностика отправлена менеджеру на согласование")
         else:
             left = [s["user"].short_name for s in hsvc.diag_state(ctx.db, wo) if not s["done"] and s["user"]]
@@ -194,7 +194,38 @@ def to_approve(order_id: str, ctx: Ctx = Depends(get_ctx)):
     return _back(order_id)
 
 
-# ---------- Согласование ----------
+# ---------- Согласование по шагам (23.11.2026, брат): Работы → Подбор → Звонок ----------
+@router.post("/orders/{order_id}/works-sent")
+def works_sent(order_id: str, ctx: Ctx = Depends(get_ctx), no_parts: str = Form("")):
+    """«Работы записаны → на подбор» (или «— запчасти не нужны»): запчастисту 🔴 «Подберите запчасти» и окошко."""
+    ctx.need("orders.approve")
+    wo = _order(ctx, order_id)
+    err = svc.send_works(ctx.db, wo, ctx.user, no_parts=bool(no_parts))
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Работы записаны — звоните клиенту" if no_parts else "Работы отправлены запчастисту на подбор")
+    return RedirectResponse(f"/orders/{order_id}#{'works' if no_parts else 'parts'}", status_code=303)
+
+
+@router.post("/orders/{order_id}/works/{work_id}/approval")
+def work_approval(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), value: str = Form(...)):
+    """Звонок клиенту: по каждой работе ✓ Да / ✕ Нет (сохраняется сразу)."""
+    ctx.need("orders.approve")
+    wo = _order(ctx, order_id)
+    from ..models import WoWork
+    w = ctx.db.get(WoWork, _uuid(work_id))
+    if (svc.approve_phase(wo) != "call" or not w or w.work_order_id != wo.id or value not in ("yes", "no", "pending")
+            or w not in svc.round_works(ctx.db, wo)):
+        return JSONResponse({"ok": False}, status_code=400)
+    w.approval, w.approved_by, w.approved_at = value, ctx.user.id, now()
+    ctx.db.commit()
+    return {"ok": True}
+
+
+# ---------- Согласование: прежнее «Да / Нет» по проблеме (до 23.11.2026) — оставлено для старых ссылок ----------
 @router.post("/orders/{order_id}/findings/{finding_id}/approval")
 def finding_approval(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx), value: str = Form(...)):
     ctx.need("orders.approve")

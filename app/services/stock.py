@@ -772,6 +772,8 @@ def mark_picked(db: Session, wo: WorkOrder, user) -> str:
     """13.11.2026 (брат): запчастист закончил подбор, пока менеджер согласует — «Подбор завершён» ничего не заказывает,
     только отмечает и пишет менеджеру: можно звонить клиенту. Без цены у позиции — нельзя. Возвращает ошибку или ''."""
     from ..db import now
+    if not wo.works_sent_at:   # 23.11.2026 (брат): подбор — после того, как менеджер записал работы
+        return "Менеджер ещё не записал работы — подбор после «Работы записаны → на подбор»"
     err = price_error(db, wo)
     if err:
         return err
@@ -786,9 +788,11 @@ def mark_picked(db: Session, wo: WorkOrder, user) -> str:
     from . import notify
     n = db.scalar(select(func.count()).select_from(WoPart).where(WoPart.work_order_id == wo.id,
                                                                  WoPart.status.notin_(("returned", "declined", "archived"))))
-    notify.send(db, [wo.manager_id], "picked", f"Подбор готов — согласуйте с клиентом · {wo.number}",
-                f"{notify.car(db, wo)} · запчастей: {n or 0} · подобрал {user.short_name}", f"/orders/{wo.id}#parts", wo,
+    notify.send(db, [wo.manager_id], "picked", f"Подбор готов — звоните клиенту, согласуйте · {wo.number}",
+                f"{notify.car(db, wo)} · запчастей: {n or 0} · подобрал {user.short_name}", f"/orders/{wo.id}#works", wo,
                 skip=user.id)
+    from . import keeper_watch   # 23.11.2026 (брат): кладовщику для сведения — что отложено со склада под наряд
+    keeper_watch.notify_held(db, wo)
     return ""
 
 

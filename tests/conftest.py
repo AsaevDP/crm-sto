@@ -70,13 +70,38 @@ def approve_razbor():
         db.commit()
 
 
+def send_works(c, url, as_user="irina"):
+    """23.11.2026 (брат): шаг «Работы» — менеджер жмёт «Работы записаны → на подбор» (если ещё не нажал)."""
+    c.post("/logout")
+    login(c, as_user, as_user + "123")
+    r = c.post(f"{url}/works-sent")
+    c.post("/logout")
+    return r
+
+
+def yes_all_works(url):
+    """Звонок клиенту: все работы текущего круга — «✓ Да» (для тестов, где решение клиента не важно)."""
+    import uuid as _u
+    from app.db import SessionLocal, current_branch_id
+    from app.models import WorkOrder, WoWork
+    from sqlalchemy import select
+    with SessionLocal() as db:
+        wo = db.get(WorkOrder, _u.UUID(url.rsplit("/", 1)[1].split("#")[0]))
+        current_branch_id.set(wo.branch_id)
+        for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.approval == "pending")):
+            w.approval = "yes"
+        db.commit()
+
+
 def agree(c, url, then="oleg", partsman="oleg"):
     """13.11.2026 (брат): запчастист подбирает на согласовании, заказ уходит поставщику только после того, как
-    менеджер «Согласовал с клиентом». Запчастист — «Подбор завершён», менеджер — согласовал; дальше входим как then."""
-    c.post("/logout")
+    менеджер «Согласовал с клиентом». 23.11.2026: по шагам — менеджер «Работы записаны» (если ещё нет), запчастист
+    «Подбор завершён», менеджер — «Да» по работам и «Согласовал»; дальше входим как then."""
+    send_works(c, url)
     login(c, partsman, partsman + "123")
     c.post(f"{url}/picking-done")
     c.post("/logout")
+    yes_all_works(url)
     login(c, "irina", "irina123")
     r = c.post(f"{url}/approval-done")
     c.post("/logout")

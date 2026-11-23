@@ -339,6 +339,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     asked_ids = set(db.scalars(select(_IRL.wo_part_id).where(_IRL.request_id.in_([r.id for r in open_issues])))) if open_issues else set()
     # 13.11.2026 (брат): подбор идёт уже на согласовании — одновременно с работами у менеджера
     can_pick = (ctx.can("parts.pick") and wo.status in ("approve", "picking", "waiting") and not wo.awaiting_prepay
+                and not (wo.status == "approve" and not wo.works_sent_at)   # 23.11.2026: сначала работы у менеджера
                 and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")))
     archived = [p for p in parts if p.status == "archived"]
     parts = [p for p in parts if p.status != "archived"]
@@ -454,6 +455,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         reopen=_reopen_state(ctx, wo),
         order_msgs=_order_msgs(ctx, wo),
         draft_parts=draft_parts, ap_round=ap_round, ap_fresh=ap_fresh,
+        # 23.11.2026 (брат): шаг согласования (works / picking / call), работы этого круга, граница «Новое»
+        phase=svc.approve_phase(wo), round_ids={w.id for w in svc.round_works(db, wo)} if wo.status == "approve" else set(),
+        new_since=svc.new_since(db, wo), works_sent_who=db.get(User, wo.works_sent_by) if wo.works_sent_by else None,
         stage_label=svc.stage_label(db, wo, mc.short_name if mc else "", pm.short_name if pm else "",
                                     {"done": n_done, "total": len(works)}),
         handed=_handed(ctx, wo),

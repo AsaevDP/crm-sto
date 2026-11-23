@@ -711,13 +711,17 @@ def job_by_name(name):
 
 
 def step_price(o, day, hhmm):
-    """Менеджер, пока запчастист подбирает: по проблемам — что пойдёт в работу («Да» сразу даёт работу), цены работ
-    и исполнители; вторые мастера — отдельной работой."""
+    """23.11.2026 (брат): шаг «Работы» — менеджер по проблемам пишет работы (цена, время, исполнитель; вторые мастера —
+    отдельной работой) и жмёт «Работы записаны → на подбор». Только после этого запчастист подбирает."""
     with at(day, hhmm):
         job_names = {j[1] for j in o.jobs}
+        have = {w.name for w in works_of(o)}
         for f in q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at):
-            v = "yes" if f.text in job_names else rnd.choice(("no", "no", "yes"))
-            post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": v}, what="Проблема: в работу / нет", fetch=True)
+            if f.text in have:
+                continue
+            if f.text in job_names or rnd.random() < 0.35:   # лишняя находка — иногда тоже в работы (клиент решит)
+                post(o.mgr, f"{o.url}/works", {"name": f.text, "pricing": "fixed", "rate": "500", "qty": "1"},
+                     what="Работа по проблеме")
         for w in works_of(o):
             kind, j = job_by_name(w.name)
             if not j:
@@ -733,6 +737,9 @@ def step_price(o, day, hhmm):
                                            "rate": str(j[3]), "qty": "1", "time_h": str(j[2] or 1),
                                            "mechanic_id": str(uid(rnd.choice(MASTERS_OF[kind])))},
                  what=f"Работа второму мастеру ({kind})")
+        if o.wo().works_sent_at is None:
+            post(o.mgr, f"{o.url}/works-sent", what="Работы записаны → на подбор")
+    R.check(o.wo().works_sent_at is not None, "менеджер записал работы → на подбор", o.wo().number)
     o.step = "pick"
 
 
@@ -791,22 +798,22 @@ def step_approve(o, day, hhmm, send=True):
             if ps:
                 post(o.mgr, f"{o.url}/parts/{ps[0].id}/delete", what="Убрать в архив")
                 post(o.mgr, f"{o.url}/parts/{ps[0].id}/restore", what="Вернуть из архива")
-        fs = q(M.WoFinding, M.WoFinding.work_order_id == o.id, order=M.WoFinding.created_at)
-        if o.fail_plan in ("all_no", "part_no") and not fs:
-            o.fail_plan = None   # без диагностики (сценарий А) отказываться не от чего — работы известны заранее
-        # 17.11.2026: «отказался от всего» — только если в наряде нет работ, записанных при приёмке (например, мойка):
-        # они остаются, и наряд честно идёт дальше (раньше прогон ждал «Готово» и ловил ложную ошибку)
-        if o.fail_plan == "all_no" and any(not w.finding_id for w in q(M.WoWork, M.WoWork.work_order_id == o.id)):
-            o.fail_plan = None
+        # 23.11.2026 (брат): звонок — клиент согласует РАБОТЫ: у каждой «✓ Да» / «✕ Нет»
+        ws = q(M.WoWork, M.WoWork.work_order_id == o.id, M.WoWork.approval == "pending", order=M.WoWork.created_at)
+        if o.fail_plan in ("all_no", "part_no") and (not ws or o.wo().scenario == "A"):
+            o.fail_plan = None   # без диагностики (сценарий А) работы известны заранее — клиент их и заказал
         job_names = {j[1] for j in o.jobs}
-        for f in fs:
-            v = None
+        job_ws = [w for w in ws if w.name in job_names]
+        for w in ws:
+            v = "yes"
             if o.fail_plan == "all_no":
                 v = "no"
-            elif o.fail_plan == "part_no" and f.text in job_names and len(fs) > 1 and f is fs[-1]:
+            elif o.fail_plan == "part_no" and len(job_ws) > 1 and w is job_ws[-1]:
                 v = "no"
-            if v and f.approval != v:
-                post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": v}, what="Клиент отказался", fetch=True)
+            elif w.name not in job_names and not any(w.name == j[1] for _, j in o.extra) and rnd.random() < 0.6:
+                v = "no"   # лишняя находка — клиент чаще отказывается (уйдёт в рекомендации)
+            post(o.mgr, f"{o.url}/works/{w.id}/approval", {"value": v},
+                 what="Клиент согласен на работу" if v == "yes" else "Клиент отказался от работы", fetch=True)
         # 19.11.2026: одна деталь несколько раз (две работы с одним маслом) — менеджер подтверждает, что клиент берёт все
         from app.services import orders as _osvc
         with SessionLocal() as db_:
@@ -964,9 +971,12 @@ def step_work(o, day, hhmm):
                 post(login, f"{o.url}/findings", {"text": "Во время ремонта: течь сальника привода", "urgency": "soon"},
                      what="Новая находка во время ремонта", fetch=True)
             R.check(o.wo().status == "approve", "находка во время работы → снова «Согласование»", o.wo().status)
-            with at(day, _later(t, 15)):
-                for f in q(M.WoFinding, M.WoFinding.work_order_id == o.id, M.WoFinding.approval == "pending"):
-                    post(o.mgr, f"{o.url}/findings/{f.id}/approval", {"value": "no"}, what="Клиент отказался от новой", fetch=True)
+            with at(day, _later(t, 15)):   # 23.11.2026: круг заново — работа к новому, без запчастей, клиент отказался
+                post(o.mgr, f"{o.url}/works", {"name": "Замена сальника привода", "pricing": "fixed", "rate": "600", "qty": "1",
+                                               "time_h": "1"}, what="Работа к новой проблеме")
+                post(o.mgr, f"{o.url}/works-sent", {"no_parts": "1"}, what="Работы записаны — запчасти не нужны")
+                for nw in q(M.WoWork, M.WoWork.work_order_id == o.id, M.WoWork.approval == "pending"):
+                    post(o.mgr, f"{o.url}/works/{nw.id}/approval", {"value": "no"}, what="Клиент отказался от новой", fetch=True)
                 post(o.mgr, f"{o.url}/approval-done", what="Согласование завершено")
         with at(day, t):
             w2 = one(M.WoWork, M.WoWork.id == w.id)
@@ -1663,6 +1673,18 @@ def leave_for_today(day):
                                                  "action": "option", "option_group": g}, what="Вариант на выбор клиенту")
                 g = g or (one(M.WoPart, M.WoPart.work_order_id == o_.id, M.WoPart.option_group.is_not(None)) or M.WoPart()).option_group or ""
 
+    # 0) 23.11.2026 (брат): проблемы записаны — менеджеру 🔴 «впишите работы» (одна работа уже есть, «Работы записаны»
+    #    не нажато), запчастисту 🟠 «скоро подбор»
+    o = new_order(day, "irina", "15:40", kind="mechanic", scen="B")
+    if o:
+        o.fail_plan = None
+        step_diag(o, day, "15:45")
+        with at(day, "16:30"):
+            j = o.jobs[0]
+            post(o.mgr, f"{o.url}/works", {"name": j[1], "pricing": "fixed" if j[2] is None else "hours", "hours": str(j[2] or 0),
+                                           "rate": str(j[3]), "qty": "1", "time_h": str(j[2] or 1)}, what="Работа (шаг «Работы»)")
+        R.check(o.wo().works_sent_at is None, "на сегодня: менеджер пишет работы, подбор ещё закрыт", o.wo().number)
+        o.step = "works_wait"
     # 1) Запчастисту: подбор ещё идёт — одна деталь добавлена, «Подбор завершён» не нажат (менеджер ждёт)
     o = fresh_mech("13:10")
     if o:
@@ -2056,7 +2078,9 @@ def site_history(day):
                                                    "np_address": "Киев, отделение 12", "action": "reserve"},
              what="На сайт: продать (резерв, отправка)")
     R.check(one(M.UsedSale, M.UsedSale.site_new_id == r2.id) is not None, "новая деталь продана через сайт — продажа разбора", r2.code)
-    other = next((x for x in ACTIVE if x is not o and x.wo() and x.wo().status == "approve"), None)
+    # 23.11.2026: подбор — только когда менеджер записал работы (шаг «Подбор»)
+    other = next((x for x in ACTIVE if x is not o and x.wo() and x.wo().status == "approve" and x.wo().works_sent_at
+                  and x.wo().partsman_id and not x.wo().picked_at), None)
     if other:
         with at(day, "17:10"):
             post("oleg", f"{other.url}/parts", {"catalog_id": str(r3.catalog_id), "name": SITE_PARTS[2][0], "qty": "1",

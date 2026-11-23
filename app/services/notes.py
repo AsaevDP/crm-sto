@@ -12,8 +12,8 @@ from ..models import IssueRequest, Notification, OrderMessage, WoPart, WorkOrder
 # Плитки-фильтры: ключ → (подпись, виды уведомлений)
 GROUPS = {
     "parts": ("Запчасти", {"parts_in", "parts_ready", "picked", "to_order", "new_problem", "diag_to_mgr", "order_cancel", "refused", "refused_done",
-                           "refused_info", "urgent_in", "urgent_ask"}),
-    "stock": ("Склад и выдача", {"issue_ready", "issued", "part_go", "part_ask", "part_ask_info", "part_ok", "part_no",
+                           "refused_info", "urgent_in", "urgent_ask", "works_todo", "works_sent"}),
+    "stock": ("Склад и выдача", {"prepare", "held_info", "issue_ready", "issued", "part_go", "part_ask", "part_ask_info", "part_ok", "part_no",
                                  "tool_ready", "tool_issued", "chem_ask", "chem_ready", "chem_ok", "chem_no"}),
     "msg": ("Переписка", {"msg"}),
     "people": ("Передачи и доступы", {"handover", "access_req", "access_ok", "access_no", "client_req", "client_ok",
@@ -48,7 +48,17 @@ def is_done(db: Session, n: Notification, user) -> bool:
     if k == "diag_to_mgr":   # 23.11.2026: мастер закончил — менеджеру вписать проблемы и «На согласование»
         return wo is not None and wo.status != "diag"
     if k == "new_problem":   # 23.11.2026: новая проблема — пока наряд на согласовании (запчастисту — пока не подобрал)
-        return wo is not None and (wo.status != "approve" or (user.id == wo.partsman_id and wo.picked_at is not None))
+        return wo is not None and (wo.status != "approve" or (user.id == wo.partsman_id and wo.picked_at is not None)
+                                   or (user.id == wo.manager_id and wo.works_sent_at is not None))
+    if k == "works_todo":   # 23.11.2026: менеджеру — вписать работы и «Работы записаны»
+        return wo is not None and (wo.status != "approve" or wo.works_sent_at is not None)
+    if k == "works_sent":   # запчастисту — подобрать (пока не нажал «Подбор завершён»)
+        return wo is not None and (wo.status != "approve" or wo.picked_at is not None)
+    if k in ("prepare", "held_info"):   # кладовщику: подготовить к выдаче / отложено под наряд
+        from . import keeper_watch as kw
+        zones = kw.zones_for(db, user)
+        rows = kw.prepare(db, bid, zones) if k == "prepare" else kw.held(db, bid, zones)
+        return wid not in rows
     if k == "to_order":   # запчастисту: заказать (черновик закупки по наряду)
         from ..models import Purchase
         return wo is not None and not _count(db, select(Purchase.id).where(Purchase.work_order_id == wid,

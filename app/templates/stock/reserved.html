@@ -1,13 +1,25 @@
 {% extends "base.html" %}
 {% from "orders/_card.html" import key_tag %}
-{# «В резерве» (18.11.2026, брат): что лежит на складе под наряды — по нарядам, свежие сверху #}
+{% from "_tiles.html" import tiles with context %}
+{# «В резерве» (18.11.2026, брат): что лежит на складе под наряды — по нарядам, свежие сверху.
+   23.11.2026 (брат): кладовщику — плитки «Подготовить к выдаче» (🟠 согласовано, запроса ещё нет) и «Отложено под
+   наряды» (🟣 для сведения: взято со склада при подборе, до «Получил» мастера); у таких строк — цветная полоска. #}
 {% block content %}
 <header class="page-head">
   <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">В резерве</h1>
     <p class="footnote" style="margin:0">Под наряды: {{ groups|length }} · позиций {{ n }}. Лежит на складе, выдаётся мастеру по запросу.</p></div>
 </header>
 
-<div class="rsv-list">
+{% if zones %}
+{# цифра — наряды (как кружок в меню), в подписи — сколько деталей #}
+{{ tiles([
+  {"t": "Подготовить к выдаче", "n": n_prep_wo, "c": "orange" if n_prep_wo else "gray", "s": "нарядов · деталей " ~ prep_ids|length, "href": "#prep"},
+  {"t": "Отложено под наряды", "n": n_held_wo, "c": "purple" if n_held_wo else "gray", "s": "до «Получил» мастера · деталей " ~ held_ids|length, "href": "#held"},
+  {"t": "В резерве", "n": n, "c": "blue", "s": "всего позиций под наряды"},
+]) }}
+{% endif %}
+
+<div class="rsv-list" id="prep">
   {% for g in groups %}
   <div class="card compact rsv-card">
     <div class="card-h">
@@ -16,12 +28,26 @@
       <span class="chip" data-s="{{ g.o.status }}">{{ STATUSES.get(g.o.status, g.o.status) }}</span>
     </div>
     <div class="caption">наряд {{ g.o.number }}{% if g.mgr %} · ведёт {{ g.mgr.short_name }}{% endif %}{% if g.mech %} · мастер {{ g.mech.short_name }}{% endif %}</div>
-    {% for r in g.rows %}
-    <div class="kv"><span>{{ r.p.name }}{% if r.loc %} <span class="caption">· {{ r.loc }}</span>{% endif %}</span><b class="nowrap">{{ r.qty|num }} шт</b></div>
+    {% for r in g.rows %}{% set prep_ = r.p.id in prep_ids %}{% set held_ = r.p.id in held_ids %}
+    <div class="kv rsv-row" data-prep="{{ 1 if prep_ else 0 }}" data-held="{{ 1 if held_ else 0 }}"
+         title="{{ 'Согласовано с клиентом — подготовьте к выдаче' if prep_ else ('Отложено со склада под наряд' if held_ else '') }}">
+      <span>{{ r.p.name }}{% if r.loc %} <span class="caption">· {{ r.loc }}</span>{% endif %}
+        {% if prep_ %}<span class="caption rsv-tag prep">подготовить к выдаче</span>{% elif held_ and g.o.status == "approve" %}<span class="caption rsv-tag held">отложено · ждёт согласования</span>{% endif %}</span>
+      <b class="nowrap">{{ r.qty|num }} шт</b></div>
     {% endfor %}
   </div>
   {% else %}
   <div class="card compact"><p class="footnote" style="margin:0">Сейчас под наряды ничего не зарезервировано.</p></div>
   {% endfor %}
 </div>
+
+{% if given %}
+<div class="card compact" id="held" style="margin-top:12px">
+  <div class="card-h"><span class="headline">Выдано со склада — ждём «Получил» мастера · {{ given|length }}</span></div>
+  {% for x in given %}
+  <div class="kv rsv-row" data-held="1"><span>{{ x.p.name }} <span class="caption">· наряд {% if x.o %}<a href="/orders/{{ x.o.id }}#parts">{{ x.o.number }}</a>{% endif %}{% if x.mech %} · мастер {{ x.mech.short_name }}{% endif %}</span></span>
+    <b class="nowrap">{{ x.p.qty|num }} шт</b></div>
+  {% endfor %}
+</div>
+{% endif %}
 {% endblock %}

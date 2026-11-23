@@ -78,7 +78,8 @@ def work_add(order_id: str, ctx: Ctx = Depends(get_ctx), name: str = Form(...), 
     wo = _order(ctx, order_id)
     if wo.status not in EDITABLE or not name.strip():
         raise Forbidden()
-    w = WoWork(work_order_id=wo.id, name=name, status="todo", is_warranty=wo.warranty == "open")
+    w = WoWork(work_order_id=wo.id, name=name, status="todo", is_warranty=wo.warranty == "open",
+               approval=osvc.new_work_approval(wo))   # 23.11.2026: до согласования — ждёт ответа клиента
     if not rate:
         rate = str(st.get(ctx.db, ctx.branch.id, "pricing")["hour_rate"]) if pricing != "fixed" else "0"
     _apply_work(ctx, w, name, pricing, hours, rate, qty, mechanic_id or (str(wo.mechanic_id) if wo.mechanic_id else ""), time_h)

@@ -2950,3 +2950,17 @@ main .pult-tiles .ptile.zero { opacity: 1; }
   main .pult-tiles .ptile b { font-size: 18px !important; }
   main .pult-tiles .ptile-s { display: none !important; }
 }
+
+/* ===== 23.11.2026 (брат): согласование по шагам — «Да / Нет» у работы, группа «Новое» (новая проблема в ремонте) ===== */
+.work-yn { margin: 4px 0 2px; max-width: 420px; }
+.work[data-appr="pending"] { border-left: 4px solid var(--orange); border-radius: 10px; padding-left: 10px; }
+.work[data-appr="no"] .part-name { color: var(--text-2); text-decoration: line-through; }
+.new-grp { margin: 10px 0 4px; padding: 6px 10px 2px; border-radius: 12px; background: color-mix(in srgb, var(--indigo) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--indigo) 30%, transparent); }
+.new-grp-h { font-size: 12px; font-weight: 700; color: color-mix(in srgb, var(--indigo) 80%, var(--text)); text-transform: none; margin: 2px 0 4px; }
+/* 23.11.2026 (брат): «В резерве» у кладовщика — полоска у строки: подготовить (оранжевая), отложено (сиреневая) */
+.rsv-row[data-prep="1"] { border-left: 4px solid var(--orange); border-radius: 10px; padding-left: 10px; }
+.rsv-row[data-held="1"]:not([data-prep="1"]) { border-left: 4px solid var(--purple); border-radius: 10px; padding-left: 10px; }
+.rsv-tag { display: block; font-weight: 600; }
+.rsv-tag.prep { color: color-mix(in srgb, var(--orange) 85%, var(--text)); }
+.rsv-tag.held { color: color-mix(in srgb, var(--purple) 85%, var(--text)); }

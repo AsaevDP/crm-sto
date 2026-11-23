@@ -44,27 +44,35 @@ def test_full_diagnosis_and_approval(client):
     assert _wo(url).status == "approve"
     client.post("/logout")
 
-    # Менеджер: 2 «да», 1 «нет»
+    # 23.11.2026 (брат): шаг «Работы» — менеджер пишет работы и цены; запчастист пока не подбирает
     login(client, "irina", "irina123")
-    with SessionLocal() as db:
-        fs = db.scalars(select(WoFinding).where(WoFinding.work_order_id == _wo(url).id).order_by(WoFinding.created_at)).all()
-    # Пока не по всем решение — завершить нельзя
-    client.post(f"{url}/findings/{fs[0].id}/approval", data={"value": "yes"}, headers=FETCH)
-    client.post(f"{url}/approval-done")
+    for name in ("Колодки передние 2 мм", "Течь прокладки клапанной крышки", "Сайлентблоки рычагов подсохли"):
+        client.post(f"{url}/works", data={"name": name, "pricing": "fixed", "rate": "500", "qty": "1"})
+    assert "Впишите работы" not in client.post(f"{url}/approval-done").text or _wo(url).status == "approve"
     assert _wo(url).status == "approve"
-    client.post(f"{url}/findings/{fs[1].id}/approval", data={"value": "yes"}, headers=FETCH)
-    client.post(f"{url}/findings/{fs[2].id}/approval", data={"value": "no"}, headers=FETCH)
-    # 13.11.2026: «Да» — сразу работа; согласовать с клиентом нельзя, пока запчастист не закончил подбор
-    with SessionLocal() as db:
-        assert len(db.scalars(select(WoWork).where(WoWork.work_order_id == _wo(url).id)).all()) == 2
+    client.post("/logout")
+    login(client, "oleg", "oleg123")
+    client.post(f"{url}/picking-done")                     # до «Работы записаны» подбор не завершить
+    assert _wo(url).picked_at is None
+    client.post("/logout")
+    login(client, "irina", "irina123")
+    client.post(f"{url}/works-sent")
+    assert _wo(url).works_sent_at is not None
     assert "не закончил подбор" in client.post(f"{url}/approval-done").text
-    assert _wo(url).status == "approve"
     client.post("/logout")
     login(client, "oleg", "oleg123")
     client.post(f"{url}/picking-done")                     # подбор: запчасти не нужны
     assert _wo(url).picked_at is not None and _wo(url).status == "approve"
     client.post("/logout")
+    # Звонок: по каждой работе — 2 «да», 1 «нет»; пока не по всем — завершить нельзя
     login(client, "irina", "irina123")
+    with SessionLocal() as db:
+        ws = db.scalars(select(WoWork).where(WoWork.work_order_id == _wo(url).id).order_by(WoWork.created_at)).all()
+    client.post(f"{url}/works/{ws[0].id}/approval", data={"value": "yes"}, headers=FETCH)
+    client.post(f"{url}/approval-done")
+    assert _wo(url).status == "approve"
+    client.post(f"{url}/works/{ws[1].id}/approval", data={"value": "yes"}, headers=FETCH)
+    client.post(f"{url}/works/{ws[2].id}/approval", data={"value": "no"}, headers=FETCH)
     client.post(f"{url}/approval-done")
     wo = _wo(url)
     assert wo.status == "work"                             # запчастей нет — сразу в работу
@@ -92,9 +100,11 @@ def test_all_declined_goes_ready(client):
     client.post(f"{url}/diag-done")
     client.post("/logout")
     login(client, "irina", "irina123")
+    client.post(f"{url}/works", data={"name": "Полировка диска", "pricing": "fixed", "rate": "300", "qty": "1"})
+    client.post(f"{url}/works-sent", data={"no_parts": "1"})   # запчасти не нужны — сразу звонок
     with SessionLocal() as db:
-        f = db.scalars(select(WoFinding).where(WoFinding.work_order_id == _wo(url).id)).first()
-    client.post(f"{url}/findings/{f.id}/approval", data={"value": "no"}, headers=FETCH)
+        w = db.scalars(select(WoWork).where(WoWork.work_order_id == _wo(url).id)).first()
+    client.post(f"{url}/works/{w.id}/approval", data={"value": "no"}, headers=FETCH)
     client.post(f"{url}/approval-done")
     assert _wo(url).status == "ready"
 

@@ -104,9 +104,10 @@
 </div>
 {% endmacro %}
 
-<div class="card compact step-card {{ 'now' if flow.cur == 3 }}" id="parts" style="--sc:var(--orange)">
+{# 23.11.2026 (брат): «Запчасти» — 5-й блок (после работ): запчастист подбирает, когда менеджер записал работы #}
+<div class="card compact step-card {{ 'now' if flow.cur in (3, 5) }}" id="parts" style="--sc:var(--orange)">
   <div class="card-h">
-    <span class="headline"><span class="stepno">4</span>Запчасти · {{ n_counted }}</span>
+    <span class="headline"><span class="stepno">5</span>Запчасти · {{ n_counted }}</span>
     <span class="parts-h-r">
       {% if pp and n_counted %}<span class="footnote nowrap">итого <b>{{ parts_total|money }} ₴</b></span>{% endif %}
       {# 13.11.2026 (брат): архив наряда — убранные позиции, можно вернуть до оплаты и закрытия #}
@@ -115,7 +116,12 @@
   </div>
 
   {% if plain_parts or groups %}<div class="part-line nm-headline"><span></span><div class="nm-cols nm-head {{ 'p3' if pp else 'p1' }}" aria-hidden="true"><span>Кол-во</span>{% if pp %}<span>Цена</span><span>Сумма</span>{% endif %}</div></div>{% endif %}
-  {% for p in plain_parts %}{{ part_row(p) }}{% endfor %}
+  {# 23.11.2026 (брат): запчасти к новой проблеме — отдельной группой «Новое» (в документах — общий список) #}
+  {% set ns_new = new_since|default(none) %}
+  {% for p in (plain_parts|rejectattr("created_at", "ge", ns_new)|list if ns_new else plain_parts) %}{{ part_row(p) }}{% endfor %}
+  {% set new_p = plain_parts|selectattr("created_at", "ge", ns_new)|list if ns_new else [] %}
+  {% if new_p %}<div class="new-grp"><div class="new-grp-h">Новое · добавлено {{ ns_new.astimezone().strftime("%d.%m %H:%M") }}</div>
+    {% for p in new_p %}{{ part_row(p) }}{% endfor %}</div>{% endif %}
 
   {% for g, items in groups.items() %}
   {% set open_ = items|selectattr("status", "equalto", "option")|list|length == items|length %}
@@ -134,8 +140,14 @@
   {% if not parts %}
   <p class="footnote">{% if can_offer or can_pick %}Подберите запчасти: со склада, заказать или варианты разных фирм на выбор клиенту.
     Заказ поставщику уйдёт после согласования с клиентом.
-    {% elif wo.status in ("created", "diag") %}Подбор начнётся после диагностики
+    {% elif wo.status in ("created", "diag") %}Подбор начнётся после того, как менеджер запишет работы
+    {% elif wo.status == "approve" and phase == "works" %}Подбор начнётся после того, как менеджер запишет работы
+    {% elif wo.status == "approve" and wo.works_no_parts %}Запчасти не нужны — так отметил менеджер
     {% elif wo.status == "approve" %}Запчастист подбирает запчасти{% else %}Запчасти не добавлены{% endif %}</p>
+  {% endif %}
+  {# 23.11.2026 (брат): запчастисту на шаге «Работы» — подбор ещё закрыт, видно, что менеджер заполняет работы #}
+  {% if wo.status == "approve" and phase == "works" and ctx.can("parts.pick") and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")) and not can_approve %}
+  <p class="hint warn" id="parts-wait-works" style="margin:8px 0 0">⏳ Менеджер заполняет работы. Подбор откроется после «Работы записаны → на подбор» — придёт окошко и красная цифра.</p>
   {% endif %}
 
   {% if can_pick or can_offer %}
@@ -216,18 +228,16 @@
   {% endif %}
 
   {# 13.11.2026 (брат): менеджер запчасти не добавляет — выбирает варианты, лишнее убирает в архив и согласует с клиентом #}
-  {% if can_approve %}
+  {# 23.11.2026 (брат): «Согласовал с клиентом» — последний шаг (звонок), когда записаны работы и готов подбор #}
+  {% if can_approve and phase == "picking" %}
+  <p class="hint warn" style="margin:8px 0 0">⏳ Ждём подбор у {{ people.get(wo.partsman_id).short_name if people.get(wo.partsman_id) else "запчастиста" }}.
+    Закончит — придёт окошко «Подбор готов», и можно звонить клиенту.</p>
+  {% endif %}
+  {% if can_approve and phase == "call" %}
   <div class="approve-box">
     {% if ap_round.again %}
     <p class="hint warn" style="margin:0 0 8px">Во время ремонта нашли новую проблему. Мастера продолжают уже согласованные
       работы — согласуйте с клиентом только новое.</p>
-    {% endif %}
-    {% if not wo.partsman_id %}
-    <p class="hint warn" style="margin:0 0 8px">Запчастист не назначен — запчасти никто не подбирает. Назначьте его в «Кто и где»
-      или, если запчасти не нужны, — «Согласовал — запчасти не нужны».</p>
-    {% elif not wo.picked_at %}
-    <p class="hint warn" style="margin:0 0 8px">⏳ Ждём подбор у {{ people.get(wo.partsman_id).short_name if people.get(wo.partsman_id) else "запчастиста" }}.
-      Пока составьте работы и цены.</p>
     {% endif %}
     <form method="post" action="/orders/{{ wo.id }}/approval-done">
       {# 19.11.2026 (брат): одна деталь несколько раз — спросить, берёт ли клиент все #}
@@ -239,13 +249,9 @@
       </div>
       {% endif %}
       <button class="btn btn-block" id="btn-approve-done">Согласовал с клиентом</button>
-      <p class="hint" style="margin:6px 0 0">Проблемы «Да» — работы, «Нет» — рекомендации в карте клиента. Запчасти со склада — в резерве,
-        остальные уйдут запчастисту в заказ.</p>
+      <p class="hint" style="margin:6px 0 0">Работы «Да» — в ремонт, «Нет» — рекомендации в карте клиента. Запчасти со склада —
+        в резерве (кладовщику «подготовить к выдаче»), остальные уйдут запчастисту в заказ.</p>
     </form>
-    {% if not wo.picked_at and (not wo.partsman_id or not parts or (ap_round.again and not ap_fresh)) %}
-    <form method="post" action="/orders/{{ wo.id }}/approval-done" style="margin-top:8px"><input type="hidden" name="no_parts" value="1">
-      <button class="btn btn-gray btn-block">Согласовал — запчасти не нужны</button></form>
-    {% endif %}
   </div>
   {% endif %}
 

@@ -32,6 +32,8 @@ def _order_to_work(c, plate, phone, part_name):
     c.post(f"{url}/picking-done")
     # 13.11.2026: подбор на согласовании — заказ уходит поставщику только после «Согласовал с клиентом»
     _as(c, "irina")
+    from .conftest import yes_all_works
+    yes_all_works(url)   # 23.11.2026: звонок — клиент согласен на все работы
     c.post(f"{url}/approval-done")
     _as(c, "oleg")
     with SessionLocal() as db:

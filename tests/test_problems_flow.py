@@ -74,20 +74,34 @@ def test_new_problem_while_waiting_restarts_partsman(client):
     wo = _wo(url)
     assert wo.status == "approve" and wo.picked_at is None
     client.post("/logout")
+    # 23.11.2026 (брат): круг заново по шагам — менеджеру 🔴 «впишите работы» и окошко, запчастисту пока 🟠
+    login(client, "oleg", "oleg123")
+    assert any(b["c"] == "orange" and "скоро подбор" in b["t"] for b in _badges(client))
+    assert "Новое: менеджер вписывает работы" in client.get("/orders?tab=approve").text
+    client.post("/logout")
+    login(client, "irina", "irina123")
+    assert any(b["c"] == "red" and "впишите работы" in b["t"] for b in _badges(client))
+    with SessionLocal() as db:
+        assert db.scalar(select(Notification).where(Notification.work_order_id == wo.id, Notification.kind == "new_problem",
+                                                    Notification.user_id == _uid("irina")))
+    client.post(f"{url}/works", data={"name": "Замена патрубка", "pricing": "fixed", "rate": "400", "qty": "1"})
+    client.post(f"{url}/works-sent")
+    client.post("/logout")
     # запчастисту — 🔴 «подобрать запчасти» и окошко
     login(client, "oleg", "oleg123")
     assert any(b["c"] == "red" and "подобрать запчасти" in b["t"] for b in _badges(client))
     with SessionLocal() as db:
-        assert db.scalar(select(Notification).where(Notification.work_order_id == wo.id, Notification.kind == "new_problem",
+        assert db.scalar(select(Notification).where(Notification.work_order_id == wo.id, Notification.kind == "works_sent",
                                                     Notification.user_id == _uid("oleg")))
-    assert "Подбор к новой проблеме" in client.get("/orders?tab=approve").text
+    assert "Подбор к новому" in client.get("/orders?tab=approve").text
+    client.post(f"{url}/picking-done")
     client.post("/logout")
-    # менеджер: 🔴 согласовать; клиент согласился, запчасти не нужны → наряд снова «Ждём запчасти»
+    # менеджер: 🔴 звонить; клиент отказался от новой работы → наряд снова «Ждём запчасти»
     login(client, "irina", "irina123")
-    assert any(b["c"] == "red" for b in _badges(client))
-    from app.models import WoFinding
+    assert any(b["c"] == "red" and "звоните клиенту" in b["t"] for b in _badges(client))
+    from app.models import WoWork
     with SessionLocal() as db:
-        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == wo.id))
-    client.post(f"{url}/findings/{f.id}/approval", data={"value": "no"})
-    client.post(f"{url}/approval-done", data={"no_parts": "1"})
+        w = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.name == "Замена патрубка"))
+    client.post(f"{url}/works/{w.id}/approval", data={"value": "no"}, headers={"x-requested-with": "fetch"})
+    client.post(f"{url}/approval-done")
     assert _wo(url).status == "waiting"

@@ -37,8 +37,9 @@ async def lifespan(_app):
         fix_delivered(db)      # 14.11.2026: шага «Привезли» нет — такие накладные снова «Ждём» / «Неполная поставка»
         from .services import keys as keys_svc
         keys_svc.fill_open(db)  # 18.11.2026: машинам на станции без номера — ячейка ключей по порядку приезда
-        from .services.orders import fill_activity
+        from .services.orders import fill_activity, fill_works_sent
         fill_activity(db)       # 18.11.2026: время последнего действия по наряду — из журнала (плитки: свежие сверху)
+        fill_works_sent(db)     # 23.11.2026: согласование по шагам — наряды на согласовании: шаг «Работы» пройден
         from .services.stock import split_mixed_open
         split_mixed_open(db)   # 20.11.2026: открытые запросы, где вместе новые и б/у, — на две зоны
         from .services import receipt as receipt_svc

@@ -159,11 +159,13 @@ def test_new_finding_refused_back_to_work(client):
     _as(client, "admin")
     client.post(f"{url}/findings", data={"text": "Течь сальника (во время работы)", "urgency": "soon"})
     assert _wo(url).status == "approve"
-    from app.models import WoFinding
-    with SessionLocal() as db:
-        f = db.scalar(select(WoFinding).where(WoFinding.work_order_id == wo.id, WoFinding.approval == "pending"))
+    # 23.11.2026 (брат): круг заново — работа к новому, «запчасти не нужны», клиент отказался
     _as(client, "irina")
-    client.post(f"{url}/findings/{f.id}/approval", data={"value": "no"})
+    client.post(f"{url}/works", data={"name": "Замена сальника (находка)", "pricing": "fixed", "rate": "300", "qty": "1"})
+    client.post(f"{url}/works-sent", data={"no_parts": "1"})
+    with SessionLocal() as db:
+        nw = db.scalar(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.name == "Замена сальника (находка)"))
+    client.post(f"{url}/works/{nw.id}/approval", data={"value": "no"}, headers={"x-requested-with": "fetch"})
     client.post(f"{url}/approval-done")
     assert _wo(url).status == "work"
     with SessionLocal() as db:

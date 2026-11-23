@@ -13,21 +13,26 @@
 {# 22.11.2026 (брат): цифры работы — столбиками с подписями сверху (как в заказ-наряде): Н/ч · Кол-во · Время · Цена ·
    Сумма, у всех строк одинаково. Мастера видят цену и сумму (их зарплата и время), но ничего не меняют. #}
 {% set wp = show_price or is_master(ctx.user) %}
-<div class="card compact step-card {{ 'now' if flow.cur == 4 or (flow.wash and flow.cur == 1) }}" id="works" style="--sc:var(--teal)">
-  <div class="card-h"><span class="headline"><span class="stepno">{{ 2 if flow.wash else 5 }}</span>{{ "Услуги мойки" if flow.wash else "Работы" }} · {{ n_done }} из {{ works|length }}</span>
-    {% if wp and works %}<span class="footnote nowrap">итого <b>{{ t.works|money }} ₴</b></span>{% endif %}</div>
-  {% if works %}{{ progress({"done": n_done, "total": works|length, "pct": (100 * n_done / works|length)|round|int,
-      "level": "all" if n_done == works|length else ("empty" if not n_done else ("part" if n_done * 2 >= works|length else "zero"))}) }}
-  <div class="nm-cols nm-head {{ 'n5' if wp else 'n3' }}" aria-hidden="true"><span>Н/ч</span><span>Кол-во</span><span>Время</span>{% if wp %}<span>Цена</span><span>Сумма</span>{% endif %}</div>
-  {% endif %}
-
-  {% for w in works %}
+{# 23.11.2026 (брат): «Работы» — 4-й блок (раньше 5-й, после запчастей): менеджер сначала пишет работы и цены, потом
+   запчастист подбирает, потом звонок клиенту — «✓ Да / ✕ Нет» у каждой работы этого круга. #}
+{% set phase = phase|default("") %}
+{% set round_ids = round_ids|default([]) %}
+{% set call_ = phase == "call" and can_approve|default(false) %}
+{% set ASTAT = {"pending": ("approve", "ждёт ответа клиента"), "yes": ("ready", "✓ согласовано"), "no": ("cancel", "✕ отказ клиента")} %}
+{% macro work_row(w) %}
   {% set mech = people.get(w.mechanic_id) %}
-  <div class="part work" data-id="{{ w.id }}" data-ws="{{ w.status }}">
+  <div class="part work" data-id="{{ w.id }}" data-ws="{{ w.status }}" data-appr="{{ w.approval if phase == 'call' and w.id in round_ids else '' }}">
     <div class="part-main">
       <span class="part-name">{{ w.name }}{% if mech %}<span class="caption work-who">{{ MASTERS.get(mech.role.code, mech.role.name) }} · {{ mech.full_name }}</span>{% elif works|length %}<span class="caption work-who none">исполнитель не выбран</span>{% endif %}</span>
-      <span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>
+      {% if w.id in round_ids %}{% set a_ = ASTAT.get(w.approval) %}<span class="chip part-st" data-s="{{ a_[0] }}">{{ a_[1] }}</span>
+      {% else %}<span class="chip part-st" data-s="{{ WCOL[w.status] }}">{{ WST.get(w.status, w.status) }}</span>{% endif %}
     </div>
+    {% if call_ and w.id in round_ids %}
+    <div class="segmented yn work-yn" data-url="/orders/{{ wo.id }}/works/{{ w.id }}/approval">
+      <button type="button" data-v="yes" aria-pressed="{{ (w.approval == 'yes')|lower }}">✓ Да, делаем</button>
+      <button type="button" data-v="no" aria-pressed="{{ (w.approval == 'no')|lower }}">✕ Клиент отказался</button>
+    </div>
+    {% endif %}
     {# Столбики: Н/ч · Кол-во · Время (на выполнение; «≈» — не вписано, взята подсказка) · Цена · Сумма #}
     {% set th = (w.minutes / 60) if w.minutes else ((w.hours or 0) * (w.qty or 1) if (w.pricing or "hours") == "hours" and w.hours else 1) %}
     <div class="nm-cols {{ 'n5' if wp else 'n3' }}">
@@ -79,14 +84,31 @@
     </details>
     {% endif %}
   </div>
-  {% else %}
-  <p class="footnote">{% if wo.status in ("created", "diag") %}Работы появятся после диагностики{% elif wo.status == "approve" %}Менеджер отмечает проблемы «✓ Да» — они сразу становятся работами{% else %}Работ нет{% endif %}</p>
-  {% endfor %}
+{% endmacro %}
+<div class="card compact step-card {{ 'now' if (not flow.wash and flow.cur in (2, 4, 6)) or (flow.wash and flow.cur == 1) }}" id="works" style="--sc:var(--teal)">
+  <div class="card-h"><span class="headline"><span class="stepno">{{ 2 if flow.wash else 4 }}</span>{{ "Услуги мойки" if flow.wash else "Работы" }} · {{ n_done }} из {{ works|length }}</span>
+    {% if wp and works %}<span class="footnote nowrap">итого <b>{{ t.works|money }} ₴</b></span>{% endif %}</div>
+  {% if works %}{{ progress({"done": n_done, "total": works|length, "pct": (100 * n_done / works|length)|round|int,
+      "level": "all" if n_done == works|length else ("empty" if not n_done else ("part" if n_done * 2 >= works|length else "zero"))}) }}
+  <div class="nm-cols nm-head {{ 'n5' if wp else 'n3' }}" aria-hidden="true"><span>Н/ч</span><span>Кол-во</span><span>Время</span>{% if wp %}<span>Цена</span><span>Сумма</span>{% endif %}</div>
+  {% endif %}
+
+  {# 23.11.2026 (брат): новая проблема во время ремонта — новые работы отдельной группой «Новое», чтобы не слились со
+     старыми (в заказ-наряде и документах — общий список) #}
+  {% set ns_new = new_since|default(none) %}
+  {% set old_w = works|rejectattr("created_at", "ge", ns_new)|list if ns_new else works %}
+  {% set new_w = works|selectattr("created_at", "ge", ns_new)|list if ns_new else [] %}
+  {% for w in old_w %}{{ work_row(w) }}{% endfor %}
+  {% if new_w %}<div class="new-grp"><div class="new-grp-h">Новое · добавлено {{ ns_new.astimezone().strftime("%d.%m %H:%M") }}</div>
+    {% for w in new_w %}{{ work_row(w) }}{% endfor %}</div>{% endif %}
+  {% if not works %}
+  <p class="footnote">{% if wo.status in ("created", "diag") %}Работы появятся после диагностики{% elif wo.status == "approve" and phase == "works" %}{{ "Впишите работы и цены — «Добавить работу»" if can_edit_works else "Менеджер заполняет работы" }}{% else %}Работ нет{% endif %}</p>
+  {% endif %}
 
   {% if can_edit_works %}
   {% set w = none %}
-  <details class="add-finding">
-    <summary class="btn btn-tinted btn-block btn-sm">{{ icon("plus") }}Добавить работу</summary>
+  <details class="add-finding" {% if phase == "works" and not round_ids %}open{% endif %}>
+    <summary class="btn btn-tinted btn-block btn-sm" id="btn-add-work">{{ icon("plus") }}Добавить работу</summary>
     <form class="form dense" method="post" action="/orders/{{ wo.id }}/works" style="margin-top:8px">
       <input class="field" name="name" placeholder="Название работы *" required>
       {% include "orders/_work_price.html" %}
@@ -94,5 +116,24 @@
       <button class="btn btn-sm">Добавить</button>
     </form>
   </details>
+  {% endif %}
+
+  {# 23.11.2026 (брат): шаг «Работы» — менеджер записал работы и цены → запчастисту на подбор (🔴 и окошко) #}
+  {% if not flow.wash and wo.status == "approve" %}
+  {% if phase == "works" and can_approve|default(false) %}
+  <form method="post" action="/orders/{{ wo.id }}/works-sent" style="margin-top:8px">
+    <button class="btn btn-block" id="btn-works-sent" {% if not wo.partsman_id %}disabled title="Запчастист не назначен"{% endif %}>Работы записаны → на подбор</button></form>
+  <form method="post" action="/orders/{{ wo.id }}/works-sent" style="margin-top:8px"><input type="hidden" name="no_parts" value="1">
+    <button class="btn btn-gray btn-block" id="btn-works-noparts">Работы записаны — запчасти не нужны</button></form>
+  <p class="hint" style="margin:6px 0 0">{% if not wo.partsman_id %}Запчастист не назначен — назначьте в «Кто и где», чтобы отправить на подбор. {% endif %}Запчастист подберёт запчасти под эти работы, потом вы звоните клиенту.</p>
+  {% elif phase == "works" %}
+  <p class="hint warn" style="margin:8px 0 0">Менеджер заполняет работы — подбор запчастей начнётся после «Работы записаны».</p>
+  {% elif phase == "picking" %}
+  <p class="hint ok-hint" style="margin:8px 0 0">✓ Работы записаны{% if works_sent_who %} · {{ works_sent_who.short_name }}{% endif %}{% if wo.works_sent_at %} · {{ wo.works_sent_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %} — ждём подбор запчастей.</p>
+  {% elif phase == "call" and can_approve|default(false) %}
+  {% set left_ = works|selectattr("id", "in", round_ids)|selectattr("approval", "equalto", "pending")|list|length %}
+  <p class="hint {{ 'warn' if left_ else 'ok-hint' }}" style="margin:8px 0 0">{% if left_ %}Звоните клиенту: по каждой работе — «✓ Да, делаем» или «✕ Клиент отказался» (осталось {{ left_ }}). Затем «Согласовал с клиентом» в блоке «Запчасти».{% else %}Все работы отмечены — нажмите «Согласовал с клиентом» в блоке «Запчасти».{% endif %}</p>
+  {% if not left_ %}<a class="btn btn-block" href="#btn-approve-done" data-goto="diag" style="margin-top:8px">К «Согласовал с клиентом» ↓</a>{% endif %}
+  {% endif %}
   {% endif %}
 </div>

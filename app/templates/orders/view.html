@@ -17,12 +17,8 @@
       {% if wo.status in ("created", "diag", "approve") and (f.created_by == ctx.user.id or ctx.can("orders.approve") or ctx.can("orders.view_all")) %}
       <button type="button" class="btn btn-plain btn-sm fd-edit-btn" data-f="{{ f.id }}">Изменить</button>
       {% endif %}
-      {% if can_approve %}
-      <div class="segmented yn" data-url="/orders/{{ wo.id }}/findings/{{ f.id }}/approval">
-        <button type="button" data-v="yes" aria-pressed="{{ (f.approval == 'yes')|lower }}">✓ Да</button>
-        <button type="button" data-v="no" aria-pressed="{{ (f.approval == 'no')|lower }}">✕ Нет</button>
-      </div>
-      {% elif can_diag and f.approval == "pending" and wo.status in ("created", "diag", "approve") and (f.created_by == ctx.user.id or ctx.can("orders.view_all")) %}
+      {# 23.11.2026 (брат): клиент согласует работы, а не проблемы — «Да / Нет» теперь у работ (блок «Работы») #}
+      {% if can_diag and f.approval == "pending" and wo.status in ("created", "diag", "approve") and (f.created_by == ctx.user.id or ctx.can("orders.view_all")) %}
       <form method="post" action="/orders/{{ wo.id }}/findings/{{ f.id }}/delete"><button class="btn btn-plain btn-sm" style="color:var(--red)">Удалить</button></form>
       {% endif %}
     </div>
@@ -39,10 +35,10 @@
   </div>
 {% endmacro %}
 {% set problems_card %}
-<div class="card compact step-card {{ 'now' if flow.cur in (1, 2) }}" id="problems" style="--sc:var(--{{ 'yellow' if wo.status == 'approve' else 'purple' }})">
+{# 23.11.2026 (брат): «Проблемы» — запись диагностики (озвучиваем клиенту); согласуются работы — в блоке «Работы» #}
+<div class="card compact step-card {{ 'now' if flow.cur == 1 }}" id="problems" style="--sc:var(--purple)">
   <div class="card-h">
-    <span class="headline"><span class="stepno">{{ 3 if wo.status == "approve" else 2 }}</span>{{ "Согласование" if wo.status == "approve" else "Проблемы" }} · {{ n_find }}</span>
-    {% if wo.status == "approve" %}<span class="chip" data-s="approve">ждёт клиента</span>{% endif %}
+    <span class="headline"><span class="stepno">2</span>Проблемы · {{ n_find }}</span>
   </div>
 
   {# 13.11.2026 (брат): мастеров несколько — у каждого свой раздел проблем и своя отметка «Диагностика готова» #}
@@ -81,7 +77,7 @@
         <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" id="finput" accept="image/*" multiple hidden></label>
         <button class="btn btn-sm" style="margin-left:auto">Сохранить проблему</button>
       </div>
-      {% if wo.status in NEW_PROBLEM_FROM %}<p class="hint warn">Наряд снова пойдёт на согласование с клиентом (мастера продолжают согласованное, запчастист подберёт к новому).</p>{% endif %}
+      {% if wo.status in NEW_PROBLEM_FROM %}<p class="hint warn">Наряд снова пойдёт на согласование: менеджер впишет работы к новому, запчастист подберёт, потом звонок клиенту (мастера продолжают согласованное).</p>{% endif %}
     </form>
   </details>
   {% endif %}
@@ -107,10 +103,8 @@
   </form>
   {% endif %}
   {% if can_approve %}
-  {# 13.11.2026 (брат): согласование — одной кнопкой в блоке «Запчасти», после «Подбор завершён» у запчастиста #}
-  <a class="btn btn-gray btn-block" href="#parts" data-goto="diag">{{ "Запчастист не назначен → «Запчасти»" if not wo.partsman_id else ("Подбор готов → согласовать в «Запчастях»" if wo.picked_at else "Запчасти: ждём подбор") }}</a>
-  <p class="hint" style="margin:6px 0 0">«Да» — сразу работа (цена и мастер — в блоке «Работы»), «Нет» — рекомендация в карте клиента.
-    После звонка клиенту — «Согласовал с клиентом» в блоке «Запчасти».</p>
+  {# 23.11.2026 (брат): шаги согласования — Работы → Подбор → Звонок; отсюда — переход к нужному блоку #}
+  <a class="btn btn-gray btn-block" href="#{{ 'parts' if phase == 'picking' else 'works' }}" data-goto="diag">{{ {"works": "Впишите работы → блок «Работы»", "picking": "Работы записаны — ждём подбор запчастей", "call": "Звоните клиенту → «Работы»: ✓ Да / ✕ Нет"}.get(phase, "") }}</a>
   {% endif %}
 </div>
 {% endset %}
@@ -139,7 +133,7 @@
 </header>
 
 {# Шаги наряда: от приёма до выдачи — нажал, и страница переходит к блоку этого шага (11.11.2026) #}
-{% set STEP_GO = [("intake", "main"), ("works", "diag"), ("money", "hist")] if flow.wash else [("intake", "main"), ("problems", "main"), ("problems", "main"), ("parts", "diag"), ("works", "diag"), ("money", "hist")] %}
+{% set STEP_GO = [("intake", "main"), ("works", "diag"), ("money", "hist")] if flow.wash else [("intake", "main"), ("problems", "main"), ("works", "diag"), ("parts", "diag"), ("works", "diag"), ("parts", "diag"), ("works", "diag"), ("money", "hist")] %}
 <ol class="wo-steps" aria-label="Этапы наряда">
   {% for s in flow.steps %}{% set go = STEP_GO[loop.index0] %}
   <li><a class="wo-step" href="#{{ go[0] }}" data-goto="{{ go[1] }}" data-state="{{ s.state }}" style="--sc:var(--{{ s.color }})" title="Перейти: {{ s.label }}"><span class="wo-dot">{{ "✓" if s.state == "done" else s.n }}</span><span class="wo-lbl">{{ s.label }}</span></a></li>
@@ -229,10 +223,10 @@
     {% if not flow.wash %}{{ problems_card }}{% endif %}
   </section>
 
-  {# ===== Колонка 2: запчасти → работы ===== #}
+  {# ===== Колонка 2: работы → запчасти (23.11.2026, брат: сначала менеджер пишет работы, потом подбор) ===== #}
   <section class="ov-col" data-t="diag">
-    {% if not flow.wash %}{% include "orders/_parts.html" %}{% endif %}
     {% include "orders/_works.html" %}
+    {% if not flow.wash %}{% include "orders/_parts.html" %}{% endif %}
 
     {% if wo_tools or can_issue_tool or can_request_tool or tool_pending %}
     <div class="card compact" id="tools">
@@ -471,8 +465,8 @@
     const r = await fetch(seg.dataset.url, { method: 'POST', body: new URLSearchParams({ value: b.dataset.v }), headers: { 'x-requested-with': 'fetch' } });
     if (!r.ok) { alert('Не сохранилось'); return; }
     seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
-    seg.closest('.finding').dataset.a = b.dataset.v;
-    (window.crmReload || (() => location.reload()))();   // 13.11.2026: «Да» — работа появилась в блоке «Работы»
+    const row = seg.closest('.finding, .work'); if (row) row.dataset.appr = b.dataset.v;
+    (window.crmReload || (() => location.reload()))();   // 23.11.2026: «Да / Нет» по работе — обновить итог и подсказки
   }));
 
   // «Кто и где» (13.11.2026): пост = мастер — выбрали пост, подставился его мастер; выбрали мастера — его пост

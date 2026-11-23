@@ -97,6 +97,8 @@ def test_stock_part_as_variant_and_lonely_variant_and_duplicates(client):
     client.post(f"{url2}/picking-done")
     client.post("/logout")
     login(client, "irina", "irina123")
+    from .conftest import yes_all_works
+    yes_all_works(url2)   # 23.11.2026: звонок — клиент согласен на работы
     page = " ".join(client.get(url2).text.split())
     assert "Да, клиент берёт все" in page and "«Диск тормозной (дубль)» — 2 позиции" in page
     r = client.post(f"{url2}/approval-done")

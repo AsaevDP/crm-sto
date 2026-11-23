@@ -100,6 +100,12 @@ class WorkOrder(Entity):
     # менеджер после этого согласует с клиентом всё разом
     picked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     picked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # 23.11.2026 (брат): согласование по шагам — «Работы» (менеджер пишет работы и цены) → «Подбор» (запчастист)
+    # → «Звонок» (менеджер согласует с клиентом каждую работу). works_sent_at — нажал «Работы записаны → на подбор»;
+    # works_no_parts — «Работы записаны — запчасти не нужны» (подбор пропускается, сразу звонок)
+    works_sent_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    works_sent_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    works_no_parts: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     # 13.11.2026: ведущий мастер нажал «Диагностика готова» (если мастеров несколько — ждём остальных)
     lead_diag_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     # 23.11.2026 (брат): мастер нажал «Диагностика готова, проблемы впишет менеджер» — когда все мастера закончили,
@@ -193,6 +199,12 @@ class WoWork(Entity):
     # Мойка (18.11.2026): работа из прайса мойки и её примерная длительность (для очереди)
     wash_service_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("wash_services.id"), nullable=True)
     minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 23.11.2026 (брат): клиент согласует РАБОТЫ (проблемы — только запись диагностики): pending — ещё не спросили,
+    # yes — согласен, no — отказался (уходит в рекомендации). Работы до согласования — pending; старые и добавленные
+    # после согласования — yes
+    approval: Mapped[str] = mapped_column(String(10), default="yes", server_default="yes")
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class WoPart(Entity):

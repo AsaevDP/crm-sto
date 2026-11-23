@@ -57,6 +57,9 @@ def test_manager_problems_options_choice_and_acts(client):
     # 13.11.2026 (брат): менеджер запчасти не добавляет — у него нет формы, сервер тоже не даст
     assert "Добавить запчасть" not in client.get(url).text
     assert client.post(f"{url}/parts", data={"name": "X", "price": "1", "action": "need"}).status_code == 403
+    # 23.11.2026 (брат): шаг «Работы» — менеджер пишет работу и отправляет на подбор
+    client.post(f"{url}/works", data={"name": "Замена передних колодок", "pricing": "fixed", "rate": "600", "qty": "1"})
+    client.post(f"{url}/works-sent")
     client.post("/logout")
 
     # Запчастист на согласовании: три варианта колодок разных фирм (одна группа) + датчик «заказать»
@@ -105,10 +108,9 @@ def test_manager_problems_options_choice_and_acts(client):
     assert (_parts(url)[sensor.id].status, _parts(url)[sensor.id].plan) == ("need", "order")
 
     # «Согласовал с клиентом» → только теперь заказ (оба — в черновик запчастиста) и сообщение ему
-    from app.models import Notification, User, WoFinding
-    with SessionLocal() as db:
-        f_id = db.scalar(select(WoFinding.id).where(WoFinding.work_order_id == _wo(url).id))
-    client.post(f"{url}/findings/{f_id}/approval", data={"value": "yes"}, headers=FETCH)
+    from app.models import Notification, User
+    from .conftest import yes_all_works
+    yes_all_works(url)   # 23.11.2026: клиент согласен на работу
     client.post(f"{url}/approval-done")
     assert _wo(url).status == "waiting"
     with SessionLocal() as db:
@@ -147,7 +149,7 @@ def test_manager_problems_options_choice_and_acts(client):
     login(client, "irina", "irina123")
     act = client.get(f"{url}/act/parts").text
     assert "АКТ ВЫДАЧИ" in act and "Bosch" in act and "2400" not in act
-    assert "Скрипят передние тормоза" in client.get(f"{url}/act/works").text
+    assert "Замена передних колодок" in client.get(f"{url}/act/works").text   # 23.11.2026: в акте — работы
     assert "Снятые (старые) запчасти" in act and "месяцев" not in act and "Гарантия на работы" not in act
     assert "претензий по объёму, качеству и срокам не имеет" in act
     assert "Гарантия не распространяется на запчасти заказчика" in act
@@ -176,6 +178,8 @@ def test_options_block_approval_until_client_chooses(client):
     assert p.price == Decimal("1300.00") and p.status == "option"
     client.post("/logout")
     login(client, "irina", "irina123")
+    from .conftest import yes_all_works
+    yes_all_works(url)
     assert "ещё не выбрал вариант" in client.post(f"{url}/approval-done").text
     assert _wo(url).status == "approve"
     client.post(f"{url}/parts/{p.id}/choose")                       # до согласования — не заказано
