@@ -505,11 +505,24 @@ def picking_done(order_id: str, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/orders/{order_id}/issue-request")
-def issue_request(order_id: str, ctx: Ctx = Depends(get_ctx), comment: str = Form("")):
-    """Слесарь или менеджер просит выдать зарезервированные запчасти."""
+def issue_request(order_id: str, ctx: Ctx = Depends(get_ctx), comment: str = Form(""),
+                  part: list[str] = Form([]), sel: str = Form("")):
+    """Слесарь или менеджер просит выдать зарезервированные запчасти.
+    23.11.2026 (брат): в наряде галочки — выдать только отмеченные (sel=1). Без галочек (окошко «Запросить выдачу») — всё."""
     ctx.need("stock.request_issue")
     wo = _order(ctx, order_id)
-    req = svc.request_issue(ctx.db, wo, comment)
+    only = None
+    if sel:
+        only = set()
+        for x in part:
+            try:
+                only.add(uuid.UUID(x))
+            except ValueError:
+                pass
+        if not only:
+            flash(ctx.request, "Отметьте галочкой, какие запчасти выдать", "error")
+            return _to(f"/orders/{order_id}#parts")
+    req = svc.request_issue(ctx.db, wo, comment, only=only)
     if req:
         ctx.db.commit()
         flash(ctx.request, "Запрос отправлен кладовщику")

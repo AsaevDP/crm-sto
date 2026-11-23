@@ -1001,15 +1001,16 @@ def open_request(db: Session, wo_id, zone: str, statuses=("new",)) -> IssueReque
                                                 IssueRequest.status.in_(statuses)))
 
 
-def request_issue(db: Session, wo: WorkOrder, comment: str = "") -> IssueRequest | None:
+def request_issue(db: Session, wo: WorkOrder, comment: str = "", only=None) -> IssueRequest | None:
     """Запрос на выдачу всех зарезервированных и ещё не выданных позиций наряда.
+    23.11.2026 (брат): only — набор id деталей (галочки в наряде): просим только их, остальное можно запросить потом.
     Позиции, которые уже в открытом запросе (ждёт кладовщика или «готово к выдаче»), второй раз не просим.
     20.11.2026 (брат): новые и б/у — РАЗНЫЕ запросы (разные окошки: склад и разбор). Возвращает первый из созданных."""
     open_ids = [r.id for r in db.scalars(select(IssueRequest).where(IssueRequest.work_order_id == wo.id,
                                                                     IssueRequest.status.in_(("new", "ready"))))]
     asked = set(db.scalars(select(IssueRequestLine.wo_part_id).where(IssueRequestLine.request_id.in_(open_ids)))) if open_ids else set()
     parts = [p for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status == "reserved"))
-             if p.id not in asked]
+             if p.id not in asked and (only is None or p.id in only)]
     by_zone: dict[str, list] = {}
     for p in parts:
         by_zone.setdefault(part_zone(db, p), []).append(p)

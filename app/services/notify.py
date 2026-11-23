@@ -104,6 +104,23 @@ def arrived_waiting(db: Session, branch_id, user_id) -> dict:
     return {wid: n for wid, n in db.execute(q)}
 
 
+def partsman_info(db: Session, branch_id, user_id) -> dict:
+    """23.11.2026 (брат): запчастисту для сведения (🟣, серая плитка «Пришли запчасти») — по его открытым нарядам все
+    детали, которые ждут выдачи: пришли по закупке и не выданы + те, что мастер попросил выдать (и со склада). {наряд: штук}."""
+    from sqlalchemy import func, or_
+    from ..models import IssueRequest, IssueRequestLine, PurchaseLine, WoPart
+    got = select(PurchaseLine.wo_part_id).where(or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0))
+    asked = (select(IssueRequestLine.wo_part_id).join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id)
+             .where(IssueRequest.status.in_(("new", "ready"))))
+    q = (select(WoPart.work_order_id, func.count(func.distinct(WoPart.id)))
+         .join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
+         .where(WorkOrder.branch_id == branch_id, WorkOrder.status.not_in(("closed", "cancel")),
+                WorkOrder.partsman_id == user_id, WoPart.status == "reserved",
+                or_(WoPart.id.in_(got), WoPart.id.in_(asked)))
+         .group_by(WoPart.work_order_id))
+    return {wid: n for wid, n in db.execute(q)}
+
+
 def arrived_parts(db: Session, branch_id, user_id, mode: str, part_ids: bool = False):
     """23.11.2026 (брат): «Пришли запчасти» по шагам. {наряд: штук}.
     mode="ask"   — 🔴 пришло по закупке, лежит в резерве, а выдачу ещё никто не запросил (менеджер и мастера наряда);

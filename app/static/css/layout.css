@@ -1087,6 +1087,11 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
   background: color-mix(in srgb, var(--red) 14%, transparent); color: color-mix(in srgb, var(--red) 80%, var(--text)); }
 .urg-btn { border: 1px solid var(--separator); background: transparent; color: var(--text-2); border-radius: 8px; padding: 3px 8px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .urg-btn[aria-pressed="true"] { background: var(--red); border-color: var(--red); color: #fff; }
+/* 23.11.2026 (брат): деталь попросили выдать — сиреневая полоска «для сведения» (срочная — красная, она важнее) */
+.part[data-asked="1"] { border-left: 4px solid var(--purple); border-radius: 10px; padding-left: 10px; }
+.iss-pick { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; cursor: pointer; }
+#iss-form #btn-request-issue { white-space: nowrap; flex: none; }
+.iss-pick input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; cursor: pointer; }
 .part[data-urgent="1"] { border-left: 4px solid var(--red); border-radius: 10px; padding-left: 10px; }   /* 22.11.2026: полоска с загибом, как на мойке */
 .rc-hint { margin: 0; }
 .rc-done { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-left: 4px solid var(--green); }
@@ -2147,6 +2152,7 @@ a.key-cell:hover { outline: 2px solid var(--accent); }
 .nbadge.nb-orange { background: var(--orange); color: #fff; }
 /* 19.11.2026 (брат): «для сведения» — следите, делает другой: цифра своего цвета с сиреневой обводкой */
 .nbadge.nb-info { box-shadow: 0 0 0 2px var(--purple); }
+.nbadge.nb-purple.nb-info, .tabbar .nbadges .nbadge.nb-purple.nb-info { box-shadow: none; }   /* 23.11.2026: сиреневый «для сведения» — того же размера, что красный / оранжевый (кольцо его раздувало) */
 .tabbar .nbadges .nbadge.nb-info { box-shadow: 0 0 0 1.5px var(--purple); }   /* 18.11.2026: «нужно ваше действие» — оранжевый (раньше жёлтый) */
 .rsv-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
 .rsv-card { display: grid; gap: 4px; border-left: 4px solid var(--orange); }

@@ -141,8 +141,8 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     # 2-м ряду, сиреневый кружок; выдачу он не запрашивает)
     arrived_info = not ctx.can("stock.request_issue", "orders.approve") and ctx.can("parts.pick")
     if arrived_info:
-        from ..services.notify import arrived_waiting
-        arrived = arrived_waiting(ctx.db, ctx.branch.id, ctx.user.id)
+        from ..services.notify import partsman_info   # пришло по закупке + попросили выдать
+        arrived = partsman_info(ctx.db, ctx.branch.id, ctx.user.id)
     stage_counts["arrived"] = len(arrived)
     # 20.11.2026 (брат, наряд 20): мастеру — наряды, где ВСЕ его работы сделаны, а машина ещё у нас (ждёт мойки,
     # другого мастера, выдачи): плитка «Сделал», из «В работе» уходят
@@ -439,6 +439,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
                            and (ctx.can("orders.view_all") or ctx.user.id == wo.mechanic_id
                                 or any(w.mechanic_id == ctx.user.id for w in works))),
         parts_coming=[p for p in parts if p.status in ("need", "ordered", "arrived")],
+        asked_ids=asked_ids,   # 23.11.2026: детали в открытом запросе на выдачу — сиреневая полоска слева
         # 19.11.2026: отказ клиента после согласования — что решил запчастист (видно в архиве наряда)
         leftover_map=lsvc.for_order(db, wo.id),
         LEFT_STATUS=lsvc.STATUS,

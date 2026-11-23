@@ -122,7 +122,27 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
         assert _arrived_badge(client, who, pwd, url) == (0 if who == "oleg" else 2), who
 
     # 23.11.2026: слесарь запросил выдачу → красная гаснет у всех; пока кладовщик не подготовил — зелёной тоже нет
+    # 23.11.2026 (брат): галочки — выдать только отмеченное. Ничего не отмечено — запроса нет
+    from app.models import IssueRequestLine
     login(client, "andrey", "andrey123")
+    page = client.get(url).text
+    assert page.count('form="iss-form" checked') == 2 and "(2 из 2)" in page
+    client.post(f"{url}/issue-request", data={"sel": "1"})
+    assert _rid(url) is None
+    client.post(f"{url}/issue-request", data={"sel": "1", "part": str(sensor.id)})
+    with SessionLocal() as db:
+        lines = db.scalars(select(IssueRequestLine.wo_part_id).where(IssueRequestLine.request_id == _rid(url))).all()
+    assert lines == [sensor.id]
+    page = client.get(url).text
+    assert page.count('data-asked="1"') == 1 and page.count('form="iss-form" checked') == 1
+    client.post("/logout")
+    assert _arrived_badge(client, "irina", "irina123", url) == 1   # вторую ещё не просили — красная на неё
+    login(client, "oleg", "oleg123")   # запчастисту — сиреневая полоска у попрошенной детали, мигает она (rows)
+    assert 'data-asked="1"' in client.get(url).text
+    b = client.get("/api/notify", headers=FETCH).json()["badges"]["/orders"]
+    assert any(x["info"] and '.part[data-asked="1"]' in x["rows"] for x in b)
+    client.post("/logout")
+    login(client, "andrey", "andrey123")   # остальное — той же кнопкой позже (окошко без галочек — всё)
     client.post(f"{url}/issue-request")
     client.post("/logout")
     for who, pwd in TEAM:

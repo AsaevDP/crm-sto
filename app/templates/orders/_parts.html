@@ -7,9 +7,14 @@
 {% set pp = show_price or is_master(ctx.user) %}
 {% macro part_row(p, in_group=False) %}
 {% set cat = cats.get(p.catalog_id) %}{% set pp = show_price or is_master(ctx.user) %}
-<div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}" data-urgent="{{ 1 if p.urgent else 0 }}">
+{# 23.11.2026 (брат): деталь попросили выдать (запрос ждёт кладовщика / готово к выдаче) — сиреневая полоска слева #}
+{% set asked = p.id in asked_ids and p.status == "reserved" %}
+{# 23.11.2026 (брат): галочка — выдать эту деталь (по умолчанию отмечены все, что можно запросить) #}
+{% set pickable = can_request_issue and p.status == "reserved" and p.id not in asked_ids %}
+<div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}" data-urgent="{{ 1 if p.urgent else 0 }}"
+     data-asked="{{ 1 if asked else 0 }}"{% if asked %} title="Попросили выдать — ждёт кладовщика"{% endif %}>
   <div class="part-main">
-    <span class="part-name">{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
+    <span class="part-name">{% if pickable %}<label class="iss-pick" title="Выдать эту деталь"><input type="checkbox" name="part" value="{{ p.id }}" form="iss-form" checked></label>{% endif %}{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
       {% if not in_group and cat and cat.brand %}<span class="tag">{{ cat.brand }}</span>{% endif %}
       {% if show_cost and cat and cat.article %}<span class="caption mono" style="display:block">{{ cat.article }}{% if cat.revision %} · рев. {{ cat.revision }}{% endif %}</span>{% endif %}
       {% if in_group and p.catalog_id in free %}<span class="caption" style="display:block">{{ "на складе: " ~ (free[p.catalog_id]|num) if free[p.catalog_id] > 0 else "под заказ" }}</span>{% endif %}
@@ -287,10 +292,23 @@
   {# 19.11.2026 (брат): то, что уже на складе, можно взять и начать работу, пока остальное едет #}
   {% if parts_coming %}<p class="hint" style="margin:0">Можно взять то, что уже на складе, и начать. Ещё нет на складе:
     {{ parts_coming|map(attribute="name")|join(", ") }} — последнюю работу закрыть нельзя, пока их не выдадут.</p>{% endif %}
-  <form class="note-form" method="post" action="/orders/{{ wo.id }}/issue-request">
+  {# 23.11.2026 (брат): выдать можно не всё — галочки у деталей слева; что не отметили — запросите потом #}
+  {% set n_pick = parts|selectattr("status", "equalto", "reserved")|rejectattr("id", "in", asked_ids)|list|length %}
+  {% if n_pick > 1 %}<p class="caption" style="margin:0">Галочками отмечены детали к выдаче — снимите лишние, остальные можно запросить позже.</p>{% endif %}
+  <form class="note-form" id="iss-form" method="post" action="/orders/{{ wo.id }}/issue-request" data-total="{{ n_pick }}">
+    <input type="hidden" name="sel" value="1">
     <input class="field" name="comment" placeholder="Комментарий кладовщику (необязательно)">
-    <button class="btn btn-sm" id="btn-request-issue">Запросить выдачу{% if parts_coming %} того, что есть{% endif %}</button>
+    <button class="btn btn-sm" id="btn-request-issue">Запросить выдачу{% if n_pick > 1 %} <span class="iss-n">({{ n_pick }} из {{ n_pick }})</span>{% elif parts_coming %} того, что есть{% endif %}</button>
   </form>
+  <script>
+  (function () {   // счётчик «Запросить выдачу (2 из 3)»; ничего не отмечено — кнопка серая
+    const f = document.getElementById('iss-form'); if (!f) return;
+    const total = +f.dataset.total, btn = f.querySelector('#btn-request-issue'), n = f.querySelector('.iss-n');
+    const upd = () => { const k = document.querySelectorAll('input[form="iss-form"][name="part"]:checked').length;
+      if (n) n.textContent = `(${k} из ${total})`; btn.disabled = !k; };
+    document.querySelectorAll('input[form="iss-form"][name="part"]').forEach(c => c.addEventListener('change', upd)); upd();
+  })();
+  </script>
   {% elif parts_coming and wo.status in ("waiting", "instock", "work") %}
   <p class="caption" style="margin:4px 0 0">Ещё нет на складе: {{ parts_coming|map(attribute="name")|join(", ") }}.
     {% if open_issues %}Пока работайте с выданным — последнюю работу закрыть нельзя, пока их не выдадут.{% else %}Пришедшее можно запросить, когда оно будет на складе.{% endif %}</p>

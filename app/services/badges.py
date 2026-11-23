@@ -250,9 +250,12 @@ def compute(ctx) -> dict:
                      alone=True, wo=list(ask), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in ask_rows] + ["#btn-request-issue"],
                      tile=['Пришли запчасти'], btn="blue")
             # 23.11.2026 (брат): запчастисту — 🟣 для сведения: по его нарядам пришло и ещё не выдано (серая плитка)
-            if not ctx.can("stock.request_issue", "orders.approve") and ctx.can("parts.pick") and arrived:
-                _add(out, "/orders", "purple", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
-                     alone=True, info=True, wo=list(arrived), blk="#parts", tile=['Пришли запчасти'])
+            if not ctx.can("stock.request_issue", "orders.approve") and ctx.can("parts.pick"):
+                from .notify import partsman_info
+                pinfo = partsman_info(db, bid, me.id)
+                _add(out, "/orders", "purple", sum(pinfo.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
+                     alone=True, info=True, wo=list(pinfo), blk="#parts", tile=['Пришли запчасти'],
+                     rows=['.part[data-asked="1"]'])   # в наряде мигают детали, которые попросили выдать; блок не обводим
             if ctx.can("orders.approve"):
                 going = arrived_parts(db, bid, me.id, "going")
                 going_rows = arrived_parts(db, bid, me.id, "going", part_ids=True) if going else []
@@ -323,10 +326,12 @@ def compute(ctx) -> dict:
         # 19.11.2026 (брат, наряд 60): по моим нарядам мастер попросил у кладовщика — менеджер видит и запчасти, и
         # инструмент: 🟠 ждёт кладовщика (проследить), 🟢 инструмент подготовлен — мастер заберёт
         from ..models import ToolRequest
-        _add(out, "/ready", "orange", db.scalar(select(func.count()).select_from(IssueRequest).join(
+        # 23.11.2026 (брат): в наряде у менеджера мигают сиреневые полоски деталей, которые попросили выдать
+        wait_wo = db.scalars(select(IssueRequest.work_order_id).join(
             WorkOrder, WorkOrder.id == IssueRequest.work_order_id).where(
-            IssueRequest.branch_id == bid, IssueRequest.status == "new", WorkOrder.manager_id == me.id)) or 0,
-             "запчасти — ждут кладовщика", "/ready#waiting", tile=['Ждут кладовщика'])
+            IssueRequest.branch_id == bid, IssueRequest.status == "new", WorkOrder.manager_id == me.id)).all()
+        _add(out, "/ready", "orange", len(wait_wo), "запчасти — ждут кладовщика", "/ready#waiting", tile=['Ждут кладовщика'],
+             wo=wait_wo, rows=['.part[data-asked="1"]'])
         tq = select(func.count()).select_from(ToolRequest).join(WorkOrder, WorkOrder.id == ToolRequest.work_order_id).where(
             ToolRequest.branch_id == bid, ToolRequest.kind == "issue", WorkOrder.manager_id == me.id)
         # 19.11.2026 (брат): инструмент — как запчасти, только у «Запросов на выдачу» (там же «Выдано»);

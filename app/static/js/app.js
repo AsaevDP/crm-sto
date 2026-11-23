@@ -408,7 +408,8 @@
           // 23.11.2026 (брат): есть кнопка / строка дела — обводим её, весь блок нет (квадратная рамка блока раздражает)
           const rowEls = (x.rows || []).flatMap(s => [...main.querySelectorAll(s)]).filter(el => el.offsetParent !== null || el.tagName === 'SUMMARY');
           if (rowEls.length) rowEls.forEach(el => add(el));
-          else if (x.blk) add(document.querySelector(x.blk));
+          // 23.11.2026 (брат): «для сведения» весь блок не обводит — только свои строки (или ничего)
+          else if (x.blk && !x.info) add(document.querySelector(x.blk));
         } else if ((here === '/orders' && menu === '/orders') || onTarget) {
           main.querySelectorAll(`a[href="/orders/${id}"], a[href^="/orders/${id}#"], a[href^="/orders/${id}?"]`)
             .forEach(a => add(a.matches('.ocard') ? a : (a.closest(BOX) || a)));
