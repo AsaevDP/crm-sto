@@ -2870,6 +2870,8 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
   text-decoration: none; font-size: 14px; line-height: 1.3; }
 .nb-menu a:hover { background: var(--fill); }
 .nb-menu .nbadge { position: static; flex: none; margin: 0; }
+/* 23.11.2026 (брат): окошко у любого кружка — заголовок «Что нужно сделать», дела — строками-ссылками */
+.nb-menu-h { padding: 4px 10px 2px; font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: none; }
 
 /* 23.11.2026 (брат): подпись этапа «чья очередь и что сделать» — длиннее обычного чипа: переносится, не обрезается */
 .chip.chip-say { white-space: normal; text-align: left; line-height: 1.25; height: auto; min-height: 22px;

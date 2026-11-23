@@ -37,14 +37,17 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     # экраны — разные кружки (раньше «новые» и «вам передали» были одной цифрой, клик вёл только к первому)
     same = None if alone else next((x for x in lst if x["c"] == color and not x.get("alone")
                                     and bool(x.get("info")) == info and x["href"] == (link or href)), None)
+    # 23.11.2026 (брат): нажали на кружок — сначала окошко со списком дел (go), переход — только выбрав дело
+    item = {"t": title + (" (для сведения)" if info else ""), "href": link or href, "n": int(n)}
     if same:   # одного цвета — одной цифрой, подсказка перечисляет всё
         same["n"] += int(n)
         same["t"] += f" · {title}"
+        same["go"].append(item)
         _merge_marks(same, {"wo": wo, "blk": blk, "rows": rows or [], "sel": sel or [], "tile": list(tile or [])})
     else:
-        lst.append({"c": color, "n": int(n), "t": title + (" (для сведения)" if info else ""), "href": link or href,
+        lst.append({"c": color, "n": int(n), "t": item["t"], "href": link or href,
                     "alone": alone, "info": info, "wo": wo, "blk": blk, "rows": list(rows or []),
-                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn})
+                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn, "go": [item]})
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
@@ -77,8 +80,7 @@ def _compact(out: dict) -> dict:
                              and not m.get("alone") and not x.get("alone")), None)
                 if same:
                     # 23.11.2026 (брат): склеенный кружок ведёт в несколько мест — при нажатии меню «куда перейти»
-                    same.setdefault("go", [{"t": same["t"], "href": same["href"], "n": same["n"]}])
-                    same["go"] += x.get("go") or [{"t": x["t"], "href": x["href"], "n": x["n"]}]
+                    same["go"] = list(same.get("go") or []) + list(x.get("go") or [{"t": x["t"], "href": x["href"], "n": x["n"]}])
                     same["n"] += x["n"]
                     same["t"] += f" · {x['t']}"
                     _merge_marks(same, x)

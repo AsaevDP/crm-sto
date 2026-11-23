@@ -79,10 +79,35 @@
     document.querySelectorAll(sel).forEach(a => {
       let b = a.querySelector('.nbadge');
       if (!n) { b && b.remove(); return; }
-      if (!b) { b = document.createElement('span'); b.className = 'nbadge'; a.appendChild(b); }
+      if (!b) {
+        b = document.createElement('span'); b.className = 'nbadge'; a.appendChild(b);
+        // 23.11.2026 (брат): и у «Сообщений» — сначала окошко, переход из него
+        b.addEventListener('click', e => nbMenu(e, b, [{ t: 'Новые сообщения — дело ещё не сделано', href: a.getAttribute('href'),
+                                                          n: b.textContent }], 'nb-red'));
+      }
       b.textContent = n;
     });
   }
+  // 23.11.2026 (брат): любой кружок в меню — сначала окошко «что нужно сделать» (даже если дело одно), переход — только
+  // нажав на дело в окошке. Каждое дело — с заглавной буквы. Повторное нажатие на тот же кружок — закрыть окошко.
+  const cap = s => (s || '').charAt(0).toUpperCase() + (s || '').slice(1);
+  function nbMenu(e, b, items, cls) {
+    e.preventDefault(); e.stopPropagation();
+    const open = document.querySelector('.nb-menu');
+    if (open) { const same = open._from === b; open.remove(); if (same) return; }
+    const go = items.filter((g, i, a) => a.findIndex(o => o.href === g.href && o.t === g.t) === i);
+    const m = document.createElement('div'); m.className = 'nb-menu'; m.setAttribute('role', 'menu'); m._from = b;
+    const h = document.createElement('div'); h.className = 'nb-menu-h'; h.textContent = 'Что нужно сделать'; m.appendChild(h);
+    go.forEach(g => { const a = document.createElement('a'); a.href = g.href; a.setAttribute('role', 'menuitem');
+      a.innerHTML = `<span class="nbadge ${cls}">${g.n}</span><span></span>`; a.lastChild.textContent = cap(g.t); m.appendChild(a); });
+    document.body.appendChild(m);
+    const r = b.getBoundingClientRect();
+    m.style.left = Math.max(8, Math.min(r.left, innerWidth - m.offsetWidth - 8)) + 'px';
+    m.style.top = (r.bottom + m.offsetHeight + 6 > innerHeight ? Math.max(8, r.top - m.offsetHeight - 6) : r.bottom + 6) + 'px';
+    setTimeout(() => document.addEventListener('click', function off(ev) {
+      if (!m.contains(ev.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
+  }
+  window.crmNbMenu = nbMenu;
   function paint(map) {
     document.querySelectorAll('.sidebar a[href], .tabbar a[href], .more-menu a[href]').forEach(a => {
       const href = a.getAttribute('href');
@@ -94,22 +119,10 @@
       box.innerHTML = '';
       list.forEach(x => {
         const b = document.createElement('span');
-        b.className = 'nbadge nb-' + x.c + (x.info ? ' nb-info' : ''); b.textContent = x.n; b.title = x.t;
-        b.addEventListener('click', e => {
-          e.preventDefault(); e.stopPropagation();
-          // 23.11.2026 (брат): в одном кружке дела из разных мест — меню «куда перейти», а не только первое
-          const go = (x.go || []).filter((g, i, a) => a.findIndex(o => o.href === g.href) === i);
-          if (go.length < 2) { location.href = x.href; return; }
-          document.querySelectorAll('.nb-menu').forEach(m => m.remove());
-          const m = document.createElement('div'); m.className = 'nb-menu'; m.setAttribute('role', 'menu');
-          go.forEach(g => { const a = document.createElement('a'); a.href = g.href; a.setAttribute('role', 'menuitem');
-            a.innerHTML = `<span class="nbadge nb-${x.c}">${g.n}</span><span></span>`; a.lastChild.textContent = g.t; m.appendChild(a); });
-          document.body.appendChild(m);
-          const r = b.getBoundingClientRect();
-          m.style.left = Math.min(r.left, innerWidth - m.offsetWidth - 8) + 'px';
-          m.style.top = (r.bottom + m.offsetHeight + 6 > innerHeight ? r.top - m.offsetHeight - 6 : r.bottom + 6) + 'px';
-          setTimeout(() => document.addEventListener('click', function off(ev) { if (!m.contains(ev.target)) { m.remove(); document.removeEventListener('click', off); } }), 0);
-        });
+        b.className = 'nbadge nb-' + x.c + (x.info ? ' nb-info' : ''); b.textContent = x.n;
+        b.title = (x.go && x.go.length ? x.go : [x]).map(g => cap(g.t)).join(' · ');
+        b.addEventListener('click', e => nbMenu(e, b, (x.go && x.go.length ? x.go : [{ t: x.t, href: x.href, n: x.n }]),
+                                                'nb-' + x.c + (x.info ? ' nb-info' : '')));
         box.appendChild(b);
       });
     });
