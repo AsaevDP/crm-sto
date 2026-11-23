@@ -95,6 +95,15 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
         assert "Пришли запчасти: 1 шт." in got[0][1] and "на складе 1 из 2" in got[0][2], who
     for who, pwd in TEAM:   # 🔴 менеджеру и мастерам (запчастисту — нет: выдачу он не запрашивает)
         assert _arrived_badge(client, who, pwd, url) == (0 if who == "oleg" else 1), who
+    # Запчастисту — 🟣 для сведения и серая плитка во 2-м ряду
+    login(client, "oleg", "oleg123")
+    b = client.get("/api/notify", headers=FETCH).json()["badges"].get("/orders", [])
+    assert any(x["c"] == "purple" and x["info"] and x["t"].startswith("пришли запчасти") for x in b)
+    page = client.get("/orders?tab=arrived").text
+    assert _wo(url).number in page
+    row2 = page.split("ord-tiles-2", 1)[1]
+    assert "Пришли запчасти" in row2.split("</div>", 1)[0]
+    client.post("/logout")
 
     # Плитка-фильтр «Пришли запчасти» в нарядах
     login(client, "elektro", "elektro123")

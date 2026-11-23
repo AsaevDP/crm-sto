@@ -249,6 +249,10 @@ def compute(ctx) -> dict:
                 _add(out, "/orders", "red", sum(ask.values()), "пришли запчасти — запросите выдачу", "/orders?tab=arrived",
                      alone=True, wo=list(ask), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in ask_rows] + ["#btn-request-issue"],
                      tile=['Пришли запчасти'], btn="blue")
+            # 23.11.2026 (брат): запчастисту — 🟣 для сведения: по его нарядам пришло и ещё не выдано (серая плитка)
+            if not ctx.can("stock.request_issue", "orders.approve") and ctx.can("parts.pick") and arrived:
+                _add(out, "/orders", "purple", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
+                     alone=True, info=True, wo=list(arrived), blk="#parts", tile=['Пришли запчасти'])
             if ctx.can("orders.approve"):
                 going = arrived_parts(db, bid, me.id, "going")
                 going_rows = arrived_parts(db, bid, me.id, "going", part_ids=True) if going else []

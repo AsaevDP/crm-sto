@@ -137,6 +137,12 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         arrived.update(arrived_parts(ctx.db, ctx.branch.id, ctx.user.id, "ask"))
     if ctx.can("orders.approve"):
         arrived.update(arrived_parts(ctx.db, ctx.branch.id, ctx.user.id, "going"))
+    # 23.11.2026 (брат): запчастисту — для сведения: его наряды, где запчасти пришли и ещё не выданы (серая плитка во
+    # 2-м ряду, сиреневый кружок; выдачу он не запрашивает)
+    arrived_info = not ctx.can("stock.request_issue", "orders.approve") and ctx.can("parts.pick")
+    if arrived_info:
+        from ..services.notify import arrived_waiting
+        arrived = arrived_waiting(ctx.db, ctx.branch.id, ctx.user.id)
     stage_counts["arrived"] = len(arrived)
     # 20.11.2026 (брат, наряд 20): мастеру — наряды, где ВСЕ его работы сделаны, а машина ещё у нас (ждёт мойки,
     # другого мастера, выдачи): плитка «Сделал», из «В работе» уходят
@@ -187,6 +193,7 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
                       STAGES=ORDER_STAGES, stage_counts=stage_counts, show_handed=show_handed, is_mech=is_master(ctx.user),
+                      arrived_info=arrived_info,
                       bar=periods.Bar(per, "/orders", {"tab": tab, "q": q, "status": status}))
 
 

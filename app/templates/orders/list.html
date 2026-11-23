@@ -49,13 +49,16 @@
 {% for k in ("active", "intake", "approve", "parts") %}{% set _ = row1.append({"t": STAGES[k][0], "n": stage_counts[k], "c": STAGES[k][1],
     "href": "?tab=" ~ k ~ qq, "on": tab == k, "s": "в работе сейчас" if k == "active" else ""}) %}{% endfor %}
 {# 12.11.2026: пришли запчасти по закупке, ждут выдачи — плитка видна, пока есть такие наряды (или открыт этот фильтр) #}
-{% if stage_counts.arrived or tab == "arrived" %}{% set _ = row1.append({"t": "Пришли запчасти", "n": stage_counts.arrived, "c": "green",
+{% if not arrived_info and (stage_counts.arrived or tab == "arrived") %}{% set _ = row1.append({"t": "Пришли запчасти", "n": stage_counts.arrived, "c": "green",
     "href": "?tab=arrived" ~ qq, "on": tab == "arrived", "s": ("запросите выдачу / ждём «Получил»" if ctx.can("orders.approve") else "запросите выдачу") if stage_counts.arrived else "всё выдано"}) %}{% endif %}
 {% set _ = row1.append({"t": STAGES.work[0], "n": stage_counts.work, "c": STAGES.work[1], "href": "?tab=work" ~ qq, "on": tab == "work", "s": ""}) %}
 {# 20.11.2026 (брат, наряд 20): мастеру — где все его работы сделаны, машина ещё у нас (мойка, другой мастер, выдача) #}
 {% if is_mech %}{% set _ = row1.append({"t": "Сделал", "n": stage_counts.mydone, "c": "gray", "href": "?tab=mydone" ~ qq,
     "on": tab == "mydone", "s": "мои работы готовы — ждёт мойки / выдачи", "zero": not stage_counts.mydone}) %}{% endif %}
 {% set _ = row1.append({"t": STAGES.ready[0], "n": stage_counts.ready, "c": STAGES.ready[1], "href": "?tab=ready" ~ qq, "on": tab == "ready", "s": ""}) %}
+{# 23.11.2026 (брат): запчастисту «Пришли запчасти» — серая, во 2-м ряду, для сведения (выдачу просит не он) #}
+{% if arrived_info and (stage_counts.arrived or tab == "arrived") %}{% set _ = row2.append({"t": "Пришли запчасти", "n": stage_counts.arrived,
+    "c": "gray", "href": "?tab=arrived" ~ qq, "on": tab == "arrived", "s": "для сведения · ждут выдачи" if stage_counts.arrived else "всё выдано"}) %}{% endif %}
 {% set _ = row2.append({"t": STAGES.closed[0], "n": stage_counts.closed, "c": STAGES.closed[1], "href": "?tab=closed" ~ qq, "on": tab == "closed", "s": ""}) %}
 {# 13.11.2026: «Переданные» — менеджер передал наряд другому: 3 дня только посмотреть #}
 {% if stage_counts.handed_out or tab == "handed_out" %}{% set _ = row2.append({"t": "Переданные", "n": stage_counts.handed_out, "c": "gray",
