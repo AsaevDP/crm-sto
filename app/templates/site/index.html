@@ -18,10 +18,11 @@
 </nav>
 
 {% if t == "new" %}
+{# 23.11.2026 (брат): порядок — Нет на складе, На сайте, Ждут утверждения, Отказано, Продано, Сняты #}
 {{ tiles([
-  {"t": "Ждут утверждения", "n": counts.wait, "s": "цену утверждает директор", "c": "red" if can_price else "orange", "href": "/site?t=new&f=wait", "on": f == "wait"},
-  {"t": "На сайте", "n": counts.site, "s": "утверждено, есть на складе", "c": "green", "href": "/site?t=new&f=site", "on": f == "site"},
   {"t": "Нет на складе", "n": counts.nostock, "s": "взяли в наряд", "c": "gray", "href": "/site?t=new&f=nostock", "on": f == "nostock"},
+  {"t": "На сайте", "n": counts.site, "s": "утверждено, есть на складе", "c": "green", "href": "/site?t=new&f=site", "on": f == "site"},
+  {"t": "Ждут утверждения", "n": counts.wait, "s": "цену утверждает директор", "c": "red" if can_price else "orange", "href": "/site?t=new&f=wait", "on": f == "wait"},
   {"t": "Отказано", "n": counts.declined, "s": "директор не утвердил", "c": "red", "href": "/site?t=new&f=declined", "on": f == "declined"},
   {"t": "Продано", "n": counts.sold, "s": "всё продали", "c": "teal", "href": "/site?t=new&f=sold", "on": f == "sold"},
   {"t": "Сняты", "n": counts.off, "s": "сняли с продажи", "c": "gray", "href": "/site?t=new&f=off", "on": f == "off"},

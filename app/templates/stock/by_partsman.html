@@ -22,29 +22,31 @@
 <nav class="segmented mo-view" aria-label="Как показать"><a href="/my-orders" aria-pressed="true">По нарядам</a><a href="/purchases" aria-pressed="false">По накладным</a></nav>
 {% endif %}
 
-{% if mode == "all" %}
+{# 23.11.2026 (брат): сверху — «меню»: Все, Мои заказы, затем этапы (Ждём, Неполная поставка, Опаздывают, Приняты);
+   ниже — запчастисты (по человеку). У запчастиста («Мои заказы») — только этапы. #}
 {% set qs = "&st=" ~ st if st != "wait" else "" %}
-<div class="pult-tiles vs-tiles pm-people">
+<div class="pult-tiles vs-tiles {{ 'pu-tiles' if mode == 'mine' }}">
+  {% if mode == "all" %}
   <a class="ptile {{ 'on' if not u }}" href="/purchases/by-partsman{{ '?st=' ~ st if st != 'wait' }}" style="--tc:{{ color_css('blue') }}">
     <span class="ptile-t">Все</span><b>{{ tiles|sum(attribute="n") + (me_tile.n if me_tile else 0) }}</b><span class="ptile-s">ждём деталей</span></a>
   {% if me_tile %}
   <a class="ptile {{ 'on' if u == 'me' }} {{ 'zero' if not me_tile.n }}" href="/purchases/by-partsman?u=me{{ qs }}" style="--tc:{{ color_css('orange') }}">
     <span class="ptile-t">Мои заказы</span><b>{{ me_tile.n }}</b><span class="ptile-s">я заказал на склад</span></a>
   {% endif %}
+  {% endif %}
+  {% for k, (title_, color, sub) in TABS.items() %}
+  <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="{{ base }}?st={{ k }}{{ uq }}" style="--tc:{{ color_css(color) }}">
+    <span class="ptile-t">{{ title_ }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
+  {% endfor %}
+</div>
+{% if mode == "all" and tiles %}
+<div class="pult-tiles vs-tiles pm-people">
   {% for t in tiles %}
   <a class="ptile {{ 'on' if who and u != 'me' and t.u.id == who.id }} {{ 'zero' if not t.n }}" href="/purchases/by-partsman?u={{ t.u.id }}{{ qs }}" style="--tc:{{ color_css('indigo') }}">
     <span class="ptile-t">{{ t.u.full_name }}</span><b>{{ t.n }}</b><span class="ptile-s">{{ t.u.role.name|lower }} · ждём</span></a>
   {% endfor %}
 </div>
 {% endif %}
-
-{# 23.11.2026 (брат): этапы — такие же плитки, как люди сверху (раньше маленькие «таблетки» st-mini) #}
-<div class="pult-tiles vs-tiles {{ 'pu-tiles' if mode == 'mine' }}">
-  {% for k, (title_, color, sub) in TABS.items() %}
-  <a class="ptile {{ 'on' if st == k }} {{ 'zero' if not counts[k] }}" href="{{ base }}?st={{ k }}{{ uq }}" style="--tc:{{ color_css(color) }}">
-    <span class="ptile-t">{{ title_ }}</span><b>{{ counts[k] }}</b><span class="ptile-s">{{ sub }}</span></a>
-  {% endfor %}
-</div>
 
 {# 18.11.2026 (брат): свежие сверху; сбоку неприметно — день по календарику и «Все» #}
 {% set day_word = {"todo": "Согласовано", "arrived": "Принято"}.get(st, "Заказано") %}

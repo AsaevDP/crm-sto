@@ -33,16 +33,24 @@
 {# Состояния — нажал — «Все детали» с этим фильтром.
    20.11.2026 (брат): плитками как во всех разделах (_tiles.html), с подписью; раньше — маленькие «таблетки» в ряд #}
 {% from "_tiles.html" import tiles as tiles_m with context %}
+{# 23.11.2026 (брат): два ряда в таком порядке — 1) В наличии, В резерве, Не утверждено, Отказано;
+   2) Нет на сайте, Нет в наличии, Отправлено, Продано, В наряды СТО. Цвета и подписи — прежние. #}
+{% set DEF = {"stock": ("В наличии", "green", "можно продать"), "reserved": ("В резерве", "yellow", "отложено покупателю"),
+              "unapproved": ("Не утверждено", "orange", "ждёт цены директора"), "declined": ("Отказано", "red", "цену не утвердили"),
+              "nosite": ("Нет на сайте", "orange" if tiles.nosite else "gray", "в наличии, не выложено"),
+              "out": ("Нет в наличии", "gray", "продано, в наряде, списано"), "sent": ("Отправлено", "purple", "в пути к покупателю"),
+              "sold": ("Продано", "blue", "деньги получены"), "service": ("В наряды СТО", "teal", "ушло в ремонт")} %}
+<div class="ord-rows rz-state-rows">
+{% for row in [["stock", "reserved", "unapproved", "declined"], ["nosite", "out", "sent", "sold", "service"]] %}
 {% set ST = [] %}
-{% for key, title, color, sub in [("unapproved", "Не утверждено", "orange", "ждёт цены директора"), ("declined", "Отказано", "red", "цену не утвердили"),
-    ("stock", "В наличии", "green", "можно продать"), ("nosite", "Нет на сайте", "orange" if tiles.nosite else "gray", "в наличии, не выложено"), ("reserved", "В резерве", "yellow", "отложено покупателю"),
-    ("sent", "Отправлено", "purple", "в пути к покупателю"), ("sold", "Продано", "blue", "деньги получены"),
-    ("service", "В наряды СТО", "teal", "ушло в ремонт"), ("out", "Нет в наличии", "gray", "продано, в наряде, списано")] %}
+{% for key in row %}{% set title, color, sub = DEF[key] %}
 {% set n = tiles[key] if key != "out" else tiles.sold + tiles.service + tiles.writeoff + tiles.out %}
 {% set _ = ST.append({"t": title, "n": n, "c": color, "s": sub, "on": f == key and v == "parts",
                       "href": link(v='parts', f=('' if f == key else key), cat='', sub='')}) %}
 {% endfor %}
 {{ tiles_m(ST, "rz-state-tiles") }}
+{% endfor %}
+</div>
 
 {% if v == "cars" %}
 {# ===================== Машины ===================== #}
