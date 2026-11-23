@@ -52,7 +52,11 @@ def test_progress_done_by_and_undo(client):
     wo = _wo(url)
     with SessionLocal() as db:
         p = work_progress(db, [wo.id])[wo.id]
-    assert p["level"] == "zero" and p["total"] == 1
+    assert p["level"] == "empty" and p["total"] == 1   # 23.11.2026: не начато — серая пустая
+    # 23.11.2026 (брат): меньше половины — красная, половина и больше — оранжевая, всё — зелёная, 0 из 0 — серая
+    from app.services.orders import progress_level as lv
+    assert [lv(0, 0), lv(0, 3), lv(1, 4), lv(2, 4), lv(3, 4), lv(4, 4), lv(1, 3), lv(2, 3)] == \
+        ["none", "empty", "zero", "part", "part", "all", "zero", "part"]
     _as(client, "irina")
     client.post(f"{url}/works", data={"name": "Диагностика ходовой", "pricing": "fixed", "rate": "300", "qty": "1"})
     w1, w2 = _works(url)

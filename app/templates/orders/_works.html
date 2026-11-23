@@ -17,7 +17,7 @@
   <div class="card-h"><span class="headline"><span class="stepno">{{ 2 if flow.wash else 5 }}</span>{{ "Услуги мойки" if flow.wash else "Работы" }} · {{ n_done }} из {{ works|length }}</span>
     {% if wp and works %}<span class="footnote nowrap">итого <b>{{ t.works|money }} ₴</b></span>{% endif %}</div>
   {% if works %}{{ progress({"done": n_done, "total": works|length, "pct": (100 * n_done / works|length)|round|int,
-      "level": "all" if n_done == works|length else ("part" if n_done else "zero")}) }}
+      "level": "all" if n_done == works|length else ("empty" if not n_done else ("part" if n_done * 2 >= works|length else "zero"))}) }}
   <div class="nm-cols nm-head {{ 'n5' if wp else 'n3' }}" aria-hidden="true"><span>Н/ч</span><span>Кол-во</span><span>Время</span>{% if wp %}<span>Цена</span><span>Сумма</span>{% endif %}</div>
   {% endif %}
 

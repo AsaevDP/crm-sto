@@ -621,6 +621,7 @@ tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red
 .wprog[data-l="part"] .wprog-bar > span { background: var(--orange); }
 .wprog[data-l="all"]  .wprog-bar > span { background: var(--green); }
 .wprog[data-l="zero"] .caption { color: var(--red); }
+.wprog[data-l="none"] .caption, .wprog[data-l="empty"] .caption { color: var(--text-2); }   /* 23.11.2026: серая пустая */
 .wprog[data-l="all"]  .caption { color: var(--green); }
 .lift .wprog { margin-top: 2px; }
 /* 23.11.2026 (брат): подписи над полосками на плитке наряда — «Запчасти» / «Работы» */

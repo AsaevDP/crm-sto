@@ -1026,6 +1026,19 @@ def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False, dups_ok:
 
 
 # ---------- Выполнение работ (полоска на карточке машины) ----------
+def progress_level(done: int, total: int) -> str:
+    """23.11.2026 (брат): цвет полоски «Запчасти» / «Работы». none — нечего считать (0 из 0, серая пустая),
+    empty — ничего ещё нет / не начато (серая пустая), zero — меньше половины (красная), part — половина и больше
+    (оранжевая), all — всё (зелёная)."""
+    if not total:
+        return "none"
+    if not done:
+        return "empty"
+    if done >= total:
+        return "all"
+    return "part" if done * 2 >= total else "zero"
+
+
 def work_progress(db: Session, order_ids) -> dict:
     """{наряд: {"done": n, "total": n, "pct": 0..100, "level": none/zero/part/all}}.
     zero — ничего не сделано (красный), part — частично (оранжевый), all — всё готово (зелёный)."""
@@ -1043,7 +1056,7 @@ def work_progress(db: Session, order_ids) -> dict:
     for p in out.values():
         if p["total"]:
             p["pct"] = round(100 * p["done"] / p["total"])
-            p["level"] = "all" if p["done"] == p["total"] else ("part" if p["done"] else "zero")
+            p["level"] = progress_level(p["done"], p["total"])
     return out
 
 
@@ -1066,7 +1079,7 @@ def parts_progress(db: Session, order_ids) -> dict:
     for p in out.values():
         if p["total"]:
             p["pct"] = round(100 * p["done"] / p["total"])
-            p["level"] = "all" if p["done"] == p["total"] else ("part" if p["done"] else "zero")
+            p["level"] = progress_level(p["done"], p["total"])
     return out
 
 
