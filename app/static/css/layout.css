@@ -2930,7 +2930,11 @@ main .pult-tiles {
   align-self: stretch !important; flex: none !important; margin-left: 0 !important; }
 main .pult-tiles .ptile:not(.set-tile) {
   width: auto !important; flex: none !important; min-width: 0 !important; min-height: 94px;
-  padding: 9px 13px 10px !important; gap: 2px !important; border-radius: var(--r-md) !important; align-content: start; opacity: 1; }
+  padding: 9px 13px 11px !important; gap: 2px !important; border-radius: var(--r-md) !important; opacity: 1;
+  /* 23.11.2026 (брат): название сверху, цифра посередине, подпись прижата к низу (по нижней строке) */
+  grid-template-rows: auto 1fr auto; align-content: stretch; }
+main .pult-tiles .ptile:not(.set-tile) > b { align-self: center; }
+main .pult-tiles .ptile:not(.set-tile) > .ptile-s { align-self: end; }
 main .pult-tiles .ptile::before { content: none !important; }
 main .pult-tiles .ptile-t { font-size: 13px !important; line-height: 1.25 !important; font-weight: 600;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

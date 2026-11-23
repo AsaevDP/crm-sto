@@ -45,7 +45,7 @@
           {% if mc %}<span class="plift-mech"><i></i>{{ mc.short_name }}</span>{% endif %}</span>
         {% if l.id in away %}<span class="caption">работает с машиной · {{ wo.number[-6:] }}</span>{% endif %}
         {% if st == "pause" %}<span class="caption pause-why">{{ paused[wo.id] }}</span>{% endif %}
-        {% if prog.get(wo.id) and prog[wo.id].total %}{{ progress(prog[wo.id]) }}{% endif %}
+        {# 23.11.2026 (брат): полоску выполненных работ у рабочего места убрали — машина, кто, этап; этого достаточно #}
       </a>
       {% else %}
       {% set lm = people.get(l.mechanic_id) %}

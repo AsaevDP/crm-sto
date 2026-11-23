@@ -35,18 +35,22 @@
 {{ payroll_nav("my" if mine else "weeks") }}
 
 {% if all_view %}
-<ol class="pw-steps">
+{# 23.11.2026 (брат): шаги недели — такими же плитками, как везде (было — отдельные «шаги» своего размера).
+   Пройден — зелёная с ✓, идёт сейчас — синяя, впереди — серая. Цифра — сколько людей прошли шаг. #}
+<div class="pult-tiles pw-steps">
   {% set order = ["open", "checked", "approved", "paid"] %}
   {% set cur = 0 if (st == "open" and start >= this_week) else order.index(st) + 1 %}
   {% for key, title, sub in [("open", "Неделя", "пн–вс, работы и наряды"), ("checked", "Проверка", "бухгалтер, по каждому"),
                              ("approved", "Утверждение", "директор, по каждому"), ("paid", "Выдача", "каждому отдельно")] %}
-  <li class="pw-step {{ 'done' if loop.index0 < cur }} {{ 'now' if loop.index0 == cur }}">
-    <b>{{ loop.index }}. {{ title }}</b><span class="caption">{{ sub }}</span>
-    {% if T.people and key != "open" %}{% set n = {"checked": T.n_checked, "approved": T.n_approved, "paid": T.n_paid}[key] %}
-    <span class="caption"><b>{{ n }} из {{ T.people }}</b> чел.</span>{% endif %}
-  </li>
+  {% set done, now_ = loop.index0 < cur, loop.index0 == cur %}
+  <span class="ptile {{ 'zero' if not done and not now_ }}" style="--tc:{{ color_css('green' if done else 'blue' if now_ else 'gray') }}">
+    <span class="ptile-t">{{ loop.index }}. {{ title }}{{ " ✓" if done }}</span>
+    {% if key == "open" %}<b class="nowrap">{{ "идёт" if now_ else "✓" if done else "—" }}</b>
+    {% else %}{% set n = {"checked": T.n_checked, "approved": T.n_approved, "paid": T.n_paid}[key] %}
+    <b class="nowrap">{{ n }} из {{ T.people }}</b>{% endif %}
+    <span class="ptile-s">{{ sub }}</span></span>
   {% endfor %}
-</ol>
+</div>
 <div class="pw-acts">
   {% if can_check and T.people and T.n_checked < T.people %}
   <form method="post" action="/payroll/weeks/{{ start }}/status" class="form-row"><input type="hidden" name="status" value="checked">
@@ -65,9 +69,9 @@
   <span class="ptile" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Начислено</span><b class="nowrap">{{ T.accrued|money(0) }} ₴</b><span class="ptile-s">за неделю</span></span>
   <span class="ptile {{ 'zero' if not T.paid }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдано</span><b class="nowrap">{{ T.paid|money(0) }} ₴</b><span class="ptile-s">{{ T.n_paid }} из {{ T.people }} чел.</span></span>
   <span class="ptile {{ 'zero' if T.due <= 0 }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">К выдаче</span><b class="nowrap">{{ T.due|money(0) }} ₴</b><span class="ptile-s">не выдано: {{ T.unpaid_people }} чел.</span></span>
-  <span class="ptile {{ 'zero' if not T.pending_sum }}" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Ждут закрытия нарядов</span><b class="nowrap">≈ {{ T.pending_sum|money(0) }} ₴</b><span class="ptile-s">работы сделаны, наряд не оплачен</span></span>
+  <span class="ptile {{ 'zero' if not T.pending_sum }}" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Ждут закрытия</span><b class="nowrap">≈ {{ T.pending_sum|money(0) }} ₴</b><span class="ptile-s">работы сделаны, наряд не оплачен</span></span>
   {% if all_view %}
-  <a class="ptile {{ 'zero' if not T.tool_charges }}" href="/tools/charges" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Удержано за инструмент</span><b class="nowrap">{{ T.tool_charges|money(0) }} ₴</b><span class="ptile-s">за неделю · весь список</span></a>
+  <a class="ptile {{ 'zero' if not T.tool_charges }}" href="/tools/charges" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Удержано</span><b class="nowrap">{{ T.tool_charges|money(0) }} ₴</b><span class="ptile-s">за инструмент · весь список</span></a>
   {% endif %}
 </div>
 
