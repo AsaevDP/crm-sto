@@ -41,7 +41,7 @@
       <a class="plift" data-st="{{ st }}" href="/orders/{{ wo.id }}" style="--mc:{{ color_css(colors.get(mid, 'gray')) }}">
         <span class="plift-top"><b class="plift-n">{{ l.number }}</b><span class="caption plift-name">{{ l.name or l.label }}</span>{{ key_tag(wo) }}</span>
         <span class="plift-car">{{ v.make if v }} {{ v.model if v }} {% if v %}<span class="ov-plate">{{ fmt_plate(v.plate) }}</span>{% endif %}</span>
-        <span class="plift-row">{% if st == "pause" %}<span class="chip" data-s="waiting">⏸ Пауза</span>{% else %}<span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
+        <span class="plift-row">{% if st == "pause" %}<span class="chip" data-s="waiting">⏸ Пауза</span>{% else %}<span class="chip{{ ' chip-say' if labels.get(wo.id) }}" data-s="{{ wo.status }}">{{ labels.get(wo.id) or STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
           {% if mc %}<span class="plift-mech"><i></i>{{ mc.short_name }}</span>{% endif %}</span>
         {% if l.id in away %}<span class="caption">работает с машиной · {{ wo.number[-6:] }}</span>{% endif %}
         {% if st == "pause" %}<span class="caption pause-why">{{ paused[wo.id] }}</span>{% endif %}

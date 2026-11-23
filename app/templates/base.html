@@ -125,7 +125,7 @@
       badge('.sidebar a[href="/notifications"]', j.unread);
       (j.notes || []).forEach(n => window.crmToast && window.crmToast({
         id: 'note-' + n.id, kicker: { parts_ready: 'Запчасти', parts_in: 'Запчасти · пришли', urgent_in: 'Срочно · пришла',
-                  picked: 'Подбор готов', to_order: 'Заказать', order_cancel: 'Отменить заказ', handover: 'Наряд', issue_ready: 'Выдача', access_req: 'Важно · доступ к нарядам',
+                  picked: 'Подбор готов', new_problem: 'Новая проблема', diag_to_mgr: 'Вписать проблемы', to_order: 'Заказать', order_cancel: 'Отменить заказ', handover: 'Наряд', issue_ready: 'Выдача', access_req: 'Важно · доступ к нарядам',
                   access_ok: 'Доступ', access_no: 'Доступ', msg: 'Сообщение', part_ask: 'Слесарь просит — согласуйте',
                   part_ask_info: 'Для сведения', part_ok: 'Согласовано', part_go: 'Выдать', part_no: 'Отказано',
                   reopen_req: 'Важно · открыть наряд', reopen_ok: 'Наряд', reopen_no: 'Наряд',

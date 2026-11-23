@@ -66,6 +66,9 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
         "mechanic": people.get(o.mechanic_id), "partsman": people.get(o.partsman_id),
         "photo": first_photo.get(o.id), "n_photos": n_photos.get(o.id, 0),
         "act": svc.activity_label(o, people.get(o.activity_by)),
+        # 23.11.2026 (брат): подпись этапа — чья очередь и что сделать
+        "label": svc.stage_label(ctx.db, o, people[o.mechanic_id].short_name if o.mechanic_id in people else "",
+                                 people[o.partsman_id].short_name if o.partsman_id in people else "", prog.get(o.id)),
     } for o in orders]
 
 
@@ -372,8 +375,12 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     ap_fresh = [p for p in parts if p.status not in PART_OFF and (
         p.status in ("need", "option") or (ap_round["entered"] and p.created_at >= ap_round["entered"]))] if ap_round["again"] else []
     draft_parts = stock_svc.draft_part_ids(db, [p.id for p in parts if p.status == "ordered"])
+    from .diagnosis import NEW_PROBLEM_FROM as _NEW_FROM
+    from .diagnosis import may_add_finding as _may_add_finding
+    from .diagnosis import mgr_turn as _mgr_turn
     flow = svc.flow(wo, mc.short_name if mc else "", pm.short_name if pm else "", len(findings), len(works), n_done,
-                    options_open, on_wash=on_wash, again=ap_round["again"], to_order=len(draft_parts))
+                    options_open, on_wash=on_wash, again=ap_round["again"], to_order=len(draft_parts),
+                    diag_to_mgr=_mgr_turn(db, wo))
     is_manager = ctx.can("orders.approve")
     # Кто ведёт и кто что делал (11.11.2026)
     from ..services import order_feed
@@ -386,12 +393,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
         finding_photos={f.id: [p for p in photos if p.finding_id == f.id] for f in findings}, URGENCY=URGENCY,
-        can_diag=ctx.can("orders.diagnose") and ((is_mech and (wo.status in ("diag", "approve", "work")
-                                                               or (wo.status == "created" and is_manager)))
-                                                 # 12.11.2026: второй мастер (электрик, моторист…) нашёл новое во время ремонта
-                                                 or (wo.status == "work" and any(w.mechanic_id == ctx.user.id for w in works))
-                                                 # 13.11.2026: добавленный мастер — свои проблемы и на диагностике
-                                                 or (wo.status in ("diag", "approve", "work") and me_extra is not None)),
+        # 23.11.2026 (брат): проблему можно записать и после согласования до выдачи — правила в diagnosis.may_add_finding
+        can_diag=_may_add_finding(ctx, wo), mgr_turn=_mgr_turn(db, wo) and is_manager,
+        NEW_PROBLEM_FROM=_NEW_FROM,
         # «Диагностика готова» — каждый мастер свою (ведущий, добавленные); менеджер за мастеров не жмёт (13.11.2026)
         can_finish_diag=ctx.can("orders.diagnose") and wo.status == "diag" and (
             (me_extra is not None and not me_extra.diag_done_at)
@@ -435,6 +439,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         reopen=_reopen_state(ctx, wo),
         order_msgs=_order_msgs(ctx, wo),
         draft_parts=draft_parts, ap_round=ap_round, ap_fresh=ap_fresh,
+        stage_label=svc.stage_label(db, wo, mc.short_name if mc else "", pm.short_name if pm else "",
+                                    {"done": n_done, "total": len(works)}),
         handed=_handed(ctx, wo),
         extra=extra, diag_state=hsvc.diag_state(db, wo) if wo.status == "diag" or extra else [],
         readonly=hsvc.read_only(ctx, wo),

@@ -52,11 +52,11 @@
   <div class="diag-sec">
     <div class="diag-sec-h"><b>{{ s.user.full_name }}</b> <span class="caption">{{ MASTERS.get(s.user.role.code, "") }}{% if s.lead %} · ведущий{% endif %}</span>
       {% if wo.status == "diag" %}<span class="chip" data-s="{{ 'ready' if s.done else 'diag' }}">{{ "✓ диагностика готова" if s.done else "идёт диагностика" }}</span>{% endif %}</div>
-    {% for f in mine %}{{ finding_row(f) }}{% else %}<p class="footnote" style="margin:4px 0">{{ "Проблем не нашёл" if s.done else "Пока проблем не записал" }}</p>{% endfor %}
+    {% for f in mine %}{{ finding_row(f) }}{% else %}<p class="footnote" style="margin:4px 0">{{ ("Сам не записывал — вписал менеджер" if (wo.problems_by_manager or findings|rejectattr("created_by", "in", diag_state|selectattr("user")|map(attribute="user.id")|list)|list) else "Проблем не нашёл") if s.done else "Пока проблем не записал" }}</p>{% endfor %}
   </div>
   {% endif %}{% endfor %}
   {% set rest = findings|rejectattr("created_by", "in", ns.shown)|list %}
-  {% if rest %}<div class="diag-sec"><div class="diag-sec-h"><b>Со слов клиента и другие</b></div>{% for f in rest %}{{ finding_row(f) }}{% endfor %}</div>{% endif %}
+  {% if rest %}<div class="diag-sec"><div class="diag-sec-h"><b>{{ "Вписал менеджер" if wo.status != "created" else "Со слов клиента" }}</b></div>{% for f in rest %}{{ finding_row(f) }}{% endfor %}</div>{% endif %}
   {% else %}
   {% for f in findings %}{{ finding_row(f) }}
   {% else %}
@@ -66,7 +66,7 @@
   {% endif %}
 
   {% if can_diag %}
-  <details class="add-finding" {% if (wo.status == "diag" or can_route) and not findings %}open{% endif %}>
+  <details class="add-finding" {% if (wo.status == "diag" or can_route or mgr_turn) and not findings %}open{% endif %}>
     <summary class="btn btn-tinted btn-block" id="btn-add-finding">{{ icon("plus") }}{{ "Записать проблему" if wo.status == "created" else "Добавить проблему" }}</summary>
     <form class="form" id="ffind" style="margin-top:10px">
       <textarea class="field" name="text" rows="2" placeholder="{{ 'Со слов клиента: «Скрипят тормоза спереди»' if wo.status == 'created' else 'Что нашли: «Течь масла с прокладки клапанной крышки»' }}" required></textarea>
@@ -81,7 +81,7 @@
         <label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" id="finput" accept="image/*" multiple hidden></label>
         <button class="btn btn-sm" style="margin-left:auto">Сохранить проблему</button>
       </div>
-      {% if wo.status == "work" %}<p class="hint warn">Наряд вернётся на согласование с клиентом.</p>{% endif %}
+      {% if wo.status in NEW_PROBLEM_FROM %}<p class="hint warn">Наряд снова пойдёт на согласование с клиентом (мастера продолжают согласованное, запчастист подберёт к новому).</p>{% endif %}
     </form>
   </details>
   {% endif %}
@@ -90,10 +90,20 @@
   <form method="post" action="/orders/{{ wo.id }}/diag-done" onsubmit="return {{ 'true' if findings else 'confirm(\'Проблем не найдено — отправить менеджеру?\')' }}">
     <button class="btn btn-block" id="btn-diag-done">{% if diag_state|length > 1 %}Моя диагностика готова{% else %}{{ "Диагностика готова → менеджеру" if findings else "Проблем не найдено → менеджеру" }}{% endif %}</button>
   </form>
+  {# 23.11.2026 (брат): мастер продиктовал / написал на бумаге — в CRM вписывает менеджер #}
+  <form method="post" action="/orders/{{ wo.id }}/diag-done" style="margin-top:8px"><input type="hidden" name="by_manager" value="1">
+    <button class="btn btn-gray btn-block" id="btn-diag-mgr">Диагностика готова, проблемы впишет менеджер</button>
+  </form>
   {% endif %}
-  {% if can_route and findings %}
+  {% if wo.status == "diag" and wo.problems_by_manager and not mgr_turn and not can_finish_diag %}
+  <p class="hint ok-hint" style="margin:8px 0 0">Проблемы впишет менеджер{% if diag_state|length > 1 %} — когда закончат остальные мастера{% endif %}.</p>
+  {% endif %}
+  {% if mgr_turn %}
+  <p class="hint warn" style="margin:8px 0">Мастер закончил диагностику — впишите проблемы с его слов («Добавить проблему»), затем отправьте на согласование.</p>
+  {% endif %}
+  {% if (can_route or mgr_turn) and findings %}
   <form method="post" action="/orders/{{ wo.id }}/to-approve">
-    <button class="btn btn-block">Проблемы записаны → согласование</button>
+    <button class="btn btn-block" id="btn-to-approve">Проблемы записаны → согласование</button>
   </form>
   {% endif %}
   {% if can_approve %}
@@ -114,7 +124,7 @@
     </div>
     <div class="ov-actions">
       {{ key_badge(wo) }}
-      <span class="chip chip-lg" data-s="{{ wo.status }}">{{ STATUSES[wo.status] }}</span>
+      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
       <details class="docs-menu">
         <summary class="btn btn-sm btn-gray">Документы ▾</summary>
         <div class="docs-list">

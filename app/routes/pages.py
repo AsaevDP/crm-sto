@@ -209,6 +209,11 @@ def pult(ctx: Ctx = Depends(get_ctx)):
                 for uid, e in on_site_now(db, bid, staff).items()}
     from ..services.orders import work_progress
     prog = work_progress(db, [wo.id for _, wo in lifts if wo])
+    # 23.11.2026 (брат): на плашке — чья очередь и что сделать (как в «Нарядах»)
+    from ..services.orders import stage_label
+    labels = {wo.id: stage_label(db, wo, people[wo.mechanic_id].short_name if wo.mechanic_id in people else "",
+                                 people[wo.partsman_id].short_name if wo.partsman_id in people else "", prog.get(wo.id))
+              for _, wo in lifts if wo}
     # Пульт (10.11.2026): плитки с цифрами, запись на сегодня, цвета мастеров, деньги за сегодня (директору / админу)
     from datetime import date as _date
     from ..services import schedule as ssvc
@@ -233,7 +238,7 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     return ctx.render("pult.html", title="Пульт", lifts=lifts, prog=prog, vehicles=vehicles, people=people, staff=staff, paused=paused,
                       presence=presence, tiles=tiles, colors=colors, place_groups=place_groups, away=away, money_today=money_today, staff_groups=staff_groups,
                       issue_new=issue_new, local=ssvc.local, today=_date.today(),
-                      counts=counts, busy=busy, fmt_plate=fmt_plate)
+                      counts=counts, busy=busy, fmt_plate=fmt_plate, labels=labels)
 
 
 @router.get("/more")

@@ -2871,6 +2871,11 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 .nb-menu a:hover { background: var(--fill); }
 .nb-menu .nbadge { position: static; flex: none; margin: 0; }
 
+/* 23.11.2026 (брат): подпись этапа «чья очередь и что сделать» — длиннее обычного чипа: переносится, не обрезается */
+.chip.chip-say { white-space: normal; text-align: left; line-height: 1.25; height: auto; min-height: 22px;
+  padding-top: 3px; padding-bottom: 3px; max-width: 100%; }
+.ocard-top { flex-wrap: wrap; row-gap: 4px; }
+
 /* 22.11.2026 (брат): «Заявки с сайта» */
 .so-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); margin-top: 12px; }
 .so-card { display: grid; gap: 6px; align-content: start; }

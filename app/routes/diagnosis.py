@@ -17,6 +17,35 @@ def _is_mech(ctx: Ctx, wo) -> bool:
     return ctx.user.id == wo.mechanic_id or ctx.can("orders.view_all")
 
 
+# 23.11.2026 (брат): новая проблема — на любом этапе после согласования до выдачи (и когда машина «Готово»): наряд
+# снова «Согласование», мастера продолжают согласованное, запчастист подбирает к новому, менеджер звонит ещё раз
+NEW_PROBLEM_FROM = ("picking", "waiting", "instock", "work", "ready")
+
+
+def may_add_finding(ctx: Ctx, wo) -> bool:
+    """Кто может записать проблему. Мастер наряда (ведущий, добавленный, с работой в наряде) — диагностика, согласование
+    и после согласования до выдачи. Менеджер — то же плюс сразу после приёмки (со слов клиента / со слов мастера)."""
+    if not ctx.can("orders.diagnose") or (wo.kind or "") == "wash":
+        return False
+    from ..models import WoWork
+    from ..services import handover as hsvc
+    st = wo.status
+    if ctx.can("orders.approve") and st in ("created", "diag", "approve", *NEW_PROBLEM_FROM):
+        return True
+    master = (_is_mech(ctx, wo) or hsvc.is_extra(ctx.db, wo, ctx.user.id) is not None
+              or ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id, WoWork.mechanic_id == ctx.user.id)
+                               .limit(1)) is not None)
+    return master and st in ("diag", "approve", *NEW_PROBLEM_FROM)
+
+
+def mgr_turn(db, wo) -> bool:
+    """Мастера закончили диагностику и передали менеджеру: «проблемы впишет менеджер»."""
+    if wo.status != "diag" or not wo.problems_by_manager:
+        return False
+    from ..services import handover as hsvc
+    return all(s["done"] for s in hsvc.diag_state(db, wo))
+
+
 def _back(order_id: str):
     return RedirectResponse(f"/orders/{order_id}", status_code=303)
 
@@ -27,15 +56,7 @@ async def finding_add(order_id: str, request: Request, ctx: Ctx = Depends(get_ct
     """Слесарь добавляет найденную проблему: текст, срочность, фото (сжатые на телефоне)."""
     ctx.need("orders.diagnose")
     wo = _order(ctx, order_id)
-    manager_writes = wo.status == "created" and ctx.can("orders.approve")   # менеджер — со слов клиента (11.11.2026)
-    # 12.11.2026: второй мастер со своей работой в наряде — тоже, пока машина в ремонте
-    from ..models import WoWork
-    second = wo.status == "work" and ctx.db.scalar(select(WoWork.id).where(WoWork.work_order_id == wo.id,
-                                                                            WoWork.mechanic_id == ctx.user.id).limit(1))
-    # 13.11.2026: добавленный мастер — свои проблемы на диагностике (и на согласовании, и в ремонте)
-    from ..services import handover as hsvc
-    second = second or (wo.status in ("diag", "approve", "work") and hsvc.is_extra(ctx.db, wo, ctx.user.id))
-    if not second and ((wo.status not in ("diag", "approve", "work") and not manager_writes) or not _is_mech(ctx, wo)):
+    if not may_add_finding(ctx, wo):   # 23.11.2026: правила — may_add_finding (и после согласования до выдачи)
         raise Forbidden()
     form = await request.form(max_files=2 * svc.MAX_PHOTOS + 2)
     text = str(form.get("text", "")).strip()
@@ -48,8 +69,10 @@ async def finding_add(order_id: str, request: Request, ctx: Ctx = Depends(get_ct
         thumb = await thumbs[i].read() if i < len(thumbs) else None
         svc.save_photo(ctx.db, wo, await p.read(), thumb, "diag", finding_id=f.id)
     svc.event(ctx.db, wo, "finding", f.text, finding=f, urgency=f.urgency)
-    if wo.status == "work":  # нашли новое во время ремонта — снова к клиенту на согласование
-        svc.set_status(ctx.db, wo, "approve", "Во время работы найдена новая проблема")
+    if wo.status in NEW_PROBLEM_FROM:  # нашли новое после согласования — снова к клиенту; запчастист подбирает к новому
+        from ..models.orders import WO_STATUSES
+        svc.set_status(ctx.db, wo, "approve", f"Новая проблема (было: {WO_STATUSES.get(wo.status, wo.status)})")
+        svc.new_problem_notify(ctx.db, wo, f, ctx.user)
     ctx.db.commit()
     return {"ok": True}
 
@@ -101,15 +124,27 @@ def finding_edit(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx), te
 
 
 @router.post("/orders/{order_id}/diag-done")
-def diag_done(order_id: str, ctx: Ctx = Depends(get_ctx)):
+def diag_done(order_id: str, ctx: Ctx = Depends(get_ctx), by_manager: str = Form("")):
     """«Диагностика готова» (13.11.2026, брат): мастеров несколько — каждый отмечает свою; на согласование наряд уходит,
-    когда закончили все."""
+    когда закончили все. 23.11.2026: «Диагностика готова, проблемы впишет менеджер» (by_manager) — мастер продиктовал /
+    написал на бумаге; когда закончили все, наряд ждёт менеджера (🔴 и окошко), он вписывает и жмёт «На согласование»."""
     ctx.need("orders.diagnose")
     wo = _order(ctx, order_id)
     from ..services import handover as hsvc
     extra = hsvc.is_extra(ctx.db, wo, ctx.user.id)
     if wo.status == "diag" and (extra or ctx.user.id == wo.mechanic_id):   # только сам мастер — свою диагностику
+        if by_manager:
+            wo.problems_by_manager = True
+            svc.event(ctx.db, wo, "status", f"Диагностика готова ({ctx.user.short_name}) — проблемы впишет менеджер")
         all_done = hsvc.mark_diag_done(ctx.db, wo, ctx.user.id)
+        if all_done and wo.problems_by_manager:
+            from ..services import notify
+            notify.send(ctx.db, [wo.manager_id], "diag_to_mgr", f"Диагностика готова — впишите проблемы · {wo.number}",
+                        f"{notify.car(db=ctx.db, wo=wo)} · проблемы со слов мастера: {ctx.user.short_name}",
+                        f"/orders/{wo.id}#problems", wo, skip=ctx.user.id)
+            flash(ctx.request, "Диагностика готова — проблемы впишет менеджер, ему отправлено сообщение")
+            ctx.db.commit()
+            return _back(order_id)
         if all_done:
             n = len(ctx.db.scalars(select(WoFinding.id).where(WoFinding.work_order_id == wo.id)).all())
             svc.finish_diagnosis(ctx.db, wo, n)
@@ -148,10 +183,12 @@ def to_approve(order_id: str, ctx: Ctx = Depends(get_ctx)):
     ctx.need("orders.approve")
     wo = _order(ctx, order_id)
     n = len(ctx.db.scalars(select(WoFinding.id).where(WoFinding.work_order_id == wo.id)).all())
-    if wo.status != "created" or not n:
+    after_master = mgr_turn(ctx.db, wo)   # 23.11.2026: мастер закончил, проблемы со слов мастера вписал менеджер
+    if not (wo.status == "created" or after_master) or not n:
         flash(ctx.request, "Сначала запишите хотя бы одну проблему", "error")
         return _back(order_id)
-    svc.set_status(ctx.db, wo, "approve", f"Проблемы записал менеджер: {n}")
+    wo.problems_by_manager = False
+    svc.set_status(ctx.db, wo, "approve", f"Проблемы {'со слов мастера ' if after_master else ''}записал менеджер: {n}")
     svc.event(ctx.db, wo, "status", f"Проблемы со слов клиента: {n}")
     ctx.db.commit()
     return _back(order_id)

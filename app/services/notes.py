@@ -11,7 +11,7 @@ from ..models import IssueRequest, Notification, OrderMessage, WoPart, WorkOrder
 
 # Плитки-фильтры: ключ → (подпись, виды уведомлений)
 GROUPS = {
-    "parts": ("Запчасти", {"parts_in", "parts_ready", "picked", "to_order", "order_cancel", "refused", "refused_done",
+    "parts": ("Запчасти", {"parts_in", "parts_ready", "picked", "to_order", "new_problem", "diag_to_mgr", "order_cancel", "refused", "refused_done",
                            "refused_info", "urgent_in", "urgent_ask"}),
     "stock": ("Склад и выдача", {"issue_ready", "issued", "part_go", "part_ask", "part_ask_info", "part_ok", "part_no",
                                  "tool_ready", "tool_issued", "chem_ask", "chem_ready", "chem_ok", "chem_no"}),
@@ -42,6 +42,10 @@ def is_done(db: Session, n: Notification, user) -> bool:
                                                                          WoPart.status == "reserved"))
     if k == "picked":   # подбор готов — менеджеру согласовать
         return wo is not None and wo.status != "approve"
+    if k == "diag_to_mgr":   # 23.11.2026: мастер закончил — менеджеру вписать проблемы и «На согласование»
+        return wo is not None and wo.status != "diag"
+    if k == "new_problem":   # 23.11.2026: новая проблема — пока наряд на согласовании (запчастисту — пока не подобрал)
+        return wo is not None and (wo.status != "approve" or (user.id == wo.partsman_id and wo.picked_at is not None))
     if k == "to_order":   # запчастисту: заказать (черновик закупки по наряду)
         from ..models import Purchase
         return wo is not None and not _count(db, select(Purchase.id).where(Purchase.work_order_id == wid,

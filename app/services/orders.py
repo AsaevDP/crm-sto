@@ -686,7 +686,8 @@ STEP_OF = {"created": 0, "diag": 1, "approve": 2, "picking": 3, "waiting": 3, "i
 
 
 def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_works: int = 0, n_done: int = 0,
-         options_open: int = 0, on_wash: dict | None = None, again: bool = False, to_order: int = 0) -> dict:
+         options_open: int = 0, on_wash: dict | None = None, again: bool = False, to_order: int = 0,
+         diag_to_mgr: bool = False) -> dict:
     """Полоса шагов наверху наряда и подсказка: что сейчас сделать и кому."""
     if (wo.kind or "") == "wash":
         return _wash_flow(wo, mech, n_works, n_done)
@@ -704,6 +705,10 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
                               "purple")
     elif s == "created":
         title, text, color = "Назначьте запчастиста", "Работы уже известны (без диагностики) — запчастист подберёт запчасти.", "blue"
+    elif s == "diag" and diag_to_mgr:   # 23.11.2026: мастер продиктовал — проблемы вписывает менеджер
+        title, text, color = ("Диагностика готова — менеджер вписывает проблемы",
+                              "Мастера закончили диагностику. Менеджер вписывает проблемы с их слов и жмёт «Проблемы "
+                              "записаны → согласование».", "red")
     elif s == "diag":
         title, text, color = (f"Диагностика · {mech}", "Слесарь записывает проблемы с фото. Закончит — «Диагностика готова», "
                               "и наряд придёт менеджеру на согласование.", "purple")
@@ -755,6 +760,54 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
         color = "green"
     tab = "main" if cur <= 2 else ("diag" if cur <= 4 else "hist")
     return {"steps": steps, "cur": cur, "title": title, "text": text, "color": color, "tab": tab}
+
+
+def stage_label(db: Session, o: WorkOrder, mech: str = "", partsman: str = "", prog: dict | None = None) -> str:
+    """23.11.2026 (брат): подпись на плашке наряда — чья очередь и что сделать («Менеджер: согласовать с клиентом»,
+    «Подбор · Савчук», «Ждём запчасти · 24.11 к 14:00»). Пусто — показать обычное название этапа."""
+    if (o.kind or "") == "wash" or o.status in ("closed", "cancel"):
+        return ""
+    s = o.status
+    if s == "created":
+        return "Менеджер: назначить запчастиста" if o.scenario == "A" else "Менеджер: проблемы или на диагностику"
+    if s == "diag":
+        from . import handover as hsvc
+        state = hsvc.diag_state(db, o)
+        if o.problems_by_manager and all(x["done"] for x in state):
+            return "Менеджер: вписать проблемы"
+        left = [x["user"].short_name for x in state if not x["done"] and x["user"]]   # кого ещё ждём
+        who = ", ".join(left) or mech
+        return f"Диагностика · {who}" if who else "Диагностика"
+    if s == "approve":
+        again = approve_round(db, o)["again"]
+        if o.partsman_id and not o.picked_at:
+            return f"Подбор к новой проблеме · {partsman}" if again else f"Подбор · {partsman}"
+        return "Новая проблема — согласовать" if again else "Менеджер: согласовать с клиентом"
+    if s == "picking":
+        return f"Подбор · {partsman}" if partsman else "Подбор запчастей"
+    if s == "waiting":
+        from ..models import Purchase, PurchaseLine, WoPart
+        from . import stock as ssvc
+        part_ids = [p for p in db.scalars(select(WoPart.id).where(WoPart.work_order_id == o.id, WoPart.status == "ordered"))]
+        if ssvc.draft_part_ids(db, part_ids):
+            return "Запчастист: заказать"
+        ps = db.scalars(select(Purchase).join(PurchaseLine, PurchaseLine.purchase_id == Purchase.id).where(
+            PurchaseLine.wo_part_id.in_(part_ids), Purchase.status.in_(("ordered", "partial")))).all() if part_ids else []
+        dated = sorted((p for p in ps if p.expected_on), key=lambda p: ssvc.expected_dt(p), reverse=True)
+        if dated:
+            late = any(ssvc.is_late(p) for p in ps)
+            return f"Ждём запчасти · {ssvc.expected_label(dated[0])}" + (" — опаздывает" if late else "")
+        return "Ждём запчасти · срок не указан" if ps else "Ждём запчасти"
+    if s == "instock":
+        return "На складе — выдать мастеру"
+    if s == "work":
+        t = f" {prog['done']} из {prog['total']}" if prog and prog.get("total") else ""
+        return f"В работе · {mech}{t}" if mech else f"В работе{t}"
+    if s == "ready":
+        return "Готово — позвонить, оплата"
+    if s == "paid":
+        return "Оплачено — выдать авто"
+    return ""
 
 
 WASH_STEPS = [("Приём", "blue"), ("Мойка", "teal"), ("Выдача", "green")]
@@ -843,6 +896,17 @@ def finish_diagnosis(db: Session, wo: WorkOrder, n_findings: int):
     note = f"Найдено проблем: {n_findings}" if n_findings else "Проблем не найдено"
     set_status(db, wo, "approve", note)
     event(db, wo, "status", f"Диагностика завершена. {note}")
+
+
+def new_problem_notify(db: Session, wo: WorkOrder, f, user):
+    """23.11.2026 (брат): после согласования нашли новое — круг заново: запчастисту «подберите к новому» (или «не нужны»),
+    менеджеру «согласуйте с клиентом» (если записал не он сам)."""
+    from . import notify
+    car = notify.car(db, wo)
+    notify.send(db, [wo.partsman_id], "new_problem", f"Новая проблема — подберите запчасти · {wo.number}",
+                f"{car} · «{f.text[:120]}» · записал(а) {user.short_name}", f"/orders/{wo.id}#parts", wo, skip=user.id)
+    notify.send(db, [wo.manager_id], "new_problem", f"Новая проблема — согласуйте с клиентом · {wo.number}",
+                f"{car} · «{f.text[:120]}» · записал(а) {user.short_name}", f"/orders/{wo.id}#problems", wo, skip=user.id)
 
 
 def work_for_finding(db: Session, wo: WorkOrder, f, yes: bool):

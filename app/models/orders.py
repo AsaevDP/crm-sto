@@ -102,6 +102,9 @@ class WorkOrder(Entity):
     picked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     # 13.11.2026: ведущий мастер нажал «Диагностика готова» (если мастеров несколько — ждём остальных)
     lead_diag_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    # 23.11.2026 (брат): мастер нажал «Диагностика готова, проблемы впишет менеджер» — когда все мастера закончили,
+    # наряд ждёт менеджера (вписать проблемы со слов мастера → «На согласование»), а не уходит на согласование сам
+    problems_by_manager: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     # Метка формы приёмки: повторная отправка той же формы не создаёт второй наряд
     intake_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)

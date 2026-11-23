@@ -168,8 +168,22 @@ def compute(ctx) -> dict:
             ids_lead = db.scalars(select(WorkOrder.id).where(
                 WorkOrder.branch_id == bid, WorkOrder.mechanic_id == me.id,
                 or_(WorkOrder.status == "created", (WorkOrder.status == "diag") & WorkOrder.lead_diag_at.is_(None)))).all()
-            _add(out, "/orders", "red", len(ids_lead) + len(ids_extra), "новые — посмотреть", "/orders?tab=intake",
-                 wo=[*ids_lead, *ids_extra], blk="#problems", rows=["#btn-diag-done", "#btn-add-finding"], tile=['Приём и диагностика'], btn="blue")
+            _add(out, "/orders", "red", len(ids_lead) + len(ids_extra), "диагностика — записать проблемы", "/orders?tab=intake",
+                 wo=[*ids_lead, *ids_extra], blk="#problems", rows=["#btn-diag-done", "#btn-diag-mgr", "#btn-add-finding"],
+                 tile=['Приём и диагностика'], btn="blue")
+        if ctx.can("orders.approve"):
+            # 🔴 23.11.2026 (брат): шаг «Проблемы» — дело менеджера: после приёмки (записать со слов клиента или отправить
+            # на диагностику) и когда мастер закончил диагностику, а проблемы «впишет менеджер»
+            ids_new = [i for i in ids_status("created", field=None if see_all else WorkOrder.manager_id)
+                       if (db.get(WorkOrder, i).kind or "") != "wash"]
+            _add(out, "/orders", "red", len(ids_new), "записать проблемы или отправить на диагностику", "/orders?tab=intake",
+                 wo=ids_new, blk="#problems", rows=["#btn-add-finding", "#btn-to-approve"], tile=['Приём и диагностика'], btn="blue")
+            from . import handover as _hs
+            ids_mgr = [o.id for o in db.scalars(select(WorkOrder).where(
+                WorkOrder.id.in_(ids_status("diag", field=None if see_all else WorkOrder.manager_id)),
+                WorkOrder.problems_by_manager.is_(True))) if all(s["done"] for s in _hs.diag_state(db, o))]
+            _add(out, "/orders", "red", len(ids_mgr), "мастер закончил диагностику — впишите проблемы", "/orders?tab=intake",
+                 wo=ids_mgr, blk="#problems", rows=["#btn-add-finding", "#btn-to-approve"], tile=['Приём и диагностика'], btn="blue")
         # 🔴 13.11.2026: мне передали наряд (менеджеру, мастеру, запчастисту) — горит, пока не нажал «✓ Принял»
         from .handover import pending_orders
         # 19.11.2026: у мойщика «Наряды» = очередь мойки — там блок «Вам передали»
@@ -191,7 +205,8 @@ def compute(ctx) -> dict:
             if not see_all:
                 qp = qp.where(WorkOrder.partsman_id == me.id)
             ids_ = db.scalars(qp).all()
-            _add(out, "/orders", "orange", len(ids_), "подобрать запчасти", "/orders?tab=approve", wo=ids_, blk="#parts",
+            # 23.11.2026 (брат): красная — пока не подобрал, менеджер не может звонить клиенту (работа стоит)
+            _add(out, "/orders", "red", len(ids_), "подобрать запчасти", "/orders?tab=approve", wo=ids_, blk="#parts",
                  rows=["#btn-picked"], tile=['Согласование'], btn="blue")
         if ctx.can("orders.approve"):
             ids_ = ids_status("ready", field=None if see_all else WorkOrder.manager_id)
