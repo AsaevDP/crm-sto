@@ -124,7 +124,7 @@
     </div>
     <div class="ov-actions">
       {{ key_badge(wo) }}
-      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
+      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ 'receipt' if stage_label.startswith('Подтвердить') else wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
       <details class="docs-menu">
         <summary class="btn btn-sm btn-gray">Документы ▾</summary>
         <div class="docs-list">
@@ -245,7 +245,7 @@
         {% if pr %}<span class="chip" data-s="waiting">сдаёт · ждёт кладовщика</span>
         {% elif ur and t.holder_id == user.id %}
         {# 20.11.2026 (брат): выдали — сначала подтвердить «Получил», потом можно «Сдаю» #}
-        <form method="post" action="/tool-requests/{{ ur.id }}/received?back=/orders/{{ wo.id }}%23tools"><button class="btn btn-sm">✓ Получил</button></form>
+        <form method="post" action="/tool-requests/{{ ur.id }}/received?back=/orders/{{ wo.id }}%23tools"><button class="btn btn-sm btn-recv">✓ Получил</button></form>
         {% elif ur and not ctx.can("tools.manage") %}<span class="chip" data-s="waiting">выдан · мастер не подтвердил</span>
         {% elif t.holder_id == user.id %}
         <form method="post" action="/tools/{{ t.id }}/return-request?back=/orders/{{ wo.id }}%23tools"><button class="btn btn-sm btn-tinted">Сдаю</button></form>

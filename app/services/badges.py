@@ -173,6 +173,15 @@ def compute(ctx) -> dict:
             _add(out, "/orders", "red", len(ids_lead) + len(ids_extra), "диагностика — записать проблемы", "/orders?tab=intake",
                  wo=[*ids_lead, *ids_extra], blk="#problems", rows=["#btn-diag-done", "#btn-diag-mgr", "#btn-add-finding"],
                  tile=['Приём и диагностика'], btn="blue")
+        if role in MASTERS and role not in ("washer", "detailer"):
+            # 🔴 23.11.2026 (брат, наряд 25): выдали запчасти / инструмент под наряд — мастер подтверждает «✓ Получил».
+            # Цифра у «Нарядов», ведёт в наряд к кнопке; пока не подтвердил, «Начал» по его работам серая
+            from . import receipt as _rc
+            rc_wo = [wo.id for _, wo in _rc.for_master(db, bid, me.id)]
+            rc_wo += [r.work_order_id for r in _rc.tools_for_master(db, bid, me.id) if r.work_order_id]
+            rc_wo = list(dict.fromkeys(rc_wo))
+            _add(out, "/orders", "red", len(rc_wo), "Подтвердить получение — выдали запчасти или инструмент",
+                 "/orders?tab=active", wo=rc_wo, blk="#parts", rows=[".btn-recv"], tile=['На СТО'], btn="blue")
         if ctx.can("orders.approve"):
             # 🔴 23.11.2026 (брат): шаг «Проблемы» — дело менеджера: после приёмки (записать со слов клиента или отправить
             # на диагностику) и когда мастер закончил диагностику, а проблемы «впишет менеджер»

@@ -785,6 +785,19 @@ def stage_label(db: Session, o: WorkOrder, mech: str = "", partsman: str = "", p
         return "Новая проблема — согласовать" if again else "Менеджер: согласовать с клиентом"
     if s == "picking":
         return f"Подбор · {partsman}" if partsman else "Подбор запчастей"
+    if s in ("waiting", "instock", "work"):
+        # 23.11.2026 (брат, наряд 25): выдали запчасти / инструмент — пока мастер не нажал «Получил», это первое дело
+        from ..models import ToolRequest
+        from . import receipt
+        who = set()
+        for r in receipt.unreceived(db, o.id):
+            who |= receipt.owners(db, o, r)
+        who |= set(db.scalars(select(ToolRequest.user_id).where(
+            ToolRequest.work_order_id == o.id, ToolRequest.kind == "issue", ToolRequest.status == "done",
+            ToolRequest.received_at.is_(None))))
+        if who:
+            names = [u.short_name for u in db.scalars(select(User).where(User.id.in_(who)))]
+            return "Подтвердить получение · " + ", ".join(sorted(names))
     if s == "waiting":
         from ..models import Purchase, PurchaseLine, WoPart
         from . import stock as ssvc
