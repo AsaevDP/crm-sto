@@ -236,14 +236,25 @@ def compute(ctx) -> dict:
         arrived = {}
         # 20.11.2026 (брат): мойщику и детейлеру запчасти не нужны — этих цифр у них нет
         if ctx.can("orders.approve", "parts.pick") or (role in MASTERS and role not in ("washer", "detailer")):
-            from .notify import arrived_waiting
-            arrived = arrived_waiting(db, bid, me.id)
-            # 22.11.2026 (брат): в наряде мигает край у каждой пришедшей детали
-            arr_rows = db.scalars(select(WoPart.id).join(PurchaseLine, PurchaseLine.wo_part_id == WoPart.id).where(
-                WoPart.work_order_id.in_(list(arrived) or [None]), WoPart.status == "reserved",
-                or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0))).all() if arrived else []
-            _add(out, "/orders", "green", sum(arrived.values()), "пришли запчасти — ждут выдачи", "/orders?tab=arrived",
-                 alone=True, wo=list(arrived), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in arr_rows] + ["#btn-request-issue"], tile=['Пришли запчасти'], btn="blue")
+            from .notify import arrived_parts, arrived_waiting
+            arrived = arrived_waiting(db, bid, me.id)   # всё пришедшее и не выданное — ниже, для «можно начинать»
+            # 23.11.2026 (брат): 🔴 пришли запчасти, а выдачу никто не запросил — тем, кто может нажать «Запросить
+            # выдачу» (менеджер, мастера наряда); запросили — гаснет. 🟢 менеджеру: кладовщик подготовил / выдал, ждём
+            # «✓ Получил» от мастера; подтвердил — гаснет. Пока запрос ждёт кладовщика — здесь ничего (🟠 в «Запросах»).
+            # Мастеру зелёной нет — у него свои 🔴 «готово — идите забирать» и «подтвердить получение».
+            # 22.11.2026 (брат): в наряде мигает край у каждой такой детали
+            if ctx.can("stock.request_issue"):
+                ask = arrived_parts(db, bid, me.id, "ask")
+                ask_rows = arrived_parts(db, bid, me.id, "ask", part_ids=True) if ask else []
+                _add(out, "/orders", "red", sum(ask.values()), "пришли запчасти — запросите выдачу", "/orders?tab=arrived",
+                     alone=True, wo=list(ask), blk="#parts", rows=[f'.part[data-id="{i}"]' for i in ask_rows] + ["#btn-request-issue"],
+                     tile=['Пришли запчасти'], btn="blue")
+            if ctx.can("orders.approve"):
+                going = arrived_parts(db, bid, me.id, "going")
+                going_rows = arrived_parts(db, bid, me.id, "going", part_ids=True) if going else []
+                _add(out, "/orders", "green", sum(going.values()), "пришли запчасти — выдаются, ждём «Получил» мастера",
+                     "/orders?tab=arrived", alone=True, wo=list(going), blk="#parts",
+                     rows=[f'.part[data-id="{i}"]' for i in going_rows], tile=['Пришли запчасти'])
         if role in ("washer", "detailer"):   # 19.11.2026: мойщику — по очереди мойки: моя машина сейчас / следующая моя
             from . import wash as wash_svc
             brd_ = wash_svc.board(db, bid)

@@ -27,21 +27,33 @@ def _kinds(login_, url):
             Notification.user_id == uid, Notification.work_order_id == _wo(url).id))]
 
 
-def _arrived_badge(client, who, pwd, url):
-    """Сколько пришедших запчастей по ЭТОМУ наряду (база в тестах общая); заодно цифра в меню = сумма по всем нарядам."""
-    from app.services.notify import arrived_waiting
+def _arrived_badge(client, who, pwd, url, mode="ask"):
+    """Сколько пришедших запчастей по ЭТОМУ наряду (база в тестах общая); заодно цифра в меню = сумма по всем нарядам.
+    23.11.2026: mode="ask" — 🔴 «запросите выдачу», "going" — 🟢 менеджеру «выдаются, ждём «Получил»»."""
+    from app.services.notify import arrived_parts
     login(client, who, pwd)
     b = client.get("/api/notify", headers=FETCH).json()["badges"].get("/orders", [])
     client.post("/logout")
     with SessionLocal() as db:
         u = db.scalar(select(User).where(User.login == who))
-        per_wo = arrived_waiting(db, u.branch_id, u.id)
+        per_wo = arrived_parts(db, u.branch_id, u.id, mode)
+    color = "red" if mode == "ask" else "green"
     # 22.11.2026: один наряд — кружок ведёт прямо в его «Запчасти», несколько — на плитку «Пришли запчасти»
-    arr = [x for x in b if x["t"].startswith("пришли запчасти")]
-    assert sum(x["n"] for x in arr) == sum(per_wo.values()), who
+    arr = [x for x in b if x["t"].startswith("пришли запчасти") and x["c"] == color]
+    shown = sum(x["n"] for x in arr)
+    if who == "oleg" or (mode == "going" and who != "irina"):   # запчастисту и мастерам этой цифры нет
+        assert shown == 0, who
+        return 0
+    assert shown == sum(per_wo.values()), who
     for x in arr:
         assert x["href"] == "/orders?tab=arrived" or (len(x["wo"]) == 1 and x["href"] == f"/orders/{x['wo'][0]}#parts")
     return per_wo.get(_wo(url).id, 0)
+
+
+def _rid(url):
+    with SessionLocal() as db:
+        return db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == _wo(url).id,
+                                                       IssueRequest.status.in_(("new", "ready", "issued"))))
 
 
 def test_arrived_parts_notify_all_masters_and_badge(client):
@@ -81,8 +93,8 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
         got = [n for n in _kinds(who, url) if n[0] == "parts_in"]
         assert len(got) == 1, who
         assert "Пришли запчасти: 1 шт." in got[0][1] and "на складе 1 из 2" in got[0][2], who
-    for who, pwd in TEAM:
-        assert _arrived_badge(client, who, pwd, url) == 1, who
+    for who, pwd in TEAM:   # 🔴 менеджеру и мастерам (запчастисту — нет: выдачу он не запрашивает)
+        assert _arrived_badge(client, who, pwd, url) == (0 if who == "oleg" else 1), who
 
     # Плитка-фильтр «Пришли запчасти» в нарядах
     login(client, "elektro", "elektro123")
@@ -98,16 +110,34 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
     for who, pwd in TEAM:
         kinds = [k for k, _, _ in _kinds(who, url)]
         assert kinds.count("parts_ready") == 1 and kinds.count("parts_in") == 1, who
-        assert _arrived_badge(client, who, pwd, url) == 2, who
+        assert _arrived_badge(client, who, pwd, url) == (0 if who == "oleg" else 2), who
 
-    # Кладовщик выдал → зелёная цифра гаснет
+    # 23.11.2026: слесарь запросил выдачу → красная гаснет у всех; пока кладовщик не подготовил — зелёной тоже нет
     login(client, "andrey", "andrey123")
     client.post(f"{url}/issue-request")
     client.post("/logout")
+    for who, pwd in TEAM:
+        assert _arrived_badge(client, who, pwd, url) == 0, who
+        assert _arrived_badge(client, who, pwd, url, "going") == 0, who
+    # Кладовщик «Готово к выдаче» → менеджеру 🟢
     login(client, "pavel", "pavel123")
-    with SessionLocal() as db:
-        rid = db.scalar(select(IssueRequest.id).where(IssueRequest.work_order_id == _wo(url).id, IssueRequest.status == "new"))
-    client.post(f"/stock/issues/{rid}/issue")
+    client.post(f"/stock/issues/{_rid(url)}/ready")
+    client.post("/logout")
+    assert _arrived_badge(client, "irina", "irina123", url, "going") == 2
+    login(client, "elektro", "elektro123")   # плитка у мастера пустая — его красной нет
+    assert _wo(url).number not in client.get("/orders?tab=arrived").text
+    client.post("/logout")
+    # Выдано → 🟢 горит, пока мастер не нажал «Получил»
+    login(client, "pavel", "pavel123")
+    client.post(f"/stock/issues/{_rid(url)}/issue")
+    client.post("/logout")
+    assert _arrived_badge(client, "irina", "irina123", url, "going") == 2
+    login(client, "irina", "irina123")
+    assert _wo(url).number in client.get("/orders?tab=arrived").text
+    client.post("/logout")
+    login(client, "andrey", "andrey123")
+    client.post(f"/stock/issues/{_rid(url)}/received")
     client.post("/logout")
     for who, pwd in TEAM:
         assert _arrived_badge(client, who, pwd, url) == 0, who
+        assert _arrived_badge(client, who, pwd, url, "going") == 0, who

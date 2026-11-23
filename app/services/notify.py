@@ -104,6 +104,35 @@ def arrived_waiting(db: Session, branch_id, user_id) -> dict:
     return {wid: n for wid, n in db.execute(q)}
 
 
+def arrived_parts(db: Session, branch_id, user_id, mode: str, part_ids: bool = False):
+    """23.11.2026 (брат): «Пришли запчасти» по шагам. {наряд: штук}.
+    mode="ask"   — 🔴 пришло по закупке, лежит в резерве, а выдачу ещё никто не запросил (менеджер и мастера наряда);
+    mode="going" — 🟢 только менеджеру наряда: кладовщик подготовил («Готово к выдаче») или уже выдал, а мастер ещё не
+                   нажал «✓ Получил». Пока запрос просто ждёт кладовщика — ни того, ни другого (у менеджера горит
+                   🟠 «Ждут кладовщика» в «Запросах на выдачу»)."""
+    from sqlalchemy import and_, func, or_
+    from ..models import IssueRequest, IssueRequestLine, PurchaseLine, WoPart, WoWork
+    in_req = lambda cond: (select(IssueRequestLine.wo_part_id)
+                           .join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id).where(cond))
+    q = (select(WoPart.work_order_id, func.count(func.distinct(WoPart.id)))
+         .join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
+         .join(PurchaseLine, PurchaseLine.wo_part_id == WoPart.id)
+         .where(WorkOrder.branch_id == branch_id, WorkOrder.status.not_in(("closed", "cancel")),
+                or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0)))
+    if mode == "ask":
+        q = q.where(WoPart.status == "reserved",
+                    WoPart.id.not_in(in_req(IssueRequest.status.in_(("new", "ready")))),
+                    or_(WorkOrder.manager_id == user_id, WorkOrder.mechanic_id == user_id,
+                        WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == user_id))))
+    else:
+        q = q.where(WorkOrder.manager_id == user_id,
+                    WoPart.id.in_(in_req(or_(IssueRequest.status == "ready",
+                                             and_(IssueRequest.status == "issued", IssueRequest.received_at.is_(None))))))
+    if part_ids:   # для мигающего края у каждой такой детали в наряде
+        return list(dict.fromkeys(db.scalars(q.with_only_columns(WoPart.id))))
+    return {wid: n for wid, n in db.execute(q.group_by(WoPart.work_order_id))}
+
+
 def unread(db: Session, user_id, limit: int = 10) -> list[Notification]:
     return list(db.scalars(select(Notification).where(Notification.user_id == user_id, Notification.read_at.is_(None))
                            .order_by(Notification.created_at.desc()).limit(limit)))

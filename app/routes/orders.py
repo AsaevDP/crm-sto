@@ -129,8 +129,14 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
     if tab == "handed_out":
         query = select(WorkOrder).where(WorkOrder.id.in_(out_ids or [uuid.uuid4()]))
     # 12.11.2026: «Пришли запчасти» — мои наряды, где запчасти пришли по закупке и ещё не выданы (зелёная цифра в меню)
-    from ..services.notify import arrived_waiting
-    arrived = arrived_waiting(ctx.db, ctx.branch.id, ctx.user.id)
+    # 23.11.2026 (брат): плитка = то же, что кружок: пришло и выдачу не запросили (менеджер, мастера) + у менеджера —
+    # подготовлено / выдано, а мастер ещё не нажал «Получил»
+    from ..services.notify import arrived_parts
+    arrived = {}
+    if ctx.can("stock.request_issue"):
+        arrived.update(arrived_parts(ctx.db, ctx.branch.id, ctx.user.id, "ask"))
+    if ctx.can("orders.approve"):
+        arrived.update(arrived_parts(ctx.db, ctx.branch.id, ctx.user.id, "going"))
     stage_counts["arrived"] = len(arrived)
     # 20.11.2026 (брат, наряд 20): мастеру — наряды, где ВСЕ его работы сделаны, а машина ещё у нас (ждёт мойки,
     # другого мастера, выдачи): плитка «Сделал», из «В работе» уходят
