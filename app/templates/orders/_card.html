@@ -1,6 +1,6 @@
 {# Полоска выполнения работ: красная — ничего не сделано, оранжевая — частично, зелёная — всё готово #}
-{% macro progress(p) -%}
-<div class="wprog" data-l="{{ p.level }}" title="Выполнено работ: {{ p.done }} из {{ p.total }}">
+{% macro progress(p, what="Выполнено работ") -%}
+<div class="wprog" data-l="{{ p.level }}" title="{{ what }}: {{ p.done }} из {{ p.total }}">
   <span class="wprog-bar"><span style="width:{{ 100 if p.level == 'zero' else ([p.pct, 6]|max) }}%"></span></span>
   <span class="caption nowrap">{{ p.done }}/{{ p.total }}</span>
 </div>
@@ -33,7 +33,9 @@
     <div class="subhead ocard-plate">{{ fmt_plate(x.v.plate) }} {{ key_tag(x.o) }}{% if x.lift %} · {{ x.lift.label }}{% endif %}</div>
     <div class="caption">{{ x.c.full_name }}{% if x.mechanic %} · слесарь {{ x.mechanic.short_name }}{% endif %}{% if x.o.scenario == "A" %} · без диагностики{% endif %}</div>
     {% if x.urgent %}<span class="urg-tag" style="justify-self:start">🔥 срочная деталь</span>{% endif %}
-    {% if x.prog and x.prog.total %}{{ progress(x.prog) }}{% endif %}
+    {# 23.11.2026 (брат): две полоски с подписями — «Запчасти» (сколько уже у нас: резерв / выдана / установлена) и «Работы» #}
+    {% if x.pprog and x.pprog.total %}<div class="wprog-l">Запчасти</div>{{ progress(x.pprog, "Запчасти у нас") }}{% endif %}
+    {% if x.prog and x.prog.total %}<div class="wprog-l">Работы</div>{{ progress(x.prog) }}{% endif %}
     {% if x.act %}<span class="ocard-act">{{ x.act }}</span>{% endif %}
   </div>
 </a>

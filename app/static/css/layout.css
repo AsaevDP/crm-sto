@@ -623,6 +623,9 @@ tr[data-r="fault"], tr[data-r="lost"] { background: color-mix(in srgb, var(--red
 .wprog[data-l="zero"] .caption { color: var(--red); }
 .wprog[data-l="all"]  .caption { color: var(--green); }
 .lift .wprog { margin-top: 2px; }
+/* 23.11.2026 (брат): подписи над полосками на плитке наряда — «Запчасти» / «Работы» */
+.wprog-l { font-size: 11px; line-height: 1.2; color: var(--text-2); margin-top: 6px; }
+.wprog-l + .wprog { margin-top: 2px; }
 .work-done-by { color: var(--green); }
 
 /* ===== Зарплата: подробная таблица ===== */

@@ -57,12 +57,13 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
     n_photos = dict(ctx.db.execute(select(WoPhoto.work_order_id, func.count()).where(WoPhoto.work_order_id.in_(ids))
                                    .group_by(WoPhoto.work_order_id)).all())
     prog = svc.work_progress(ctx.db, ids)
+    pprog = svc.parts_progress(ctx.db, ids)   # 23.11.2026 (брат): вторая полоска — сколько запчастей уже у нас
     from ..models import WoPart
     urgent = set(ctx.db.scalars(select(WoPart.work_order_id).where(   # слесарь просит срочно — видно на карточке
         WoPart.work_order_id.in_(ids), WoPart.urgent.is_(True), WoPart.status.in_(("need", "ordered", "arrived", "reserved")))))
     return [{
         "urgent": o.id in urgent,
-        "o": o, "v": vehicles.get(o.vehicle_id), "prog": prog.get(o.id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
+        "o": o, "v": vehicles.get(o.vehicle_id), "prog": prog.get(o.id), "pprog": pprog.get(o.id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
         "mechanic": people.get(o.mechanic_id), "partsman": people.get(o.partsman_id),
         "photo": first_photo.get(o.id), "n_photos": n_photos.get(o.id, 0),
         "act": svc.activity_label(o, people.get(o.activity_by)),

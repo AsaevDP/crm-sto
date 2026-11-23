@@ -1047,6 +1047,29 @@ def work_progress(db: Session, order_ids) -> dict:
     return out
 
 
+def parts_progress(db: Session, order_ids) -> dict:
+    """23.11.2026 (брат): полоска «Запчасти» на плитке наряда — сколько деталей уже у нас (на складе в резерве, выдана
+    или установлена) из всех деталей наряда (варианты, «не выбран», архив, возврат не считаются). Формат — как у работ."""
+    from sqlalchemy import func
+    from ..models import WoPart
+    from ..models.orders import PART_OFF
+    ids = [i for i in order_ids if i]
+    out = {i: {"done": 0, "total": 0, "pct": 0, "level": "none"} for i in ids}
+    if not ids:
+        return out
+    rows = db.execute(select(WoPart.work_order_id, WoPart.status, func.count()).where(
+        WoPart.work_order_id.in_(ids), WoPart.status.not_in(PART_OFF)).group_by(WoPart.work_order_id, WoPart.status)).all()
+    for oid, status, n in rows:
+        out[oid]["total"] += n
+        if status in ("reserved", "issued", "installed"):
+            out[oid]["done"] += n
+    for p in out.values():
+        if p["total"]:
+            p["pct"] = round(100 * p["done"] / p["total"])
+            p["level"] = "all" if p["done"] == p["total"] else ("part" if p["done"] else "zero")
+    return out
+
+
 def master_done_orders(db: Session, branch_id, user) -> list:
     """20.11.2026 (брат, наряд 20): открытые наряды, где у мастера есть работы и ВСЕ они сделаны, а машина ещё у нас
     (ждёт мойки, другого мастера или выдачи). У мастера — плитка «Сделал», из «В работе» уходят."""
