@@ -2942,9 +2942,7 @@ main .pult-tiles .ptile b { font-size: 24px !important; line-height: 1.1 !import
 main .pult-tiles .ptile-s { display: -webkit-box !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden !important; white-space: normal !important; font-size: 11.5px !important; line-height: 1.25 !important; }
 main .pult-tiles .ptile.zero { opacity: 1; }
-@media (min-width: 900px) and (max-width: 1599px) {
-  main .pult-tiles.ord-tiles { grid-template-columns: repeat(8, minmax(0, 1fr)) !important; }
-}
+/* 23.11.2026 (брат, позже): «Наряды» — того же размера, что везде (исключение «8 в ряд на ноутбуке» убрано) */
 @media (max-width: 600px) {
   main .pult-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px !important; }
   main .pult-tiles .ptile:not(.set-tile) { min-height: 0; padding: 6px 8px 7px !important; }
