@@ -69,7 +69,7 @@ def test_chem_ready_reserves_then_issued(client):
     # у мойщика — зелёная цифра и сообщение «готово, подойдите»
     login(client, "moyka", "moyka123")
     b = _badges(client)
-    assert any(x["c"] == "green" and "химия готова" in x["t"] for x in b)
+    assert any(x["c"] == "red" and "химия готова" in x["t"] for x in b)   # 23.11.2026: «готово — забрать» — 🔴
     assert not any(x["c"] == "orange" and "химия" in x["t"] for x in b)
     with SessionLocal() as db:
         moyka = db.scalar(select(User).where(User.login == "moyka"))
@@ -137,7 +137,7 @@ def test_tool_ready_then_issued(client):
     client.post("/logout")
 
     login(client, "andrey", "andrey123")
-    assert any(x["c"] == "green" and "инструмент готов" in x["t"] for x in _badges(client))
+    assert any(x["c"] == "red" and "инструмент готов" in x["t"] for x in _badges(client))
     assert "готово — у кладовщика" in client.get(url).text
     assert "готово — у окошка кладовщика" in client.get("/my-requests?tab=tools").text
     client.post(f"{url}/tool-requests", data={"tool_id": str(tool.id)})   # пока готово — второй раз не попросить
@@ -207,7 +207,7 @@ def test_manager_picks_up_tool_for_master(client):
 
     login(client, "irina", "irina123")
     b = client.get("/api/notify").json()["badges"]
-    assert any(x["c"] == "green" and "инструмент" in x["t"] for x in b.get("/ready", []))
+    assert any(x["c"] == "orange" and "забрать у окошка" in x["t"] for x in b.get("/ready", []))   # 23.11.2026: 🟠 (было 🟢)
     assert not b.get("/tools")
     page = client.get("/ready").text
     assert f"/tool-requests/{rid}/pickup" in page and "Отнести мастеру" in page

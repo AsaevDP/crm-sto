@@ -4,7 +4,7 @@
    Менеджер приходит, забирает и нажимает «Выдано» (или это делает кладовщик — кто первый).
    19.11.2026 (брат): так же с инструментом — забрал у окошка, отнёс мастеру, «Выдано» (на руках у мастера). #}
 {% macro req_card(x) %}
-<div class="card compact issue rim rim-green">
+<div class="card compact issue rim rim-orange">
   <div class="card-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
     <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
   <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
@@ -17,7 +17,7 @@
 </div>
 {% endmacro %}
 {% macro tool_card(x) %}
-<div class="card compact issue rim rim-green">
+<div class="card compact issue rim rim-orange">
   <div class="card-h"><span class="headline">🔧 {{ x.tool.name if x.tool else "" }}</span>
     <span class="caption nowrap">готово {{ x.r.ready_at.astimezone().strftime("%d.%m %H:%M") if x.r.ready_at else "" }}</span></div>
   {% if x.wo %}<div class="subhead"><a href="/orders/{{ x.wo.id }}#tools">{{ x.wo.number }}</a>{% if x.v %} · {{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}{% endif %}</div>{% endif %}
@@ -38,7 +38,7 @@
 <nav class="pult-tiles iss-tiles rd-tiles" aria-label="Что по моим нарядам">
   {# 20.11.2026 (брат): плитка стоит всегда, как соседние; нечего согласовывать — серая 0 #}
   <a class="ptile {{ 'zero' if not asks }}" href="#asks" style="--tc:{{ color_css('red' if asks else 'gray') }}"><span class="ptile-t">Согласовать</span><b>{{ asks|length }}</b><span class="ptile-s">мастер просит со склада</span></a>
-  <a class="ptile {{ 'zero' if not n_take }}" href="#mine" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Забрать у окошка</span><b>{{ n_take }}</b><span class="ptile-s">запчасти: {{ mine|length }} · инструмент: {{ t_ready_mine|length }}</span></a>
+  <a class="ptile {{ 'zero' if not n_take }}" href="#mine" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Забрать у окошка</span><b>{{ n_take }}</b><span class="ptile-s">запчасти: {{ mine|length }} · инструмент: {{ t_ready_mine|length }}</span></a>
   <a class="ptile {{ 'zero' if not n_wait }}" href="#waiting" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Ждут кладовщика</span><b>{{ n_wait }}</b><span class="ptile-s">запчасти: {{ waiting|length }} · инструмент: {{ t_wait|length }}</span></a>
 </nav>
 <p class="footnote" style="margin:0 4px">Запросы по вашим нарядам. Кладовщик подготовил у окошка запчасти или инструмент — заберите,

@@ -3,15 +3,15 @@
    и что с этим сейчас. Запчасти: ждёт кладовщика → готово у окошка → выдано. Инструмент, химия — так же.
    20.11.2026 (брат): одна страница, колонки Запчасти | Б/у · разбор | Инструмент (| Химия), внизу история.
    Рамка карточки — цвет плитки: 🟢 забрать / «Получил», 🟠 ждёт кладовщика, серая — ждёт согласования менеджера. #}
-{% set PST = {"new": ("ждёт кладовщика", "waiting"), "ready": ("готово — у окошка кладовщика", "ready"),
+{% set PST = {"new": ("ждёт кладовщика", "waiting"), "ready": ("готово — у окошка кладовщика", "receipt"),
               "issued": ("выдано", "closed"), "cancelled": ("отменён", "cancel")} %}
 
 {% macro part_card(x, col) %}{% set r = x.r %}{% set rcv = r.id in recv_ok %}
   {% set s = PST.get(r.status, (r.status, "created")) %}
   {% if rcv %}{% set s = ("выдано — подтвердите", "receipt") %}
-  {% elif r.status == "ready" and r.zone == "razbor" %}{% set s = ("готово — у окошка разбора", "ready") %}
+  {% elif r.status == "ready" and r.zone == "razbor" %}{% set s = ("готово — у окошка разбора", "receipt") %}
   {% elif r.status == "new" and r.zone == "razbor" %}{% set s = ("ждёт кладовщика разбора", "waiting") %}{% endif %}
-  <div class="card compact issue rim {{ 'rim-red' if rcv else ('rim-green' if r.status == 'ready' else 'rim-orange') }}">
+  <div class="card compact issue rim {{ 'rim-red' if rcv or r.status == 'ready' else 'rim-orange' }}">
     <div class="card-h mr-h"><span class="headline"><a href="/orders/{{ x.wo.id }}#parts">{{ x.wo.number }}</a></span>
       <span class="chip" data-s="{{ s[1] }}">{{ s[0] }}</span></div>
     <div class="subhead">{{ x.v.make }} {{ x.v.model }} · {{ fmt_plate(x.v.plate) }}</div>
@@ -35,8 +35,8 @@
 {% endmacro %}
 
 {% macro tool_card(x) %}{% set r = x.r %}{% set rcv = r.kind == "issue" and r.status == "done" and not r.received_at %}
-  {% set s = ("готово — у окошка кладовщика", "ready") if r.status == "ready" else (("выдан — подтвердите", "receipt") if rcv else ("ждёт кладовщика", "waiting")) %}
-  <div class="card compact rim {{ 'rim-red' if rcv else ('rim-green' if r.status == 'ready' else 'rim-orange') }}">
+  {% set s = ("готово — у окошка кладовщика", "receipt") if r.status == "ready" else (("выдан — подтвердите", "receipt") if rcv else ("ждёт кладовщика", "waiting")) %}
+  <div class="card compact rim {{ 'rim-red' if rcv or r.status == 'ready' else 'rim-orange' }}">
     <div class="card-h mr-h"><span class="headline">{{ x.tool.name if x.tool else "Инструмент" }}</span><span class="chip nowrap" data-s="{{ s[1] }}">{{ s[0] }}</span></div>
     <div class="caption">{{ "Прошу выдать" if r.kind == "issue" else "Сдаю" }} · {{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}
       {% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% endif %}{% if x.tool and x.tool.place %} · {{ x.tool.place }}{% endif %}</div>
@@ -46,9 +46,9 @@
 {% endmacro %}
 
 {% macro chem_card(x) %}{% set r = x.r %}{% set rcv = r.status == "issued" and not r.received_at %}
-  <div class="card compact issue rim {{ 'rim-red' if rcv else ('rim-green' if r.status == 'ready' else 'rim-orange') }}">
+  <div class="card compact issue rim {{ 'rim-red' if rcv or r.status == 'ready' else 'rim-orange' }}">
     <div class="card-h mr-h"><span class="headline">{{ x.c.name if x.c else "Химия" }}</span>
-      <span class="chip" data-s="{{ 'receipt' if rcv else ('ready' if r.status == 'ready' else 'waiting') }}">{{ "выдано — подтвердите" if rcv else CHEM_STATUS.get(r.status, r.status) }}</span></div>
+      <span class="chip" data-s="{{ 'receipt' if rcv or r.status == 'ready' else 'waiting' }}">{{ "выдано — подтвердите" if rcv else CHEM_STATUS.get(r.status, r.status) }}</span></div>
     <div class="caption">{{ (r.issued_qty if r.status in ("ready", "issued") and r.issued_qty else r.qty)|num }} шт · {{ r.created_at.astimezone().strftime("%d.%m %H:%M") }}{% if x.wo %} · <a href="/orders/{{ x.wo.id }}">{{ x.wo.number }}</a>{% else %} · в запас{% endif %}
       {% if r.status == "ready" and r.ready_at %} · готово {{ r.ready_at.astimezone().strftime("%H:%M") }} — подойдите к кладовщику{% endif %}</div>
     {# 23.11.2026 (брат): выдали — «✓ Получил» #}

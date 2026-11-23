@@ -300,7 +300,8 @@ def compute(ctx) -> dict:
                                 .where(IssueRequest.branch_id == bid, IssueRequest.status == "ready")):
             if wo.manager_id == me.id or r.created_by == me.id:
                 n += 1
-        _add(out, "/ready", "green", n, "кладовщик подготовил", "/ready#mine", tile=['Забрать у окошка'])
+        # 🟠 23.11.2026 (брат, было 🟢): кладовщик подготовил — менеджеру забрать у окошка и отнести мастеру
+        _add(out, "/ready", "orange", n, "кладовщик подготовил — забрать у окошка", "/ready#mine", tile=['Забрать у окошка'])
         # 🔴 20.11.2026 (брат, наряд 60): мастер просит со склада под мой наряд — согласовать / отказать
         from . import messages as msg_svc
         _add(out, "/ready", "red", len(msg_svc.my_pending(ctx)), "мастер просит со склада — согласуйте", "/ready#asks", tile=['Согласовать'])
@@ -317,7 +318,7 @@ def compute(ctx) -> dict:
         # у «Инструмента» цифр нет (сиреневую «для сведения» убрали)
         _add(out, "/ready", "orange", db.scalar(tq.where(ToolRequest.status == "new")) or 0,
              "инструмент — ждёт кладовщика", "/ready#waiting", tile=['Ждут кладовщика', 'Инструмент'])
-        _add(out, "/ready", "green", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
+        _add(out, "/ready", "orange", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
              "инструмент подготовлен — забрать у окошка и отнести мастеру", "/ready#tools", tile=['Забрать у окошка'])
 
     # ---------- Мои запросы на выдачу (мастер, 12.11.2026) ----------
@@ -328,7 +329,8 @@ def compute(ctx) -> dict:
         mine_req = or_(IssueRequest.created_by == me.id, IssueRequest.work_order_id.in_(my_wo))
         if role in ("washer", "detailer"):   # 20.11.2026: запчасти слесарей в машине, которую он моет, — не его
             mine_req = IssueRequest.created_by == me.id
-        _add(out, "/my-requests", "green", db.scalar(select(func.count()).select_from(IssueRequest).where(
+        # 23.11.2026 (брат): «готово — идите забирать» — 🔴 (важно, было 🟢); «выдали — подтвердите» — тоже 🔴
+        _add(out, "/my-requests", "red", db.scalar(select(func.count()).select_from(IssueRequest).where(
             IssueRequest.branch_id == bid, IssueRequest.status == "ready", mine_req)) or 0,
              "готово — забрать у окошка кладовщика", "/my-requests?tab=parts", tile=['Запчасти', 'Б/у · разбор'])
         wait = (db.scalar(select(func.count()).select_from(IssueRequest).where(
@@ -339,10 +341,10 @@ def compute(ctx) -> dict:
         _add(out, "/my-requests", "orange", wait, "ждут кладовщика или менеджера", "/my-requests?tab=parts", tile=['Запчасти', 'Б/у · разбор'])
         tq = select(func.count()).select_from(ToolRequest).where(ToolRequest.branch_id == bid, ToolRequest.user_id == me.id)
         cq = select(func.count()).select_from(ChemRequest).where(ChemRequest.branch_id == bid, ChemRequest.created_by == me.id)
-        # 🟢 19.11.2026 (брат): кладовщик подготовил инструмент / химию — «готово, подойдите», как с запчастями
-        _add(out, "/my-requests", "green", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
+        # 🔴 23.11.2026 (было 🟢): кладовщик подготовил инструмент / химию — «готово, подойдите», как с запчастями
+        _add(out, "/my-requests", "red", db.scalar(tq.where(ToolRequest.status == "ready")) or 0,
              "инструмент готов — забрать у кладовщика", "/my-requests?tab=tools", tile=['Инструмент'])
-        _add(out, "/my-requests", "green", db.scalar(cq.where(ChemRequest.status == "ready")) or 0,
+        _add(out, "/my-requests", "red", db.scalar(cq.where(ChemRequest.status == "ready")) or 0,
              "химия готова — забрать у кладовщика", "/my-requests?tab=chem", tile=['Химия'])
         _add(out, "/my-requests", "orange", db.scalar(tq.where(ToolRequest.status == "new")) or 0,
              "инструмент — ждёт кладовщика", "/my-requests?tab=tools", tile=['Ждут кладовщика', 'Инструмент'])

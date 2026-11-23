@@ -2244,7 +2244,7 @@ def my_requests_columns(ctx: Ctx, data: dict) -> tuple[list, list]:
     for c in cols.values():
         c["n_take"], c["n_wait"] = len(c["take"]), len(c["wait"]) + len(c["ask"])
         # 23.11.2026: «подтвердить получение» — красная плитка (как цифра)
-        c["color"] = "red" if c["n_recv"] else "green" if c["n_take"] else "orange" if c["n_wait"] else "gray"
+        c["color"] = "red" if c["n_take"] else "orange" if c["n_wait"] else "gray"   # 23.11: «готово — забрать» тоже 🔴
     hist.sort(key=lambda h: h[2], reverse=True)
     return list(cols.values()), hist[:40]
 

@@ -2877,7 +2877,7 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 .chip.chip-say { white-space: normal; text-align: left; line-height: 1.25; height: auto; min-height: 22px;
   padding-top: 3px; padding-bottom: 3px; max-width: 100%; }
 .ocard-top { flex-wrap: wrap; row-gap: 4px; }
-.chip[data-s="receipt"] { --c: var(--red); }   /* 23.11.2026: «Подтвердить получение» — дело мастера, красным */
+.chip[data-s="receipt"] { --c: var(--red); }   /* 23.11.2026: «Подтвердить получение» и «готово — забрать» — дело мастера, красным */
 
 /* 22.11.2026 (брат): «Заявки с сайта» */
 .so-list { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); margin-top: 12px; }
