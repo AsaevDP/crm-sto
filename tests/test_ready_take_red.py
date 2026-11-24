@@ -50,10 +50,13 @@ def test_take_red_wait_purple_all_parts_blink(client):
     for i in all_ids:
         assert f'.part[data-id="{i}"]' in take["rows"]
     assert not any(x["c"] == "orange" for x in b)
-    # зелёный «Пришли запчасти — выдаются» в наряде тоже ведёт ко всем деталям запроса
-    going = [x for x in client.get("/api/notify").json()["badges"].get("/orders", [])
-             if x["c"] == "green" and "выдаются" in x["t"]]
-    assert going and all(f'.part[data-id="{i}"]' in going[0]["rows"] for i in all_ids)
+    # 24.11.2026 (брат): пока не выдано — зелёного «ждём «Получил»» нет; выдали — он ведёт ко всем деталям запроса
+    green = lambda: [x for x in client.get("/api/notify").json()["badges"].get("/orders", [])
+                     if x["c"] == "green" and "Получил" in x["t"] and str(_wo(url).id) in x["wo"]]
+    assert not green()
+    client.post(f"/stock/issues/{rid}/issue", data={"back": "/ready"})
+    g = green()
+    assert g and all(f'.part[data-id="{i}"]' in g[0]["rows"] for i in all_ids)
     # в наряде у обеих деталей есть data-id — им есть что подсветить
     order = client.get(url).text
     for i in all_ids:

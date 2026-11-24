@@ -69,7 +69,8 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
         "act": svc.activity_label(o, people.get(o.activity_by)),
         # 23.11.2026 (брат): подпись этапа — чья очередь и что сделать
         "label": svc.stage_label(ctx.db, o, people[o.mechanic_id].short_name if o.mechanic_id in people else "",
-                                 people[o.partsman_id].short_name if o.partsman_id in people else "", prog.get(o.id)),
+                                 people[o.partsman_id].short_name if o.partsman_id in people else "", prog.get(o.id),
+                                 viewer=ctx.user),
     } for o in orders]
 
 
@@ -459,7 +460,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         phase=svc.approve_phase(wo), round_ids={w.id for w in svc.round_works(db, wo)} if wo.status == "approve" else set(),
         new_since=svc.new_since(db, wo), works_sent_who=db.get(User, wo.works_sent_by) if wo.works_sent_by else None,
         stage_label=svc.stage_label(db, wo, mc.short_name if mc else "", pm.short_name if pm else "",
-                                    {"done": n_done, "total": len(works)}),
+                                    {"done": n_done, "total": len(works)}, viewer=ctx.user),
         handed=_handed(ctx, wo),
         extra=extra, diag_state=hsvc.diag_state(db, wo) if wo.status == "diag" or extra else [],
         readonly=hsvc.read_only(ctx, wo),

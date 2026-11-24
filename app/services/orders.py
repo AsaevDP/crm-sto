@@ -784,7 +784,8 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
     return {"steps": steps, "cur": cur, "title": title, "text": text, "color": color, "tab": tab}
 
 
-def stage_label(db: Session, o: WorkOrder, mech: str = "", partsman: str = "", prog: dict | None = None) -> str:
+def stage_label(db: Session, o: WorkOrder, mech: str = "", partsman: str = "", prog: dict | None = None,
+                viewer=None) -> str:
     """23.11.2026 (брат): подпись на плашке наряда — чья очередь и что сделать («Менеджер: согласовать с клиентом»,
     «Подбор · Савчук», «Ждём запчасти · 24.11 к 14:00»). Пусто — показать обычное название этапа."""
     if (o.kind or "") == "wash" or o.status in ("closed", "cancel"):
@@ -820,9 +821,19 @@ def stage_label(db: Session, o: WorkOrder, mech: str = "", partsman: str = "", p
         who |= set(db.scalars(select(ToolRequest.user_id).where(
             ToolRequest.work_order_id == o.id, ToolRequest.kind == "issue", ToolRequest.status == "done",
             ToolRequest.received_at.is_(None))))
+        # 24.11.2026 (брат, наряд 23): первым — дело того, кто смотрит. Мастеру — «Подтвердить получение» (если это он),
+        # остальным — «Пришли запчасти — запросить выдачу», если в наряде пришло и выдачу не просили
+        from .notify import arrived_parts
+        recv = ""
         if who:
             names = [u.short_name for u in db.scalars(select(User).where(User.id.in_(who)))]
-            return "Подтвердить получение · " + ", ".join(sorted(names))
+            recv = "Подтвердить получение · " + ", ".join(sorted(names))
+        if recv and viewer is not None and viewer.id in who:
+            return recv
+        if arrived_parts(db, o.branch_id, None, "ask", wo_id=o.id):
+            return "Пришли запчасти — запросить выдачу"
+        if recv:
+            return recv
     if s == "waiting":
         from ..models import Purchase, PurchaseLine, WoPart
         from . import stock as ssvc

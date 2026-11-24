@@ -39,12 +39,12 @@ def _arrived_badge(client, who, pwd, url, mode="ask"):
         per_wo = arrived_parts(db, u.branch_id, u.id, mode)
     color = "red" if mode == "ask" else "green"
     # 22.11.2026: один наряд — кружок ведёт прямо в его «Запчасти», несколько — на плитку «Пришли запчасти»
-    arr = [x for x in b if x["t"].startswith("пришли запчасти") and x["c"] == color]
+    arr = [x for x in b if x["c"] == color and (x["t"].startswith("пришли запчасти") if mode == "ask" else "Получил" in x["t"])]
     shown = sum(x["n"] for x in arr)
     if who == "oleg" or (mode == "going" and who != "irina"):   # запчастисту и мастерам этой цифры нет
         assert shown == 0, who
         return 0
-    assert shown == sum(per_wo.values()), who
+    assert shown == len(per_wo), who   # 24.11.2026 (брат): цифра = наряды (как плитка «Пришли запчасти»), не штуки
     for x in arr:
         assert x["href"] == "/orders?tab=arrived" or (len(x["wo"]) == 1 and x["href"] == f"/orders/{x['wo'][0]}#parts")
     return per_wo.get(_wo(url).id, 0)
@@ -140,7 +140,7 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
     login(client, "oleg", "oleg123")   # запчастисту — сиреневая полоска у попрошенной детали, мигает она (rows)
     assert 'data-asked="1"' in client.get(url).text
     b = client.get("/api/notify", headers=FETCH).json()["badges"]["/orders"]
-    assert any(x["info"] and '.part[data-asked="1"]' in x["rows"] for x in b)
+    assert any(x["info"] and f'.part[data-id="{sensor.id}"]' in x["rows"] for x in b)
     client.post("/logout")
     login(client, "andrey", "andrey123")   # остальное — той же кнопкой позже (окошко без галочек — всё)
     client.post(f"{url}/issue-request")
@@ -148,11 +148,11 @@ def test_arrived_parts_notify_all_masters_and_badge(client):
     for who, pwd in TEAM:
         assert _arrived_badge(client, who, pwd, url) == 0, who
         assert _arrived_badge(client, who, pwd, url, "going") == 0, who
-    # Кладовщик «Готово к выдаче» → менеджеру 🟢
+    # Кладовщик «Готово к выдаче» → менеджеру 🟢 ещё НЕТ (24.11.2026, брат: ещё не выдано — это 🔴 «Забрать у окошка»)
     login(client, "pavel", "pavel123")
     client.post(f"/stock/issues/{_rid(url)}/ready")
     client.post("/logout")
-    assert _arrived_badge(client, "irina", "irina123", url, "going") == 2
+    assert _arrived_badge(client, "irina", "irina123", url, "going") == 0
     login(client, "elektro", "elektro123")   # плитка у мастера пустая — его красной нет
     assert _wo(url).number not in client.get("/orders?tab=arrived").text
     client.post("/logout")

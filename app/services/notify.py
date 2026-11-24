@@ -104,59 +104,61 @@ def arrived_waiting(db: Session, branch_id, user_id) -> dict:
     return {wid: n for wid, n in db.execute(q)}
 
 
-def partsman_info(db: Session, branch_id, user_id) -> dict:
-    """23.11.2026 (брат): запчастисту для сведения (🟣, серая плитка «Пришли запчасти») — по его открытым нарядам все
-    детали, которые ждут выдачи: пришли по закупке и не выданы + те, что мастер попросил выдать (и со склада). {наряд: штук}."""
-    from sqlalchemy import func, or_
-    from ..models import IssueRequest, IssueRequestLine, PurchaseLine, WoPart
-    got = select(PurchaseLine.wo_part_id).where(or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0))
+def partsman_info(db: Session, branch_id, user_id, part_ids: bool = False):
+    """23.11.2026 (брат): запчастисту для сведения (🟣, серая плитка «Пришли запчасти») — его открытые наряды, где детали
+    ждут выдачи. 24.11.2026 (брат, наряды 23, 27): то же правило, что у менеджера и мастеров — пришло по закупке и
+    выдачу не просили (вместе с деталями с полки) + попросили выдать, ещё не выдано. {наряд: деталей}; считаем наряды."""
+    from sqlalchemy import func
+    from ..models import IssueRequest, IssueRequestLine, WoPart
+    mine = select(WorkOrder.id).where(WorkOrder.partsman_id == user_id)
+    ask = [i for i in arrived_parts(db, branch_id, None, "ask", part_ids=True)]
     asked = (select(IssueRequestLine.wo_part_id).join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id)
              .where(IssueRequest.status.in_(("new", "ready"))))
     q = (select(WoPart.work_order_id, func.count(func.distinct(WoPart.id)))
          .join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
          .where(WorkOrder.branch_id == branch_id, WorkOrder.status.not_in(("closed", "cancel")),
-                WorkOrder.partsman_id == user_id, WoPart.status == "reserved",
-                or_(WoPart.id.in_(got), WoPart.id.in_(asked)))
-         .group_by(WoPart.work_order_id))
-    return {wid: n for wid, n in db.execute(q)}
+                WorkOrder.id.in_(mine), WoPart.status == "reserved",
+                WoPart.id.in_(ask or [None]) | WoPart.id.in_(asked)))
+    if part_ids:
+        return [i for i in dict.fromkeys(db.scalars(q.with_only_columns(WoPart.id))) if i]
+    return {wid: n for wid, n in db.execute(q.group_by(WoPart.work_order_id))}
 
 
-def arrived_parts(db: Session, branch_id, user_id, mode: str, part_ids: bool = False):
-    """23.11.2026 (брат): «Пришли запчасти» по шагам. {наряд: штук}.
-    mode="ask"   — 🔴 пришло по закупке, лежит в резерве, а выдачу ещё никто не запросил (менеджер и мастера наряда);
-    mode="going" — 🟢 только менеджеру наряда: кладовщик подготовил («Готово к выдаче») или уже выдал, а мастер ещё не
-                   нажал «✓ Получил». Пока запрос просто ждёт кладовщика — ни того, ни другого (у менеджера горит
-                   🟠 «Ждут кладовщика» в «Запросах на выдачу»)."""
-    from sqlalchemy import and_, func, or_
+def arrived_parts(db: Session, branch_id, user_id, mode: str, part_ids: bool = False, wo_id=None):
+    """«Пришли запчасти» по шагам. Возвращает {наряд: сколько деталей}; кружки и плитка считают НАРЯДЫ (len).
+    24.11.2026 (брат, наряды 23 и 27) — одно правило во всей CRM:
+    mode="ask"   — 🔴 в наряде что-то пришло по закупке, а в резерве лежат детали, выдачу которых ещё не просили.
+                   Считаются и мигают ВСЕ такие детали — и приехавшие, и взятые с полки склада (раньше только
+                   приехавшие: в наряде 23 мигали 3 из 11). Кому: менеджер и мастера наряда (user_id=None — всем).
+    mode="going" — 🟢 только менеджеру наряда: запчасти ВЫДАНЫ, а мастер ещё не нажал «✓ Получил». Пока кладовщик
+                   только подготовил («Готово к выдаче») — здесь ничего: это 🔴 «Забрать у окошка» в «Запросах на
+                   выдачу» (раньше горело и тут, «ждём Получил» — хотя ещё не выдано)."""
+    from sqlalchemy import func, or_
     from ..models import IssueRequest, IssueRequestLine, PurchaseLine, WoPart, WoWork
-    in_req = lambda cond: (select(IssueRequestLine.wo_part_id)
-                           .join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id).where(cond))
-    q = (select(WoPart.work_order_id, func.count(func.distinct(WoPart.id)))
-         .join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
-         .join(PurchaseLine, PurchaseLine.wo_part_id == WoPart.id)
-         .where(WorkOrder.branch_id == branch_id, WorkOrder.status.not_in(("closed", "cancel")),
-                or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0)))
+    open_req = (select(IssueRequestLine.wo_part_id).join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id)
+                .where(IssueRequest.status.in_(("new", "ready"))))
+    base = (select(WoPart.work_order_id, func.count(func.distinct(WoPart.id)))
+            .join(WorkOrder, WorkOrder.id == WoPart.work_order_id)
+            .where(WorkOrder.branch_id == branch_id, WorkOrder.status.not_in(("closed", "cancel")),
+                   (WorkOrder.kind.is_(None)) | (WorkOrder.kind != "wash")))
+    if wo_id is not None:
+        base = base.where(WorkOrder.id == wo_id)
     if mode == "ask":
-        q = q.where(WoPart.status == "reserved",
-                    WoPart.id.not_in(in_req(IssueRequest.status.in_(("new", "ready")))),
-                    or_(WorkOrder.manager_id == user_id, WorkOrder.mechanic_id == user_id,
-                        WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == user_id))))
+        came = (select(WoPart.work_order_id).join(PurchaseLine, PurchaseLine.wo_part_id == WoPart.id)
+                .where(WoPart.status == "reserved", WoPart.id.not_in(open_req),
+                       or_(PurchaseLine.received.is_(True), PurchaseLine.received_qty > 0)))
+        q = base.where(WoPart.status == "reserved", WoPart.id.not_in(open_req), WorkOrder.id.in_(came))
+        if user_id is not None:
+            q = q.where(or_(WorkOrder.manager_id == user_id, WorkOrder.mechanic_id == user_id,
+                            WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == user_id))))
     else:
-        q = q.where(WorkOrder.manager_id == user_id,
-                    WoPart.id.in_(in_req(or_(IssueRequest.status == "ready",
-                                             and_(IssueRequest.status == "issued", IssueRequest.received_at.is_(None))))))
+        given = (select(IssueRequestLine.wo_part_id).join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id)
+                 .where(IssueRequest.status == "issued", IssueRequest.received_at.is_(None)))
+        q = base.where(WoPart.id.in_(given))
+        if user_id is not None:
+            q = q.where(WorkOrder.manager_id == user_id)
     if part_ids:   # для мигающего края у каждой такой детали в наряде
-        ids = list(dict.fromkeys(db.scalars(q.with_only_columns(WoPart.id))))
-        if mode != "ask" and ids:
-            # 24.11.2026 (брат, наряд 27): мигают ВСЕ детали этих запросов на выдачу, и взятые с полки склада —
-            # раньше только приехавшие по закупке (из 10 мигали 4)
-            reqs = select(IssueRequestLine.request_id).where(IssueRequestLine.wo_part_id.in_(ids))
-            ids = list(dict.fromkeys(ids + list(db.scalars(
-                select(IssueRequestLine.wo_part_id).join(IssueRequest, IssueRequest.id == IssueRequestLine.request_id)
-                .where(IssueRequestLine.request_id.in_(reqs), or_(
-                    IssueRequest.status == "ready",
-                    and_(IssueRequest.status == "issued", IssueRequest.received_at.is_(None))))))))
-        return [i for i in ids if i]
+        return [i for i in dict.fromkeys(db.scalars(q.with_only_columns(WoPart.id))) if i]
     return {wid: n for wid, n in db.execute(q.group_by(WoPart.work_order_id))}
 
 

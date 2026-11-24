@@ -118,7 +118,7 @@
     </div>
     <div class="ov-actions">
       {{ key_badge(wo) }}
-      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ 'receipt' if stage_label.startswith('Подтвердить') else wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
+      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ 'receipt' if stage_label.startswith(('Подтвердить', 'Пришли')) else wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
       <details class="docs-menu">
         <summary class="btn btn-sm btn-gray">Документы ▾</summary>
         <div class="docs-list">
