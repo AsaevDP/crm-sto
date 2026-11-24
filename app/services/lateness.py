@@ -296,6 +296,7 @@ def for_boss(db: Session, bid, me: User, now_: datetime | None = None) -> list[d
     since = _since(db, bid)
     ak, dec = acks(db, bid, since), decisions(db, bid, since)
     p = params(db, bid)
+    me_admin = bool(me.role and me.role.code == "admin")
     out = []
     for f in flags(db, bid, None, now_):
         if f.user.id == me.id:
@@ -303,13 +304,14 @@ def for_boss(db: Session, bid, me: User, now_: datetime | None = None) -> list[d
         if f.kind == "no_out":
             if (f.user.id, f.day, "no_out", "boss") in ak:
                 continue
-            out.append({"f": f, "d": None, "level": "red", "can": True, "owner": False, "who": ""})
+            out.append({"f": f, "d": None, "level": "red", "can": True, "owner": False, "who": "",
+                        "mark": me_admin and only_admin(f.user)})
             continue
         d = dec.get((f.user.id, f.day, f.kind))
         if d and d.decision:
             continue
         x = {"f": f, "d": d, "level": f.level or "red", "can": can_decide(me, f.user), "owner": only_admin(f.user),
-             "who": decider_note(f.user)}
+             "who": decider_note(f.user), "mark": me_admin and only_admin(f.user)}
         if f.kind in MONEY_KINDS:
             rate = hour_rate(db, bid, f.user, f.day)
             hrs = hours_to_hold(db, bid, f)

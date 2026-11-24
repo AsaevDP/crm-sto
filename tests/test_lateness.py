@@ -159,6 +159,7 @@ def test_timesheet_rules_money_decisions(client):
         assert "Решает админ (владелец)" in r.text
         b = client.get("/api/notify").json()["badges"].get("/timesheet", [])
         assert not any(x.get("owner") for x in b)
+        assert 'lt-role"><span' not in client.get("/timesheet?v=boss").text   # у зама «!» у должности нет
         client.post("/logout")
         login(client, "director", "director123")
         with SessionLocal() as db:
@@ -170,6 +171,10 @@ def test_timesheet_rules_money_decisions(client):
         login(client, "admin", "admin123")
         b = client.get("/api/notify").json()["badges"].get("/timesheet", [])
         assert any(x.get("owner") and x["c"] == "red" for x in b)               # «!» — решает только админ
+        # 25.11.2026 (брат): «!» и у должности в карточке директора — только у админа и только у директора
+        page = client.get("/timesheet?v=boss").text
+        assert page.count('nb-owner" title="Решает только админ">!</span><b>') >= 1
+        assert page.count('lt-role"><span') == page.count("<b>Директор</b>")
         client.post("/timesheet/decide", data={"user_id": str(did), "day": D.isoformat(), "kind": "late", "decision": "excused",
                                                "reason": "car", "comment": "Пробка из-за ДТП"})
         with SessionLocal() as db:

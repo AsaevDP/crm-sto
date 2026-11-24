@@ -3017,6 +3017,6 @@ main .pult-tiles .ptile.zero { opacity: 1; }
 .nbadge.nb-owner { background: var(--red); color: #ffb020; font-weight: 900; font-size: 14px;
   box-shadow: 0 0 0 2px color-mix(in srgb, #ffb020 55%, transparent); }
 .tabbar .nbadges .nbadge.nb-owner { font-size: 11px; }
-.lt-t .nbadge.nb-owner, .lt-who .nbadge.nb-owner { display: inline-flex; min-width: 18px; height: 18px; font-size: 12px;
+.lt-t .nbadge.nb-owner, .lt-who .nbadge.nb-owner, .lt-role .nbadge.nb-owner { display: inline-flex; min-width: 18px; height: 18px; font-size: 12px;
   vertical-align: 1px; margin-right: 4px; justify-content: center; align-items: center; border-radius: 9px; padding: 0; }
 

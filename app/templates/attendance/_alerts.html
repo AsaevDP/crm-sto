@@ -55,7 +55,8 @@
     {% for x in lt_boss if x.level == want %}{% set f = x.f %}{% set d = x.d %}
     <div class="card compact rim {{ 'rim-purple' if x.level == 'info' else 'rim-red' }} lt-card lt-boss" data-k="{{ f.kind }}">
       <div class="lt-t">{% if x.owner and lt_decide and x.can %}<span class="nbadge nb-red nb-owner" title="Решает только админ">!</span> {% endif %}{{ lt_kind[f.kind] }} · <a href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}">{{ f.user.full_name }}</a></div>
-      <div class="caption">{{ f.user.role.name }}</div>
+      {# 25.11.2026 (брат): админу «!» у должности — о директоре решает только он, сразу видно среди карточек #}
+      <div class="caption lt-role">{% if x.mark %}<span class="nbadge nb-red nb-owner" title="Решает только админ">!</span><b>{{ f.user.role.name }}</b>{% else %}{{ f.user.role.name }}{% endif %}</div>
       <div class="subhead">{{ f.text() }}</div>
       {% if f.kind in ("late", "absent", "early") %}
         <div class="lt-money caption">
