@@ -457,8 +457,8 @@ def compute(ctx) -> dict:
             late_all = tools_svc.after_close(db, bid, manager_id=None if (keeper or ctx.can("orders.grant_access", "staff.dismiss")
                                                                             or role in ALL_ROLES) else me.id)
             n = sum(1 for x in late_all if not (keeper and x["ret"]) and x["tool"].holder_id != me.id)
-            _add(out, "/tools", "orange", n, "наряд закрыт, инструмент не сдан", "/tools#late",
-                 sel=[("/tools", ".tl-late-row:not(.tl-late-ret)" if keeper else ".tl-late-row")], tile=['Не сдали после наряда'])
+            _add(out, "/tools", "orange", n, "наряд закрыт, инструмент не сдан", "/tools?view=late",
+                 sel=[("/tools?view=late", ".tl-late-row:not(.tl-late-ret)" if keeper else ".tl-late-row")], tile=['Не сдали после наряда'])
 
     # ---------- Мойка (18.11.2026, брат) ----------
     wash_queue = ctx.can("orders.create", "orders.approve", "orders.view_all")   # 20.11.2026: запчастисту — только химия

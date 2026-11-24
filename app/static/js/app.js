@@ -423,7 +423,7 @@
     const els = [...want.keys()];
     els.forEach(el => { if (els.some(o => o !== el && el.contains(o))) want.delete(el); });
     const EDGE = '.part, .work, .wq-card, .lo-card, .rc-group, tr';   // + «Склад»: приход, лишнее, «Всегда в наличии»   // строки и окошки с полоской сбоку — мигает только край
-    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', 'need-top', ...ORDER.map(c => 'need-' + c)];
+    const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', 'need-top', 'need-bar', ...ORDER.map(c => 'need-' + c)];
     document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) { el.classList.remove(...CLS); el.style.removeProperty('--edge-c'); } });
     want.forEach((c, el) => {
       ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
@@ -439,6 +439,10 @@
         if (bl >= 3 && !el.classList.contains('need-edge')) el.style.setProperty('--edge-c', getComputedStyle(el).borderLeftColor);
         el.classList.add('need-edge');
         if (bl < 3 && !el.matches('tr')) el.classList.add('need-edge-add');
+      } else if ((parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0) < 6) {
+        // 24.11.2026 (брат): квадратных рамок (прямые углы) нет нигде — у такого окошка / строки мигает полоска слева,
+        // как во всей CRM: край скруглённого окошка, концы плавно сужаются (need-edge + need-edge-add)
+        el.classList.add('need-edge', 'need-edge-add'); return;
       }
       if (getComputedStyle(el).position === 'static') el.classList.add('need-rel');
     });

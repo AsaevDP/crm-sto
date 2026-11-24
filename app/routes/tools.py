@@ -87,7 +87,8 @@ async def _photo_from(form) -> str | None:
 
 
 # ---------- Список ----------
-TOOL_VIEWS = {"staff": "Сотрудники", "cabinets": "Шкафы", "spare": "Запасные", "list": "Весь список"}
+TOOL_VIEWS = {"staff": "Сотрудники", "cabinets": "Шкафы", "spare": "Запасные", "list": "Весь список",
+              "late": "Не сдали после наряда"}   # 24.11.2026: вид — плитка «Не сдали после наряда»
 
 
 def _tool_overview(ctx: Ctx, all_rows):

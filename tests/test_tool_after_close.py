@@ -71,7 +71,8 @@ def test_tool_after_close(client):
     for who in ("irina", "director"):
         login(client, who, who + "123")
         assert any(x["c"] == "orange" and "не сдан" in x["t"] for x in _tools_badges(client)), who
-        page = client.get("/tools").text
+        assert "Не сдали инструмент после закрытия наряда" not in client.get("/tools").text   # только под своей плиткой
+        page = client.get("/tools?view=late").text
         assert "Не сдали инструмент после закрытия наряда" in page and "Съёмник (после закрытия)" in page, who
         client.post("/logout")
     # второй менеджер (не его наряд) — не видит
@@ -88,7 +89,7 @@ def test_tool_after_close(client):
     client.post(f"/tool-requests/{rr.id}/done", data={"result": "ok"})
     with SessionLocal() as db:
         assert db.get(Tool, tool.id).holder_id is None
-    assert "Съёмник (после закрытия)" not in client.get("/tools").text.split("Как показать")[0]
+    assert "Съёмник (после закрытия)" not in client.get("/tools?view=late").text
     client.post("/logout")
     login(client, "andrey", "andrey123")
     assert "Наряд закрыт — сдайте инструмент" not in client.get(f"/tools/staff/{me.id}").text

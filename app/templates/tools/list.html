@@ -16,25 +16,32 @@
   </div>
 </header>
 
+{# 24.11.2026 (брат): плитки — меню раздела (переключатель «Сотрудники / Шкафы / Запасные / Весь список» убран);
+   выбранная плитка темнее (.ptile.on). «Просят / сдают» — в «Запросы на выдачу», «Не сдали» и «Проверки» — к блоку. #}
+{% set sel = view if view in ("staff", "cabinets", "spare", "late") else
+   ("out" if (cat == "shared" and holder == "out" and not st and not q) else
+   ("bad" if (st == "bad" and not cat and not holder and not q) else "all")) %}
 <div class="pult-tiles tl-tiles">
   {% set T = ov.tiles %}
-  {% for title, n, sub, color, href in [
-      ("Личный у слесарей", T.personal_out, "числится за людьми", "blue", "/tools?view=staff"),
-      ("Общий в шкафах", T.shared_in, "можно выдать под наряд", "green", "/tools?view=cabinets"),
-      ("Выдан под наряды", T.shared_out, "на руках сейчас", "orange", "/tools?view=list&cat=shared&holder=out"),
-      ("Запасные наборы", T.spare_in, "лежат в шкафу", "teal", "/tools?view=spare"),
-      ("Сломан / износ", T.bad, "проверить, починить", "red", "/tools?view=list&st=bad"),
-      ("Просят / сдают", T.reqs + T.ready, ("просят: " ~ T.reqs ~ " · готово: " ~ T.ready) if T.reqs and T.ready
+  {% for key, title, n, sub, color, href in [
+      ("staff", "Личный у слесарей", T.personal_out, "числится за людьми", "blue", "/tools?view=staff"),
+      ("cabinets", "Общий в шкафах", T.shared_in, "что где лежит", "green", "/tools?view=cabinets"),
+      ("out", "Выдан под наряды", T.shared_out, "на руках сейчас", "orange", "/tools?view=list&cat=shared&holder=out"),
+      ("spare", "Запасные наборы", T.spare_in, "лежат в шкафу", "teal", "/tools?view=spare"),
+      ("bad", "Сломан / износ", T.bad, "проверить, починить", "red", "/tools?view=list&st=bad"),
+      ("all", "Весь инструмент", n_all, "список с поиском", "gray", "/tools?view=list"),
+      ("", "Просят / сдают", T.reqs + T.ready, ("просят: " ~ T.reqs ~ " · готово: " ~ T.ready) if T.reqs and T.ready
         else "готово — не выдано" if T.ready else "ждут кладовщика",
         "red" if T.reqs else "orange" if T.ready else "purple", "/stock/issues?tab=tools"),
-      ("Не сдали после наряда", late|length, "наряд закрыт, инструмент у мастера", "orange" if late else "gray", "/tools#late"),
-      ("Проверки", pending|length, "идут сейчас", "gray", "/tools?view=staff#checks")] %}
-  <a class="ptile {{ 'zero' if not n }}" href="{{ href }}" style="--tc:{{ color_css(color) }}"><span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
+      ("late", "Не сдали после наряда", late|length, "наряд закрыт, инструмент у мастера", "orange" if late else "gray", "/tools?view=late"),
+      ("", "Проверки", pending|length, "идут сейчас", "gray", "/tools?view=staff#checks")] %}
+  <a class="ptile {{ 'zero' if not n }} {{ 'on' if key and key == sel }}" href="{{ href }}"{% if key and key == sel %} aria-current="page"{% endif %} style="--tc:{{ color_css(color) }}"><span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
   {% endfor %}
 </div>
 
 {# 24.11.2026 (брат): наряд закрыт / отменён, а общий инструмент у мастера — кто не сдал. Мастеру горит 🔴 «Сдаю» #}
-{% if late %}
+{# 24.11.2026 (брат): блок — только под своей плиткой «Не сдали после наряда» (view=late), в остальных видах его нет #}
+{% if view == "late" %}{% if not late %}<p class="footnote" id="late">Всё сдано — после закрытых нарядов инструмент ни у кого не числится.</p>{% else %}
 <section class="card compact rim rim-orange tl-late" id="late">
   <div class="card-h"><span class="headline">Не сдали инструмент после закрытия наряда · {{ late|length }}</span></div>
   {% for x in late %}{% set t = x.tool %}{% set w = late_people.get(t.holder_id) %}
@@ -44,16 +51,13 @@
         · наряд <a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a> {{ "отменён" if x.wo.status == "cancel" else "закрыт" }}{% if x.wo.closed_at %} {{ x.wo.closed_at.astimezone().strftime("%d.%m") }}{% endif %}</span></span>
     {% if x.ret %}<span class="chip nowrap" data-s="waiting">сдаёт · ждёт кладовщика</span>
     {% else %}<span class="chip nowrap" data-s="cancel">не сдал</span>{% endif %}
-    {% if manage %}<form method="post" action="/tools/{{ t.id }}/returned?back=/tools%23late"
+    {% if manage %}<form method="post" action="/tools/{{ t.id }}/returned?back=/tools%3Fview%3Dlate"
           onsubmit="return confirm('Инструмент принесли и он в шкафу? Отметить «Вернул».')"><button class="btn btn-sm btn-tinted">Вернул</button></form>{% endif %}
   </div>
   {% endfor %}
 </section>
-{% endif %}
+{% endif %}{% endif %}
 
-<nav class="segmented tl-views" aria-label="Как показать">
-  {% for k, v in VIEWS.items() %}<a href="/tools?view={{ k }}" aria-pressed="{{ (view == k)|lower }}">{{ v }}</a>{% endfor %}
-</nav>
 
 {# ===================== По сотрудникам ===================== #}
 {% if view == "staff" %}
@@ -180,7 +184,7 @@
 </div>
 
 {# ===================== Весь список ===================== #}
-{% else %}
+{% elif view != "late" %}
 <form class="toolbar-row tl-filters" method="get" action="/tools">
   <input type="hidden" name="view" value="list"><input type="hidden" name="q" value="{{ q }}">
   <select class="field" name="cat" onchange="this.form.submit()" aria-label="Категория">

@@ -2825,6 +2825,9 @@ body.has-toast-pill .toasts { bottom: calc(134px + env(safe-area-inset-bottom));
 @keyframes need-run { to { --need-a: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .need::after { animation: none; background: var(--need-c); } }
 @media print { .need::after { display: none; } }
+/* 24.11.2026 (брат): КВАДРАТНЫХ РАМОК (прямые углы) НЕТ НИГДЕ. У окошка или строки без скругления вместо рамки мигает
+   полоска слева, как во всей CRM (app.js добавляет need-edge + need-edge-add: левый край скруглённого окошка,
+   концы полоски плавно сужаются). Скруглённые окошки — как были. */
 
 /* 22.11.2026 (брат): у окошек со своей цветной полоской слева и у строк — мигает только край, без рамки вокруг */
 .need-edge::after { content: none; }
