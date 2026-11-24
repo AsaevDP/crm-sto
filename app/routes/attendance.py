@@ -115,7 +115,70 @@ def _month(m: str):
         return t.year, t.month
 
 
-LT_VIEWS = ("late", "warn", "over", "boss", "info")
+LT_VIEWS = ("late", "warn", "over", "boss", "info", "on", "out", "none", "open", "hours")
+
+
+def _today_views(ctx: Ctx, staff, grid, now_on, y, mo, lt) -> dict:
+    """25.11.2026 (брат): все плитки общего «Табеля» открываются окном под плитками (?v=…). Ряды: 1) Сейчас на месте,
+    Ушли, Не отмечались, Для сведения; 2) Нужно решить, Забыли отметить уход, Часов за месяц; 3) свои дела, если есть."""
+    from ..models import AttendanceLeave
+    today = date.today()
+    tz = svc.local_tz()
+    now = datetime.now(tz)
+    active = [s for s in staff if s.active and s.role.code != "admin"]   # владелец — табель не считается
+    tgrid = grid if (y, mo) == (today.year, today.month) else svc.month_grid(ctx.db, ctx.branch.id, active, today.year, today.month)
+    p = late_svc.params(ctx.db, ctx.branch.id)
+    leaves = {}
+    for lv in ctx.db.scalars(select(AttendanceLeave).where(AttendanceLeave.branch_id == ctx.branch.id,
+                                                           AttendanceLeave.day == today)):
+        leaves.setdefault(lv.user_id, []).append(lv)
+    on, out, none = [], [], []
+    for s in active:
+        e = now_on.get(s.id)
+        day = tgrid.get(s.id, {}).get(today.day)
+        row = {"u": s, "day": day, "leave": leaves.get(s.id, [])}
+        if e and e.direction == "in":
+            row["since"] = day.first_in if day and day.first_in else svc._aware(e.at).astimezone(tz)
+            row["mins"] = day.minutes if day else int((now - row["since"]).total_seconds() // 60)
+            on.append(row)
+        elif e:
+            out.append(row)
+        else:
+            row["off"] = today.weekday() in p["days_off"]
+            none.append(row)
+    on.sort(key=lambda r: r["since"])
+    out.sort(key=lambda r: (r["day"].last_out if r["day"] and r["day"].last_out else now), reverse=True)
+    none.sort(key=lambda r: (bool(r["off"] or r["leave"]), r["u"].full_name))
+    open_days = []
+    for s in staff:
+        for d, day in grid.get(s.id, {}).items():
+            if day.open and date(y, mo, d) != today:
+                open_days.append({"u": s, "d": date(y, mo, d), "day": day})
+    open_days.sort(key=lambda r: (r["d"], r["u"].full_name), reverse=True)
+    hours = []
+    for s in staff:
+        g = grid.get(s.id, {})
+        mins = sum(x.minutes for x in g.values())
+        n = sum(1 for x in g.values() if x.minutes)
+        hours.append({"u": s, "days": n, "mins": mins, "avg": round(mins / 60 / n, 1) if n else 0})
+    hours.sort(key=lambda r: (-r["mins"], r["u"].full_name))
+    total = sum(r["mins"] for r in hours)
+    item = lt["lt_item"]
+    n_open = len(open_days)
+    month_name = MONTHS[mo]
+    row1 = [item("on", "Сейчас на месте", f"{len(on)} из {len(active)}", "green", "отметились картой"),
+            item("out", "Ушли", len(out), "blue", "сегодня уже ушли"),
+            item("none", "Не отмечались", len(none), "gray", "сегодня")]
+    row1[0]["zero"] = not on
+    if "info" in lt["lt_boss_t"]:
+        row1.append(lt["lt_boss_t"]["info"])
+    row2 = ([lt["lt_boss_t"]["boss"]] if "boss" in lt["lt_boss_t"] else []) + [
+        item("open", "Забыли отметить уход", n_open, "red", "дни со знаком «?»"),
+        item("hours", "Часов за месяц", round(total / 60), "teal", f"{month_name} · все сотрудники")]
+    row2[-1]["zero"] = not total
+    return {"on": on, "out": out, "none": none, "open": open_days, "hours": hours, "total": total,
+            "rows": [row1, row2] + ([lt["lt_own_t"]] if lt["lt_own_t"] else []), "today": today, "now": now,
+            "n_staff": len(active)}
 
 
 def _alerts(ctx: Ctx, only: User | None = None, base: str = "/timesheet", view: str = "") -> dict:
@@ -138,20 +201,24 @@ def _alerts(ctx: Ctx, only: User | None = None, base: str = "/timesheet", view: 
         on = view == key
         return {"t": t, "n": n, "c": c if n else "gray", "s": sub, "on": on,
                 "href": base if on else f"{base}{sep}v={key}", "zero": not n}
-    tiles_ = []
+    own_t = []
     if mine and (mine["new"] or mine["warn"] or mine["week"] or mine["over"]):
-        tiles_ += [item("late", "Опоздание", len(mine["new"]), "red", "прочитать и принять к сведению"),
+        own_t += [item("late", "Опоздание", len(mine["new"]), "red", "прочитать и принять к сведению"),
                    item("warn", "Нет отметки", len(mine["warn"]), "orange", "сообщите бухгалтеру или директору"),
                    {"t": "Опозданий за неделю", "n": len(mine["week"]), "c": "orange" if mine["week"] else "gray",
                     "s": "с понедельника", "href": base if view == "late" else f"{base}{sep}v=late", "zero": not mine["week"]},
                    item("over", "Задержались", len(mine["over"]), "orange", "напишите, что делали")]
-    if boss:
+    boss_t = {}
+    # 25.11.2026 (брат): в общем табеле у руководства плитки «Нужно решить» и «Для сведения» есть всегда (ноль — серая)
+    if boss or (only is None and ctx.can("attendance.alerts", "attendance.decide")):
         n_red = sum(1 for x in boss if x["level"] == "red")
-        tiles_ += [item("boss", "Нужно решить", n_red, "red", "опоздания, неявки, ранний уход"),
-                   item("info", "Для сведения", len(boss) - n_red, "purple", "задержались на 30–59 мин")]
+        boss_t = {"boss": item("boss", "Нужно решить", n_red, "red", "опоздания, неявки, ранний уход"),
+                  "info": item("info", "Для сведения", len(boss) - n_red, "purple", "задержались на 30–59 мин")}
+    tiles_ = own_t + list(boss_t.values())
     return {"lt_me": mine, "lt_boss": boss, "lt_kind": late_svc.KIND_NAME, "lt_min": late_svc.fmt_min,
             "lt_decide": ctx.can("attendance.decide"), "ATT_DECISIONS": ATT_DECISIONS, "ATT_REASONS": ATT_REASONS,
             "lt_p": late_svc.params(ctx.db, ctx.branch.id), "lt_tiles": tiles_, "lt_view": view,
+            "lt_own_t": own_t, "lt_boss_t": boss_t, "lt_base": base, "lt_item": item,
             "lt_back": f"{base}{sep}v={view}" if view else base}
 
 
@@ -363,9 +430,10 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str =
                                                            AttendanceLeave.day >= date(y, mo, 1),
                                                            AttendanceLeave.day <= date(y, mo, n_days))):
         lvs.setdefault(lv.user_id, {}).setdefault(lv.day.day, []).append(lv)
+    tv = _today_views(ctx, staff, grid, now_on, y, mo, lt)
     return ctx.render("attendance/month.html", title="Табель", staff=staff, grid=grid, now_on=now_on, y=y, mo=mo,
                       n_days=n_days, month_name=MONTHS[mo], prev=prev, nxt=nxt, weekends=weekends, bar=bar, **lt,
-                      marks=marks, lvs=lvs,
+                      marks=marks, lvs=lvs, tv=tv,
                       today=date.today(), local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
 
 

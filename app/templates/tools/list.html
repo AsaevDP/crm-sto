@@ -21,7 +21,7 @@
 {% set sel = view if view in ("staff", "cabinets", "spare", "late") else
    ("out" if (cat == "shared" and holder == "out" and not st and not q) else
    ("bad" if (st == "bad" and not cat and not holder and not q) else "all")) %}
-<div class="pult-tiles tl-tiles">
+<div class="pult-tiles tl-tiles" data-menu-base="/tools">
   {% set T = ov.tiles %}
   {% for key, title, n, sub, color, href in [
       ("staff", "Личный у слесарей", T.personal_out, "числится за людьми", "blue", "/tools?view=staff"),

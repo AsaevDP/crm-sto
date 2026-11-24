@@ -3019,4 +3019,9 @@ main .pult-tiles .ptile.zero { opacity: 1; }
 .tabbar .nbadges .nbadge.nb-owner { font-size: 11px; }
 .lt-t .nbadge.nb-owner, .lt-who .nbadge.nb-owner, .lt-role .nbadge.nb-owner { display: inline-flex; min-width: 18px; height: 18px; font-size: 12px;
   vertical-align: 1px; margin-right: 4px; justify-content: center; align-items: center; border-radius: 9px; padding: 0; }
+/* 25.11.2026 (брат): «Табель» — плитки двумя строками, окно выбранной плитки */
+.ts-rows { margin-bottom: 12px; }
+.ts-view .table td, .ts-view .table th { white-space: nowrap; }
+.ts-view .table td:first-child { white-space: normal; }
+.ts-why-red { color: var(--red); font-weight: 600; }
 

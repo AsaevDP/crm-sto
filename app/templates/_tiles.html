@@ -2,8 +2,9 @@
    items: список словарей {t: заголовок, n: число/текст, s: подпись, c: цвет (blue/green/orange/red/purple/teal/gray/indigo),
    href: ссылка (необязательно), on: выбрана, zero: серая (нечего показать)}.
    Цвет по смыслу: зелёный — готово/в наличии, оранжевый — ждём, красный — проблема/долг, синий — в работе, серый — всего. #}
-{% macro tiles(items, cls="") %}
-<div class="pult-tiles vs-tiles {{ cls }}">
+{# base (25.11.2026, брат): плитки — меню раздела; открыта плитка (адрес ≠ base) — «‹ Назад» сначала ведёт на base #}
+{% macro tiles(items, cls="", base="") %}
+<div class="pult-tiles vs-tiles {{ cls }}"{% if base %} data-menu-base="{{ base }}"{% endif %}>
   {% for x in items %}
   {% set zero = x.zero if x.zero is defined else (not x.n) %}
   {% if x.href %}<a class="ptile {{ 'zero' if zero }} {{ 'on' if x.on }}" href="{{ x.href }}" style="--tc:{{ color_css(x.c or 'blue') }}">

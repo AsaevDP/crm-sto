@@ -7,7 +7,7 @@
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
 {% from "_tiles.html" import tiles with context %}
-{% if lt_tiles %}{{ tiles(lt_tiles) }}{% endif %}
+{% if lt_tiles %}{{ tiles(lt_tiles, base=lt_base) }}{% endif %}
 {% if lt_view %}
 {% include "attendance/_alerts.html" %}
 {% else %}

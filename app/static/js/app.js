@@ -345,6 +345,18 @@
   else st.push(cur);
   st = st.slice(-50);
   try { sessionStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
+  // 25.11.2026 (брат): плитки — меню раздела («Табель», «Инструмент»): открыта плитка — «Назад» сначала к обычному
+  // виду раздела (base из data-menu-base), а уже оттуда — на прежнюю страницу
+  const menu = document.querySelector('.content [data-menu-base]');
+  if (menu) {
+    const base = norm(menu.dataset.menuBase);
+    if (base.k === cur.k && base.u !== cur.u && menu.querySelector('.ptile.on')) {
+      btn.href = menu.dataset.menuBase;
+      btn.title = 'Вернуться к разделу';
+      btn.hidden = false;
+      return;
+    }
+  }
   const own = document.querySelector('.content a.back');   // прежняя ссылка «‹ Раздел» — запасной путь
   const prev = st.length > 1 ? st[st.length - 2].u : (own ? own.getAttribute('href') : '');
   if (!prev) return;
