@@ -74,6 +74,8 @@ PERMISSIONS = [
     ("attendance.edit", "Править отметки табеля", "Сотрудники"),
     # 24.11.2026 (брат): не пришёл / не отметил уход (и опоздание директора, зама — админу) — «Принял к сведению»
     ("attendance.alerts", "Табель: опоздания и пропущенные отметки сотрудников", "Сотрудники"),
+    # 24.11.2026 (брат, вечер): решения по опозданию / неявке / раннему уходу / задержке, «Отпросился», «Настройки → Табель»
+    ("attendance.decide", "Табель: решать (удержать, штраф, уважительная, отпросился, премия)", "Сотрудники"),
     ("payroll.view_own", "Своя зарплата («Моя зарплата»)", "Сотрудники"),
     # 20.11.2026 (брат): «Зарплата сотрудников» — бухгалтер всегда, директору — галочку ставит админ, заму — на срок по запросу
     ("payroll.view_all", "«Зарплата сотрудников» — видеть всех (директору даёт админ)", "Сотрудники"),
@@ -152,7 +154,7 @@ DEFAULT_ROLES = {
         "purchases.view", "purchases.by_partsman", "stock.view", "razbor.view", "money.view", "prices.view_purchase", "prices.view_sale",
         # 20.11.2026 (брат): «Зарплата сотрудников» (payroll.view_all) директору — только галочкой админа; утверждать —
         # payroll.approve; заму доступ на срок — payroll.grant
-        "attendance.view_all", "attendance.edit", "attendance.alerts",   # 24.11.2026: вписать время ухода вручную
+        "attendance.view_all", "attendance.edit", "attendance.alerts", "attendance.decide",   # 24.11.2026
         "tools.view", "audit.view", "staff.dismiss", "orders.grant_access",
         "payroll.advance", "payroll.approve", "payroll.grant",
         "wash.view", "wash.buy", "wash.prices", "razbor.price", "purchases.all", "stock.keep", "site.orders", *_OWN]),
@@ -160,7 +162,7 @@ DEFAULT_ROLES = {
     "deputy": ("Заместитель директора", "yellow", [
         "dashboard.view", "reports.view", "orders.view_all", "orders.approve", "parts.offer", "orders.assign", "clients.view",
         "schedule.view", "schedule.manage", "schedule.queue", "purchases.view", "stock.view", "razbor.view", "money.view",
-        "prices.view_sale", "attendance.view_all", "attendance.edit", "attendance.alerts", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price",
+        "prices.view_sale", "attendance.view_all", "attendance.edit", "attendance.alerts", "attendance.decide", "tools.view", "orders.grant_access", "payroll.advance", "wash.view", "wash.buy", "wash.prices", "razbor.price",
         "payroll.approve",   # 20.11.2026: утверждать — когда директор дал доступ к «Зарплате сотрудников» (на срок)
         "purchases.all", "stock.keep", "site.orders", *_OWN]),
     # Бухгалтер (11.11.2026): в выходные проверяет неделю и выдаёт зарплату. Суммы править — только с разрешения админа

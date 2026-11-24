@@ -1,14 +1,16 @@
-{# 24.11.2026 (брат): опоздания и пропущенные отметки (services/lateness.py).
-   Свои: 🔴 опоздание → «Принял к сведению» → 🟠 счёт за неделю; ⚠ не отметились — сообщить бухгалтеру или директору.
-   Руководству: 🔴 не пришёл / не отметил уход (админу — ещё опоздание директора, зама) → «Принял к сведению». #}
+{# 24.11.2026 (брат): опоздания, неявки, ранний уход, задержка (services/lateness.py).
+   Свои: 🔴 опоздание → «Принял к сведению» → 🟠 счёт за неделю; ⚠ не отметились — сообщить бухгалтеру или директору;
+   задержался — «что делали после работы». Руководству — «Нужно решить»: кнопки у директора, зама, админа
+   (attendance.decide), бухгалтер видит то же без кнопок. #}
 {% from "_tiles.html" import tiles with context %}
-{% set me_lt = lt_me or {"new": [], "week": [], "warn": []} %}
-{% if me_lt.new or me_lt.warn or me_lt.week %}
+{% set me_lt = lt_me or {"new": [], "week": [], "warn": [], "over": []} %}
+{% if me_lt.new or me_lt.warn or me_lt.week or me_lt.over %}
 <section class="lt-wrap" id="late">
   {{ tiles([
     {"t": "Опоздание", "n": me_lt.new|length, "c": "red" if me_lt.new else "gray", "s": "прочитать и принять к сведению", "href": "#late"},
     {"t": "Нет отметки", "n": me_lt.warn|length, "c": "orange" if me_lt.warn else "gray", "s": "сообщите бухгалтеру или директору", "href": "#late"},
-    {"t": "Опозданий за неделю", "n": me_lt.week|length, "c": "orange" if me_lt.week else "gray", "s": "с понедельника"}]) }}
+    {"t": "Опозданий за неделю", "n": me_lt.week|length, "c": "orange" if me_lt.week else "gray", "s": "с понедельника"},
+    {"t": "Задержались", "n": me_lt.over|length, "c": "orange" if me_lt.over else "gray", "s": "напишите, что делали", "href": "#late"}]) }}
   <div class="lt-grid">
     {% for f in me_lt.new %}
     <div class="card compact rim rim-red lt-card lt-new">
@@ -26,8 +28,19 @@
       <div class="lt-t"><span class="lt-warn-ico">!</span>{{ "Вы не отметили уход" if f.kind == "no_out" else "Нет отметки прихода" }}</div>
       <div class="subhead">{{ f.text() }}</div>
       <p class="footnote" style="margin:4px 0 0">Сообщите бухгалтеру или директору — время {{ "ухода" if f.kind == "no_out" else "прихода" }}
-        впишут в табель вручную. Знак погаснет, когда впишут.</p>
+        впишут в табель вручную. Знак погаснет, когда впишут{{ " или руководство решит" if f.kind == "absent" }}.</p>
     </div>
+    {% endfor %}
+    {% for f in me_lt.over %}
+    <form class="card compact rim rim-orange lt-card lt-over" method="post" action="/timesheet/note">
+      <div class="lt-t">🌙 Вы задержались после работы</div>
+      <div class="subhead">{{ f.text() }}</div>
+      <p class="footnote" style="margin:4px 0 6px">Ставка за день от этого не растёт. Если оставались по работе — напишите, что делали:
+        руководство увидит и может назначить премию.</p>
+      <input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+      <textarea class="field" name="text" rows="2" placeholder="Например: доделывал наряд 23 — клиент ждал машину" required></textarea>
+      <button class="btn btn-sm" style="margin-top:6px">Отправить</button>
+    </form>
     {% endfor %}
     {% if me_lt.week %}
     <div class="card compact rim rim-orange lt-card">
@@ -38,23 +51,72 @@
   </div>
 </section>
 {% endif %}
+
 {% if lt_boss %}
+{% set n_red = lt_boss|selectattr("level", "equalto", "red")|list|length %}
+{% set n_info = lt_boss|length - n_red %}
 <section class="lt-wrap" id="boss">
-  {{ tiles([{"t": "Принять к сведению", "n": lt_boss|length, "c": "red", "s": "не пришли, не отметили уход", "href": "#boss"}]) }}
+  {{ tiles([
+    {"t": "Нужно решить", "n": n_red, "c": "red" if n_red else "gray", "s": "опоздания, неявки, ранний уход", "href": "#boss"},
+    {"t": "Для сведения", "n": n_info, "c": "purple" if n_info else "gray", "s": "задержались на 30–59 мин", "href": "#boss"}]) }}
+  {% if not lt_decide %}<p class="footnote" style="margin:0">Решают директор, зам и админ. Пока не решено — неделю сотрудника не отметить «проверено».</p>{% endif %}
   <div class="lt-grid">
-    {% for f in lt_boss %}
-    <div class="card compact rim rim-red lt-card lt-boss">
-      <div class="lt-t">{{ lt_kind[f.kind] }} · {{ f.user.full_name }}</div>
+    {% for x in lt_boss %}{% set f = x.f %}{% set d = x.d %}
+    {% set mine_ = f.user.id == user.id %}
+    <div class="card compact rim {{ 'rim-purple' if x.level == 'info' else 'rim-red' }} lt-card lt-boss" data-k="{{ f.kind }}">
+      <div class="lt-t">{{ lt_kind[f.kind] }} · <a href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}">{{ f.user.full_name }}</a></div>
       <div class="caption">{{ f.user.role.name }}</div>
       <div class="subhead">{{ f.text() }}</div>
-      <form method="post" action="/timesheet/ack" class="btn-row" style="display:flex;gap:8px;flex-wrap:wrap">
-        <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
-        <input type="hidden" name="kind" value="{{ f.kind }}"><input type="hidden" name="side" value="boss">
-        <input type="hidden" name="back" value="/timesheet#boss">
-        <button class="btn btn-sm">✓ Принял к сведению</button>
-        {% if f.kind != "late" and ctx.can("attendance.edit") %}
-        <a class="btn btn-sm btn-gray" href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}&fday={{ f.day.isoformat() }}#manual">Вписать время</a>{% endif %}
-      </form>
+      {% if f.kind in ("late", "absent", "early") %}
+        <div class="lt-money caption">
+          {% if x.rate is none %}Не на окладе — за время не удерживаем.
+          {% elif x.hrs %}Оклад: −{{ x.hrs }} ч × {{ x.rate|money }} ₴ = <b>{{ x.amount|money }} ₴</b>
+          {% else %}День без отметок и так не оплачивается — удерживать нечего.{% endif %}
+          · Это <b>{{ x.nth }}-е</b> нарушение за 30 дней{% if x.fine_due %} — <b class="lt-fine">положен штраф {{ x.fine|money }} ₴</b>{% endif %}</div>
+      {% elif f.kind == "overtime" %}
+        <div class="lt-money caption">{% if d and d.note %}Что делал: <b>{{ d.note }}</b>{% else %}Сотрудник ещё не написал, что делал.{% endif %}</div>
+        {% if x.works %}<div class="caption">Закрыл после {{ f.end.strftime("%H:%M") }}: {% for w, o in x.works %}<a href="/orders/{{ o.id }}">{{ o.number[-6:] }}</a> {{ w.name }}{{ ", " if not loop.last }}{% endfor %}</div>{% endif %}
+      {% endif %}
+
+      {% if f.kind == "no_out" %}
+        <form method="post" action="/timesheet/ack" class="lt-btns">
+          <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+          <input type="hidden" name="kind" value="no_out"><input type="hidden" name="side" value="boss"><input type="hidden" name="back" value="/timesheet#boss">
+          <button class="btn btn-sm">✓ Принял к сведению</button>
+          {% if ctx.can("attendance.edit") %}<a class="btn btn-sm btn-gray" href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}&fday={{ f.day.isoformat() }}#manual">Вписать время</a>{% endif %}
+        </form>
+      {% elif not lt_decide %}
+        <p class="footnote" style="margin:6px 0 0">Ждёт решения директора или зама.</p>
+      {% elif mine_ %}
+        <p class="footnote" style="margin:6px 0 0">О себе решает другой руководитель.</p>
+      {% elif f.kind == "overtime" %}
+        <form method="post" action="/timesheet/decide" class="lt-btns">
+          <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+          <input type="hidden" name="kind" value="overtime"><input type="hidden" name="back" value="/timesheet#boss">
+          <input class="field lt-sum" name="bonus" inputmode="decimal" placeholder="Премия, ₴">
+          <button class="btn btn-sm" name="decision" value="bonus">Назначить премию</button>
+          <button class="btn btn-sm btn-gray" name="decision" value="nobonus" formnovalidate>Без премии</button>
+        </form>
+      {% else %}
+        <form method="post" action="/timesheet/decide" class="lt-btns">
+          <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+          <input type="hidden" name="kind" value="{{ f.kind }}"><input type="hidden" name="back" value="/timesheet#boss">
+          <button class="btn btn-sm btn-gray" name="decision" value="leave">Отпросился заранее</button>
+          <button class="btn btn-sm btn-gray" name="decision" value="deduct">Удержать за время</button>
+          <span class="lt-fine-row"><input class="field lt-sum" name="fine" inputmode="decimal" value="{{ (x.fine|int) if x.fine is defined else '' }}" aria-label="Штраф, ₴">
+            <button class="btn btn-sm {{ 'btn-danger' if x.fine_due else 'btn-gray' }}" name="decision" value="fine">Удержать + штраф</button></span>
+        </form>
+        <details class="lt-exc">
+          <summary class="btn btn-sm btn-tinted">Уважительная причина…</summary>
+          <form method="post" action="/timesheet/decide" class="lt-exc-form">
+            <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">
+            <input type="hidden" name="kind" value="{{ f.kind }}"><input type="hidden" name="decision" value="excused"><input type="hidden" name="back" value="/timesheet#boss">
+            <select class="field" name="reason" required><option value="">Что случилось…</option>{% for k, v in ATT_REASONS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+            <input class="field" name="comment" placeholder="Комментарий (для «Другое» — обязательно)">
+            <button class="btn btn-sm">Сохранить — не удерживать</button>
+          </form>
+        </details>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

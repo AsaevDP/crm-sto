@@ -225,6 +225,7 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     if ctx.can("money.view", "reports.finance") and ctx.user.role.code in ("admin", "director", "deputy", "manager"):
         from ..services.reports import money_for
         money_today = money_for(db, bid, _date.today(), _date.today(), light=True).revenue
+    from ..services.lateness import params as late_params
     tiles = [
         ("На СТО", sum(counts.get(s, 0) for s in WO_ACTIVE), "/orders?tab=active", "blue", "машин"),
         ("Диагностика", counts.get("diag", 0), "/orders?status=diag", "purple", "у слесарей"),
@@ -238,7 +239,8 @@ def pult(ctx: Ctx = Depends(get_ctx)):
     return ctx.render("pult.html", title="Пульт", lifts=lifts, prog=prog, vehicles=vehicles, people=people, staff=staff, paused=paused,
                       presence=presence, tiles=tiles, colors=colors, place_groups=place_groups, away=away, money_today=money_today, staff_groups=staff_groups,
                       issue_new=issue_new, local=ssvc.local, today=_date.today(),
-                      counts=counts, busy=busy, fmt_plate=fmt_plate, labels=labels)
+                      counts=counts, busy=busy, fmt_plate=fmt_plate, labels=labels,
+                      lt_p=late_params(db, ctx.branch.id))   # 24.11.2026: окошко «Отпросился» — начало и конец дня
 
 
 @router.get("/more")

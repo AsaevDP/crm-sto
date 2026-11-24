@@ -15,12 +15,27 @@
 <div class="cl-grid fill">
   <section class="ov-col on">
     <div class="card compact">
-      {% for d in range(1, n_days + 1) %}{% set day = grid.get(d) %}{% if day %}
+      {% for d in range(1, n_days + 1) %}{% set day = grid.get(d) %}{% if day or day_flags.get(d) or lv_days.get(d) %}
       <div class="ts-day">
+        {% if day %}
         <div class="kv"><span><b>{{ "%02d"|format(d) }}.{{ "%02d"|format(mo) }}</b> · {{ ["пн","вт","ср","чт","пт","сб","вс"][date(y, mo, d).weekday()] }}
           · {{ day.first_in.strftime("%H:%M") if day.first_in else "—" }}–{{ day.last_out.strftime("%H:%M") if day.last_out else ("сейчас" if day.open else "—") }}</span>
-          <b>{% if d in late_days %}<span class="chip" data-s="cancel">опоздание</span> {% endif %}{{ day.hours|num }} ч{% if day.open and not (date.today() == date(y, mo, d)) %} <span class="chip" data-s="cancel">нет ухода</span>{% endif %}</b></div>
-        {% if can_edit %}
+          <b>{{ day.hours|num }} ч{% if day.open and not (date.today() == date(y, mo, d)) %} <span class="chip" data-s="cancel">нет ухода</span>{% endif %}</b></div>
+        {% else %}
+        <div class="kv"><span><b>{{ "%02d"|format(d) }}.{{ "%02d"|format(mo) }}</b> · {{ ["пн","вт","ср","чт","пт","сб","вс"][date(y, mo, d).weekday()] }} · отметок нет</span><b>0 ч</b></div>
+        {% endif %}
+        {# 24.11.2026 (брат): что случилось в этот день и что решили (видят сотрудник, бухгалтер, директор, зам, админ) #}
+        {% for x in day_flags.get(d, []) if x.f.kind != "no_out" %}{% set dd = x.d %}
+        <div class="caption ts-flag"><span class="chip" data-s="{{ 'ready' if dd and dd.decision in ('leave', 'excused', 'nobonus', 'bonus') else ('cancel' if dd and dd.decision else 'waiting') }}">{{ lt_kind[x.f.kind] }}{% if x.f.kind in ("late", "early") %} {{ lt_min(x.f.minutes) }}{% endif %}</span>
+          {% if dd and dd.decision %}{{ ATT_DECISIONS[dd.decision] }}{% if dd.reason %}: {{ ATT_REASONS[dd.reason]|lower }}{% endif %}{% if dd.hours %} · −{{ dd.hours }} ч{% endif %}{% if dd.fine_id %} · штраф{% endif %}{% if dd.comment %} · «{{ dd.comment }}»{% endif %}{% set who_ = people_.get(dd.decided_by) %}{% if who_ %} · решил {{ who_.short_name }}{% endif %}
+          {% elif x.f.kind == "overtime" and x.f.level != "red" %}для сведения
+          {% else %}ждёт решения директора{% endif %}
+          {% if dd and dd.note %} · сотрудник: «{{ dd.note }}»{% endif %}</div>
+        {% endfor %}
+        {% for lv in lv_days.get(d, []) %}<div class="caption ts-flag"><span class="chip" data-s="ready">Отпросился {{ lv.t_from }}–{{ lv.t_to }}</span> «{{ lv.comment }}»
+          {% if lt_decide %}<form method="post" action="/timesheet/leave/{{ lv.id }}/delete" style="display:inline"><input type="hidden" name="back" value="/timesheet?user={{ u.id }}&m={{ y }}-{{ '%02d'|format(mo) }}">
+            <button class="btn btn-sm btn-plain" onclick="return confirm('Убрать «отпросился»?')">Убрать</button></form>{% endif %}</div>{% endfor %}
+        {% if can_edit and day %}
         <div class="ts-events">{% for e in day.events %}
           <form method="post" action="/timesheet/events/{{ e.id }}/delete" class="ts-ev"><span class="tag">{{ "↘ пришёл" if e.direction == "in" else "↗ ушёл" }} {{ local(e).strftime("%H:%M") }}</span>
             <span class="caption">{{ "вручную" if e.method == "manual" else "карта" }}{% if e.comment %}: {{ e.comment }}{% endif %}</span>

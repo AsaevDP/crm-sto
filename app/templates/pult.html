@@ -69,10 +69,32 @@
       <div class="pst-title">{{ g.title }} · {{ g.rows|length }}</div>
       {% for r in g.rows %}
       <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
-        <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span></div>
+        <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span>
+        {% if ctx.can("attendance.decide") and r.u.role.code != "admin" %}<button type="button" class="pst-lv ts-lv" data-uid="{{ r.u.id }}" data-name="{{ r.u.full_name }}" title="Отпросился…" aria-label="Отпросился">↗</button>{% endif %}</div>
       {% endfor %}
     </div>
     {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}
   </div>
 </section>
+{% if ctx.can("attendance.decide") %}
+{# 24.11.2026 (брат): «Отпросился заранее» прямо с «Пульта» — то же окошко, что в «Табеле» #}
+<dialog class="sheet lv-dlg" id="lv-dlg">
+  <form method="post" action="/timesheet/leave">
+    <div class="card-h"><span class="headline">Отпросился заранее · <span id="lv-name"></span></span>
+      <button type="button" class="btn btn-sm btn-plain" onclick="this.closest('dialog').close()">✕</button></div>
+    <p class="footnote" style="margin:0">В это время опоздание, неявка и ранний уход не считаются, ничего не удерживается. Весь день — с {{ "%02d"|format(lt_p.start_h) }}:00 до {{ "%02d"|format(lt_p.end_h) }}:00.</p>
+    <input type="hidden" name="user_id" id="lv-uid"><input type="hidden" name="back" value="/pult">
+    <div class="form-row three"><input class="field" type="date" name="day" value="{{ today }}" required>
+      <input class="field" type="time" name="t_from" value="{{ '%02d'|format(lt_p.start_h) }}:00" required aria-label="С">
+      <input class="field" type="time" name="t_to" value="{{ '%02d'|format(lt_p.end_h) }}:00" required aria-label="До"></div>
+    <input class="field" name="comment" placeholder="Почему: звонил директору, к врачу… *" required>
+    <button class="btn">Сохранить</button>
+  </form>
+</dialog>
+<script>
+document.querySelectorAll('.ts-lv').forEach(b => b.addEventListener('click', () => {
+  const d = document.getElementById('lv-dlg'); document.getElementById('lv-uid').value = b.dataset.uid;
+  document.getElementById('lv-name').textContent = b.dataset.name; d.showModal(); }));
+</script>
+{% endif %}
 {% endblock %}

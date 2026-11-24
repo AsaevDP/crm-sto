@@ -2,7 +2,7 @@
 from .org import Branch, Setting, Lift, OrderCounter  # noqa: F401
 from .staff import (  # noqa: F401
     Role, Permission, RolePermission, User, UserPermission,
-    StaffCard, AccessPoint, AttendanceEvent, AttendanceAck,
+    StaffCard, AccessPoint, AttendanceEvent, AttendanceAck, AttendanceDecision, AttendanceLeave,
 )
 from .payroll import (  # noqa: F401
     PayScheme, PaySchemeLine, UserPayScheme, PartGroup, PartGroupItem,

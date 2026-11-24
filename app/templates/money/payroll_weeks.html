@@ -107,6 +107,9 @@
     </summary>
 
     <div class="pw-body">
+      {% set aw = att_wait.get(u.id) if att_wait is defined else none %}
+      {% if aw %}<p class="caption pw-attwait">⏱ В табеле ждёт решения директора: {% for f in aw %}{{ att_kind[f.kind]|lower }} {{ f.day.strftime("%d.%m") }}{{ ", " if not loop.last }}{% endfor %}
+        — пока не решат, «Проверено» не поставить. <a href="/timesheet#boss">Открыть</a></p>{% endif %}
       {% if all_view and r.active %}{% set pr = r.prow %}
       <div class="pw-pacts">
         <span class="caption">

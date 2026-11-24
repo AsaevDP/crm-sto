@@ -669,8 +669,26 @@ def compute(ctx) -> dict:
         # 🟠 опозданий за эту неделю (принятые к сведению) — горит до конца недели
         _add(out, "/timesheet", "orange", len(mine["week"]), "опозданий на этой неделе", "/timesheet#late",
              alone=True, tile=['Опозданий за неделю'])
-        if ctx.can("attendance.alerts"):
+        # 🟠 задержался после работы — написать, что делал (руководство решит про премию)
+        _add(out, "/timesheet", "orange", len(mine["over"]), "вы задержались — напишите, что делали",
+             "/timesheet#late", alone=True, sel=[("/timesheet", ".lt-card.lt-over")], tile=['Задержались'])
+        # 24.11.2026 (брат, вечер): руководству. Директор / зам / админ — 🔴 решить (опоздание, неявка, ранний уход,
+        # задержка от часа, не отметил уход), 🟣 задержка 30–59 мин. Бухгалтер — 🔴 «не отметил уход» (вписать время),
+        # остальное 🟣 «ждёт решения директора» (для сведения)
+        if ctx.can("attendance.alerts", "attendance.decide"):
             boss = late_svc.for_boss(db, bid, me)
-            _add(out, "/timesheet", "red", len(boss), "сотрудник не отметился или не пришёл — примите к сведению",
-                 "/timesheet#boss", alone=True, sel=[("/timesheet", ".lt-card.lt-boss")], tile=['Принять к сведению'])
+            if ctx.can("attendance.decide"):
+                red = [x for x in boss if x["level"] == "red" and (x["f"].kind == "no_out" or x["f"].user.id != me.id)]
+                info = [x for x in boss if x["level"] == "info"]
+                _add(out, "/timesheet", "red", len(red), "опоздания, неявки, ранний уход, задержка — решить",
+                     "/timesheet#boss", alone=True, sel=[("/timesheet", '.lt-card.lt-boss.rim-red')], tile=['Нужно решить'])
+                _add(out, "/timesheet", "purple", len(info), "задержались после работы на 30–59 мин", "/timesheet#boss",
+                     alone=True, info=True, sel=[("/timesheet", '.lt-card.lt-boss.rim-purple')], tile=['Для сведения'])
+            else:
+                no_out = [x for x in boss if x["f"].kind == "no_out"]
+                wait = [x for x in boss if x["f"].kind != "no_out"]
+                _add(out, "/timesheet", "red", len(no_out), "не отметил уход — вписать время или принять к сведению",
+                     "/timesheet#boss", alone=True, sel=[("/timesheet", '.lt-card.lt-boss[data-k="no_out"]')], tile=['Нужно решить'])
+                _add(out, "/timesheet", "purple", len(wait), "ждёт решения директора (опоздания, неявки, задержки)",
+                     "/timesheet#boss", alone=True, info=True, tile=['Нужно решить', 'Для сведения'])
     return _compact(out)

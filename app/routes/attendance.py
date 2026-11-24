@@ -116,19 +116,30 @@ def _month(m: str):
 
 
 def _alerts(ctx: Ctx, only: User | None = None) -> dict:
-    """24.11.2026 (брат): окошки табеля. lt_me — свои (опоздания, ⚠ не отметились), lt_boss — руководству."""
+    """Окошки табеля (24.11.2026, брат). lt_me — свои (опоздание, ⚠ не отметились, «что делали после работы»),
+    lt_boss — руководству «Нужно решить» (кнопки — attendance.decide: директор, зам, админ; бухгалтер видит)."""
+    from ..models.staff import ATT_DECISIONS, ATT_REASONS
     me = ctx.user
     mine = late_svc.for_user(ctx.db, ctx.branch.id, me) if (only is None or only.id == me.id) else None
-    boss = late_svc.for_boss(ctx.db, ctx.branch.id, me) if ctx.can("attendance.alerts") else []
+    boss = late_svc.for_boss(ctx.db, ctx.branch.id, me) if ctx.can("attendance.alerts", "attendance.decide") else []
     if only is not None:
-        boss = [f for f in boss if f.user.id == only.id]
-    return {"lt_me": mine, "lt_boss": boss, "lt_kind": late_svc.KIND_NAME, "lt_min": late_svc.fmt_min}
+        boss = [x for x in boss if x["f"].user.id == only.id]
+    for x in boss:
+        if x["f"].kind == "overtime":
+            x["works"] = late_svc.closed_orders_after(ctx.db, x["f"].user, x["f"])
+    return {"lt_me": mine, "lt_boss": boss, "lt_kind": late_svc.KIND_NAME, "lt_min": late_svc.fmt_min,
+            "lt_decide": ctx.can("attendance.decide"), "ATT_DECISIONS": ATT_DECISIONS, "ATT_REASONS": ATT_REASONS,
+            "lt_p": late_svc.params(ctx.db, ctx.branch.id)}
+
+
+def _back(back: str, default: str = "/timesheet#boss"):
+    return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else default, status_code=303)
 
 
 @router.post("/timesheet/ack")
 def ack(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), kind: str = Form(...),
         side: str = Form("self"), back: str = Form("/timesheet#late")):
-    """«Принял к сведению»: self — сотрудник о своём опоздании; boss — руководство (кто-то один за всех)."""
+    """«Принял к сведению»: self — сотрудник о своём опоздании; boss — руководство о «не отметил уход» (один за всех)."""
     uid = _uuid(user_id)
     try:
         d = date.fromisoformat(day)
@@ -138,19 +149,129 @@ def ack(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(.
         if uid != ctx.user.id or kind != "late":
             raise Forbidden()
     else:
-        ctx.need("attendance.alerts")
-        if uid == ctx.user.id:
+        ctx.need("attendance.alerts", "attendance.decide")
+        if uid == ctx.user.id or kind != "no_out":
             raise Forbidden()   # о себе руководитель не решает — примет другой
         u = ctx.db.get(User, uid)
         if not u or u.branch_id != ctx.branch.id:
-            raise Forbidden()
-        if kind == "late" and not (ctx.user.role.code == "admin" and u.role.code in late_svc.LEADERS):
             raise Forbidden()
     if not late_svc.ack(ctx.db, ctx.branch.id, ctx.user, uid, d, kind, side):
         raise Forbidden()
     ctx.db.commit()
     flash(ctx.request, "Принято к сведению" if side == "boss" else "Принято. Больше не опаздывайте")
-    return RedirectResponse(back if back.startswith("/timesheet") else "/timesheet", status_code=303)
+    return _back(back, "/timesheet")
+
+
+@router.post("/timesheet/decide")
+def decide(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), kind: str = Form(...),
+           decision: str = Form(...), reason: str = Form(""), comment: str = Form(""), fine: str = Form(""),
+           bonus: str = Form(""), back: str = Form("/timesheet#boss")):
+    """Директор / зам / админ: решение по опозданию, неявке, раннему уходу, задержке (деньги — в зарплату недели)."""
+    from decimal import Decimal, InvalidOperation
+    ctx.need("attendance.decide")
+    u = ctx.db.get(User, _uuid(user_id))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    if not late_svc.can_decide(ctx.user, u):
+        flash(ctx.request, "О себе решает другой руководитель", "error")
+        return _back(back)
+    try:
+        d = date.fromisoformat(day)
+        fine_v = Decimal(fine.replace(",", ".").replace(" ", "")) if fine.strip() else None
+        bonus_v = Decimal(bonus.replace(",", ".").replace(" ", "")) if bonus.strip() else None
+    except (ValueError, InvalidOperation):
+        flash(ctx.request, "Проверьте дату и суммы", "error")
+        return _back(back)
+    err = late_svc.decide(ctx.db, ctx.branch.id, ctx.user, u, d, kind, decision, reason, comment, fine_v, bonus_v)
+    if err:
+        ctx.db.rollback()
+        flash(ctx.request, err, "error")
+        return _back(back)
+    ctx.db.commit()
+    from ..models.staff import ATT_DECISIONS
+    flash(ctx.request, f"{u.short_name}: {ATT_DECISIONS[decision].lower()}")
+    return _back(back)
+
+
+@router.post("/timesheet/note")
+def note(ctx: Ctx = Depends(get_ctx), day: str = Form(...), text: str = Form(""), back: str = Form("/timesheet#late")):
+    """Сотрудник: «что делали после работы» — руководство решит про премию."""
+    ctx.need("attendance.view_own", "attendance.view_all")
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        raise Forbidden()
+    err = late_svc.set_note(ctx.db, ctx.user, d, text)
+    if err:
+        flash(ctx.request, err, "error")
+        return _back(back, "/timesheet")
+    ctx.db.commit()
+    flash(ctx.request, "Записано — руководство увидит")
+    return _back(back, "/timesheet")
+
+
+@router.post("/timesheet/leave")
+def leave_add(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), t_from: str = Form("08:00"),
+              t_to: str = Form("19:00"), comment: str = Form(""), back: str = Form("/timesheet")):
+    """«Отпросился заранее» — директор / зам / админ (в «Табеле» и на «Пульте»)."""
+    from ..models import AttendanceLeave
+    ctx.need("attendance.decide")
+    u = ctx.db.get(User, _uuid(user_id))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    try:
+        d = date.fromisoformat(day)
+        a, b = time.fromisoformat(t_from), time.fromisoformat(t_to)
+    except ValueError:
+        flash(ctx.request, "Проверьте день и время", "error")
+        return _back(back, "/timesheet")
+    if b <= a:
+        flash(ctx.request, "«До» должно быть позже «с»", "error")
+        return _back(back, "/timesheet")
+    if not comment.strip():
+        flash(ctx.request, "Напишите, почему отпросился", "error")
+        return _back(back, "/timesheet")
+    ctx.db.add(AttendanceLeave(user_id=u.id, day=d, t_from=a.strftime("%H:%M"), t_to=b.strftime("%H:%M"),
+                               comment=comment.strip()[:500]))
+    ctx.db.commit()
+    flash(ctx.request, f"{u.short_name}: отпросился {d:%d.%m} с {a:%H:%M} до {b:%H:%M}")
+    return _back(back, "/timesheet")
+
+
+@router.post("/timesheet/leave/{lid}/delete")
+def leave_delete(lid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("/timesheet")):
+    from ..models import AttendanceLeave
+    ctx.need("attendance.decide")
+    lv = ctx.db.get(AttendanceLeave, _uuid(lid))
+    if not lv or lv.branch_id != ctx.branch.id:
+        raise Forbidden()
+    ctx.db.delete(lv)
+    ctx.db.commit()
+    flash(ctx.request, "Отметка «отпросился» убрана (в журнале осталась)")
+    return _back(back, "/timesheet")
+
+
+@router.get("/settings/timesheet")
+def ts_settings(ctx: Ctx = Depends(get_ctx)):
+    """«Настройки → Табель»: границы времени, задержка, штраф. Менять — директор, зам, админ; бухгалтер видит."""
+    ctx.need("attendance.decide", "attendance.alerts")
+    return ctx.render("attendance/settings.html", title="Табель — настройки", p=late_svc.params(ctx.db, ctx.branch.id),
+                      can_edit=ctx.can("attendance.decide"))
+
+
+@router.post("/settings/timesheet")
+def ts_settings_save(ctx: Ctx = Depends(get_ctx), late_min: int = Form(15), absent_min: int = Form(60),
+                     over_info_min: int = Form(30), over_red_min: int = Form(60), fine_amount: int = Form(500),
+                     fine_from: int = Form(3)):
+    ctx.need("attendance.decide")
+    if not (0 <= late_min < absent_min <= 600 and 0 < over_info_min <= over_red_min <= 600 and fine_amount >= 0 and fine_from >= 1):
+        flash(ctx.request, "Проверьте значения: опоздание < неявки, сведения ≤ «красной» задержки", "error")
+        return RedirectResponse("/settings/timesheet", status_code=303)
+    st.put(ctx.db, ctx.branch.id, "attendance", {"late_min": late_min, "absent_min": absent_min, "over_info_min": over_info_min,
+                                                 "over_red_min": over_red_min, "fine_amount": fine_amount, "fine_from": fine_from})
+    ctx.db.commit()
+    flash(ctx.request, "Настройки табеля сохранены")
+    return RedirectResponse("/settings/timesheet", status_code=303)
 
 
 @router.get("/timesheet")
@@ -178,17 +299,46 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str =
         lt = _alerts(ctx, only=target)
         late_days = {f.day.day for f in late_svc.flags(ctx.db, ctx.branch.id, [target]) if f.kind == "late"
                      and f.day.year == y and f.day.month == mo} if target.role.code != "admin" else set()
+        # 24.11.2026: по каждому дню — что было (опоздание, неявка, ранний уход, задержка), решение, «отпросился»
+        from ..models import AttendanceLeave
+        dec = late_svc.decisions(ctx.db, ctx.branch.id, date(y, mo, 1))
+        day_flags = {}
+        if target.role.code != "admin":
+            for f in late_svc.flags(ctx.db, ctx.branch.id, [target], back_days=62):
+                if f.day.year == y and f.day.month == mo:
+                    day_flags.setdefault(f.day.day, []).append({"f": f, "d": dec.get((target.id, f.day, f.kind))})
+        lv_days = {}
+        for lv in ctx.db.scalars(select(AttendanceLeave).where(AttendanceLeave.user_id == target.id,
+                                                               AttendanceLeave.day >= date(y, mo, 1),
+                                                               AttendanceLeave.day <= date(y, mo, n_days))):
+            lv_days.setdefault(lv.day.day, []).append(lv)
+        people_ = {x.id: x for x in ctx.db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
         return ctx.render("attendance/user.html", title="Табель", u=target, grid=grid, y=y, mo=mo, n_days=n_days,
                           month_name=MONTHS[mo], prev=prev, nxt=nxt, see_all=see_all, date=date, bar=bar,
                           total=sum(d.minutes for d in grid.values()), can_edit=ctx.can("attendance.edit"),
-                          can_delete=ctx.user.role.code == "admin", late_days=late_days, **lt,
+                          can_delete=ctx.user.role.code == "admin", late_days=late_days, day_flags=day_flags,
+                          lv_days=lv_days, people_=people_, **lt,
                           local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
     grid = svc.month_grid(ctx.db, ctx.branch.id, staff, y, mo)
     now_on = svc.on_site_now(ctx.db, ctx.branch.id, staff)
     weekends = {d for d in range(1, n_days + 1) if date(y, mo, d).weekday() >= 5}
     lt = _alerts(ctx)
+    # 24.11.2026 (брат, вечер): значки в клетках — опоздание / неявка / ранний уход / задержка, решение; «отпросился»
+    from ..models import AttendanceLeave
+    marks = {}
+    dec = late_svc.decisions(ctx.db, ctx.branch.id, date(y, mo, 1))
+    for f in late_svc.flags(ctx.db, ctx.branch.id, [u for u in staff if u.active], back_days=62):
+        if f.day.year == y and f.day.month == mo and f.kind != "no_out":
+            x = dec.get((f.user.id, f.day, f.kind))
+            marks.setdefault(f.user.id, {}).setdefault(f.day.day, []).append({"k": f.kind, "d": x.decision if x else ""})
+    lvs = {}
+    for lv in ctx.db.scalars(select(AttendanceLeave).where(AttendanceLeave.branch_id == ctx.branch.id,
+                                                           AttendanceLeave.day >= date(y, mo, 1),
+                                                           AttendanceLeave.day <= date(y, mo, n_days))):
+        lvs.setdefault(lv.user_id, {}).setdefault(lv.day.day, []).append(lv)
     return ctx.render("attendance/month.html", title="Табель", staff=staff, grid=grid, now_on=now_on, y=y, mo=mo,
                       n_days=n_days, month_name=MONTHS[mo], prev=prev, nxt=nxt, weekends=weekends, bar=bar, **lt,
+                      marks=marks, lvs=lvs,
                       today=date.today(), local=lambda e: svc._aware(e.at).astimezone(svc.local_tz()))
 
 

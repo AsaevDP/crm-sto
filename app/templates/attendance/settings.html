@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{# 24.11.2026 (брат): «Настройки → Табель» — границы опоздания и неявки, задержка, штраф. Менять — директор, зам, админ
+   (attendance.decide); бухгалтер видит. Начало и конец дня — из «Записи». #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/timesheet">{{ icon("back") }}Табель</a><h1 class="large-title">Табель — настройки</h1></div>
+</header>
+<form class="card compact form" method="post" action="/settings/timesheet" style="max-width:720px">
+  <p class="footnote" style="margin:0">Рабочий день — с {{ "%02d"|format(p.start_h) }}:00 до {{ "%02d"|format(p.end_h) }}:00
+    ({{ p.end_h - p.start_h }} ч, обед входит) — как в настройках «Записи». Удержание — только тем, кто на окладе, целыми часами:
+    каждый начатый час опоздания или раннего ухода. Цена часа = ставка за день ÷ {{ p.end_h - p.start_h }} ч.</p>
+  {% set dis = "" if can_edit else "disabled" %}
+  <label class="field-row"><span>Опоздание — с какой минуты после начала дня</span>
+    <input class="field" type="number" name="late_min" min="0" max="120" value="{{ p.late }}" {{ dis }}>
+    <span class="caption">сейчас: пришёл до {{ "%02d"|format(p.start_h) }}:{{ "%02d"|format(p.late - 1 if p.late else 0) }} — норма; так же ранний уход — раньше конца дня на столько минут и больше</span></label>
+  <label class="field-row"><span>Неявка — с какой минуты после начала дня</span>
+    <input class="field" type="number" name="absent_min" min="1" max="600" value="{{ p.absent }}" {{ dis }}>
+    <span class="caption">сейчас: с {{ "%02d"|format(p.start_h + p.absent // 60) }}:{{ "%02d"|format(p.absent % 60) }} или без отметки «пришёл»</span></label>
+  <label class="field-row"><span>Задержался после работы — для сведения, минут</span>
+    <input class="field" type="number" name="over_info_min" min="1" max="600" value="{{ p.over_info }}" {{ dis }}>
+    <span class="caption">меньше — не считается совсем</span></label>
+  <label class="field-row"><span>Задержался — «решить про премию» (красная), минут</span>
+    <input class="field" type="number" name="over_red_min" min="1" max="600" value="{{ p.over_red }}" {{ dis }}>
+    <span class="caption">ставка за день не растёт; премию назначают вручную</span></label>
+  <label class="field-row"><span>Штраф, ₴</span>
+    <input class="field" type="number" name="fine_amount" min="0" step="1" value="{{ p.fine|int }}" {{ dis }}></label>
+  <label class="field-row"><span>Предлагать штраф — с какого нарушения за 30 дней</span>
+    <input class="field" type="number" name="fine_from" min="1" max="30" value="{{ p.fine_from }}" {{ dis }}>
+    <span class="caption">нарушение — решение «удержать» или «удержать + штраф»; «отпросился» и «уважительная» не считаются</span></label>
+  {% if can_edit %}<button class="btn">Сохранить</button>{% else %}<p class="footnote" style="margin:0">Менять могут директор, зам и админ.</p>{% endif %}
+</form>
+{% endblock %}

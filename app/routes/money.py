@@ -560,7 +560,10 @@ def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool):
     tool_checks = {l.id: l.check_id for l in db.scalars(select(ToolCheckLine).where(ToolCheckLine.id.in_(tl_ids)))} if tl_ids else {}
     # 20.11.2026 (брат): утверждает директор (и зам с доступом) — право payroll.approve; админ — payroll.edit
     can_approve = all_view and ctx.can("payroll.approve", "payroll.edit")
-    return ctx.render("money/payroll_weeks.html", title="Моя зарплата" if mine else "Зарплата сотрудников",
+    # 24.11.2026 (брат): что в табеле ещё ждёт решения директора — проверить такого сотрудника нельзя
+    from ..services import lateness as late_svc
+    att_wait = {u.id: late_svc.undecided(db, ctx.branch.id, u.id, start, data["end"]) for u in users} if all_view else {}
+    return ctx.render("money/payroll_weeks.html", att_wait=att_wait, att_kind=late_svc.KIND_NAME, title="Моя зарплата" if mine else "Зарплата сотрудников",
                       all_view=all_view, mine=mine, base="/payroll/my" if mine else "/payroll/weeks",
                       can_approve=can_approve, start=start, end=data["end"], data=data,
                       users=users, orders=orders, vehicles=vehicles, works=works, people=people, hist=hist,
@@ -626,9 +629,13 @@ def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(
     start, w = _week_of(ctx, d)
     users = staff_for_period(ctx.db, ctx.branch.id, start)
     data = wsvc.week_data(ctx.db, ctx.branch.id, start, users)
-    n = 0
+    n, skipped = 0, []
+    from ..services import lateness as late_svc
     for uid, r in data["rows"].items():
         if (r["accrued"] > 0 or r["paid"]) and r["pst"] == "open":
+            if late_svc.undecided(ctx.db, ctx.branch.id, uid, start, start + timedelta(days=6)):
+                skipped.append(next((u.short_name for u in users if u.id == uid), ""))   # 24.11.2026: ждёт решения
+                continue
             wsvc.set_person(ctx.db, w, uid, "checked", ctx.user)
             n += 1
     w.checked_by, w.checked_at = ctx.user.id, now()
@@ -636,7 +643,8 @@ def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(
         w.note = (w.note + "\n" if w.note else "") + f"{date.today():%d.%m} {ctx.user.short_name}: {note.strip()}"
     wsvc.refresh_paid(ctx.db, w, users)
     ctx.db.commit()
-    flash(ctx.request, f"Проверено: {n} чел. — ждут утверждения директора" if n else "Проверять некого — все уже проверены")
+    flash(ctx.request, (f"Проверено: {n} чел. — ждут утверждения директора" if n else "Проверять некого — все уже проверены")
+          + (f". Не отмечены — в табеле ждёт решения директора: {', '.join(skipped)}" if skipped else ""))
     return _to(_week_back(start))
 
 
@@ -656,6 +664,14 @@ def payroll_person_status(d: str, uid: str, ctx: Ctx = Depends(get_ctx), status:
         raise Forbidden()
     start, w = _week_of(ctx, d)
     users = staff_for_period(ctx.db, ctx.branch.id, start)
+    if status in ("checked", "approved"):
+        # 24.11.2026 (брат): опоздание / неявка / ранний уход / задержка от часа без решения директора — не проверять
+        from ..services import lateness as late_svc
+        wait = late_svc.undecided(ctx.db, ctx.branch.id, u.id, start, start + timedelta(days=6))
+        if wait:
+            flash(ctx.request, f"{u.short_name}: в табеле ждёт решения директора — "
+                  + ", ".join(f"{late_svc.KIND_NAME[f.kind].lower()} {f.day:%d.%m}" for f in wait), "error")
+            return _to(_week_back(start, u.id))
     wsvc.set_person(ctx.db, w, u.id, status, ctx.user)
     wsvc.refresh_paid(ctx.db, w, users)
     ctx.db.commit()

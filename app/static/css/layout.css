@@ -2991,4 +2991,26 @@ main .pult-tiles .ptile.zero { opacity: 1; }
 .tl-late-note { margin: 0 0 12px; }
 .tl-late { margin: 0 0 12px; }
 .tl-late .kv { flex-wrap: wrap; }
+/* 24.11.2026 (брат, вечер): «Нужно решить» в табеле — кнопки решения, штраф, уважительная причина */
+.lt-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.lt-fine-row { display: inline-flex; gap: 6px; align-items: center; }
+.lt-sum { width: 110px; min-width: 0; }
+.lt-money { margin-top: 4px; }
+.lt-fine { color: var(--red); }
+.lt-exc { margin-top: 8px; }
+.lt-exc > summary { list-style: none; display: inline-flex; cursor: pointer; }
+.lt-exc > summary::-webkit-details-marker { display: none; }
+.lt-exc-form { display: grid; gap: 6px; margin-top: 8px; }
+.ts-flag { display: inline-flex; gap: 4px; align-items: center; margin: 2px 4px 0 0; }
+.lv-dlg form { display: grid; gap: 8px; }
+.ts-marks { display: flex; gap: 1px; justify-content: center; line-height: 1; margin-top: 1px; }
+.ts-m { font-size: 10px; font-weight: 700; color: var(--orange); }
+.ts-m[data-d="deduct"], .ts-m[data-d="fine"] { color: var(--red); }
+.ts-m[data-d="leave"], .ts-m[data-d="excused"], .ts-m[data-d="nobonus"], .ts-m[data-k="leave"] { color: var(--gray); }
+.ts-m[data-d="bonus"] { color: var(--green); }
+.ts-lv { padding: 0; height: auto; font-size: 12px; }
+.pw-attwait { color: var(--red); margin: 0 0 8px; }
+.pst-lv { border: 0; background: var(--fill); color: var(--text-2); border-radius: 8px; width: 24px; height: 22px; padding: 0;
+  font-size: 12px; cursor: pointer; flex: none; margin-left: 4px; }
+.pst-lv:hover { color: var(--accent); }
 

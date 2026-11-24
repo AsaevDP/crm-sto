@@ -118,3 +118,42 @@ class AttendanceAck(Entity):
     kind: Mapped[str] = mapped_column(String(10))       # late / absent / no_out
     side: Mapped[str] = mapped_column(String(10))       # self / boss
     acked_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+
+
+# 24.11.2026 (брат): решение руководства по опозданию / неявке / раннему уходу / задержке после работы.
+ATT_DECISIONS = {"leave": "Отпросился заранее", "excused": "Уважительная причина", "deduct": "Удержать за время",
+                 "fine": "Удержать + штраф", "bonus": "Премия за задержку", "nobonus": "Без премии"}
+ATT_REASONS = {"ill": "Заболел", "injury": "Травма", "car": "Сломалась машина не по его вине", "accident": "ДТП",
+               "family": "Семейные обстоятельства", "other": "Другое"}
+
+
+class AttendanceDecision(Entity):
+    """Что решили по дню сотрудника (services/lateness.py). kind: late / absent / early / overtime.
+    Удержание, штраф, премия — строки PayrollAccrual (их id здесь; поменяли решение — старые отменяются).
+    note — что написал сам сотрудник («что делал после работы»)."""
+    __tablename__ = "attendance_decisions"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    decision: Mapped[str] = mapped_column(String(10), default="")       # ATT_DECISIONS; "" — ещё не решили
+    reason: Mapped[str] = mapped_column(String(10), default="")         # ATT_REASONS (уважительная)
+    comment: Mapped[str] = mapped_column(Text, default="")              # комментарий руководителя
+    note: Mapped[str] = mapped_column(Text, default="")                 # объяснение сотрудника
+    hours: Mapped[int] = mapped_column(default=0)                      # сколько часов удержано
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    deduct_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    fine_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    bonus_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class AttendanceLeave(Entity):
+    """«Отпросился заранее» (24.11.2026): директор / зам / админ отмечают в «Табеле» или на «Пульте» — в это время
+    опоздание, неявка и ранний уход не считаются и ничего не удерживается."""
+    __tablename__ = "attendance_leaves"
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    t_from: Mapped[str] = mapped_column(String(5), default="08:00")
+    t_to: Mapped[str] = mapped_column(String(5), default="19:00")
+    comment: Mapped[str] = mapped_column(Text, default="")
+
