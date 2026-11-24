@@ -19,7 +19,8 @@ ALL_ROLES = ("admin", "director", "deputy")
 
 
 def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", alone: bool = False, info: bool = False,
-         wo=None, blk: str = "", rows=None, sel=None, tile=None, btn: str = "", big: bool = False, shape: str = ""):
+         wo=None, blk: str = "", rows=None, sel=None, tile=None, btn: str = "", big: bool = False, shape: str = "",
+         owner: bool = False):
     """alone — своя цифра, не складывается с другими того же цвета (штуки запчастей ≠ наряды).
     info — 19.11.2026 (брат): «для сведения» (вы следите, делает другой) — цифра с сиреневой обводкой; с цифрами
     «действие ваше» того же цвета не складывается.
@@ -48,7 +49,9 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
         lst.append({"c": color, "n": int(n), "t": item["t"], "href": link or href,
                     "alone": alone, "info": info, "wo": wo, "blk": blk, "rows": list(rows or []),
                     "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn, "go": [item],
-                    "big": big, "shape": shape})   # 24.11.2026: big — крупнее (опоздание), shape="warn" — ⚠ вместо цифры
+                    "big": big, "shape": shape, "owner": owner})
+    # 24.11.2026: big — крупнее (опоздание), shape="warn" — ⚠ вместо цифры. 25.11.2026 (брат): owner — дело, которое
+    # может решить ТОЛЬКО админ (владелец): красный кружок с ярко-оранжевым «!» вместо цифры, всегда отдельно (alone)
     lst.sort(key=lambda x: ("red", "orange", "purple", "green").index(x["c"]))   # purple — «Всегда в наличии» (17.11.2026)
 
 
@@ -440,6 +443,14 @@ def compute(ctx) -> dict:
                  "инструмент подготовлен — ещё не выдан", "/stock/issues?tab=tools", info=info_new, tile=['Инструмент', 'Просят / сдают'])
         # 19.11.2026 (брат): «готово — ещё не выдано» снова горит оранжевым (18.11 убирали) — пока не нажато «Выдано»
 
+    # ---------- Только админ (25.11.2026, брат): проверка инструмента ждёт его решения по удержаниям ----------
+    if role == "admin":
+        from ..models import ToolCheck
+        n_chk = db.scalar(select(func.count()).select_from(ToolCheck).where(ToolCheck.branch_id == bid,
+                                                                             ToolCheck.status == "done")) or 0
+        _add(out, "/tools", "red", n_chk, "проверка инструмента — решить, что удержать из зарплаты",
+             "/tools?view=staff#checks", alone=True, owner=True, sel=[("/tools", "#checks .kv")], tile=['Проверки'])
+
     # ---------- Инструмент после закрытия наряда (24.11.2026, брат) ----------
     # Общий инструмент под наряд, наряд закрыт / отменён, а инструмент у мастера. Мастеру: 🔴 сдать (красная «Сдаю»),
     # нажал «Сдаю» — 🟠 до «Принял» / «Вернул» кладовщика. Руководству (кладовщик, главный, менеджер — свои наряды,
@@ -678,8 +689,13 @@ def compute(ctx) -> dict:
         if ctx.can("attendance.alerts", "attendance.decide"):
             boss = late_svc.for_boss(db, bid, me)
             if ctx.can("attendance.decide"):
-                red = [x for x in boss if x["level"] == "red" and (x["f"].kind == "no_out" or x["f"].user.id != me.id)]
-                info = [x for x in boss if x["level"] == "info"]
+                # 25.11.2026 (брат): только то, что этот руководитель может решить (о директоре — только админ)
+                red = [x for x in boss if x["level"] == "red" and x["can"] and not x["owner"]]
+                own = [x for x in boss if x["level"] == "red" and x["can"] and x["owner"]]
+                info = [x for x in boss if x["level"] == "info" and x["can"]]
+                _add(out, "/timesheet", "red", len(own), "опоздание / неявка директора — решает только админ",
+                     "/timesheet?v=boss", alone=True, owner=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss.rim-red')],
+                     tile=['Нужно решить'])
                 _add(out, "/timesheet", "red", len(red), "опоздания, неявки, ранний уход, задержка — решить",
                      "/timesheet?v=boss", alone=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss.rim-red')], tile=['Нужно решить'])
                 _add(out, "/timesheet", "purple", len(info), "задержались после работы на 30–59 мин", "/timesheet?v=info",

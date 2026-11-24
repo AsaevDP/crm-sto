@@ -113,7 +113,7 @@ def test_timesheet_rules_money_decisions(client):
         login(client, "buh", "buh123")
         assert "Нужно решить" in client.get("/timesheet").text
         page = client.get("/timesheet?v=boss").text
-        assert "Ждёт решения директора" in page and 'action="/timesheet/decide"' not in page
+        assert "Решают директор, зам, админ" in page and 'action="/timesheet/decide"' not in page
         assert client.post("/timesheet/decide", data={"user_id": str(uid), "day": D.isoformat(), "kind": "late",
                                                       "decision": "deduct"}).status_code == 403
         client.post("/logout")
@@ -151,6 +151,29 @@ def test_timesheet_rules_money_decisions(client):
             assert not any(f.day == D and f.kind == "late" for f in ls.flags(db, bid, [u]))
         page = client.get(f"/timesheet?user={uid}&m={D:%Y-%m}").text
         assert "Отпросился 08:00–19:00" in page and "Уважительная причина" in page
+        client.post("/logout")
+
+        # 25.11.2026 (брат): о директоре решает только админ; себе «Отпросился» — нельзя; у админа кружок с «!»
+        login(client, "deputy", "deputy123")
+        r = client.post("/timesheet/decide", data={"user_id": str(did), "day": D.isoformat(), "kind": "late", "decision": "deduct"})
+        assert "Решает админ (владелец)" in r.text
+        b = client.get("/api/notify").json()["badges"].get("/timesheet", [])
+        assert not any(x.get("owner") for x in b)
+        client.post("/logout")
+        login(client, "director", "director123")
+        with SessionLocal() as db:
+            me_id = db.scalar(select(User.id).where(User.login == "director"))
+        r = client.post("/timesheet/leave", data={"user_id": str(me_id), "day": D.isoformat(), "t_from": "08:00",
+                                                  "t_to": "19:00", "comment": "сам себе"})
+        assert "Себе «Отпросился» не ставят" in r.text
+        client.post("/logout")
+        login(client, "admin", "admin123")
+        b = client.get("/api/notify").json()["badges"].get("/timesheet", [])
+        assert any(x.get("owner") and x["c"] == "red" for x in b)               # «!» — решает только админ
+        client.post("/timesheet/decide", data={"user_id": str(did), "day": D.isoformat(), "kind": "late", "decision": "excused",
+                                               "reason": "car", "comment": "Пробка из-за ДТП"})
+        with SessionLocal() as db:
+            assert not any(f.day == D and f.kind == "late" for f in ls.undecided(db, bid, did, D, D))
         client.post("/logout")
 
         # бухгалтер больше не упирается в «ждёт решения» по этому человеку за прошлую неделю (кроме «не отметил уход»)

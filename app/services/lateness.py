@@ -241,9 +241,29 @@ def violations(db: Session, bid, uid, day: date) -> int:
         if x.kind in MONEY_KINDS])
 
 
+def decider_note(target: User) -> str:
+    """Кто решает о сотруднике (25.11.2026, брат): о директоре — только админ (владелец), о заме — директор или админ,
+    об остальных — директор, зам, админ. О себе не решает никто."""
+    code = target.role.code if target.role else ""
+    return {"director": "Решает админ (владелец)", "deputy": "Решает директор или админ"}.get(code, "Решают директор, зам, админ")
+
+
 def can_decide(ctx_user, target: User) -> bool:
-    """О себе руководитель не решает; опоздание директора / зама решает другой руководитель или админ."""
-    return ctx_user.id != target.id
+    """Решения и «Отпросился» (25.11.2026, брат): о себе — нельзя; о директоре — только админ; о заме — директор, админ."""
+    if ctx_user.id == target.id:
+        return False
+    me = ctx_user.role.code if ctx_user.role else ""
+    code = target.role.code if target.role else ""
+    if code == "director":
+        return me == "admin"
+    if code == "deputy":
+        return me in ("admin", "director")
+    return True
+
+
+def only_admin(target: User) -> bool:
+    """Решить может только админ — у него кружок с «!» (правило 25.11.2026)."""
+    return bool(target.role and target.role.code == "director")
 
 
 def for_user(db: Session, bid, user: User, now_: datetime | None = None) -> dict:
@@ -283,12 +303,13 @@ def for_boss(db: Session, bid, me: User, now_: datetime | None = None) -> list[d
         if f.kind == "no_out":
             if (f.user.id, f.day, "no_out", "boss") in ak:
                 continue
-            out.append({"f": f, "d": None, "level": "red"})
+            out.append({"f": f, "d": None, "level": "red", "can": True, "owner": False, "who": ""})
             continue
         d = dec.get((f.user.id, f.day, f.kind))
         if d and d.decision:
             continue
-        x = {"f": f, "d": d, "level": f.level or "red"}
+        x = {"f": f, "d": d, "level": f.level or "red", "can": can_decide(me, f.user), "owner": only_admin(f.user),
+             "who": decider_note(f.user)}
         if f.kind in MONEY_KINDS:
             rate = hour_rate(db, bid, f.user, f.day)
             hrs = hours_to_hold(db, bid, f)

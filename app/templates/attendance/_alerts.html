@@ -53,9 +53,8 @@
   {% if not lt_decide %}<p class="footnote" style="margin:0">Решают директор, зам и админ. Пока не решено — неделю сотрудника не отметить «проверено».</p>{% endif %}
   <div class="lt-grid">
     {% for x in lt_boss if x.level == want %}{% set f = x.f %}{% set d = x.d %}
-    {% set mine_ = f.user.id == user.id %}
     <div class="card compact rim {{ 'rim-purple' if x.level == 'info' else 'rim-red' }} lt-card lt-boss" data-k="{{ f.kind }}">
-      <div class="lt-t">{{ lt_kind[f.kind] }} · <a href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}">{{ f.user.full_name }}</a></div>
+      <div class="lt-t">{% if x.owner and lt_decide and x.can %}<span class="nbadge nb-red nb-owner" title="Решает только админ">!</span> {% endif %}{{ lt_kind[f.kind] }} · <a href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}">{{ f.user.full_name }}</a></div>
       <div class="caption">{{ f.user.role.name }}</div>
       <div class="subhead">{{ f.text() }}</div>
       {% if f.kind in ("late", "absent", "early") %}
@@ -76,10 +75,9 @@
           <button class="btn btn-sm">✓ Принял к сведению</button>
           {% if ctx.can("attendance.edit") %}<a class="btn btn-sm btn-gray" href="/timesheet?user={{ f.user.id }}&m={{ f.day.strftime('%Y-%m') }}&fday={{ f.day.isoformat() }}#manual">Вписать время</a>{% endif %}
         </form>
-      {% elif not lt_decide %}
-        <p class="footnote" style="margin:6px 0 0">Ждёт решения директора или зама.</p>
-      {% elif mine_ %}
-        <p class="footnote" style="margin:6px 0 0">О себе решает другой руководитель.</p>
+      {% elif not lt_decide or not x.can %}
+        {# 25.11.2026 (брат): о директоре — только админ, о заме — директор или админ, о себе — никто #}
+        <p class="footnote lt-who" style="margin:6px 0 0">{% if x.owner %}<span class="nbadge nb-red nb-owner">!</span> {% endif %}{{ x.who }}.</p>
       {% elif f.kind == "overtime" %}
         <form method="post" action="/timesheet/decide" class="lt-btns">
           <input type="hidden" name="user_id" value="{{ f.user.id }}"><input type="hidden" name="day" value="{{ f.day.isoformat() }}">

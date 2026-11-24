@@ -196,7 +196,7 @@ def decide(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = For
     if not u or u.branch_id != ctx.branch.id:
         raise Forbidden()
     if not late_svc.can_decide(ctx.user, u):
-        flash(ctx.request, "О себе решает другой руководитель", "error")
+        flash(ctx.request, "О себе решает другой руководитель" if u.id == ctx.user.id else late_svc.decider_note(u), "error")
         return _back(back)
     try:
         d = date.fromisoformat(day)
@@ -242,6 +242,10 @@ def leave_add(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = 
     u = ctx.db.get(User, _uuid(user_id))
     if not u or u.branch_id != ctx.branch.id:
         raise Forbidden()
+    if not late_svc.can_decide(ctx.user, u):   # 25.11.2026: себе «Отпросился» не ставят; директору — только админ
+        flash(ctx.request, "Себе «Отпросился» не ставят — это делает другой руководитель" if u.id == ctx.user.id
+              else late_svc.decider_note(u), "error")
+        return _back(back, "/timesheet")
     try:
         d = date.fromisoformat(day)
         a, b = time.fromisoformat(t_from), time.fromisoformat(t_to)

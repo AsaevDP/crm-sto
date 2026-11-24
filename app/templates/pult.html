@@ -70,7 +70,7 @@
       {% for r in g.rows %}
       <div class="pst-row" data-st="{{ r.state }}" title="{{ r.u.full_name }} · {{ r.u.role.name }}">
         <i></i><span class="grow">{{ r.u.short_name }}</span><span class="pst-st">{{ r.text }}</span>
-        {% if ctx.can("attendance.decide") and r.u.role.code != "admin" %}<button type="button" class="pst-lv ts-lv" data-uid="{{ r.u.id }}" data-name="{{ r.u.full_name }}" title="Отпросился…" aria-label="Отпросился">↗</button>{% endif %}</div>
+        {% if ctx.can("attendance.decide") and r.u.role.code != "admin" and r.u.id != user.id and (r.u.role.code != 'director' or user.role.code == 'admin') and (r.u.role.code != 'deputy' or user.role.code in ('admin', 'director')) %}<button type="button" class="pst-lv ts-lv" data-uid="{{ r.u.id }}" data-name="{{ r.u.full_name }}" title="Отпросился…" aria-label="Отпросился">↗</button>{% endif %}</div>
       {% endfor %}
     </div>
     {% else %}<p class="footnote" style="margin:0">Сотрудников нет</p>{% endfor %}

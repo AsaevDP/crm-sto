@@ -120,11 +120,14 @@
       list.forEach(x => {
         const b = document.createElement('span');
         // 24.11.2026 (брат): табель — опоздание крупнее (nb-big), «не отметились» — треугольник с «!» (nb-warn)
-        const kind = 'nb-' + x.c + (x.info ? ' nb-info' : '') + (x.big ? ' nb-big' : '') + (x.shape === 'warn' ? ' nb-warn' : '');
-        b.className = 'nbadge ' + kind; b.textContent = x.shape === 'warn' ? '!' : x.n;
+        // 25.11.2026 (брат): только админ может решить — красный кружок с ярко-оранжевым «!» (nb-owner)
+        const kind = 'nb-' + x.c + (x.info ? ' nb-info' : '') + (x.big ? ' nb-big' : '') + (x.shape === 'warn' ? ' nb-warn' : '')
+          + (x.owner ? ' nb-owner' : '');
+        b.className = 'nbadge ' + kind; b.textContent = (x.shape === 'warn' || x.owner) ? '!' : x.n;
         b.title = (x.go && x.go.length ? x.go : [x]).map(g => cap(g.t)).join(' · ');
         b.addEventListener('click', e => nbMenu(e, b, (x.go && x.go.length ? x.go : [{ t: x.t, href: x.href, n: x.n }])
-                                                .map(g => x.shape === 'warn' ? { ...g, n: '!' } : g), kind));
+                                                .map(g => x.shape === 'warn' ? { ...g, n: '!' } : g),
+                                                kind.replace(' nb-owner', '')));   // в окошке — цифры дел
         box.appendChild(b);
       });
     });
