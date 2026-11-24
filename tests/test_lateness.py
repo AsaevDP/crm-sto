@@ -104,14 +104,16 @@ def test_timesheet_rules_money_decisions(client):
         # сотрудник пишет, что делал после работы
         login(client, "latetest", "latetest123")
         page = client.get("/timesheet").text
-        assert "Вы задержались после работы" in page
+        assert "Задержались" in page and "Вы задержались после работы" not in page   # 24.11: окошко — под плиткой
+        assert "Вы задержались после работы" in client.get("/timesheet?v=over").text
         client.post("/timesheet/note", data={"day": W.isoformat(), "text": "Доделывал машину клиента"})
         client.post("/logout")
 
         # бухгалтер видит, но не решает; «проверено» не поставить, пока не решено
         login(client, "buh", "buh123")
-        page = client.get("/timesheet").text
-        assert "Нужно решить" in page and "Ждёт решения директора" in page and 'action="/timesheet/decide"' not in page
+        assert "Нужно решить" in client.get("/timesheet").text
+        page = client.get("/timesheet?v=boss").text
+        assert "Ждёт решения директора" in page and 'action="/timesheet/decide"' not in page
         assert client.post("/timesheet/decide", data={"user_id": str(uid), "day": D.isoformat(), "kind": "late",
                                                       "decision": "deduct"}).status_code == 403
         client.post("/logout")

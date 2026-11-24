@@ -662,16 +662,16 @@ def compute(ctx) -> dict:
         mine = late_svc.for_user(db, bid, me)
         # 🔴 крупнее остальных: опоздали — прочитать и «Принял к сведению»
         _add(out, "/timesheet", "red", len(mine["new"]), "вы опоздали — прочитайте и примите к сведению",
-             "/timesheet#late", alone=True, big=True, sel=[("/timesheet", ".lt-card.lt-new")], tile=['Опоздание'])
+             "/timesheet?v=late", alone=True, big=True, sel=[("/timesheet?v=late", ".lt-card.lt-new")], tile=['Опоздание'])
         # ⚠ не отметились (уход / приход) — сообщить бухгалтеру или директору, время впишут вручную
         _add(out, "/timesheet", "orange", len(mine["warn"]), "вы не отметились — сообщите бухгалтеру или директору",
-             "/timesheet#late", alone=True, shape="warn", sel=[("/timesheet", ".lt-card.lt-warn")], tile=['Нет отметки'])
+             "/timesheet?v=warn", alone=True, shape="warn", sel=[("/timesheet?v=warn", ".lt-card.lt-warn")], tile=['Нет отметки'])
         # 🟠 опозданий за эту неделю (принятые к сведению) — горит до конца недели
-        _add(out, "/timesheet", "orange", len(mine["week"]), "опозданий на этой неделе", "/timesheet#late",
+        _add(out, "/timesheet", "orange", len(mine["week"]), "опозданий на этой неделе", "/timesheet?v=late",
              alone=True, tile=['Опозданий за неделю'])
         # 🟠 задержался после работы — написать, что делал (руководство решит про премию)
         _add(out, "/timesheet", "orange", len(mine["over"]), "вы задержались — напишите, что делали",
-             "/timesheet#late", alone=True, sel=[("/timesheet", ".lt-card.lt-over")], tile=['Задержались'])
+             "/timesheet?v=over", alone=True, sel=[("/timesheet?v=over", ".lt-card.lt-over")], tile=['Задержались'])
         # 24.11.2026 (брат, вечер): руководству. Директор / зам / админ — 🔴 решить (опоздание, неявка, ранний уход,
         # задержка от часа, не отметил уход), 🟣 задержка 30–59 мин. Бухгалтер — 🔴 «не отметил уход» (вписать время),
         # остальное 🟣 «ждёт решения директора» (для сведения)
@@ -681,14 +681,14 @@ def compute(ctx) -> dict:
                 red = [x for x in boss if x["level"] == "red" and (x["f"].kind == "no_out" or x["f"].user.id != me.id)]
                 info = [x for x in boss if x["level"] == "info"]
                 _add(out, "/timesheet", "red", len(red), "опоздания, неявки, ранний уход, задержка — решить",
-                     "/timesheet#boss", alone=True, sel=[("/timesheet", '.lt-card.lt-boss.rim-red')], tile=['Нужно решить'])
-                _add(out, "/timesheet", "purple", len(info), "задержались после работы на 30–59 мин", "/timesheet#boss",
-                     alone=True, info=True, sel=[("/timesheet", '.lt-card.lt-boss.rim-purple')], tile=['Для сведения'])
+                     "/timesheet?v=boss", alone=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss.rim-red')], tile=['Нужно решить'])
+                _add(out, "/timesheet", "purple", len(info), "задержались после работы на 30–59 мин", "/timesheet?v=info",
+                     alone=True, info=True, sel=[("/timesheet?v=info", '.lt-card.lt-boss.rim-purple')], tile=['Для сведения'])
             else:
                 no_out = [x for x in boss if x["f"].kind == "no_out"]
                 wait = [x for x in boss if x["f"].kind != "no_out"]
                 _add(out, "/timesheet", "red", len(no_out), "не отметил уход — вписать время или принять к сведению",
-                     "/timesheet#boss", alone=True, sel=[("/timesheet", '.lt-card.lt-boss[data-k="no_out"]')], tile=['Нужно решить'])
+                     "/timesheet?v=boss", alone=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss[data-k="no_out"]')], tile=['Нужно решить'])
                 _add(out, "/timesheet", "purple", len(wait), "ждёт решения директора (опоздания, неявки, задержки)",
-                     "/timesheet#boss", alone=True, info=True, tile=['Нужно решить', 'Для сведения'])
+                     "/timesheet?v=boss", alone=True, info=True, tile=['Нужно решить', 'Для сведения'])
     return _compact(out)

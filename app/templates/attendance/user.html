@@ -6,7 +6,11 @@
     <h1 class="large-title">{{ "Мой табель" if u.id == user.id else u.full_name }}</h1></div>
   <div class="ov-actions">{{ period_bar(bar) }}</div>
 </header>
+{% from "_tiles.html" import tiles with context %}
+{% if lt_tiles %}{{ tiles(lt_tiles) }}{% endif %}
+{% if lt_view %}
 {% include "attendance/_alerts.html" %}
+{% else %}
 <div class="stats">
   <div class="stat"><span class="footnote">Дней на работе</span><b>{{ grid.values()|selectattr("minutes")|list|length }}</b></div>
   <div class="stat"><span class="footnote">Часов за месяц</span><b>{{ (total / 60)|round(1)|num }}</b></div>
@@ -61,4 +65,5 @@
     <p class="hint">Отметки ставятся картой на проходной. Часы считаются парами «пришёл → ушёл».</p>
   </section>
 </div>
+{% endif %}
 {% endblock %}

@@ -115,9 +115,13 @@ def _month(m: str):
         return t.year, t.month
 
 
-def _alerts(ctx: Ctx, only: User | None = None) -> dict:
-    """Окошки табеля (24.11.2026, брат). lt_me — свои (опоздание, ⚠ не отметились, «что делали после работы»),
-    lt_boss — руководству «Нужно решить» (кнопки — attendance.decide: директор, зам, админ; бухгалтер видит)."""
+LT_VIEWS = ("late", "warn", "over", "boss", "info")
+
+
+def _alerts(ctx: Ctx, only: User | None = None, base: str = "/timesheet", view: str = "") -> dict:
+    """Окошки табеля (24.11.2026, брат). Плитки дел — меню, как в «Инструменте»: нажал плитку — ниже только её окошки
+    (?v=late / warn / over — свои; boss / info — руководству), нажал ещё раз — обычный табель.
+    Кнопки решения — attendance.decide (директор, зам, админ); бухгалтер видит."""
     from ..models.staff import ATT_DECISIONS, ATT_REASONS
     me = ctx.user
     mine = late_svc.for_user(ctx.db, ctx.branch.id, me) if (only is None or only.id == me.id) else None
@@ -127,18 +131,37 @@ def _alerts(ctx: Ctx, only: User | None = None) -> dict:
     for x in boss:
         if x["f"].kind == "overtime":
             x["works"] = late_svc.closed_orders_after(ctx.db, x["f"].user, x["f"])
+    view = view if view in LT_VIEWS else ""
+    sep = "&" if "?" in base else "?"
+
+    def item(key, t, n, c, sub):
+        on = view == key
+        return {"t": t, "n": n, "c": c if n else "gray", "s": sub, "on": on,
+                "href": base if on else f"{base}{sep}v={key}", "zero": not n}
+    tiles_ = []
+    if mine and (mine["new"] or mine["warn"] or mine["week"] or mine["over"]):
+        tiles_ += [item("late", "Опоздание", len(mine["new"]), "red", "прочитать и принять к сведению"),
+                   item("warn", "Нет отметки", len(mine["warn"]), "orange", "сообщите бухгалтеру или директору"),
+                   {"t": "Опозданий за неделю", "n": len(mine["week"]), "c": "orange" if mine["week"] else "gray",
+                    "s": "с понедельника", "href": base if view == "late" else f"{base}{sep}v=late", "zero": not mine["week"]},
+                   item("over", "Задержались", len(mine["over"]), "orange", "напишите, что делали")]
+    if boss:
+        n_red = sum(1 for x in boss if x["level"] == "red")
+        tiles_ += [item("boss", "Нужно решить", n_red, "red", "опоздания, неявки, ранний уход"),
+                   item("info", "Для сведения", len(boss) - n_red, "purple", "задержались на 30–59 мин")]
     return {"lt_me": mine, "lt_boss": boss, "lt_kind": late_svc.KIND_NAME, "lt_min": late_svc.fmt_min,
             "lt_decide": ctx.can("attendance.decide"), "ATT_DECISIONS": ATT_DECISIONS, "ATT_REASONS": ATT_REASONS,
-            "lt_p": late_svc.params(ctx.db, ctx.branch.id)}
+            "lt_p": late_svc.params(ctx.db, ctx.branch.id), "lt_tiles": tiles_, "lt_view": view,
+            "lt_back": f"{base}{sep}v={view}" if view else base}
 
 
-def _back(back: str, default: str = "/timesheet#boss"):
+def _back(back: str, default: str = "/timesheet?v=boss"):
     return RedirectResponse(back if back.startswith("/") and not back.startswith("//") else default, status_code=303)
 
 
 @router.post("/timesheet/ack")
 def ack(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), kind: str = Form(...),
-        side: str = Form("self"), back: str = Form("/timesheet#late")):
+        side: str = Form("self"), back: str = Form("/timesheet?v=late")):
     """«Принял к сведению»: self — сотрудник о своём опоздании; boss — руководство о «не отметил уход» (один за всех)."""
     uid = _uuid(user_id)
     try:
@@ -165,7 +188,7 @@ def ack(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(.
 @router.post("/timesheet/decide")
 def decide(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(...), kind: str = Form(...),
            decision: str = Form(...), reason: str = Form(""), comment: str = Form(""), fine: str = Form(""),
-           bonus: str = Form(""), back: str = Form("/timesheet#boss")):
+           bonus: str = Form(""), back: str = Form("/timesheet?v=boss")):
     """Директор / зам / админ: решение по опозданию, неявке, раннему уходу, задержке (деньги — в зарплату недели)."""
     from decimal import Decimal, InvalidOperation
     ctx.need("attendance.decide")
@@ -194,7 +217,7 @@ def decide(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = For
 
 
 @router.post("/timesheet/note")
-def note(ctx: Ctx = Depends(get_ctx), day: str = Form(...), text: str = Form(""), back: str = Form("/timesheet#late")):
+def note(ctx: Ctx = Depends(get_ctx), day: str = Form(...), text: str = Form(""), back: str = Form("/timesheet?v=late")):
     """Сотрудник: «что делали после работы» — руководство решит про премию."""
     ctx.need("attendance.view_own", "attendance.view_all")
     try:
@@ -275,7 +298,7 @@ def ts_settings_save(ctx: Ctx = Depends(get_ctx), late_min: int = Form(15), abse
 
 
 @router.get("/timesheet")
-def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str = "", d: str = ""):
+def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str = "", d: str = "", v: str = ""):
     ctx.need("attendance.view_all", "attendance.view_own")
     import calendar
     from ..services import periods
@@ -296,7 +319,7 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str =
         target = ctx.db.get(User, _uuid(user))
     if target:
         grid = svc.month_grid(ctx.db, ctx.branch.id, [target], y, mo)[target.id]
-        lt = _alerts(ctx, only=target)
+        lt = _alerts(ctx, only=target, base=f"/timesheet?user={target.id}&m={y}-{mo:02d}" if see_all else "/timesheet", view=v)
         late_days = {f.day.day for f in late_svc.flags(ctx.db, ctx.branch.id, [target]) if f.kind == "late"
                      and f.day.year == y and f.day.month == mo} if target.role.code != "admin" else set()
         # 24.11.2026: по каждому дню — что было (опоздание, неявка, ранний уход, задержка), решение, «отпросился»
@@ -322,12 +345,12 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str =
     grid = svc.month_grid(ctx.db, ctx.branch.id, staff, y, mo)
     now_on = svc.on_site_now(ctx.db, ctx.branch.id, staff)
     weekends = {d for d in range(1, n_days + 1) if date(y, mo, d).weekday() >= 5}
-    lt = _alerts(ctx)
+    lt = _alerts(ctx, base="/timesheet" if (y, mo) == (date.today().year, date.today().month) else f"/timesheet?m={y}-{mo:02d}", view=v)
     # 24.11.2026 (брат, вечер): значки в клетках — опоздание / неявка / ранний уход / задержка, решение; «отпросился»
     from ..models import AttendanceLeave
     marks = {}
     dec = late_svc.decisions(ctx.db, ctx.branch.id, date(y, mo, 1))
-    for f in late_svc.flags(ctx.db, ctx.branch.id, [u for u in staff if u.active], back_days=62):
+    for f in late_svc.flags(ctx.db, ctx.branch.id, [u for u in staff if u.active and u.role.code != "admin"], back_days=62):
         if f.day.year == y and f.day.month == mo and f.kind != "no_out":
             x = dec.get((f.user.id, f.day, f.kind))
             marks.setdefault(f.user.id, {}).setdefault(f.day.day, []).append({"k": f.kind, "d": x.decision if x else ""})
