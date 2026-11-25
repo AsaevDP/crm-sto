@@ -90,6 +90,11 @@ def yes_all_works(url):
         current_branch_id.set(wo.branch_id)
         for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id, WoWork.approval == "pending")):
             w.approval = "yes"
+        # 25.11.2026: и запчасти — «✓ Да, берём» (варианты выбирают сами тесты кнопкой «Выбрать»)
+        from app.models import WoPart
+        for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.approval == "pending")):
+            if not p.option_group:
+                p.approval = "yes"
         db.commit()
 
 

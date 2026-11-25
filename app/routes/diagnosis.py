@@ -225,6 +225,35 @@ def work_approval(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), valu
     return {"ok": True}
 
 
+@router.post("/orders/{order_id}/parts/{part_id}/approval")
+def part_approval(order_id: str, part_id: str, ctx: Ctx = Depends(get_ctx), value: str = Form(...)):
+    """25.11.2026 (брат, наряд 39): звонок клиенту — по каждой запчасти ✓ Да / ✕ Нет, как у работ (сохраняется сразу).
+    Группа вариантов: «Выбрать» (= да) или «Клиент отказался от всех» — value=no у любой детали группы."""
+    ctx.need("orders.approve")
+    wo = _order(ctx, order_id)
+    from ..models import WoPart
+    p = ctx.db.get(WoPart, _uuid(part_id))
+    if (svc.approve_phase(wo) != "call" or not p or p.work_order_id != wo.id or value not in ("yes", "no", "pending")
+            or p not in svc.round_parts(ctx.db, wo)):
+        return JSONResponse({"ok": False}, status_code=400)
+    items = [x for x in svc.round_parts(ctx.db, wo) if x.option_group == p.option_group] if p.option_group else [p]
+    if p.option_group and value == "yes":
+        return JSONResponse({"ok": False}, status_code=400)   # вариант — через «Выбрать»
+    if p.option_group and value == "no":
+        from ..services import stock as ssvc
+        for x in items:   # отказался от всех: выбранный вариант (если был) — снова вариант, резерв снят
+            if x.status not in ("option", "declined"):
+                ssvc.release_part(ctx.db, x, "Клиент отказался от всех вариантов")
+                x.source = ""
+            x.status = "option"
+    for x in items:
+        x.approval, x.approved_by, x.approved_at = value, ctx.user.id, now()
+    ctx.db.commit()
+    if ctx.request.headers.get("x-requested-with") == "fetch":
+        return {"ok": True}
+    return RedirectResponse(f"/orders/{order_id}#parts", status_code=303)
+
+
 # ---------- Согласование: прежнее «Да / Нет» по проблеме (до 23.11.2026) — оставлено для старых ссылок ----------
 @router.post("/orders/{order_id}/findings/{finding_id}/approval")
 def finding_approval(order_id: str, finding_id: str, ctx: Ctx = Depends(get_ctx), value: str = Form(...)):

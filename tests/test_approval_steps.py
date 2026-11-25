@@ -100,11 +100,20 @@ def test_steps_works_picking_call_and_keeper(client):
     assert _has(b, "/orders", "red", "звоните клиенту", wid)
     assert _notes("irina", wid, "picked")
     page = client.get(url).text
-    assert "✓ Да, делаем" in page and 'id="btn-approve-done"' in page
+    # 25.11.2026 (брат, наряд 39): «Согласовал» появляется в самом конце — пока не отмечено всё, вместо неё «осталось»
+    assert "✓ Да, делаем" in page and 'id="btn-approve-done"' not in page and 'id="ap-left"' in page
     with SessionLocal() as db:
         w = db.scalar(select(WoWork).where(WoWork.work_order_id == wid))
+        from app.models import WoPart
+        p_ids = [p.id for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wid, WoPart.approval == "pending"))]
     assert "Отметьте по каждой работе" in client.post(f"{url}/approval-done").text
     client.post(f"{url}/works/{w.id}/approval", data={"value": "yes"}, headers=FETCH)
+    if p_ids:   # запчасти — тоже «✓ Да, берём»
+        assert "✓ Да, берём" in client.get(url).text
+        assert "Отметьте по каждой запчасти" in client.post(f"{url}/approval-done").text
+        for pid in p_ids:
+            client.post(f"{url}/parts/{pid}/approval", data={"value": "yes"}, headers=FETCH)
+    assert 'id="btn-approve-done"' in client.get(url).text
     client.post(f"{url}/approval-done")
     assert _wo(url).status in ("picking", "waiting", "instock")
     assert not _has(_badges(client, "irina"), "/orders", "red", "звоните клиенту", wid)

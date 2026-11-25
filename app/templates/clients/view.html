@@ -93,6 +93,15 @@
         <form method="post" action="/clients/{{ c.id }}/events/{{ e.id }}/resolve"><button class="btn btn-plain btn-sm" title="Отметить: сделано">Сделано</button></form>
       </div>
       {% else %}<p class="footnote">Нет открытых рекомендаций</p>{% endfor %}
+      {# 25.11.2026 (брат): от чего клиент отказался при согласовании — свёрнуто, как «Архив» у запчастей #}
+      {% if refused %}
+      <details class="parts-arch cl-refused">
+        <summary class="caption">Отказался от запчастей · {{ refused|length }}</summary>
+        {% for e in refused %}{% set who = people.get(e.created_by) %}
+        <div class="kv"><span>{{ e.text }}<span class="caption" style="display:block">{{ e.created_at.astimezone().strftime("%d.%m.%Y") }}{% if e.vehicle_id and vmap.get(e.vehicle_id) %} · {{ fmt_plate(vmap[e.vehicle_id].plate) }}{% endif %}{% if who %} · {{ who.short_name }}{% endif %}{% if e.work_order_id %} · <a href="/orders/{{ e.work_order_id }}">открыть наряд</a>{% endif %}</span></span></div>
+        {% endfor %}
+      </details>
+      {% endif %}
     </div>
 
     <div class="card compact">

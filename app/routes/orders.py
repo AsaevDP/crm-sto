@@ -371,7 +371,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     options_open = sum(1 for g in groups.values() if any(p.status == "option" for p in g)
                        and not any(p.status not in ("option", "declined") for p in g))
     can_offer = _can_offer(ctx, wo)
-    counted = [p for p in parts if p.status not in PART_OFF]
+    counted = [p for p in parts if p.status not in PART_OFF
+               and not (wo.status == "approve" and p.approval == "no")]   # 25.11.2026: отказ клиента — не в итоге
     free = stock_svc.catalog_free(db, ctx.branch.id, [p.catalog_id for p in parts if p.catalog_id]) if groups else {}
     n_done = sum(1 for w in works if w.status == "done")
     mc, pm = people.get(wo.mechanic_id), people.get(wo.partsman_id)
@@ -458,6 +459,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         draft_parts=draft_parts, ap_round=ap_round, ap_fresh=ap_fresh,
         # 23.11.2026 (брат): шаг согласования (works / picking / call), работы этого круга, граница «Новое»
         phase=svc.approve_phase(wo), round_ids={w.id for w in svc.round_works(db, wo)} if wo.status == "approve" else set(),
+        # 25.11.2026 (брат, наряд 39): запчасти тоже «Да / Нет»; «Согласовал с клиентом» — когда отмечено всё
+        round_part_ids={p.id for p in svc.round_parts(db, wo)} if wo.status == "approve" else set(),
+        ap_left=svc.approval_left(db, wo) if svc.approve_phase(wo) == "call" else None,
         new_since=svc.new_since(db, wo), works_sent_who=db.get(User, wo.works_sent_by) if wo.works_sent_by else None,
         stage_label=svc.stage_label(db, wo, mc.short_name if mc else "", pm.short_name if pm else "",
                                     {"done": n_done, "total": len(works)}, viewer=ctx.user),
@@ -1200,12 +1204,15 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
     events = ctx.db.scalars(select(ClientEvent).where(ClientEvent.client_id == c.id)
                             .order_by(ClientEvent.created_at.desc()).limit(300)).all()
     recs = [e for e in events if e.kind == "recommendation" and not e.resolved]
-    numbers = {o.id: o.number for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.client_id == c.id))}
+    # 25.11.2026 (брат): отказы от запчастей при согласовании — свёрнутым архивом, не в общей истории и не в бумагах
+    refused = [e for e in events if e.kind == "part_refused"]
+    events = [e for e in events if e.kind != "part_refused"]
+    numbers ={o.id: o.number for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.client_id == c.id))}
     from ..services import clients as csvc
     return ctx.render("clients/view.html", title=c.full_name, c=c, vehicles=vehicles, cards=_cards(ctx, orders),
                       st=csvc.one(ctx.db, c), REGULAR_VISITS=csvc.REGULAR_VISITS, show_money=ctx.can("money.view"),
                       STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, events=events,
-                      recs=recs, people=_people(ctx, *[e.created_by for e in events]), URGENCY=URGENCY,
+                      recs=recs, refused=refused, people=_people(ctx, *[e.created_by for e in events + refused]), URGENCY=URGENCY,
                       vmap={v.id: v for v in vehicles}, numbers=numbers,
                       can_edit=ctx.can("orders.create") or ctx.user.role.code == "admin",
                       grant=_grant_data(ctx, c) if ctx.can("orders.grant_access") else None,

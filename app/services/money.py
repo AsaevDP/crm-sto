@@ -57,9 +57,13 @@ def pct(v) -> Decimal:
 
 
 def totals(db: Session, wo: WorkOrder) -> Totals:
-    works = money(sum((Decimal(w.price or 0) for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))), D0))
+    # 25.11.2026 (брат, наряд 39): на звонке клиенту «✕ Клиент отказался» — сразу не в сумме (работы и запчасти)
+    off = wo.status == "approve"
+    works = money(sum((Decimal(w.price or 0) for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id))
+                       if not (off and w.approval == "no")), D0))
     parts = money(sum((part_sum(p) for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id,
-                                                                           WoPart.status.notin_(PART_OFF)))), D0))
+                                                                           WoPart.status.notin_(PART_OFF)))
+                       if not (off and p.approval == "no")), D0))
     subtotal = money(works + parts)
     wd = money(works * pct(wo.works_discount_pct) / 100)
     od = money((subtotal - wd) * pct(wo.discount_pct) / 100)

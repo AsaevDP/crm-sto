@@ -748,8 +748,9 @@ def flow(wo: WorkOrder, mech: str = "", partsman: str = "", n_find: int = 0, n_w
                               "варианты фирм) и жмёт «Подбор завершён» — тогда менеджер звонит клиенту.", "yellow")
     elif s == "approve":
         title, text, color = (("Новое — согласуйте с клиентом" if again else "Звоните клиенту — согласуйте"),
-                              "Работы и запчасти готовы. По каждой работе — ✓ Да / ✕ Нет, варианты фирм — «Выбрать», "
-                              "лишнее — «Убрать». Затем «Согласовал с клиентом» (блок «Запчасти») — запчасти уйдут в заказ.",
+                              "Работы и запчасти готовы. По каждой работе и каждой запчасти — ✓ Да / ✕ Клиент отказался, "
+                              "варианты фирм — «Выбрать». Когда отмечено всё, появится «Согласовал с клиентом» (блок "
+                              "«Запчасти») — запчасти уйдут в заказ.",
                               "orange")
     elif s == "picking" and options_open:
         title, text, color = ("Клиент выбирает запчасти", f"Ждут выбора: {options_open}. Отметьте вариант клиента кнопкой «Выбрать».",
@@ -985,6 +986,94 @@ def new_since(db: Session, wo: WorkOrder):
     return h.created_at if h else None
 
 
+PART_GONE = ("returned", "archived")
+
+
+def round_parts(db: Session, wo: WorkOrder) -> list:
+    """25.11.2026 (брат): запчасти текущего круга согласования — обычно все, а если новая проблема во время ремонта —
+    только новые (старые клиент уже согласовал)."""
+    from ..models import WoPart
+    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_GONE))
+                       .order_by(WoPart.created_at)).all()
+    r = approve_round(db, wo)
+    if r["again"] and r["entered"]:
+        return [p for p in parts if p.created_at and p.created_at >= r["entered"]]
+    return list(parts)
+
+
+def part_groups(parts) -> dict:
+    """Варианты на выбор: {группа: [детали]} (только группы, где 2+ варианта или есть статус option/declined)."""
+    g: dict = {}
+    for p in parts:
+        if p.option_group:
+            g.setdefault(p.option_group, []).append(p)
+    return g
+
+
+def group_open(items) -> bool:
+    """Клиент ещё не выбрал вариант и не отказался от всех."""
+    return all(p.status == "option" for p in items) and not any(p.approval == "no" for p in items)
+
+
+def approval_left(db: Session, wo: WorkOrder) -> dict:
+    """25.11.2026 (брат, наряд 39): что ещё не отмечено на шаге «Звонок клиенту». «Согласовал с клиентом» появляется,
+    когда всё по нулям: works — работы без «Да / Нет», parts — запчасти без «Да / Нет», groups — варианты без выбора."""
+    works = [w for w in round_works(db, wo) if w.approval == "pending"]
+    parts = round_parts(db, wo)
+    groups = [items[0].name for items in part_groups(parts).values() if group_open(items)]
+    plain = [p for p in parts if not p.option_group and p.approval == "pending"]
+    return {"works": len(works), "parts": [p.name for p in plain], "groups": groups,
+            "n": len(works) + len(plain) + len(groups), "n_parts": len(plain) + len(groups),
+            "has_parts": bool(parts)}
+
+
+def refuse_parts_on_approval(db: Session, wo: WorkOrder, user_id=None) -> int:
+    """«Согласовал с клиентом»: запчасти «✕ Клиент отказался» и группы «отказался от всех» → архив наряда (в счёт и
+    бумаги не идут) + в карту клиента «Отказался от запчастей» (kind part_refused). Невыбранный вариант — не отказ."""
+    from ..models import PartCatalog
+    from . import stock as ssvc
+    n, seen = 0, set()
+    for p in round_parts(db, wo):
+        if p.approval != "no":
+            continue
+        group_all = bool(p.option_group) and p.status in ("option", "declined")
+        c = db.get(PartCatalog, p.catalog_id) if p.catalog_id else None
+        ssvc.archive_part(db, p, user_id, tell=False)
+        p.refuse_reason = p.refuse_reason or "Клиент отказался при согласовании"
+        if group_all:
+            if p.option_group in seen:
+                continue   # «отказался от всех вариантов» — одна строка на группу
+            seen.add(p.option_group)
+            text = f"{p.name} (все варианты)"
+        else:
+            q = p.qty.normalize() if p.qty else 1
+            text = f"{p.name}{' · ' + c.brand if c and c.brand else ''} · {q:f} шт"
+        event(db, wo, "part_refused", f"{text} · наряд №{wo.number[-6:].lstrip('0')}")
+        n += 1
+    db.flush()
+    return n
+
+
+def fill_parts_pending(db: Session):
+    """Один раз (25.11.2026): наряды на согласовании — их запчасти текущего круга ждут ответа клиента."""
+    from ..db import current_branch_id
+    from ..models import Branch
+    from . import settings as st
+    for br in db.scalars(select(Branch)):
+        if st.get(db, br.id, "grants_once").get("approve.parts_pending"):
+            continue
+        current_branch_id.set(br.id)
+        for wo in db.scalars(select(WorkOrder).where(WorkOrder.branch_id == br.id,
+                                                     WorkOrder.status.in_(("created", "diag", "approve")))):
+            if (wo.kind or "") == "wash":
+                continue
+            for p in round_parts(db, wo):
+                if p.status not in ("declined",):
+                    p.approval = "pending"
+        st.put(db, br.id, "grants_once", {"approve.parts_pending": True})
+    db.commit()
+
+
 def notify_works_todo(db: Session, wo: WorkOrder, user=None):
     """Наряд пришёл на шаг «Работы» — менеджеру окошко «Впишите работы» (если это сделал не он сам)."""
     from . import notify
@@ -1069,7 +1158,8 @@ def duplicate_parts(db: Session, wo: WorkOrder) -> list[dict]:
     Toyota) — перед «Согласовал с клиентом» спрашиваем, берёт ли клиент все. [{name, items: [«TRW · на складе», …]}]."""
     from ..models import PartCatalog, WoPart
     from ..models.orders import PART_OFF
-    parts = db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF))).all()
+    parts = [p for p in db.scalars(select(WoPart).where(WoPart.work_order_id == wo.id, WoPart.status.notin_(PART_OFF)))
+             if p.approval != "no"]   # 25.11.2026: от чего клиент уже отказался — не дубль
     groups: dict = {}
     for p in parts:
         groups.setdefault(" ".join((p.name or "").lower().replace("ё", "е").split()), []).append(p)
@@ -1104,6 +1194,12 @@ def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False, dups_ok:
     all_works = db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all()
     if any(w.approval == "pending" for w in all_works):
         return "Отметьте по каждой работе: клиент согласен (✓ Да) или отказался (✕ Нет)"
+    left = approval_left(db, wo)   # 25.11.2026 (брат, наряд 39): запчасти — тоже «Да / Нет», варианты — выбрать
+    if left["groups"]:
+        return (f"Клиент ещё не выбрал вариант: «{'», «'.join(left['groups'])}» — нажмите «Выбрать» у нужной фирмы "
+                "или «Клиент отказался от всех вариантов»")
+    if left["parts"]:
+        return f"Отметьте по каждой запчасти: клиент берёт (✓ Да) или отказался (✕ Нет) — осталось {len(left['parts'])}"
     this_round = round_works(db, wo)
     yes = [w for w in this_round if w.approval == "yes"]
     no = [w for w in this_round if w.approval == "no"]
@@ -1122,8 +1218,11 @@ def finish_approval(db: Session, wo: WorkOrder, no_parts: bool = False, dups_ok:
         if d:
             return (f"«{d[0]['name']}» в наряде {len(d[0]['items'])} раза ({', '.join(d[0]['items'])}). "
                     "Если клиент берёт все — отметьте «Да, клиент берёт все», иначе уберите лишнее")
-    # Ошибок нет — отказанные работы в рекомендации и из наряда (если их ещё не начинали)
-    findings = {f.id: f for f in db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id))}
+    # Ошибок нет — отказанные запчасти в архив наряда и в карту клиента; работы — в рекомендации
+    if refuse_parts_on_approval(db, wo):
+        parts = [p for p in parts if p.status not in ("returned", "declined", "archived")]
+        fresh = [p for p in parts if p.status in ("need", "option") or (entered and p.created_at >= entered)]
+    findings ={f.id: f for f in db.scalars(select(WoFinding).where(WoFinding.work_order_id == wo.id))}
     for w in no:
         f = findings.get(w.finding_id)
         event(db, wo, "recommendation", w.name, finding=f, urgency=f.urgency if f else "")

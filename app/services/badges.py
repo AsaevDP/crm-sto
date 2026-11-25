@@ -227,7 +227,8 @@ def compute(ctx) -> dict:
                  wo=ids_w, blk="#works", rows=["#btn-works-sent"], tile=['Согласование'], btn="blue")
             # 22.11.2026 (брат): красная — дело менеджера, пока не согласует, работа стоит
             _add(out, "/orders", "red", len(ids_c), "подбор готов — звоните клиенту, согласуйте", "/orders?tab=approve",
-                 wo=ids_c, blk="#works", rows=['.work[data-appr="pending"]', "#btn-approve-done"], tile=['Согласование'],
+                 wo=ids_c, blk="#works", rows=['.work[data-appr="pending"]', '.part[data-appr="pending"]',
+                                               '.optgroup[data-appr="pending"]', "#btn-approve-done"], tile=['Согласование'],
                  btn="blue")
         if ctx.can("parts.pick") and not ctx.can("orders.approve"):
             # 13.11.2026: подбор идёт уже на согласовании — пока не нажал «Подбор завершён»; 23.11.2026 — после того,

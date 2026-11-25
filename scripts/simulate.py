@@ -814,6 +814,14 @@ def step_approve(o, day, hhmm, send=True):
                 v = "no"   # лишняя находка — клиент чаще отказывается (уйдёт в рекомендации)
             post(o.mgr, f"{o.url}/works/{w.id}/approval", {"value": v},
                  what="Клиент согласен на работу" if v == "yes" else "Клиент отказался от работы", fetch=True)
+        # 25.11.2026 (брат, наряд 39): запчасти — тоже «✓ Да, берём» / «✕ Клиент отказался» (изредка отказ — в карту клиента)
+        ps = q(M.WoPart, M.WoPart.work_order_id == o.id, M.WoPart.approval == "pending", order=M.WoPart.created_at)
+        for p in ps:
+            if p.option_group or p.status in ("archived", "returned", "declined"):
+                continue
+            v = "no" if (o.fail_plan is None and len(ps) > 2 and rnd.random() < 0.08) else "yes"
+            post(o.mgr, f"{o.url}/parts/{p.id}/approval", {"value": v},
+                 what="Клиент берёт запчасть" if v == "yes" else "Клиент отказался от запчасти", fetch=True)
         # 19.11.2026: одна деталь несколько раз (две работы с одним маслом) — менеджер подтверждает, что клиент берёт все
         from app.services import orders as _osvc
         with SessionLocal() as db_:

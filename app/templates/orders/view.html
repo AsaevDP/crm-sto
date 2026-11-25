@@ -465,7 +465,7 @@
     const r = await fetch(seg.dataset.url, { method: 'POST', body: new URLSearchParams({ value: b.dataset.v }), headers: { 'x-requested-with': 'fetch' } });
     if (!r.ok) { alert('Не сохранилось'); return; }
     seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
-    const row = seg.closest('.finding, .work'); if (row) row.dataset.appr = b.dataset.v;
+    const row = seg.closest('.finding, .work, .part'); if (row) row.dataset.appr = b.dataset.v;
     (window.crmReload || (() => location.reload()))();   // 23.11.2026: «Да / Нет» по работе — обновить итог и подсказки
   }));
 

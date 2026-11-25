@@ -5,14 +5,20 @@
 {% from "_brand.html" import brand_select %}
 {# 22.11.2026 (брат): мастера видят цену детали для клиента (не закупку) — отвечают за деталь при установке #}
 {% set pp = show_price or is_master(ctx.user) %}
+{# 25.11.2026 (брат, наряд 39): шаг «Звонок клиенту» — по каждой запчасти «✓ Да, берём / ✕ Клиент отказался», как у работ;
+   группа вариантов — «Выбрать» или «Клиент отказался от всех». «Согласовал с клиентом» — когда отмечено всё. #}
+{% set phase = phase|default("") %}
+{% set rp_ids = round_part_ids|default([]) %}
+{% set PAPPR = {"pending": ("approve", "ждёт ответа клиента"), "yes": ("ready", "✓ клиент берёт"), "no": ("cancel", "✕ клиент отказался")} %}
 {% macro part_row(p, in_group=False) %}
 {% set cat = cats.get(p.catalog_id) %}{% set pp = show_price or is_master(ctx.user) %}
+{% set call_p = phase == "call" and p.id in rp_ids and not in_group %}
 {# 23.11.2026 (брат): деталь попросили выдать (запрос ждёт кладовщика / готово к выдаче) — сиреневая полоска слева #}
 {% set asked = p.id in asked_ids and p.status == "reserved" %}
 {# 23.11.2026 (брат): галочка — выдать эту деталь (по умолчанию отмечены все, что можно запросить) #}
 {% set pickable = can_request_issue and p.status == "reserved" and p.id not in asked_ids %}
 <div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}" data-urgent="{{ 1 if p.urgent else 0 }}"
-     data-asked="{{ 1 if asked else 0 }}"{% if asked %} title="Попросили выдать — ждёт кладовщика"{% endif %}>
+     data-asked="{{ 1 if asked else 0 }}" data-appr="{{ p.approval if call_p else '' }}"{% if asked %} title="Попросили выдать — ждёт кладовщика"{% endif %}>
   <div class="part-main">
     <span class="part-name">{% if pickable %}<label class="iss-pick" title="Выдать эту деталь"><input type="checkbox" name="part" value="{{ p.id }}" form="iss-form" checked></label>{% endif %}{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
       {% if not in_group and cat and cat.brand %}<span class="tag">{{ cat.brand }}</span>{% endif %}
@@ -40,6 +46,14 @@
       </span>
     {% endif %}
   </div>
+  {% if call_p %}
+  {% if can_approve %}
+  <div class="segmented yn work-yn" data-url="/orders/{{ wo.id }}/parts/{{ p.id }}/approval">
+    <button type="button" data-v="yes" aria-pressed="{{ (p.approval == 'yes')|lower }}">✓ Да, берём</button>
+    <button type="button" data-v="no" aria-pressed="{{ (p.approval == 'no')|lower }}">✕ Клиент отказался</button>
+  </div>
+  {% else %}{% set a_ = PAPPR.get(p.approval, PAPPR.pending) %}<span class="chip part-st part-appr" data-s="{{ a_[0] }}">{{ a_[1] }}</span>{% endif %}
+  {% endif %}
   {# 22.11.2026 (брат): цифры — столбиками с подписями сверху блока: Кол-во · Цена · Сумма #}
   {# Одна строка: слева кто добавил, справа столбики (как у запчастиста); «Срочно» — у статуса, выше #}
   {% set au = people.get(p.created_by) %}
@@ -125,11 +139,21 @@
 
   {% for g, items in groups.items() %}
   {% set open_ = items|selectattr("status", "equalto", "option")|list|length == items|length %}
-  <div class="optgroup {{ 'open' if open_ }}" data-group="{{ g }}">
+  {% set g_call = phase == "call" and items[0].id in rp_ids %}
+  {% set g_no = items|selectattr("approval", "equalto", "no")|list|length > 0 %}
+  <div class="optgroup {{ 'open' if open_ and not g_no }}" data-group="{{ g }}" data-appr="{{ ('no' if g_no else ('pending' if open_ else 'yes')) if g_call else '' }}">
     <div class="optgroup-h">
       <span class="headline">{{ items[0].name }}</span>
-      <span class="chip" data-s="{{ 'approve' if open_ else 'ready' }}">{{ "выбор из " ~ items|length if open_ else "выбрано" }}</span>
+      {% if g_call and g_no %}<span class="chip" data-s="cancel">✕ клиент отказался от всех</span>
+      {% else %}<span class="chip" data-s="{{ 'approve' if open_ else 'ready' }}">{{ "выбор из " ~ items|length if open_ else "выбрано" }}</span>{% endif %}
     </div>
+    {% if g_call and can_approve %}
+    <form method="post" action="/orders/{{ wo.id }}/parts/{{ items[0].id }}/approval" class="og-refuse">
+      {% if g_no %}<input type="hidden" name="value" value="pending"><button class="btn btn-sm btn-gray">Отменить отказ — клиент выбирает</button>
+      {% else %}<input type="hidden" name="value" value="no"><button class="btn btn-sm btn-gray">✕ Клиент отказался от всех вариантов</button>
+        <span class="caption">или «Выбрать» у фирмы, которую берёт клиент</span>{% endif %}
+    </form>
+    {% endif %}
     {% for p in items|sort(attribute="price") %}{{ part_row(p, True) }}{% endfor %}
     {% if (can_offer or can_pick) and open_ %}
     <button type="button" class="btn btn-plain btn-sm add-opt" data-group="{{ g }}" data-name="{{ items[0].name }}">{{ icon("plus") }}Ещё вариант</button>
@@ -239,6 +263,19 @@
     <p class="hint warn" style="margin:0 0 8px">Во время ремонта нашли новую проблему. Мастера продолжают уже согласованные
       работы — согласуйте с клиентом только новое.</p>
     {% endif %}
+    {# 25.11.2026 (брат, наряд 39): кнопка появляется в самом конце — когда отмечены все работы, все запчасти и выбраны варианты #}
+    {% set al = ap_left|default(none) %}
+    {% if al and al.n %}
+    <div class="hint warn ap-left" id="ap-left">
+      <b>Звоните клиенту — осталось отметить:</b>
+      <ul>
+        {% if al.works %}<li><a href="#works">Работы</a> — {{ al.works }}: «✓ Да, делаем» или «✕ Клиент отказался»</li>{% endif %}
+        {% if al.parts %}<li>Запчасти — {{ al.parts|length }}: «✓ Да, берём» или «✕ Клиент отказался» ({{ al.parts|join(", ") }})</li>{% endif %}
+        {% if al.groups %}<li>Выбрать вариант: {{ al.groups|join(", ") }} — «Выбрать» у фирмы или «Клиент отказался от всех»</li>{% endif %}
+      </ul>
+      <span class="caption">Когда всё отмечено — здесь появится «Согласовал с клиентом».</span>
+    </div>
+    {% else %}
     <form method="post" action="/orders/{{ wo.id }}/approval-done">
       {# 19.11.2026 (брат): одна деталь несколько раз — спросить, берёт ли клиент все #}
       {% if dup_names %}
@@ -249,9 +286,11 @@
       </div>
       {% endif %}
       <button class="btn btn-block" id="btn-approve-done">Согласовал с клиентом</button>
-      <p class="hint" style="margin:6px 0 0">Работы «Да» — в ремонт, «Нет» — рекомендации в карте клиента. Запчасти со склада —
-        в резерве (кладовщику «подготовить к выдаче»), остальные уйдут запчастисту в заказ.</p>
+      <p class="hint" style="margin:6px 0 0">Работы «Да» — в ремонт, «Нет» — рекомендации в карте клиента. Запчасти «Да»: со
+        склада — в резерве (кладовщику «подготовить к выдаче»), остальные уйдут запчастисту в заказ; «Нет» — в архив наряда
+        и в карту клиента «Отказался от запчастей» (в бумаги клиенту не попадают).</p>
     </form>
+    {% endif %}
   </div>
   {% endif %}
 

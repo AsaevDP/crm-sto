@@ -40,6 +40,8 @@ async def lifespan(_app):
         from .services.orders import fill_activity, fill_works_sent
         fill_activity(db)       # 18.11.2026: время последнего действия по наряду — из журнала (плитки: свежие сверху)
         fill_works_sent(db)     # 23.11.2026: согласование по шагам — наряды на согласовании: шаг «Работы» пройден
+        from .services.orders import fill_parts_pending
+        fill_parts_pending(db)  # 25.11.2026: запчасти нарядов на согласовании ждут «Да / Нет» клиента (как работы)
         from .services.stock import split_mixed_open
         split_mixed_open(db)   # 20.11.2026: открытые запросы, где вместе новые и б/у, — на две зоны
         from .services import receipt as receipt_svc

@@ -663,6 +663,8 @@ def restore_part(db: Session, branch_id, wo: WorkOrder, part: WoPart) -> str:
         elif part.plan != "order":
             plan_part(db, branch_id, part, "auto")   # снова со склада, если есть, иначе «заказать после согласования»
     part.prev_status, part.archived_at, part.archived_by = "", None, None
+    # 25.11.2026: вернули из архива до согласования — снова ждёт ответа клиента; после — клиент передумал, берёт
+    part.approval = "pending" if wo.status in ("created", "diag", "approve") and (wo.kind or "") != "wash" else "yes"
     db.flush()
     return ""
 
@@ -687,6 +689,10 @@ def choose_option(db: Session, branch_id, wo: WorkOrder, part: WoPart) -> str:
         if p.status not in ("option", "declined"):
             release_part(db, p, "Клиент выбрал другой вариант")
         p.status, p.source = "declined", ""
+    part.approval = "yes"   # 25.11.2026: клиент выбрал этот вариант — значит берёт
+    for p in group:
+        if p.approval == "no":
+            p.approval = "pending"   # был «отказался от всех» — передумал и выбрал
     if part.status in ("option", "declined"):
         part.status = "need"
         # 13.11.2026: до согласования — со склада в резерв или «заказать после согласования» (закупки ещё нет)

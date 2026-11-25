@@ -237,6 +237,12 @@ class WoPart(Entity):
     archived_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     # 19.11.2026 (брат): после «Согласовал с клиентом» убрать можно только как «Клиент отказался» — с причиной
     refuse_reason: Mapped[str | None] = mapped_column(Text, default="", nullable=True)
+    # 25.11.2026 (брат, наряд 39): клиент согласует и ЗАПЧАСТИ — как работы: pending — ещё не спросили, yes — берёт,
+    # no — отказался (после «Согласовал с клиентом» — в архив наряда и в карту клиента «Отказался от запчастей»).
+    # Добавленные до согласования — pending (`services/orders.part_approval_default`), старые и после — yes.
+    approval: Mapped[str] = mapped_column(String(10), default="yes", server_default="yes")
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
 
 
 class Notification(Entity):
@@ -387,3 +393,18 @@ class WoWorkSession(Entity):
     ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     kind: Mapped[str] = mapped_column(String(10), default="work")  # work / pause
     pause_reason: Mapped[str] = mapped_column(String(200), default="")
+
+
+# 25.11.2026 (брат, наряд 39): новая запчасть до «Согласовал с клиентом» ждёт ответа клиента (как работа), после — «да».
+# Ставится само при сохранении, где бы деталь ни добавили (подбор, «Попросить под наряд», склад → в наряд, демо).
+from sqlalchemy import event as _event  # noqa: E402
+from sqlalchemy.orm import Session as _Session  # noqa: E402
+
+
+@_event.listens_for(_Session, "before_flush")
+def _part_approval(session, flush_context, instances):
+    for obj in list(session.new):
+        if isinstance(obj, WoPart) and not obj.approval:
+            wo = session.get(WorkOrder, obj.work_order_id) if obj.work_order_id else None
+            obj.approval = ("pending" if wo is not None and wo.status in ("created", "diag", "approve")
+                            and (wo.kind or "") != "wash" else "yes")

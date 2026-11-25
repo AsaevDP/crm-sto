@@ -132,8 +132,11 @@
   <p class="hint ok-hint" style="margin:8px 0 0">✓ Работы записаны{% if works_sent_who %} · {{ works_sent_who.short_name }}{% endif %}{% if wo.works_sent_at %} · {{ wo.works_sent_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %} — ждём подбор запчастей.</p>
   {% elif phase == "call" and can_approve|default(false) %}
   {% set left_ = works|selectattr("id", "in", round_ids)|selectattr("approval", "equalto", "pending")|list|length %}
-  <p class="hint {{ 'warn' if left_ else 'ok-hint' }}" style="margin:8px 0 0">{% if left_ %}Звоните клиенту: по каждой работе — «✓ Да, делаем» или «✕ Клиент отказался» (осталось {{ left_ }}). Затем «Согласовал с клиентом» в блоке «Запчасти».{% else %}Все работы отмечены — нажмите «Согласовал с клиентом» в блоке «Запчасти».{% endif %}</p>
-  {% if not left_ %}<a class="btn btn-block" href="#btn-approve-done" data-goto="diag" style="margin-top:8px">К «Согласовал с клиентом» ↓</a>{% endif %}
+  {# 25.11.2026 (брат, наряд 39): после работ — запчасти («Да / Нет», выбрать вариант), и только потом «Согласовал» #}
+  {% set pl_ = (ap_left.n_parts if ap_left|default(none) else 0) %}
+  <p class="hint {{ 'warn' if left_ or pl_ else 'ok-hint' }}" style="margin:8px 0 0">{% if left_ %}Звоните клиенту: по каждой работе — «✓ Да, делаем» или «✕ Клиент отказался» (осталось {{ left_ }}).{% if ap_left|default(none) and ap_left.has_parts %} Затем — запчасти в блоке «Запчасти».{% endif %}{% elif pl_ %}Все работы отмечены — теперь запчасти: по каждой «✓ Да, берём» или «✕ Клиент отказался»{% if ap_left.groups %}, в вариантах — выбрать фирму{% endif %} (осталось {{ pl_ }}).{% else %}Все работы{% if ap_left|default(none) and ap_left.has_parts %} и запчасти{% endif %} отмечены — нажмите «Согласовал с клиентом» в блоке «Запчасти».{% endif %}</p>
+  {% if not left_ and pl_ %}<a class="btn btn-block" href="#parts" style="margin-top:8px">К запчастям ↓</a>
+  {% elif not left_ %}<a class="btn btn-block" href="#btn-approve-done" data-goto="diag" style="margin-top:8px">К «Согласовал с клиентом» ↓</a>{% endif %}
   {% endif %}
   {% endif %}
 </div>

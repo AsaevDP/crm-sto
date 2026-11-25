@@ -3024,4 +3024,12 @@ main .pult-tiles .ptile.zero { opacity: 1; }
 .ts-view .table td, .ts-view .table th { white-space: nowrap; }
 .ts-view .table td:first-child { white-space: normal; }
 .ts-why-red { color: var(--red); font-weight: 600; }
+/* 25.11.2026 (брат, наряд 39): запчасти согласуются как работы — ждёт ответа: оранжевая полоска слева; отказ — зачёркнуто */
+.part[data-appr="pending"], .optgroup[data-appr="pending"] { border-left: 4px solid var(--orange); border-radius: 10px; padding-left: 10px; }
+.part[data-appr="no"] .part-name { color: var(--text-2); text-decoration: line-through; }
+.optgroup[data-appr="no"] .part-name, .optgroup[data-appr="no"] .opt-brand { color: var(--text-2); text-decoration: line-through; }
+.part-appr { margin: 4px 0 2px; display: inline-block; }
+.og-refuse { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.ap-left ul { margin: 6px 0 4px; padding-left: 18px; }
+.ap-left li { margin: 2px 0; }
 
