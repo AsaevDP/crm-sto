@@ -34,6 +34,15 @@
 </div>
 {% endif %}
 
+{# 25.11.2026 (брат): внутреннее — только владелец #}
+{% if ctx.can("data.archive") %}
+<div class="group-title">Данные — только владелец</div>
+<div class="set-tiles">
+  {{ tile("/settings/archive", "Архив клиентов", "копии базы, Excel + JSON, восстановление", "green", "shield") }}
+  {{ tile("/settings/photos", "Фотоархив", "все фото, место, срок хранения", "blue", "palette") }}
+</div>
+{% endif %}
+
 {% if ctx.can("stock.manage") or ctx.can("razbor.manage") or ctx.can("tools.manage") or ctx.can("wash.prices") %}
 <div class="group-title">Справочники разделов</div>
 <div class="set-tiles">

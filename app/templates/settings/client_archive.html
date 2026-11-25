@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{# Архив клиентов (25.11.2026, брат): запасная копия на случай поломки CRM. Внутреннее — только владелец. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Архив клиентов</h1>
+    <p class="footnote" style="margin:0">Данные защищены двумя способами. Это внутренний раздел владельца.</p></div>
+</header>
+
+<div class="arch-cols">
+  <div class="card compact">
+    <div class="card-h"><span class="headline">1. Копии всей базы</span></div>
+    <p class="footnote">CRM сама делает полную копию при каждом запуске и раз в сутки, хранит последние 14. Восстанавливает всё:
+      клиентов, склад, зарплату, табель — всё как было на момент копии.</p>
+    {% for b in backups %}<div class="kv"><span class="mono caption">{{ b.name }}</span><span class="caption nowrap">{{ b.size|size }}</span></div>
+    {% else %}<p class="footnote">Копий пока нет</p>{% endfor %}
+    <p class="caption" style="margin:6px 0 0">Папка: <span class="mono">data/backups</span></p>
+  </div>
+
+  <div class="card compact">
+    <div class="card-h"><span class="headline">2. Архив клиентов — Excel + JSON</span></div>
+    <p class="footnote">Папка на каждого клиента: «Клиент.xlsx» (прочитать глазами), «данные.json» (по нему CRM восстанавливает
+      историю, даже в новую установку), закреплённые фото машин. Обновляется каждую ночь.</p>
+    <div class="arch-stat">
+      <span>Клиентов в архиве <b>{{ s.n_folders }}</b></span>
+      <span>Размер <b>{{ s.size|size }}</b></span>
+      <span>Обновлён <b>{{ last.strftime("%d.%m.%Y %H:%M") if last else "ещё ни разу" }}</b></span>
+    </div>
+    <p class="caption">Папка: <span class="mono">{{ s.folder_path }}</span></p>
+    {% if is_admin %}
+    <div class="arch-btns">
+      <form method="post" action="/settings/archive/run"><button class="btn btn-sm btn-tinted">Обновить сейчас</button></form>
+      <a class="btn btn-sm btn-gray" href="/settings/archive/zip">⬇ Скачать архив (zip) — на флешку</a>
+    </div>
+    <details class="work-edit">
+      <summary class="caption">Другая папка (второй диск, сетевая папка сервера)…</summary>
+      <form method="post" action="/settings/archive/folder" class="form dense">
+        <label>Путь к папке<input class="field mono" name="folder" value="{{ s.folder or '' }}" placeholder="D:\CRM-архив"></label>
+        <button class="btn btn-sm">Сохранить</button>
+        <p class="hint" style="margin:0">Пусто — папка по умолчанию <span class="mono">data/archive</span>. Лучше — на другом диске:
+          если сломается диск с CRM, архив останется.</p>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+</div>
+
+{% if is_admin %}
+<div class="card compact" id="restore">
+  <div class="card-h"><span class="headline">Восстановить из архива</span></div>
+  <p class="footnote">После переустановки CRM: скопируйте папку архива с флешки на этот компьютер, впишите путь (или оставьте
+    пустым — папка архива выше) и нажмите «Проверить». Уже существующие записи не трогаются и не дублируются.
+    Перед восстановлением CRM сама сделает копию базы.</p>
+  <form method="post" action="/settings/archive/restore" class="arch-restore">
+    <input class="field mono" name="folder" value="{{ check.folder if check else '' }}" placeholder="{{ s.folder_path }}">
+    <button class="btn btn-sm">Проверить</button>
+  </form>
+  {% if check %}
+  <div class="arch-check">
+    <b>В архиве {{ check.docs }} клиентов. Добавится:</b>
+    <span>клиентов <b>{{ check.clients }}</b></span><span>машин <b>{{ check.vehicles }}</b></span>
+    <span>нарядов <b>{{ check.orders }}</b></span><span>работ <b>{{ check.works }}</b></span><span>оплат <b>{{ check.payments }}</b></span>
+    {% if check.skipped %}<span class="caption">не подходят: {{ check.skipped }}</span>{% endif %}
+    {% for e in check.errors %}<span class="caption">{{ e }}</span>{% endfor %}
+    {% if check.clients or check.orders or check.vehicles or check.works or check.payments %}
+    <form method="post" action="/settings/archive/restore" onsubmit="return confirm('Добавить в CRM данные из архива?')">
+      <input type="hidden" name="folder" value="{{ check.folder }}"><input type="hidden" name="go" value="1">
+      <button class="btn btn-sm btn-tinted">Восстановить</button>
+    </form>
+    {% else %}<span class="caption">Всё из архива уже есть в CRM — добавлять нечего.</span>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

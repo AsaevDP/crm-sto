@@ -97,6 +97,18 @@ from .models.orders import INTAKE_LABELS  # noqa: E402
 templates.env.globals["INTAKE_LABELS"] = INTAKE_LABELS
 templates.env.filters["num"] = num
 templates.env.filters["money"] = money_fmt
+
+
+def size_fmt(n) -> str:
+    """Размер файла по-русски: 820 КБ, 12,4 МБ, 3,1 ГБ (25.11.2026, фотоархив)."""
+    n = float(n or 0)
+    for unit, k in (("ГБ", 1 << 30), ("МБ", 1 << 20), ("КБ", 1 << 10)):
+        if n >= k:
+            return f"{n / k:.1f}".replace(".", ",").replace(",0", "") + f" {unit}"
+    return f"{int(n)} Б"
+
+
+templates.env.filters["size"] = size_fmt
 templates.env.globals.update(color_css=color_css, SYSTEM_COLORS=SYSTEM_COLORS, asset=asset, DEMO=DEMO,
                              STATUS_SHORT=WO_STATUS_SHORT, SECTIONS=SECTIONS, SECTION_SHORT=SECTION_SHORT, CATEGORIES=CATEGORIES,
                              RAZBOR_CATEGORIES=RAZBOR_CATEGORIES)

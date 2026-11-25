@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{# Фотоархив (25.11.2026, брат): все фото CRM, сколько места, удаление (только админ). Фото нарядов удаляются сами
+   через срок хранения; закреплённое фото машины — хранится всегда. Плитки — меню раздела. #}
+{% from "_tiles.html" import tiles %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Фотоархив</h1>
+    <p class="footnote" style="margin:0">Все фото CRM: {{ sm.n }} шт · {{ sm.size|size }}. Папка на сервере — <span class="mono">data/photos</span>.</p></div>
+</header>
+
+{{ tiles([
+  {"t": "Наряды", "n": sm.by.orders[0], "s": sm.by.orders[1]|size ~ " · хранятся " ~ sm.keep_days ~ " дн.", "c": "blue", "href": "?tab=orders", "on": tab == "orders"},
+  {"t": "Машины", "n": sm.by.cars[0], "s": sm.by.cars[1]|size ~ " · хранятся всегда", "c": "green", "href": "?tab=cars", "on": tab == "cars"},
+  {"t": "Склад и разбор", "n": sm.by.razbor[0], "s": sm.by.razbor[1]|size ~ " · пока деталь в CRM", "c": "orange", "href": "?tab=razbor", "on": tab == "razbor"},
+  {"t": "Инструмент", "n": sm.by.tools[0], "s": sm.by.tools[1]|size, "c": "teal", "href": "?tab=tools", "on": tab == "tools"},
+], cls="ph-tiles") }}
+
+<div class="card compact ph-keep">
+  <div class="ph-keep-t">
+    <b>Срок хранения фото нарядов: {{ sm.keep_days }} дн.</b>
+    <span class="caption">Старше — удаляются сами каждую ночь (только у закрытых и отменённых нарядов).
+      {% if sm.old %}Сейчас старше срока: <b>{{ sm.old }}</b>.{% endif %}
+      {% if s.last_cleanup %}Последняя чистка: {{ s.last_cleanup[:10]|replace("-", ".") }}, удалено {{ s.last_removed }}.{% endif %}
+      Закреплённое фото машины не удаляется никогда.</span>
+  </div>
+  {% if is_admin %}
+  <form method="post" action="/settings/photos/keep" class="ph-keep-f">
+    <label class="caption">Дней<input class="field" name="keep_days" value="{{ sm.keep_days }}" inputmode="numeric" maxlength="4"></label>
+    <button class="btn btn-sm">Сохранить</button>
+  </form>
+  <form method="post" action="/settings/photos/cleanup" onsubmit="return confirm('Удалить фото нарядов старше {{ sm.keep_days }} дней? Вернуть их будет нельзя.')">
+    <button class="btn btn-sm btn-gray">Удалить старые сейчас</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if tab == "orders" %}
+<form class="ph-filter" method="get">
+  <input type="hidden" name="tab" value="orders">
+  <select class="field" name="m" onchange="this.form.submit()">
+    <option value="">Все месяцы</option>
+    {% for x in months %}<option value="{{ x }}" {{ 'selected' if x == m }}>{{ x[5:] }}.{{ x[:4] }}</option>{% endfor %}
+  </select>
+  <input class="field" name="q" value="{{ q }}" placeholder="Наряд, клиент, госномер">
+  <button class="btn btn-sm">Найти</button>
+</form>
+{% for g in groups %}{% set wo = g.wo %}
+<details class="card compact ph-group">
+  <summary class="ph-sum">
+    <span class="chip" data-s="{{ wo.status }}">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>
+    <span class="ph-sum-m"><b>{{ wo.created_at.astimezone().strftime("%d.%m.%Y") }}</b> · <span class="mono">{{ wo.number }}</span>
+      {% if g.c %}· {{ g.c.full_name }}{% endif %}{% if g.v %} · {{ g.v.make }} {{ g.v.model }} {{ g.v.plate }}{% endif %}</span>
+    <span class="caption nowrap">{{ g.photos|length }} фото · {{ g.size|size }}</span>
+  </summary>
+  <div class="ph-grid">
+    {% for p in g.photos %}
+    <div class="ph-it">
+      <a href="/settings/photos/file?rel={{ p.file|urlencode }}" target="_blank"><img src="/settings/photos/file?rel={{ (p.thumb or p.file)|urlencode }}" alt="" loading="lazy"></a>
+      <span class="caption">{{ STAGES.get(p.stage, "") }} · {{ p.created_at.astimezone().strftime("%d.%m.%y") }}</span>
+      {% if is_admin %}<form method="post" action="/settings/photos/delete" onsubmit="return confirm('Удалить это фото? Вернуть будет нельзя.')">
+        <input type="hidden" name="kind" value="wo"><input type="hidden" name="pid" value="{{ p.id }}">
+        <input type="hidden" name="back" value="/settings/photos?tab=orders&m={{ m }}&q={{ q|urlencode }}">
+        <button class="btn btn-plain btn-sm ph-del">Удалить</button></form>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="ph-foot"><a class="btn btn-plain btn-sm" href="/orders/{{ wo.id }}">Открыть наряд</a>
+    {% if is_admin %}<form method="post" action="/settings/photos/delete" onsubmit="return confirm('Удалить все фото наряда {{ wo.number }} ({{ g.photos|length }} шт)? Вернуть будет нельзя.')">
+      <input type="hidden" name="kind" value="order"><input type="hidden" name="pid" value="{{ wo.id }}">
+      <input type="hidden" name="back" value="/settings/photos?tab=orders&m={{ m }}&q={{ q|urlencode }}">
+      <button class="btn btn-plain btn-sm ph-del">Удалить все фото наряда</button></form>{% endif %}</div>
+</details>
+{% else %}<p class="footnote">Фото нет</p>{% endfor %}
+
+{% elif tab == "cars" %}
+<p class="footnote">Фото машин, закреплённые в картах клиентов. Хранятся всегда. Убрать — в карте клиента («Убрать фото»).</p>
+<div class="ph-grid">
+  {% for v in cars %}
+  <div class="ph-it"><a href="/settings/photos/file?rel={{ v.photo|urlencode }}" target="_blank"><img src="/settings/photos/file?rel={{ (v.photo_thumb or v.photo)|urlencode }}" alt="" loading="lazy"></a>
+    <span class="caption">{{ v.make }} {{ v.model }} · {{ v.plate }}</span>
+    <a class="btn btn-plain btn-sm" href="/clients/{{ v.client_id }}">Карта клиента</a></div>
+  {% else %}<p class="footnote">Закреплённых фото пока нет</p>{% endfor %}
+</div>
+
+{% else %}
+<p class="footnote">{% if tab == "razbor" %}Фото машин-доноров, деталей и «На сайт». Сами не удаляются, пока деталь или машина в CRM.{% else %}Фото инструмента. Сами не удаляются; меняются в карточке инструмента.{% endif %}</p>
+<div class="ph-grid">
+  {% for f in files %}
+  <div class="ph-it"><a href="/settings/photos/file?rel={{ f.file|urlencode }}" target="_blank"><img src="/settings/photos/file?rel={{ f.file|urlencode }}" alt="" loading="lazy"></a>
+    <span class="caption">{{ f.label }} · {{ f.at.astimezone().strftime("%d.%m.%y") }}</span>
+    {% if is_admin and tab == "razbor" %}<form method="post" action="/settings/photos/delete" onsubmit="return confirm('Удалить это фото? Вернуть будет нельзя.')">
+      <input type="hidden" name="kind" value="{{ f.kind }}"><input type="hidden" name="pid" value="{{ f.id }}">
+      <input type="hidden" name="back" value="/settings/photos?tab=razbor">
+      <button class="btn btn-plain btn-sm ph-del">Удалить</button></form>{% endif %}</div>
+  {% else %}<p class="footnote">Фото нет</p>{% endfor %}
+</div>
+{% endif %}
+{% if not is_admin %}<p class="footnote">Удалять фото и менять срок хранения может только админ (владелец).</p>{% endif %}
+{% endblock %}

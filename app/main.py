@@ -10,7 +10,7 @@ from . import audit  # noqa: F401 — подключает автоматиче�
 from .services import clients_card  # noqa: F401 — номер клиента и телефоны выдаются сами (25.11.2026)
 from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
-from .routes import (attendance, auth, diagnosis, folders, money, orders, pages, razbor, reports, schedule,
+from .routes import (attendance, auth, data_admin, diagnosis, folders, money, orders, pages, razbor, reports, schedule,
                      settings, site, stock, tools, wash)
 from .seed import seed
 from .web import Forbidden, NotLoggedIn, ViewOnly, flash, templates
@@ -76,6 +76,9 @@ async def lifespan(_app):
             keys_svc.fill_open(db)   # демо-наряды — тоже с ячейками ключей
             db.commit()
     backup.start_daily()   # и раз в сутки, пока CRM работает
+    if not DEMO:
+        from .services import nightly
+        nightly.start()    # 25.11.2026: ночью — старые фото удалить, архив клиентов (Excel + JSON) обновить
     yield
 
 
@@ -98,6 +101,7 @@ app.include_router(attendance.router)
 app.include_router(folders.router)
 app.include_router(schedule.router)
 app.include_router(reports.router)
+app.include_router(data_admin.router)   # 25.11.2026: фотоархив и архив клиентов
 app.include_router(settings.router)
 app.include_router(wash.router)
 app.include_router(site.router)
