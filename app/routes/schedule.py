@@ -91,7 +91,8 @@ def _sorted(items: list) -> list:
 
 @router.get("/schedule")
 def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: str = "", p: str = "", by: str = "",
-             f: str = "", t: str = "", show: str = "", m: str = "", fd: str = "", free: str = "", mv: str = ""):
+             f: str = "", t: str = "", show: str = "", m: str = "", fd: str = "", free: str = "", mv: str = "",
+             v: str = ""):
     """Запись (22.11.2026, брат — новый вид «столбиками»). День — столбик на каждого мастера; неделя — столбик на
     каждый день; месяц — календарь. В столбике по времени: записи клиентов, наряды мастера и «свободно» (+ записать).
     Наверху плитки (записей / ждём / приехали / не приехали), кнопки «Новая запись», «Свободные окна», «Напомнить о
@@ -99,7 +100,7 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     ctx.need("schedule.view", "schedule.manage")
     if show in ("future", "past"):
         return _lists(ctx, show, by)
-    return _board(ctx, d, view, edit, p, f, t, m, fd, free, mv)
+    return _board(ctx, d, view, edit, p, f, t, m, fd, free, mv, v)
 
 
 def _mark_queue(items: list, wl: dict, mid) -> list:
@@ -114,7 +115,7 @@ def _mark_queue(items: list, wl: dict, mid) -> list:
     return items
 
 
-def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv=""):
+def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv="", v=""):
     from ..services import periods
     from ..services import workload as wl_svc
     db, bid = ctx.db, ctx.branch.id
@@ -164,7 +165,8 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv=""):
     base = dict(view=view, day=day, per=per, bar=bar, today=today, masters=masters, shown=shown, pick=pick, own=own,
                 all_masters=all_masters, colors=colors, own_lift=own_lift, lifts=lifts, editing=editing,
                 can_manage=can_manage, APPT_STATUS=APPT_STATUS, fmt_phone=osvc.fmt_phone, fmt_plate=osvc.fmt_plate,
-                local=svc.local, WEEKDAYS=WEEKDAYS, MON=MON, summary=_summary(appts), day_h=day_h, days_off=days_off,
+                local=svc.local, WEEKDAYS=WEEKDAYS, MON=MON, day_h=day_h, days_off=days_off,
+                **_windows(ctx, d1, d2, v, appts),
                 remind=svc.reminders(db, bid) if can_manage else None, fday=fday, free_rows=free_rows,
                 open_free=bool(free) and can_manage, level=_level,
                 load_ok=ctx.can("dashboard.view"), people={x.id: x for x in all_masters},
@@ -277,6 +279,26 @@ def queue_move(wid: str, ctx: Ctx = Depends(get_ctx), mech: str = Form(...), whe
 def _summary(appts) -> dict:
     return {"all": len(appts), "arrived": sum(a.status == "arrived" for a in appts),
             "noshow": sum(a.status == "noshow" for a in appts), "booked": sum(a.status == "booked" for a in appts)}
+
+
+WINDOWS = {"all": None, "wait": ("booked",), "arrived": ("arrived",), "noshow": ("noshow",)}
+
+
+def _windows(ctx: Ctx, d1, d2, v: str, appts) -> dict:
+    """25.11.2026 (брат): плитки «Записей / Ждём / Приехали / Не приехали» — меню: у того, кто записывает, считают всех
+    мастеров за период (не только выбранного), нажатая плитка открывает окно со списком и кнопками (?v=)."""
+    if not ctx.can("schedule.manage"):
+        return {"summary": _summary(appts), "vw": "", "win": [], "win_orders": {}, "managers": {}}
+    db = ctx.db
+    every = svc.between(db, ctx.branch.id, d1, d2)
+    orders = {o.id: o for o in db.scalars(select(WorkOrder).where(
+        WorkOrder.id.in_([a.work_order_id for a in every if a.work_order_id])))} if any(a.work_order_id for a in every) else {}
+    sm = _summary(every)
+    sm["pending"] = sum(1 for o in orders.values() if o.intake_pending)
+    vw = v if v in WINDOWS else ""
+    win = [a for a in every if WINDOWS.get(vw) is None or a.status in WINDOWS[vw]] if vw else []
+    mgr = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))} if vw == "arrived" else {}
+    return {"summary": sm, "vw": vw, "win": win, "win_orders": orders, "managers": mgr}
 
 
 def _lists(ctx: Ctx, show: str, by: str):
@@ -423,7 +445,22 @@ def appt_status(aid: str, ctx: Ctx = Depends(get_ctx), status: str = Form(...), 
     if status == "arrived":
         if a.work_order_id:
             return RedirectResponse(f"/orders/{a.work_order_id}", status_code=303)
-        return RedirectResponse(f"/orders/new?appt={a.id}", status_code=303)
+        # 25.11.2026 (брат): наряд создаётся сразу (без формы), ведущий менеджер потом оформляет приёмку
+        from ..services import arrival
+        if not arrival.can_auto(ctx.db, a):
+            if not ctx.can("orders.create"):
+                flash(ctx.request, "В записи нет телефона или госномера — приёмку оформит менеджер", "error")
+                return RedirectResponse(_back(back, f"/schedule?d={d}&view={view}"), status_code=303)
+            flash(ctx.request, "В записи нет телефона или госномера — заполните приёмку", "error")
+            return RedirectResponse(f"/orders/new?appt={a.id}", status_code=303)
+        wo = arrival.arrive(ctx.db, ctx, a)
+        ctx.db.commit()
+        lead = ctx.db.get(User, wo.manager_id)
+        if lead and lead.id != ctx.user.id:
+            flash(ctx.request, f"Наряд {wo.number[-6:]} создан. Ведёт {lead.full_name} — сообщение отправлено")
+            return RedirectResponse(_back(back, f"/schedule?d={d}&view={view}"), status_code=303)
+        flash(ctx.request, f"Наряд {wo.number[-6:]} создан — оформите приёмку, когда будет время")
+        return RedirectResponse(_back(back, f"/schedule?d={d}&view={view}"), status_code=303)
     if status in ("noshow", "cancel", "booked"):
         a.status = status
         ctx.db.commit()

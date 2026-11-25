@@ -309,6 +309,95 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
     return {"ok": True, "url": f"/orders/{wo.id}"}
 
 
+def _can_fill(ctx: Ctx, wo: WorkOrder) -> bool:
+    from ..services import arrival
+    return arrival.can_fill(ctx, wo)
+
+
+def _draft(ctx: Ctx, order_id: str) -> WorkOrder:
+    from ..services import arrival
+    wo = _order(ctx, order_id)
+    if not arrival.can_fill(ctx, wo):
+        raise Forbidden()
+    return wo
+
+
+@router.get("/orders/{order_id}/intake")
+def order_intake_form(order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """25.11.2026 (брат): клиент приехал по записи — ведущий менеджер оформляет приёмку (форма «Приёмки» с данными
+    наряда). «Сохранить черновик» — можно незаполненным; «✓ Принять в работу» — проверки как при обычной приёмке."""
+    wo = _draft(ctx, order_id)
+    if not wo.intake_pending:
+        return _to(f"/orders/{wo.id}")
+    from ..models import Appointment
+    bid = ctx.branch.id
+    c, v = ctx.db.get(Client, wo.client_id), ctx.db.get(Vehicle, wo.vehicle_id)
+    appt = ctx.db.scalar(select(Appointment).where(Appointment.work_order_id == wo.id))
+    works = ctx.db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id).order_by(WoWork.created_at)).all()
+    prefill = {"client_id": str(c.id), "vehicle_id": str(v.id), "phone": svc.fmt_phone(c.phone), "name": c.full_name,
+               "plate": svc.fmt_plate(v.plate), "make": v.make, "model": v.model, "year": str(v.year or ""),
+               "vin": v.vin, "mileage": str(wo.mileage_in or ""), "complaint": wo.complaint or "",
+               "scenario": wo.scenario or "B", "works": "\n".join(w.name for w in works),
+               "partsman_id": str(wo.partsman_id or ""), "mechanic_id": str(wo.mechanic_id or ""),
+               "lift_id": str(wo.lift_id or (appt.lift_id if appt and appt.lift_id else "") or ""),
+               "fuel_level": "" if wo.fuel_level is None else str(wo.fuel_level), "intake_note": wo.intake_note or "",
+               "intake_items": list(wo.intake_items or [])}
+    partsmen = svc.staff_by_role(ctx.db, bid, "partsman")
+    n_photos = ctx.db.scalar(select(func.count()).select_from(WoPhoto).where(WoPhoto.work_order_id == wo.id)) or 0
+    who = ctx.db.get(User, wo.arrived_by) if wo.arrived_by else None
+    return ctx.render("orders/new.html", title=f"Оформить приёмку · {wo.number[-6:]}",
+                      partsmen=partsmen, my_partsman=None,
+                      mechanics=svc.staff_by_role(ctx.db, bid, "masters"), MASTERS=MASTERS,
+                      lifts=svc.lifts_with_load(ctx.db, bid), makes=svc.known_makes(ctx.db, bid),
+                      INTAKE_ITEMS=INTAKE_ITEMS, FUEL_LEVELS=FUEL_LEVELS, MAX_PHOTOS=svc.MAX_PHOTOS,
+                      fmt_plate=svc.fmt_plate, prefill=prefill, intake_token="", draft=wo, appt=appt,
+                      draft_photos=n_photos, arrived_who=who, post_url=f"/orders/{wo.id}/intake")
+
+
+@router.post("/orders/{order_id}/intake")
+async def order_intake_save(order_id: str, request: Request, ctx: Ctx = Depends(get_ctx)):
+    """Черновик приёмки (mode=save — без проверок) или «Принять в работу» (mode=go — как обычная приёмка)."""
+    wo = _draft(ctx, order_id)
+    if not wo.intake_pending:
+        return {"ok": True, "url": f"/orders/{wo.id}"}
+    form = await request.form(max_files=2 * svc.MAX_PHOTOS + 2)
+    f = svc.IntakeForm(**{k: str(form.get(k, "")) for k in svc.IntakeForm.__dataclass_fields__ if k != "intake_items"},
+                       intake_items=[str(x) for x in form.getlist("intake_items")])
+    go = str(form.get("mode", "")) == "go"
+    have = ctx.db.scalar(select(func.count()).select_from(WoPhoto).where(WoPhoto.work_order_id == wo.id)) or 0
+    photos = [p for p in form.getlist("photos") if hasattr(p, "read")][:max(0, svc.MAX_PHOTOS - have)]
+    thumbs = [p for p in form.getlist("thumbs") if hasattr(p, "read")]
+    if go:
+        errors = f.errors(have + len(photos)) or f.problems(ctx.db, ctx.branch.id)
+        if errors:
+            return JSONResponse({"ok": False, "errors": errors}, status_code=400)
+    svc.fill_draft(ctx.db, ctx, wo, f)
+    for i, p in enumerate(photos):
+        thumb = await thumbs[i].read() if i < len(thumbs) else None
+        svc.save_photo(ctx.db, wo, await p.read(), thumb)
+    if not go:
+        ctx.db.commit()
+        flash(request, "Черновик приёмки сохранён — оформить до конца можно позже")
+        return {"ok": True, "url": f"/orders/{wo.id}"}
+    ctx.db.flush()
+    if not (ctx.db.scalar(select(func.count()).select_from(WoPhoto).where(WoPhoto.work_order_id == wo.id)) or 0):
+        ctx.db.rollback()
+        return JSONResponse({"ok": False, "errors": ["Фото не распознаны (нужны JPG/PNG)"]}, status_code=400)
+    from ..services import handover as hsvc
+    works_x = [str(x) for x in form.getlist("extra_work")]
+    for i, mid in enumerate(form.getlist("extra_master_id")):
+        u = ctx.db.get(User, svc._uuid(str(mid))) if svc._uuid(str(mid)) else None
+        if u and u.branch_id == ctx.branch.id and u.role.code in MASTERS and u.active and u.id != wo.mechanic_id:
+            hsvc.add_master(ctx.db, wo, u, works_x[i] if i < len(works_x) else "", ctx.user.id, tell=False)
+    wo.intake_pending = False
+    svc.event(ctx.db, wo, "order", f"Приёмка оформлена. {wo.complaint or ''}".strip())
+    svc.route_after_intake(ctx.db, wo)
+    ctx.db.commit()
+    q = getattr(wo, "queued_for", None)
+    flash(request, f"Наряд {wo.number[-6:]} принят в работу" + (f" — {q} занято, машина в очереди" if q else ""))
+    return {"ok": True, "url": f"/orders/{wo.id}"}
+
+
 @router.get("/api/clients/search")
 def clients_search(ctx: Ctx = Depends(get_ctx), q: str = ""):
     ctx.need("orders.create", "clients.view")
@@ -450,7 +539,7 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
             (me_extra is not None and not me_extra.diag_done_at)
             or (ctx.user.id == wo.mechanic_id and not wo.lead_diag_at)),
         can_approve=ctx.can("orders.approve") and wo.status == "approve",
-        can_route=is_manager and wo.status == "created" and wo.scenario == "B",
+        can_route=is_manager and wo.status == "created" and wo.scenario == "B" and not wo.intake_pending,
         parts=parts, plain_parts=plain, groups=groups, free=free, options_open=options_open,
         archived=archived, can_archive=_can_archive(ctx, wo),
         open_groups={g: items[0].name for g, items in groups.items() if any(p.status == "option" for p in items)
@@ -498,6 +587,8 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
         stage_label=svc.stage_label(db, wo, mc.short_name if mc else "", pm.short_name if pm else "",
                                     {"done": n_done, "total": len(works)}, viewer=ctx.user),
         handed=_handed(ctx, wo),
+        arrived_who=db.get(User, wo.arrived_by) if wo.intake_pending and wo.arrived_by else None,
+        can_fill_intake=bool(wo.intake_pending) and _can_fill(ctx, wo),
         extra=extra, diag_state=hsvc.diag_state(db, wo) if wo.status == "diag" or extra else [],
         readonly=hsvc.read_only(ctx, wo),
         can_money=ctx.can("money.accept") and (wo.status not in ("closed", "cancel")

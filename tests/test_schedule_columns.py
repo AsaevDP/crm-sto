@@ -38,7 +38,7 @@ def test_manager_columns_and_buttons(client):
     with SessionLocal() as db:
         aid = db.scalar(select(Appointment.id).where(Appointment.client_name == "Столбик Тестовый"))
     edit = client.get(f"/schedule?p=day&d={d}&edit={aid}").text
-    assert 'id="zp-edit"' in edit and "Приехал → приёмка" in edit
+    assert 'id="zp-edit"' in edit and "✓ Приехали" in edit   # 25.11.2026: наряд сразу (test_arrival.py)
     assert "Столбик Тестовый" in client.get("/schedule?show=future").text
     assert 'href="/schedule"' in client.get("/load?p=week&from=schedule").text   # «назад» — в «Запись»
     client.post("/logout")

@@ -28,7 +28,7 @@
   <div class="ocard-body">
     <div class="ocard-top">
       <span class="footnote mono">{{ x.o.number }}</span>
-      <span class="chip{{ ' chip-say' if x.label }}" data-s="{{ 'receipt' if x.label.startswith(('Подтвердить', 'Пришли')) else x.o.status }}" title="{{ STATUSES[x.o.status] }}">{{ x.label or STATUS_SHORT.get(x.o.status, STATUSES[x.o.status]) }}</span>
+      <span class="chip{{ ' chip-say' if x.label }}" data-s="{{ 'receipt' if x.o.intake_pending or x.label.startswith(('Подтвердить', 'Пришли')) else x.o.status }}" title="{{ STATUSES[x.o.status] }}">{{ x.label or STATUS_SHORT.get(x.o.status, STATUSES[x.o.status]) }}</span>
     </div>
     <div class="headline ocard-car">{{ x.v.make }} {{ x.v.model }}{% if x.v.year %} · {{ x.v.year }}{% endif %}</div>
     <div class="subhead ocard-plate">{{ fmt_plate(x.v.plate) }} {{ key_tag(x.o) }}{% if x.lift %} · {{ x.lift.label }}{% endif %}</div>

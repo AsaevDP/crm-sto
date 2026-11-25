@@ -134,6 +134,11 @@ class WorkOrder(Entity):
     problems_by_manager: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
     # Метка формы приёмки: повторная отправка той же формы не создаёт второй наряд
     intake_token: Mapped[str | None] = mapped_column(String(40), default=None, nullable=True, index=True)
+    # 25.11.2026 (брат): клиент приехал по записи — любой менеджер нажал «Приехали», наряд создан сразу и сохраняется
+    # незаполненным, пока ведущий менеджер не оформит приёмку («✓ Принять в работу»). Мастер и запчастист его пока не видят.
+    intake_pending: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True, index=True)
+    arrived_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    arrived_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     payroll_ignore_discount: Mapped[bool] = mapped_column(Boolean, default=False)  # зарплата без учёта скидки (главный админ)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)

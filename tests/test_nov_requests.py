@@ -115,10 +115,13 @@ def test_schedule_booking_to_intake(client):
     assert "Неделя" in client.get(f"/schedule?d={d}&view=week").text
     with SessionLocal() as db:
         a = db.scalar(select(Appointment).where(Appointment.client_name == "Пётр Записанный"))
+    # 25.11.2026: «Приехали» — наряд создаётся сразу, приёмку оформляют потом (test_arrival.py)
     r = client.post(f"/schedule/{a.id}/status", data={"status": "arrived"}, follow_redirects=False)
-    assert r.headers["location"] == f"/orders/new?appt={a.id}"
-    intake = client.get(r.headers["location"]).text
-    assert "Приёмка по записи" in intake and "Skoda" in intake
+    assert r.headers["location"].startswith("/schedule")
+    with SessionLocal() as db:
+        wid = db.get(Appointment, a.id).work_order_id
+    intake = client.get(f"/orders/{wid}/intake").text
+    assert "Клиент приехал по записи" in intake and "Skoda" in intake
     # Слесарь видит запись, но не может записывать
     _as(client, "andrey")
     assert "Пётр Записанный" in client.get(f"/schedule?d={d}").text

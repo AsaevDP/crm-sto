@@ -152,6 +152,9 @@ def visible_orders_query(ctx):
                         WorkOrder.id.in_(select(WoWork.work_order_id).where(WoWork.mechanic_id == me)),
                         WorkOrder.id.in_(select(OrderMaster.work_order_id).where(OrderMaster.user_id == me,
                                                                                 OrderMaster.active.is_(True)))))
+        # 25.11.2026 (брат): клиент приехал по записи, приёмка не оформлена — мастер и запчастист наряд не видят
+        q = q.where(or_(WorkOrder.intake_pending.is_(None), WorkOrder.intake_pending.is_(False),
+                        WorkOrder.manager_id == me))
     return q
 
 
@@ -343,6 +346,8 @@ def can_view(ctx, wo: WorkOrder) -> bool:
         from . import handover as hsvc   # 13.11.2026: передал другому менеджеру — 3 дня только посмотреть
         return (wo.client_id in granted_client_ids(ctx) or ctx.user.id in (wo.partsman_id, wo.mechanic_id)
                 or history_order(ctx, wo) or wo.id in set(hsvc.handed_out(ctx.db, ctx.branch.id, ctx.user.id)))
+    if wo.intake_pending and ctx.user.id != wo.manager_id:   # 25.11.2026: приёмка не оформлена — только ведущему
+        return False
     if ctx.user.id in (wo.partsman_id, wo.mechanic_id, wo.manager_id):
         return True
     from ..permissions import WASHERS   # 18.11.2026: мойщик видит все машины в очереди мойки (берёт следующую)
@@ -672,6 +677,51 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     return wo
 
 
+def fill_draft(db: Session, ctx, wo: WorkOrder, f: IntakeForm):
+    """25.11.2026 (брат): приёмка наряда «клиент приехал по записи» — записать то, что заполнено (можно не всё).
+    Клиент и машина уже в наряде: у машины дополняем только пустое (марка, модель, год, VIN), пробег — если больше."""
+    from ..permissions import MASTERS
+    bid = ctx.branch.id
+    v = db.get(Vehicle, wo.vehicle_id)
+    if v is not None:
+        v.make = v.make or f.make.strip()[:60]
+        v.model = v.model or f.model.strip()[:60]
+        v.year = v.year or _int(f.year)
+        v.vin = v.vin or f.vin.strip().upper()[:32]
+    mileage = _int(f.mileage)
+    wo.mileage_in = mileage
+    if v is not None and mileage and mileage >= (v.mileage or 0):
+        v.mileage = mileage
+    wo.complaint = f.complaint.strip()
+    wo.scenario = "A" if f.scenario == "A" else "B"
+
+    def staff(val, kind):
+        u = db.get(User, _uuid(val)) if val and _uuid(val) else None
+        ok = u and u.branch_id == bid and u.active and (u.role.code in MASTERS if kind == "masters" else u.role.code == kind)
+        return u.id if ok else None
+
+    lift = db.get(Lift, _uuid(f.lift_id)) if f.lift_id and _uuid(f.lift_id) else None
+    if lift and (lift.branch_id != bid or not lift.active):
+        lift = None
+    queue_for = lift if lift and lift_busy(db, lift, wo) else None
+    wo.partsman_id = staff(f.partsman_id, "partsman")
+    wo.mechanic_id = staff(f.mechanic_id, "masters") or (lift.mechanic_id if lift else None)
+    wo.lift_id = lift.id if lift and not queue_for else None
+    wo.queued_for = queue_for.label if queue_for else None
+    fuel = _int(f.fuel_level)
+    wo.fuel_level = fuel if fuel in FUEL_LEVELS else None
+    wo.intake_items = [i for i in f.intake_items if i in INTAKE_ITEMS]
+    wo.intake_note = f.intake_note.strip()
+    # Сценарий А — работы из приёмки (черновик: пересоздаём при каждом сохранении)
+    for w in db.scalars(select(WoWork).where(WoWork.work_order_id == wo.id)).all():
+        db.delete(w)
+    if wo.scenario == "A":
+        rate = _hour_rate(db, bid)
+        for name in f.work_lines()[:50]:
+            db.add(WoWork(work_order_id=wo.id, name=name[:200], mechanic_id=wo.mechanic_id, pricing="hours", rate=rate,
+                          approval="pending"))
+
+
 def route_after_intake(db: Session, wo: WorkOrder):
     """Сразу после приёмки: А → согласование (запчастист подбирает, менеджер ставит цены работ, потом звонит клиенту),
     Б → диагностика (если назначен слесарь).
@@ -805,6 +855,8 @@ def stage_label(db: Session, o: WorkOrder, mech: str = "", partsman: str = "", p
     if (o.kind or "") == "wash" or o.status in ("closed", "cancel"):
         return ""
     s = o.status
+    if o.intake_pending:   # 25.11.2026 (брат): приехал по записи — сначала оформить приёмку
+        return "Клиент приехал — оформить приёмку"
     if s == "created":
         return "Менеджер: назначить запчастиста" if o.scenario == "A" else "Менеджер: проблемы или на диагностику"
     if s == "diag":

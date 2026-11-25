@@ -96,7 +96,8 @@
     {% if kind in ("new", "noshow", "wait new") %}
     <form method="post" action="/schedule/{{ a.id }}/seen"><input type="hidden" name="back" value="{{ here }}"><button class="btn btn-sm btn-gray">✓ Видел</button></form>
     {% elif kind == "arrived" %}{% set wo = sig_orders.get(a.work_order_id) %}
-    <a class="btn btn-sm btn-gray" href="/orders/{{ a.work_order_id }}">Открыть наряд{% if wo %} {{ wo.number[-6:] }}{% endif %}</a>
+    {% if wo and wo.intake_pending %}<span class="caption">менеджер оформляет приёмку</span>
+    {% else %}<a class="btn btn-sm btn-gray" href="/orders/{{ a.work_order_id }}">Открыть наряд{% if wo %} {{ wo.number[-6:] }}{% endif %}</a>{% endif %}
     {% endif %}
   </div>
   {% endmacro %}
@@ -106,13 +107,63 @@
 </section>
 {% endif %}
 {% else %}
+{# 25.11.2026 (брат): плитки — меню. Нажал — ниже окно со списком клиентов и кнопками; ещё раз — обычный вид «Записи».
+   Считают всех мастеров за выбранный день / неделю / месяц. #}
+{% set vbase = here %}
+{% macro vh(k) %}{{ here if vw == k else here ~ amp ~ "v=" ~ k }}{% endmacro %}
 {{ tiles([
-  {"t": "Записей", "n": summary.all, "s": "за " ~ ("день" if view == "day" else "неделю" if view == "week" else "период"), "c": "blue"},
-  {"t": "Ждём", "n": summary.booked, "s": "ещё не приехали", "c": "orange"},
-  {"t": "Приехали", "n": summary.arrived, "s": "машина у нас", "c": "green"},
-  {"t": "Не приехали", "n": summary.noshow, "s": "отмечено «не приехал»", "c": "red"},
-], "zp-tiles") }}
+  {"t": "Записей", "n": summary.all, "s": "за " ~ ("день" if view == "day" else "неделю" if view == "week" else "период"), "c": "blue", "href": vh("all"), "on": vw == "all"},
+  {"t": "Ждём", "n": summary.booked, "s": "ещё не приехали", "c": "orange", "href": vh("wait"), "on": vw == "wait"},
+  {"t": "Приехали", "n": summary.arrived, "s": ("оформить приёмку: " ~ summary.pending) if summary.pending else "машина у нас", "c": "green", "href": vh("arrived"), "on": vw == "arrived"},
+  {"t": "Не приехали", "n": summary.noshow, "s": "отмечено «не приехал»", "c": "red", "href": vh("noshow"), "on": vw == "noshow"},
+], "zp-tiles", base=here if vw else "") }}
 {% endif %}
+
+{% if vw %}
+{% set W_T = {"all": "Все записи", "wait": "Ждём — ещё не приехали", "arrived": "Приехали", "noshow": "Не приехали"} %}
+<section class="card compact zp-win" id="zp-win">
+  <div class="zp-win-h"><h2 class="title-3">{{ W_T[vw] }} · {{ win|length }}</h2>
+    <a class="btn btn-sm btn-plain" href="{{ here }}">Закрыть</a></div>
+  {% if vw == "wait" %}<p class="caption" style="margin:0 0 8px">«✓ Приехали» — наряд создаётся сразу, ведущему менеджеру придёт сообщение и красный кружок «оформите приёмку».</p>{% endif %}
+  {% for a in win %}{% set s = local(a.start_at) %}{% set mm = people.get(a.mechanic_id) %}{% set wo = win_orders.get(a.work_order_id) %}
+  <div class="zp-win-row" data-st="{{ a.status }}" style="--mc:{{ color_css(colors.get(a.mechanic_id, 'gray')) }}">
+    <span class="zp-win-when"><b class="nowrap">{{ s.strftime("%H:%M") }}</b>{% if view != "day" %}<span class="caption nowrap">{{ WEEKDAYS[s.weekday()] }} {{ s.strftime("%d.%m") }}</span>{% endif %}</span>
+    <span class="zp-win-who">
+      <b>{{ a.client_name or fmt_phone(a.phone) or "Клиент" }}</b>
+      <span class="caption">{% if a.phone %}<a href="tel:{{ a.phone }}" class="nowrap">{{ fmt_phone(a.phone) }}</a> · {% endif %}{{ a.car }}{% if a.plate %} <span class="nowrap">{{ fmt_plate(a.plate) }}</span>{% endif %}</span>
+      {% if a.work %}<span class="caption">{{ a.work }}</span>{% endif %}
+      <span class="zp-who-s"><i class="zp-dot"></i>{{ mm.short_name if mm else "Без мастера" }}</span>
+    </span>
+    <span class="zp-win-st"><span class="zp-st" data-st="{{ a.status }}">{{ ST_WORD[a.status] }}</span>
+      {% if wo %}<span class="caption nowrap">наряд {{ wo.number[-6:] }}</span>{% endif %}</span>
+    <span class="zp-win-acts">
+      {% if a.status == "booked" %}
+        <form method="post" action="/schedule/{{ a.id }}/status"><input type="hidden" name="status" value="arrived"><input type="hidden" name="back" value="{{ here }}{{ amp }}v={{ vw }}">
+          <button class="btn btn-sm">✓ Приехали</button></form>
+        <form method="post" action="/schedule/{{ a.id }}/status"><input type="hidden" name="status" value="noshow"><input type="hidden" name="back" value="{{ here }}{{ amp }}v={{ vw }}">
+          <button class="btn btn-sm btn-gray">Не приехал</button></form>
+        <a class="btn btn-sm btn-gray" href="{{ here }}{{ amp }}v={{ vw }}&edit={{ a.id }}">Перенести</a>
+      {% elif a.status == "arrived" and wo %}
+        {% if wo.intake_pending and (wo.manager_id == user.id or ctx.user.role.code in ("admin", "director", "deputy")) %}
+        <a class="btn btn-sm btn-danger need-intake" href="/orders/{{ wo.id }}/intake">Оформить приёмку</a>
+        {% elif wo.intake_pending %}{% set lm = managers.get(wo.manager_id) %}
+        <span class="caption">оформляет приёмку {{ lm.short_name if lm else "менеджер" }}</span>
+        {% else %}<a class="btn btn-sm btn-gray" href="/orders/{{ wo.id }}">Открыть наряд</a>
+        <span class="caption">{{ STATUS_SHORT.get(wo.status, wo.status) }}</span>{% endif %}
+      {% elif a.status == "noshow" %}
+        <form method="post" action="/schedule/{{ a.id }}/status"><input type="hidden" name="status" value="booked"><input type="hidden" name="back" value="{{ here }}{{ amp }}v={{ vw }}">
+          <button class="btn btn-sm btn-gray">Вернуть в «Ждём»</button></form>
+        <a class="btn btn-sm btn-gray" href="{{ here }}{{ amp }}v={{ vw }}&edit={{ a.id }}">Перенести</a>
+        <form method="post" action="/schedule/{{ a.id }}/status" onsubmit="return confirm('Отменить запись?')"><input type="hidden" name="status" value="cancel"><input type="hidden" name="back" value="{{ here }}{{ amp }}v={{ vw }}">
+          <button class="btn btn-sm btn-plain">Отменить запись</button></form>
+      {% else %}
+        <a class="btn btn-sm btn-plain" href="{{ here }}{{ amp }}v={{ vw }}&edit={{ a.id }}">Открыть</a>
+      {% endif %}
+    </span>
+  </div>
+  {% else %}<p class="footnote">Никого нет</p>{% endfor %}
+</section>
+{% else %}
 
 <div class="zp-actions">
   {% if can_manage %}
@@ -222,6 +273,7 @@
 {% endif %}
 
 <p class="zp-legend caption"><span class="zp-key appt"></span>запись клиента <span class="zp-key wo"></span>наряд <span class="zp-key tent"></span>наряд «возможно» (согласование, диагностика) <span class="zp-key free"></span>свободно</p>
+{% endif %}{# /vw — окно плитки вместо обычного вида #}
 
 {# ===== Окошки ===== #}
 {% macro appt_fields(e=none, d=none) %}
@@ -297,7 +349,7 @@
   <div class="zp-edit-acts">
     {% if e.work_order_id %}<a class="btn btn-sm" href="/orders/{{ e.work_order_id }}">Открыть наряд</a>
     {% elif e.status in ("booked", "noshow") %}
-    <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="arrived"><button class="btn btn-sm">Приехал → приёмка</button></form>
+    <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="arrived"><input type="hidden" name="back" value="{{ here }}"><button class="btn btn-sm">✓ Приехали</button></form>
     {% endif %}
     {% if e.status == "booked" %}
     <form method="post" action="/schedule/{{ e.id }}/status"><input type="hidden" name="status" value="noshow"><input type="hidden" name="back" value="{{ here }}"><button class="btn btn-sm btn-gray">Не приехал</button></form>

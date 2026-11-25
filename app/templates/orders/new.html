@@ -1,15 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
+{# 25.11.2026 (брат): draft — наряд «клиент приехал по записи»: та же форма, клиент и машина уже в наряде,
+   «Сохранить черновик» (можно незаполненным) и «✓ Принять в работу» (проверки как при обычной приёмке) #}
 <header class="page-head">
+  {% if draft %}
+  <div><a class="back" href="/orders/{{ draft.id }}">{{ icon("back") }}Наряд</a><h1 class="large-title">Оформить приёмку</h1>
+    <p class="footnote" style="margin:0"><span class="mono">{{ draft.number }}</span> · ключи — крючок {{ draft.key_slot or "—" }}</p></div>
+  {% else %}
   <div><a class="back" href="/orders">{{ icon("back") }}Наряды</a><h1 class="large-title">Приёмка</h1></div>
   {# 18.11.2026 (брат): только мойка — короткая форма без диагностики, запчастиста и подъёмника #}
   <a class="btn btn-tinted wash-quick" href="/wash/new">🫧 Быстрая приёмка на мойку</a>
+  {% endif %}
 </header>
 
-<form id="intake" class="intake fill" autocomplete="off" novalidate>
+<form id="intake" class="intake fill {{ 'is-draft' if draft }}" autocomplete="off" novalidate>
   <input type="hidden" name="client_id"><input type="hidden" name="vehicle_id"><input type="hidden" name="appt_id">
   <input type="hidden" name="intake_token" value="{{ intake_token }}">
-  {% if prefill %}<div class="flash" role="status">Приёмка по записи: {{ prefill.name or "" }} {{ prefill.plate or "" }} — проверьте поля, сделайте фото</div>{% endif %}
+  <input type="hidden" name="mode" value="go">
+  {% if draft %}
+  <div class="flash arrived-flash" role="status"><b>Клиент приехал по записи</b>{% if appt %} на {{ appt.start_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}{% if arrived_who %} · отметил {{ arrived_who.short_name }}{% endif %}.
+    Заполните, что успеваете, и нажмите «Сохранить черновик» — вернуться можно в любой момент. Всё готово — «✓ Принять в работу».</div>
+  {% elif prefill %}<div class="flash" role="status">Приёмка по записи: {{ prefill.name or "" }} {{ prefill.plate or "" }} — проверьте поля, сделайте фото</div>{% endif %}
   <div class="steps" id="steps"><span class="on">1 · Клиент и авто</span><span>2 · Фото и работы</span><span>3 · Кто и акт</span></div>
   <div class="intake-cols">
   <div class="icol on" data-step="1">
@@ -18,7 +29,8 @@
   <section class="stack">
     <div class="group-title">1 · Клиент</div>
     <div class="card form">
-      <div class="search-box">
+      {% if draft %}<p class="hint" style="margin:0">Клиент и машина — из записи. Изменить имя или телефон — в карточке клиента.</p>{% endif %}
+      <div class="search-box" {{ 'hidden' if draft }}>
         <input class="field search" id="find" placeholder="Найти: телефон, госномер, фамилия" inputmode="search">
         <div class="results" id="results" hidden></div>
       </div>
@@ -88,6 +100,7 @@
         <input type="file" id="pinput" accept="image/*" multiple hidden>
       </label>
       <p class="hint" id="pcount">Снимите машину по кругу и все повреждения. До {{ MAX_PHOTOS }} фото.</p>
+      {% if draft and draft_photos %}<p class="hint">Уже сохранено фото: <b>{{ draft_photos }}</b> — новые добавятся к ним.</p>{% endif %}
     </div>
   </section>
 
@@ -168,7 +181,8 @@
   <div class="submit-bar">
     <button type="button" class="btn btn-gray" id="prev" hidden>Назад</button>
     <button type="button" class="btn" id="next">Далее</button>
-    <button class="btn" id="submit">Создать наряд</button>
+    {% if draft %}<button type="button" class="btn btn-gray" id="save-draft">Сохранить черновик</button>{% endif %}
+    <button class="btn" id="submit">{{ "✓ Принять в работу" if draft else "Создать наряд" }}</button>
   </div>
 </form>
 
@@ -183,7 +197,12 @@
   });
   // Приёмка из записи: заполняем то, что уже известно
   const PREFILL = {{ prefill|tojson }};
-  Object.entries(PREFILL).forEach(([k, v]) => { const el = form.elements[k]; if (el && 'value' in el) el.value = v; });
+  Object.entries(PREFILL).forEach(([k, v]) => { const el = form.elements[k]; if (el && 'value' in el && !Array.isArray(v)) el.value = v; });
+  const DRAFT = {{ 'true' if draft else 'false' }};
+  if (DRAFT) {   // 25.11.2026: клиент приехал по записи — клиент и машина уже в наряде
+    ['phone', 'name', 'plate'].forEach(n => { const el = form.elements[n]; if (el) { el.readOnly = true; el.classList.add('is-ro'); } });
+    (PREFILL.intake_items || []).forEach(v => { const el = form.querySelector(`input[name="intake_items"][value="${v}"]`); if (el) el.checked = true; });
+  }
 
   // ---- Фото ----
   const pc = document.getElementById('pcount');
@@ -200,6 +219,11 @@
   }
   seg('scen', 'scenario', v => document.querySelectorAll('[data-only]').forEach(el => el.hidden = el.dataset.only !== v));
   seg('fuel', 'fuel_level');
+  if (DRAFT) {   // черновик: сценарий и топливо — как сохранили
+    const sb = document.querySelector(`#scen button[data-v="${PREFILL.scenario || 'B'}"]`); if (sb) sb.click();
+    if (PREFILL.fuel_level !== undefined && PREFILL.fuel_level !== '') {
+      const fb = document.querySelector(`#fuel button[data-v="${PREFILL.fuel_level}"]`); if (fb) fb.click(); }
+  }
 
   // ---- Подъёмник занят: машину принимаем, она ждёт в очереди на этот пост ----
   const lift = document.getElementById('lift'), lw = document.getElementById('liftwarn');
@@ -274,13 +298,16 @@
 
   // ---- Отправка ----
   const btn = document.getElementById('submit'), errBox = document.getElementById('errors');
-  form.addEventListener('submit', async e => {
-    e.preventDefault();
+  const URL_ = {{ (post_url or '/orders/new')|tojson }}, LABEL = btn.textContent;
+  const saveBtn = document.getElementById('save-draft');
+  async function send(mode, b) {
+    $('mode').value = mode;
     const fd = new FormData(form);
     picker.appendTo(fd);
-    btn.disabled = true; btn.textContent = 'Сохраняю…'; errBox.hidden = true;
+    const old = b.textContent;
+    b.disabled = true; b.textContent = 'Сохраняю…'; errBox.hidden = true;
     try {
-      const r = await fetch('/orders/new', { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
+      const r = await fetch(URL_, { method: 'POST', body: fd, headers: { 'x-requested-with': 'fetch' } });
       const res = await r.json().catch(() => ({}));
       if (r.ok && res.ok) { location.href = res.url; return; }
       errBox.innerHTML = 'Проверьте: ' + (res.errors || [res.error || 'ошибка сервера']).map(esc).join(', ');
@@ -288,8 +315,10 @@
     } catch (err) {
       errBox.textContent = 'Нет связи с сервером. Проверьте Wi-Fi и нажмите ещё раз.'; errBox.hidden = false;
     }
-    btn.disabled = false; btn.textContent = 'Создать наряд';
-  });
+    b.disabled = false; b.textContent = old;
+  }
+  form.addEventListener('submit', e => { e.preventDefault(); send('go', btn); });
+  if (saveBtn) saveBtn.addEventListener('click', () => send('save', saveBtn));
 })();
 </script>
 {% endblock %}

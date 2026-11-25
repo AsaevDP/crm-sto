@@ -118,7 +118,7 @@
     </div>
     <div class="ov-actions">
       {{ key_badge(wo) }}
-      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ 'receipt' if stage_label.startswith(('Подтвердить', 'Пришли')) else wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
+      <span class="chip chip-lg{{ ' chip-say' if stage_label }}" data-s="{{ 'receipt' if wo.intake_pending or stage_label.startswith(('Подтвердить', 'Пришли')) else wo.status }}" title="{{ STATUSES[wo.status] }}">{{ stage_label or STATUSES[wo.status] }}</span>
       <details class="docs-menu">
         <summary class="btn btn-sm btn-gray">Документы ▾</summary>
         <div class="docs-list">
@@ -172,13 +172,21 @@
   <div class="grow"><b>Прошлый визит клиента</b><span class="wo-now-t">{% set hm = team[0][1] %}Наряд вёл(а) {{ hm.full_name if hm else "другой менеджер" }} — открыт для просмотра истории.</span></div>
 </div>
 {% endif %}
+{% if wo.intake_pending %}
+{# 25.11.2026 (брат): клиент приехал по записи — наряд создан сразу, ведущий менеджер оформляет приёмку #}
+<div class="wo-now" id="intake-pending" style="--sc:var(--red)">
+  <div class="grow"><b>Клиент приехал по записи — оформите приёмку</b><span class="wo-now-t">{% if wo.arrived_at %}Приехал {{ wo.arrived_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}{% if arrived_who %} · отметил {{ arrived_who.short_name }}{% endif %}.
+    Пробег, фото, топливо, что делаем, мастер и пост — потом «✓ Принять в работу». Мастер увидит машину после этого.</span></div>
+  {% if can_fill_intake %}<a class="btn btn-sm wo-now-acts" id="btn-intake" href="/orders/{{ wo.id }}/intake">Оформить приёмку</a>{% endif %}
+</div>
+{% endif %}
 {% if handed %}
 <div class="wo-now" id="ho-accept" style="--sc:var(--red)">
   <div class="grow"><b>Вам передали этот наряд{% if handed.role %} — вы {{ handed.role }}{% endif %}</b><span class="wo-now-t">{% if handed.from %}Передал(а) {{ handed.from.full_name }}{% endif %}{% if handed.at %} · {{ handed.at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Посмотрите и нажмите «Принял».</span></div>
   <form class="wo-now-acts one-shot" method="post" action="/orders/{{ wo.id }}/handover-ack"><button class="btn btn-sm">✓ Принял</button></form>
 </div>
 {% endif %}
-<div class="wo-now" style="--sc:var(--{{ flow.color }})">
+<div class="wo-now" style="--sc:var(--{{ flow.color }})" {{ 'hidden' if wo.intake_pending }}>
   <div class="grow"><b>{{ flow.title }}</b><span class="wo-now-t">{{ flow.text }}</span></div>
   {% if can_route %}
   <form class="wo-now-acts" method="post" action="/orders/{{ wo.id }}/to-diag">

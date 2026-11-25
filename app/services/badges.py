@@ -197,8 +197,14 @@ def compute(ctx) -> dict:
         if ctx.can("orders.approve"):
             # 🔴 23.11.2026 (брат): шаг «Проблемы» — дело менеджера: после приёмки (записать со слов клиента или отправить
             # на диагностику) и когда мастер закончил диагностику, а проблемы «впишет менеджер»
+            # 25.11.2026 (брат): клиент приехал по записи — ведущему менеджеру 🔴 «оформите приёмку» (кружок = сколько машин)
+            from .arrival import pending_for
+            ids_arr = [o.id for o in pending_for(db, bid, me.id)]
+            _add(out, "/orders", "red", len(ids_arr), "клиент приехал по записи — оформите приёмку",
+                 "/orders?tab=intake", wo=ids_arr, blk="#intake-pending", rows=["#btn-intake"],
+                 tile=['Приём и диагностика'], btn="blue")
             ids_new = [i for i in ids_status("created", field=None if see_all else WorkOrder.manager_id)
-                       if (db.get(WorkOrder, i).kind or "") != "wash"]
+                       if (db.get(WorkOrder, i).kind or "") != "wash" and not db.get(WorkOrder, i).intake_pending]
             _add(out, "/orders", "red", len(ids_new), "записать проблемы или отправить на диагностику", "/orders?tab=intake",
                  wo=ids_new, blk="#problems", rows=["#btn-add-finding", "#btn-to-approve"], tile=['Приём и диагностика'], btn="blue")
             from . import handover as _hs

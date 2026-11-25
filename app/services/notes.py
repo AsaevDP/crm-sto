@@ -18,7 +18,8 @@ GROUPS = {
     "msg": ("Переписка", {"msg"}),
     "people": ("Передачи и доступы", {"handover", "access_req", "access_ok", "access_no", "client_req", "client_ok",
                                       "client_no", "reopen_req", "reopen_no", "self_decided", "payroll_req", "payroll_ok",
-                                      "payroll_no", "wash_queue", "wash_queue_ok", "wash_queue_no", "to_wash", "wash_go"}),
+                                      "payroll_no", "wash_queue", "wash_queue_ok", "wash_queue_no", "to_wash", "wash_go",
+                                      "arrived"}),
 }
 CLOSED = ("closed", "cancel", "cancelled")
 
@@ -103,6 +104,8 @@ def is_done(db: Session, n: Notification, user) -> bool:
     if k == "reopen_req":
         from ..models import OrderReopen
         return not _count(db, select(OrderReopen.id).where(OrderReopen.work_order_id == wid, OrderReopen.status == "pending"))
+    if k == "arrived":   # 25.11.2026: клиент приехал по записи — пока ведущий менеджер не оформил приёмку
+        return wo is None or not wo.intake_pending
     if k in ("to_wash", "wash_go"):   # 20.11.2026: машина с ремонта ждёт мойки — пока мойку не сделали
         from ..models import WoWork
         return wo is None or not _count(db, select(WoWork.id).where(WoWork.work_order_id == wid, WoWork.status != "done"))

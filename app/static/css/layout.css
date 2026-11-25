@@ -3087,3 +3087,20 @@ details.vh:first-of-type { border-top: 0; }
 .arch-restore .field { flex: 1 1 320px; }
 .arch-check { padding: 10px 12px; border-radius: var(--r-sm); background: var(--fill-2); }
 @media (max-width: 600px) { .ph-sum { grid-template-columns: 1fr; } .arch-cols { grid-template-columns: 1fr; } }
+
+/* ===== 25.11.2026 (брат): «Запись» — окна плиток (Записей / Ждём / Приехали / Не приехали) ===== */
+.zp-win { margin: 12px 0; }
+.zp-win-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.zp-win-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; grid-template-areas: "when who st" "when acts acts";
+  gap: 6px 14px; padding: 10px 12px 10px 16px; border-top: 1px solid var(--separator); position: relative; }
+.zp-win-row::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 4px; background: var(--mc); }
+.zp-win-row:first-of-type { border-top: 0; }
+.zp-win-when { grid-area: when; display: grid; align-content: start; }
+.zp-win-who { grid-area: who; display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.zp-win-st { grid-area: st; display: grid; justify-items: end; gap: 2px; }
+.zp-win-acts { grid-area: acts; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.zp-win-acts form { margin: 0; }
+.is-ro { background: var(--fill-2); color: var(--text-2); }
+.arrived-flash { border-left: 4px solid var(--red); }
+@media (max-width: 600px) { .zp-win-row { grid-template-columns: 54px minmax(0, 1fr); grid-template-areas: "when who" "st st" "acts acts"; }
+  .zp-win-st { justify-items: start; } }

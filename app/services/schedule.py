@@ -235,7 +235,7 @@ def master_signals(db: Session, branch_id, user_id) -> dict:
             out["noshow"].append(a)
         elif a.status == "arrived" and a.work_order_id:
             wo = db.get(WorkOrder, a.work_order_id)
-            if not wo or wo.status not in WO_ACTIVE:
+            if not wo or wo.status not in WO_ACTIVE or wo.intake_pending:   # 25.11: приёмку ещё оформляют
                 continue
             began = db.scalar(select(WoWorkSession.id).where(WoWorkSession.work_order_id == wo.id,
                                                              WoWorkSession.mechanic_id == user_id).limit(1))
