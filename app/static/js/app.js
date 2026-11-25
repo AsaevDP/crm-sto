@@ -330,11 +330,15 @@
   // день, фильтр — это та же страница: запоминаем её последний вид, но нового шага нет. «Назад» уводит на предыдущую
   // страницу (в том виде, в каком её оставили), а не отменяет нажатия по одному.
   const KEY = 'crm-nav2', SKIP = ['edit', 'mv', 'free', 'fd', 't'];
+  // 25.11.2026 (брат): параметр, который открывает ДРУГОЙ объект на том же адресе, — это новая страница, а не вид
+  // (табель сотрудника /timesheet?user=… — отдельный шаг: «Назад» из него ведёт в общий табель).
+  const OWN = { '/timesheet': ['user'] };
   const norm = href => {
     const u = new URL(href, location.origin);
     SKIP.forEach(k => u.searchParams.delete(k));
     u.searchParams.sort();
-    return { k: u.pathname, u: u.pathname + (u.searchParams.toString() ? '?' + u.searchParams : '') };
+    const id = (OWN[u.pathname] || []).map(p => u.searchParams.get(p) || '').join('|');
+    return { k: u.pathname + (id.replace(/\|/g, '') ? '#' + id : ''), u: u.pathname + (u.searchParams.toString() ? '?' + u.searchParams : '') };
   };
   let st = [];
   try { st = JSON.parse(sessionStorage.getItem(KEY) || '[]').filter(x => x && x.k); } catch (e) {}
