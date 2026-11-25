@@ -1499,8 +1499,24 @@ def attendance(day):
         card = one(M.StaffCard, M.StaffCard.user_id == u.id)
         if not card:
             continue
-        for hhmm, d in ((f"0{rnd.randint(7, 8)}:{rnd.randint(30, 59):02d}", "in"),
-                        (f"{rnd.choice((17, 18, 18, 19))}:{rnd.randint(0, 59):02d}", "out")):
+        # 25.11.2026 (брат): день 8:00–19:00. Чаще вовремя, изредка опоздание / ранний уход / забыл отметить уход
+        # (менеджер напомнит). Прошлые дни — отметка картой прямо в базу: проходная решает «пришёл / ушёл» по
+        # настоящей сегодняшней дате, и при «перемотке» времени все прошлые отметки были бы «пришёл».
+        t_in = (f"08:{rnd.randint(16, 40):02d}" if rnd.random() < 0.06 else
+                f"0{rnd.choice((7, 7, 8))}:{rnd.randint(35, 59) if rnd.random() < 0.7 else rnd.randint(0, 10):02d}")
+        t_out = (f"18:{rnd.randint(20, 40):02d}" if rnd.random() < 0.04 else f"19:{rnd.randint(0, 25):02d}")
+        if t_in.startswith("08:") and int(t_in[3:]) > 10 and int(t_in[3:]) < 16:
+            t_in = "07:58"
+        for hhmm, d in ((t_in, "in"), (t_out, "out")):
+            if d == "out" and (day == TODAY or rnd.random() < 0.04):
+                continue   # изредка забыли отметить уход; сегодня — ещё на работе
+            if day < TODAY:
+                hh_, mm_ = map(int, hhmm.split(":"))
+                with SessionLocal() as db_:
+                    db_.add(M.AttendanceEvent(user_id=u.id, branch_id=u.branch_id, card_id=card.id, direction=d, method="card",
+                                              at=datetime.combine(day, time(hh_, mm_), tzinfo=LOCAL).astimezone(timezone.utc)))
+                    db_.commit()
+                continue
             with at(day, hhmm):
                 r = KIOSK.post("/kiosk/tap", data={"uid": card.uid})
                 if r.status_code != 200:
@@ -1516,6 +1532,25 @@ def payroll_week(monday):
         if rnd.random() < 0.5:
             post("admin", f"/payroll/weeks/{d}/adjust", {"user_id": str(uid("andrey")), "amount": "500", "kind": "bonus",
                                                          "note": "За срочную машину в субботу"}, what="Премия")
+    # 25.11.2026 (брат): сначала руководство решает по табелю прошлой недели (опоздания, неявки, ранний уход, задержка) —
+    # без решения бухгалтер неделю сотрудника «Проверено» не отметит. О директоре — админ, о заме — директор.
+    with at(monday, "09:45"):
+        from app.services import lateness as _ls
+        with SessionLocal() as db:
+            br = db.scalar(select(M.Branch))
+            dr = db.scalar(select(M.User).where(M.User.login == "director"))
+            todo = [(x["f"].user.id, x["f"].day, x["f"].kind, x["can"]) for x in _ls.for_boss(db, br.id, dr)
+                    if prev <= x["f"].day < monday and x["f"].kind != "no_out"]
+        for u_id, d_, kind, can in todo:
+            who = "director" if can else "admin"
+            if kind == "overtime":
+                post(who, "/timesheet/decide", {"user_id": str(u_id), "day": d_.isoformat(), "kind": kind, "decision": "nobonus"},
+                     what="Табель: задержка — без премии")
+            else:
+                v = rnd.choice(("deduct", "deduct", "excused", "leave"))
+                post(who, "/timesheet/decide", {"user_id": str(u_id), "day": d_.isoformat(), "kind": kind, "decision": v,
+                                                "reason": "car", "comment": "Пробка из-за ДТП"},
+                     what="Табель: решение по " + {"late": "опозданию", "absent": "неявке", "early": "раннему уходу"}.get(kind, kind))
     with at(monday, "10:00"):
         from app.services import payweek as wsvc
         from app.services.staff import staff_for_period
@@ -2002,6 +2037,7 @@ def leave_for_today(day):
     # Директору и заму: открыть закрытый наряд, гарантия, доступ ко всем нарядам, доступ к клиенту
     # недавно выданные (менеджер видит выданное за 3 дня), сначала самые свежие
     closed = sorted([o for o in DONE if o.wo() and o.wo().status == "closed" and o.wo().closed_at
+                     and o.wo().manager_id == uid("irina")   # 25.11.2026: просит менеджер наряда (чужой — 403)
                      and (TODAY - o.wo().closed_at.astimezone(LOCAL).date()).days <= 1],
                     key=lambda o: o.wo().closed_at, reverse=True)
     if len(closed) >= 2:
@@ -2299,7 +2335,10 @@ def cover_extras(day):
             post("admin", f"/timesheet/events/{ev.id}/delete", what="Табель: удалить отметку")
     # ---- клиенты, машины, доступы
     with at(day, "10:20"):
-        cl = _first(M.Client, M.Client.full_name != "", order=M.Client.created_at)
+        # 25.11.2026: клиент Ирины (машина у нас) — чужого менеджер не правит (так и задумано), раньше скрипт брал первого
+        o_ = _first(M.WorkOrder, M.WorkOrder.manager_id == uid("irina"),
+                    M.WorkOrder.status.notin_(("closed", "cancel")), order=M.WorkOrder.created_at)
+        cl = one(M.Client, M.Client.id == o_.client_id) if o_ else None
         if cl:
             post("irina", f"/clients/{cl.id}/edit", {"full_name": cl.full_name, "phone": cl.phone}, what="Клиент: правка")
             post("irina", f"/clients/{cl.id}/note", {"text": "Предпочитает звонок после 17:00"}, what="Клиент: заметка")
@@ -2356,7 +2395,7 @@ def cover_extras(day):
         for k, (mgr, how) in enumerate((("marina", "diag"), ("irina", "approve"))):
             c = free_client()
             r = post(mgr, "/orders/new", {"phone": c["phone"], "name": c["name"], "plate": c["plate"], "make": c["make"],
-                                          "model": c["model"], "year": str(c["year"]), "mileage": str(c["km"] + 1000),
+                                          "model": c["model"], "year": str(c["year"]), "mileage": str(c["km"] + 20000),
                                           "vin": c["vin"], "scenario": "B", "complaint": "Посмотреть подвеску" if k == 0 else "Скрип справа",
                                           "partsman_id": str(uid(PARTSMEN[mgr][0])), "mechanic_id": "", "lift_id": "",
                                           "fuel_level": "50", "intake_items": ["docs"], "intake_token": f"sim-x{k}-{rnd.random()}"},
@@ -2586,6 +2625,12 @@ def screen_tour():
             path = path.replace("{" + p + "}", str(v))
         if ok:
             urls.append(path)
+    # 25.11.2026 (брат): плитки-окна — каждый вид отдельно (адрес тот же, содержимое разное)
+    urls += [f"/timesheet?v={v}" for v in ("on", "out", "none", "info", "boss", "open", "hours", "late", "warn", "over")]
+    urls += ["/tools?view=reqs", "/tools?view=late", "/tools?view=cabinets", "/tools?view=spare", "/tools?view=list",
+             "/wash?tab=chem", "/wash?tab=buy", "/wash?tab=asks"]
+    urls += [f"/purchases/by-partsman?st={s_}" for s_ in ("wait", "partial", "late", "arrived")]
+    urls += [f"/my-orders?st={s_}" for s_ in ("todo", "wait", "partial", "late", "arrived")]
     logins = list(STAFF) + [s[0] for s in STAFF_EXTRA]
     bad = []
     for login in logins:
@@ -2611,6 +2656,14 @@ def run():
     for lg in STAFF:
         PASS[lg] = lg + "123"
     setup()
+    # 25.11.2026 (брат): правила табеля (опоздания, неявки, «забыли уход») — с прошлого понедельника, а не с дня запуска
+    with SessionLocal() as db_:
+        from app.db import current_branch_id as _cb
+        from app.services import settings as _st
+        br_ = db_.scalar(select(M.Branch))
+        _cb.set(br_.id)
+        _st.put(db_, br_.id, "attendance", {"alerts_from": (TODAY - timedelta(days=TODAY.weekday() + 7)).isoformat()})
+        db_.commit()
     first_stock()
     appts = []
     wd = -1   # 22.11.2026: рабочий день по счёту (сб и вс — выходные; сегодня — «вышли в субботу»)
@@ -2702,6 +2755,7 @@ def run():
             schedule_next_week(day)
             queue_today(day)
             cover_extras(day)   # 23.11.2026: каждая кнопка CRM
+            today_1125(day)     # 25.11.2026: напомнить об уходе, «Заказать» по норме (склад / химия), новые окна
             check_badges()
             break
         end_of_day(day)
@@ -2739,6 +2793,46 @@ def advance(o, day, hh):
         step_reopen(o, day, hh)
     elif s == "cancel":
         step_cancel(o, day, hh)
+
+
+def today_1125(day):
+    """25.11.2026 (брат): новые кнопки и окна — менеджер напоминает «отметьте уход» (одному, остальные ждут — 🔴),
+    кладовщик ставит норму химии, запчастист заказывает её по норме (вторая позиция остаётся ниже нормы — 🟠),
+    кладовщик «Заказать» одну позицию склада; окна «Просят / сдают», «Заказы запчастистов» по вкладкам и людям."""
+    with at(day, "12:30"):
+        mgr = MANAGERS[0]
+        r = get(mgr, "/timesheet?v=open", what="Табель: забыли отметить уход")
+        with SessionLocal() as db:
+            from app.services import lateness as _ls
+            br = db.scalar(select(M.Branch))
+            fl = [f for f in _ls.no_out_open(db, br.id) if f.user.login != mgr]
+        if fl:
+            post(mgr, "/timesheet/remind", {"user_id": str(fl[0].user.id), "day": fl[0].day.isoformat()},
+                 what="Напомнить: отметить уход")
+            with SessionLocal() as db:
+                n = db.scalar(select(func.count()).select_from(M.Notification).where(
+                    M.Notification.user_id == fl[0].user.id, M.Notification.kind == "att_remind"))
+            R.check(n >= 1, "напоминание «отметьте уход» пришло сотруднику", fl[0].user.full_name)
+        get(mgr, "/timesheet?v=hours", what="Табель: часы (свои)")
+        get(mgr, "/tools?view=reqs", what="Инструмент: просят / сдают")
+        for st_ in ("wait", "partial", "late", "arrived"):
+            get(mgr, f"/purchases/by-partsman?st={st_}", what="Заказы запчастистов: вкладка")
+        # химия «всегда в наличии»: норма выше остатка у двух позиций
+        chem = q(M.PartCatalog, M.PartCatalog.section == "chem")[:2]
+        for c in chem:
+            post("pavel", "/stock/always", {"catalog_id": str(c.id), "min_qty": str(int(free_qty(c.id)) + 4)},
+                 what="Всегда в наличии: норма химии")
+        if chem:
+            r = post("oleg", "/stock/always/order/missing", {"cid": str(chem[0].id), "back": "/wash?tab=chem"},
+                     what="Заказать химию по норме")
+            R.check(r is not None and "/purchases/" in r.url.path, "запчастист заказал химию по норме", chem[0].name)
+            r2 = post("oleg", "/stock/always/order/missing", {"cid": str(chem[0].id), "back": "/wash?tab=chem"},
+                      what="Повторный заказ той же химии (не должен создаться)")
+            with SessionLocal() as db:
+                n = db.scalar(select(func.count()).select_from(M.PurchaseLine).join(M.Purchase, M.Purchase.id == M.PurchaseLine.purchase_id)
+                              .where(M.PurchaseLine.catalog_id == chem[0].id, M.Purchase.status == "draft"))
+            R.check(n == 1, "повторно та же позиция не заказывается", f"черновиков: {n}")
+        get("oleg", "/wash?tab=chem", what="Мойка: химия, норма и заказ")
 
 
 def keep_setup(day):

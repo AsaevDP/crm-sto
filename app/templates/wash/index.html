@@ -119,12 +119,19 @@
     <div class="card compact">
       <div class="card-h"><span class="headline">Химия на складе · {{ items|length }}</span><a class="caption" href="/stock?sec=chem">на складе →</a></div>
       <div class="tablewrap"><table class="table dense-table">
-        <thead><tr><th>Название</th><th>Ячейка</th><th class="num">Свободно</th></tr></thead>
-        <tbody>{% for x in items %}
-        <tr class="{{ 'low' if x.free <= 2 }}"><td><b>{{ x.c.name }}</b><div class="caption">{{ x.c.category }}{% if x.c.brand %} · {{ x.c.brand }}{% endif %}</div></td>
+        <thead><tr><th>Название</th><th>Ячейка</th><th class="num">Свободно</th><th>Норма · заказ</th></tr></thead>
+        <tbody>{% for x in items %}{% set k = x.keep %}
+        <tr class="{{ 'low' if x.low }}"><td><b>{{ x.c.name }}</b><div class="caption">{{ x.c.category }}{% if x.c.brand %} · {{ x.c.brand }}{% endif %}</div></td>
           <td class="caption nowrap">{{ locs.get(x.loc, "—") if x.loc else "—" }}</td>
-          <td class="num nowrap"><b class="{{ 'late' if x.free <= 2 }}">{{ x.free|num }}</b></td></tr>
-        {% else %}<tr><td colspan="3" class="footnote">Химии на складе пока нет — {{ "оформите «Заказать химию»" if buy_ok else "заказывает запчастист" }}, кладовщик примет на полку «Химия».</td></tr>{% endfor %}</tbody>
+          <td class="num nowrap"><b class="{{ 'late' if x.low }}">{{ x.free|num }}</b></td>
+          {# 25.11.2026 (брат): «Всегда в наличии» для химии — заказывает запчастист; уже заказано — кто и когда #}
+          <td class="kp-ord">{% if k %}<span class="caption">всегда в наличии · не меньше {{ k.min|num }}</span>
+            {% for o_ in k.orders %}<div class="caption">{{ "в черновике" if o_.draft else "заказано" }} {{ o_.qty|num }} шт · {{ o_.who }} · {{ o_.at.astimezone().strftime("%d.%m") }}</div>{% endfor %}
+            {% if k.missing > 0 %}{% if buy_ok %}<form method="post" action="/stock/always/order/missing" style="margin:2px 0 0">
+              <input type="hidden" name="cid" value="{{ x.c.id }}"><input type="hidden" name="back" value="/wash?tab=chem">
+              <button class="btn btn-sm">🛒 Заказать {{ k.missing|num }}</button></form>{% else %}<div class="caption">Заказывает запчастист</div>{% endif %}{% endif %}
+            {% elif x.low %}<span class="caption">нормы нет — кладовщик может поставить «Всегда в наличии»</span>{% else %}—{% endif %}</td></tr>
+        {% else %}<tr><td colspan="4" class="footnote">Химии на складе пока нет — {{ "оформите «Заказать химию»" if buy_ok else "заказывает запчастист" }}, кладовщик примет на полку «Химия».</td></tr>{% endfor %}</tbody>
       </table></div>
     </div>
   </section>
@@ -149,7 +156,7 @@
 </div>
 
 {% elif tab == "buy" %}
-{% if low %}<div class="card compact wash-low"><b>Заканчивается:</b> {% for x in low %}{{ x.c.name }} — {{ x.free|num }}{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+{% if low %}<div class="card compact wash-low"><b>Заканчивается:</b> {% for x in low %}{{ x.c.name }} — {{ x.free|num }}{% if not loop.last %}, {% endif %}{% endfor %} · <a href="/wash?tab=chem">заказать по норме →</a></div>{% endif %}
 <div class="tablewrap">
   <table class="table pu-table">
     <thead><tr><th>Создана</th><th>Поставщик</th><th>Заказал</th><th>Статус</th><th class="num">Строк</th>{% if ctx.can("prices.view_purchase") or ctx.can("wash.buy") %}<th class="num">Сумма</th>{% endif %}<th>Привезут</th></tr></thead>

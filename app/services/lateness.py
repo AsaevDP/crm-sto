@@ -415,6 +415,33 @@ def set_note(db: Session, u: User, day: date, text: str) -> str:
     return ""
 
 
+def no_out_open(db: Session, bid, now_: datetime | None = None) -> list[Flag]:
+    """25.11.2026 (брат): «Забыли отметить уход» — по тем же правилам табеля (с какого дня считаем, будни, через час
+    после конца дня). Одна цифра у всех: плитка, окно, кружок менеджера. Свежие сверху."""
+    return sorted([f for f in flags(db, bid, None, now_) if f.kind == "no_out"],
+                  key=lambda f: (f.day, f.user.full_name), reverse=True)
+
+
+def reminded(db: Session, bid) -> dict:
+    """Кому менеджер уже напомнил «отметьте уход»: {(user_id, day): AttendanceAck}."""
+    return {(a.user_id, a.day): a for a in db.scalars(select(AttendanceAck).where(
+        AttendanceAck.branch_id == bid, AttendanceAck.kind == "no_out", AttendanceAck.side == "remind"))}
+
+
+def remind(db: Session, bid, me: User, f: Flag) -> bool:
+    """Менеджер напомнил сотруднику: «Вы не отметили уход — сообщите бухгалтеру, директору или заму». Повторно — нет."""
+    if (f.user.id, f.day) in reminded(db, bid):
+        return False
+    db.add(AttendanceAck(user_id=f.user.id, day=f.day, kind="no_out", side="remind", acked_by=me.id))
+    from . import notify
+    came = f.first_in.strftime("%H:%M") if f.first_in else "—"
+    notify.send(db, [f.user.id], "att_remind", f"Вы не отметили уход {f.day:%d.%m}",
+                f"Пришли в {came}, ухода нет. Сообщите бухгалтеру, директору или заму — время впишут в табель. "
+                f"Напомнил(а) {me.short_name}", "/timesheet?v=warn", skip=me.id)
+    db.flush()
+    return True
+
+
 def ack(db: Session, bid, me: User, user_id, day: date, kind: str, side: str) -> bool:
     if kind not in KIND_NAME or side not in ("self", "boss"):
         return False

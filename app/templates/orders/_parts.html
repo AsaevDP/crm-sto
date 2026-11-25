@@ -18,7 +18,7 @@
 {# 23.11.2026 (брат): галочка — выдать эту деталь (по умолчанию отмечены все, что можно запросить) #}
 {% set pickable = can_request_issue and p.status == "reserved" and p.id not in asked_ids %}
 <div class="part {{ 'opt' if in_group }}" data-id="{{ p.id }}" data-ps="{{ p.status }}" data-urgent="{{ 1 if p.urgent else 0 }}"
-     data-asked="{{ 1 if asked else 0 }}" data-appr="{{ p.approval if call_p else '' }}"{% if asked %} title="Попросили выдать — ждёт кладовщика"{% endif %}>
+     data-asked="{{ 1 if asked else 0 }}" data-draft="{{ 1 if p.id in draft_parts else 0 }}" data-appr="{{ p.approval if call_p else '' }}"{% if asked %} title="Попросили выдать — ждёт кладовщика"{% endif %}>
   <div class="part-main">
     <span class="part-name">{% if pickable %}<label class="iss-pick" title="Выдать эту деталь"><input type="checkbox" name="part" value="{{ p.id }}" form="iss-form" checked></label>{% endif %}{% if in_group %}<b class="opt-brand">{{ cat.brand if cat and cat.brand else "без бренда" }}</b> {% endif %}{{ p.name if not in_group else "" }}
       {% if not in_group and cat and cat.brand %}<span class="tag">{{ cat.brand }}</span>{% endif %}
@@ -246,6 +246,11 @@
   {% if can_pick and (wo.status == "picking" or (wo.status == "approve" and not wo.picked_at)) %}
   <form method="post" action="/orders/{{ wo.id }}/picking-done"><button class="btn btn-block" id="btn-picked">Подбор завершён</button>
     {% if wo.status == "approve" %}<p class="hint" style="margin:6px 0 0">Менеджер получит сообщение и согласует с клиентом. Заказ поставщику — после согласования, он придёт в «Мои заказы».</p>{% endif %}</form>
+  {% endif %}
+  {# 25.11.2026 (брат, наряд 39): согласовано — запчастисту заказать у поставщика (страница «Заказ по наряду») #}
+  {% if draft_parts and ctx.can("purchases.mine") and (ctx.user.id == wo.partsman_id or ctx.can("orders.view_all")) %}
+  <a class="btn btn-block" id="btn-order-wo" href="/my-orders/wo/{{ wo.id }}">Заказать у поставщика · {{ draft_parts|length }}</a>
+  <p class="hint" style="margin:6px 0 0">Клиент согласовал — выберите поставщика у каждой детали и нажмите «✓ Заказал».</p>
   {% endif %}
   {% if wo.status == "approve" and wo.picked_at %}
   <p class="hint ok-hint" style="margin:8px 0 0">✓ Подбор завершён{% if picked_who %} · {{ picked_who.short_name }}{% endif %} · {{ wo.picked_at.astimezone().strftime("%d.%m %H:%M") }}</p>

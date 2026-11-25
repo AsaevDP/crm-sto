@@ -28,10 +28,10 @@
 <div class="pult-tiles vs-tiles {{ 'pu-tiles' if mode == 'mine' }}">
   {% if mode == "all" %}
   <a class="ptile {{ 'on' if not u }}" href="/purchases/by-partsman{{ '?st=' ~ st if st != 'wait' }}" style="--tc:{{ color_css('blue') }}">
-    <span class="ptile-t">Все</span><b>{{ tiles|sum(attribute="n") + (me_tile.n if me_tile else 0) }}</b><span class="ptile-s">ждём деталей</span></a>
+    <span class="ptile-t">Все</span><b>{{ all_n }}</b><span class="ptile-s">все люди · {{ st_word }}</span></a>
   {% if me_tile %}
   <a class="ptile {{ 'on' if u == 'me' }} {{ 'zero' if not me_tile.n }}" href="/purchases/by-partsman?u=me{{ qs }}" style="--tc:{{ color_css('orange') }}">
-    <span class="ptile-t">Мои заказы</span><b>{{ me_tile.n }}</b><span class="ptile-s">я заказал на склад</span></a>
+    <span class="ptile-t">Мои заказы</span><b>{{ me_tile.n }}</b><span class="ptile-s">я заказал · {{ st_word }}</span></a>
   {% endif %}
   {% endif %}
   {% for k, (title_, color, sub) in TABS.items() %}
@@ -43,7 +43,7 @@
 <div class="pult-tiles vs-tiles pm-people">
   {% for t in tiles %}
   <a class="ptile {{ 'on' if who and u != 'me' and t.u.id == who.id }} {{ 'zero' if not t.n }}" href="/purchases/by-partsman?u={{ t.u.id }}{{ qs }}" style="--tc:{{ color_css('indigo') }}">
-    <span class="ptile-t">{{ t.u.full_name }}</span><b>{{ t.n }}</b><span class="ptile-s">{{ t.u.role.name|lower }} · ждём</span></a>
+    <span class="ptile-t">{{ t.u.full_name }}</span><b>{{ t.n }}</b><span class="ptile-s">{{ t.u.role.name|lower }} · {{ st_word }}</span></a>
   {% endfor %}
 </div>
 {% endif %}

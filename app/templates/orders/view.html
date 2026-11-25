@@ -680,6 +680,7 @@
       const b = c.querySelector(':scope > .card-h .fold-btn');
       if (b) { b.setAttribute('aria-expanded', String(!on)); b.title = on ? 'Развернуть' : 'Свернуть'; }
       if (!keep) { if (on) st[c.id] = 1; else delete st[c.id]; save(); }
+      window.crmNeedAgain && window.crmNeedAgain();   // 25.11.2026: подсветка дела — сразу по видимым строкам
     };
     cards.forEach(c => {
       const h = c.querySelector(':scope > .card-h');

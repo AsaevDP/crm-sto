@@ -88,7 +88,8 @@ async def _photo_from(form) -> str | None:
 
 # ---------- Список ----------
 TOOL_VIEWS = {"staff": "Сотрудники", "cabinets": "Шкафы", "spare": "Запасные", "list": "Весь список",
-              "late": "Не сдали после наряда"}   # 24.11.2026: вид — плитка «Не сдали после наряда»
+              "late": "Не сдали после наряда",   # 24.11.2026: вид — плитка «Не сдали после наряда»
+              "reqs": "Просят / сдают"}          # 25.11.2026: своё окно в «Инструменте» (не уводит в «Запросы на выдачу»)
 
 
 def _tool_overview(ctx: Ctx, all_rows):
@@ -184,8 +185,20 @@ def tools_list(ctx: Ctx = Depends(get_ctx), q: str = "", holder: str = "", cat: 
     sees_all = ctx.can("tools.manage", "orders.grant_access", "staff.dismiss") or ctx.user.role.code in ("admin", "director", "deputy")
     late = svc.after_close(db, ctx.branch.id, manager_id=None if sees_all else ctx.user.id)
     late_people = {u.id: u for u in db.scalars(select(User).where(User.id.in_([x["tool"].holder_id for x in late] or [None])))}
+    # 25.11.2026 (брат): «Просят / сдают» — кто просит инструмент, кто сдаёт, что подготовлено (только смотреть;
+    # выдают и принимают кладовщики в «Запросах на выдачу»)
+    open_reqs = []
+    if view == "reqs":
+        from ..models import ToolRequest, WorkOrder as _WO
+        for r in db.scalars(select(ToolRequest).where(ToolRequest.branch_id == ctx.branch.id,
+                                                      ToolRequest.status.in_(("new", "ready")))
+                            .order_by(ToolRequest.created_at)):
+            t = db.get(Tool, r.tool_id)
+            open_reqs.append({"r": r, "t": t, "u": db.get(User, r.user_id),
+                              "wo": db.get(_WO, r.work_order_id) if r.work_order_id else None,
+                              "st": "ready" if r.status == "ready" else ("ret" if r.kind == "return" else "ask")})
     return ctx.render("tools/list.html", title="Инструмент", rows=rows, q=q, holder=holder, cat=cat, staff=staff,
-                      late=late, late_people=late_people,
+                      late=late, late_people=late_people, open_reqs=open_reqs,
                       people=people, summary=summary, pending=pending, TOOL_STATUS=TOOL_STATUS, CHECK_KINDS=CHECK_KINDS,
                       CHECK_STATUS=CHECK_STATUS, TOOL_CATEGORIES=TOOL_CATEGORIES, cat_counts=cat_counts,
                       n_all=len(all_rows), n_personal=cat_counts.get("personal", 0), wo_nums={**wo_nums, **ov["wo_nums"]},

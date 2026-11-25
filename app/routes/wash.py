@@ -90,7 +90,10 @@ def wash(ctx: Ctx = Depends(get_ctx), tab: str = ""):
     tabs = (("now", "asksq") if q_ok else ()) + ("chem", "asks") + (("buy",) if buy_ok else ())
     if tab not in tabs:
         tab = tabs[0]
-    low = [x for x in items if x["free"] <= LOW]
+    # 25.11.2026 (брат): «Заканчивается» — по норме «Всегда в наличии» (ниже нормы и не заказано); без нормы — ≤ 2
+    from ..services import keep as ksvc
+    items = ksvc.chem_with_keep(db, bid, items)
+    low = [x for x in items if x["low"]]
     data = dict(tab=tab, q_ok=q_ok, buy_ok=buy_ok, cars=cars, items=items, asks=asks, low=low, WASH_ST=WASH_ST, fmt_plate=osvc.fmt_plate,
                 brd=brd, fmt_min=wsvc.fmt_min, CLASSES=wsvc.CLASSES, now=now(), qasks=wsvc.open_asks(db, bid, brd),
                 n_open=sum(1 for p in chem_p if p.status != "arrived"),

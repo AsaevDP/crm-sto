@@ -664,7 +664,7 @@ def _wo_board(ctx: Ctx, ps: list, st: str, day=None, drafts: bool = False):
                 counts["late"] += len(left) if svc.is_late(p) else 0
             got = [l for l in lines if l.received and got_at(l, p) >= since]
             counts["arrived"] += len(got)
-            if st == "todo":
+            if st in ("todo", "__count__"):   # __count__ — только цифры (плитки людей)
                 continue
             if st == "arrived":
                 show = [(l, got_at(l, p)) for l in got]
@@ -750,13 +750,23 @@ def orders_by_partsman(ctx: Ctx = Depends(get_ctx), u: str = "", st: str = "", d
                 PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))) or 0)
     people = sorted((x for x in db.scalars(select(User).where(User.id.in_(list(ids) or [uuid.uuid4()])))
                      if x.id != ctx.user.id), key=lambda x: x.full_name)
-    tiles = [{"u": x, "n": open_n.get(x.id, 0)} for x in people]
-    me_tile = ({"n": open_n.get(ctx.user.id, 0)} if ctx.can("purchases.stock") or ctx.user.id in ids else None)
+    # 25.11.2026 (брат): цифры у людей («Все», «Мои заказы», запчастисты) — по ОТКРЫТОЙ вкладке (Ждём / Неполная /
+    # Опаздывают / Приняты), а не всегда «ждём» — иначе плитки не менялись и «Все» совпадало со «Ждём»
+    st_ = {"draft": "todo"}.get(st, st)
+    st_ = st_ if st_ in BP_TABS else "wait"
+    by_who: dict = {}
+    for p in allp:
+        by_who.setdefault(p.created_by, []).append(p)
+    n_of = lambda uid: _wo_board(ctx, by_who.get(uid, []), "__count__")[1][st_] if by_who.get(uid) else 0
+    tiles = [{"u": x, "n": n_of(x.id)} for x in people]
+    me_tile = ({"n": n_of(ctx.user.id)} if ctx.can("purchases.stock") or ctx.user.id in ids else None)
     who = ctx.user if u == "me" else (db.get(User, _uuid(u)) if u else None)
     if who and who.branch_id != ctx.branch.id:
         raise Forbidden()
     ps = [p for p in allp if not who or p.created_by == who.id]
-    return _board_render(ctx, "all", ps, st, d, False, title="Заказы запчастистов", who=who, u=u, tiles=tiles, me_tile=me_tile)
+    all_n = _wo_board(ctx, allp, "__count__")[1][st_]
+    return _board_render(ctx, "all", ps, st, d, False, title="Заказы запчастистов", who=who, u=u, tiles=tiles, me_tile=me_tile,
+                         all_n=all_n, st_word=BP_TABS[st_][0].lower())
 
 
 @router.post("/purchases/new")
@@ -1651,6 +1661,16 @@ def _keep_data(ctx: Ctx):
                   "ok": sum(r["st"] == "ok" for r in rows), "below": sum(r["below"] for r in rows)}
 
 
+def ksvc_can(ctx: Ctx, own: str) -> bool:
+    from ..services import keep as ksvc
+    return ksvc.can_order(ctx, own)
+
+
+def _keep_owner_names():
+    from ..services import keep as ksvc
+    return ksvc.OWNER_NAME
+
+
 @router.get("/stock/always")
 def keep_page(ctx: Ctx = Depends(get_ctx), q: str = ""):
     """«Всегда в наличии»: что должно быть на складе всегда и в достаточном объёме. Ниже нормы — красная строка,
@@ -1661,7 +1681,8 @@ def keep_page(ctx: Ctx = Depends(get_ctx), q: str = ""):
     kept = {r["c"].id for r in rows if r["c"]}
     return ctx.render("stock/keep.html", title="Всегда в наличии", rows=rows, cnt=cnt, q=q,
                       found=[f for f in found if not f["used"] and _uuid(str(f["id"])) not in kept],
-                      can_edit=ctx.can("stock.keep"), can_order=ctx.can("purchases.stock", "purchases.manage"))
+                      can_edit=ctx.can("stock.keep"), can_own={o: ksvc_can(ctx, o) for o in ("stock", "chem")},
+                      OWNER_NAME=_keep_owner_names())
 
 
 @router.post("/stock/always")
@@ -1701,16 +1722,22 @@ def keep_edit(kid: str, ctx: Ctx = Depends(get_ctx), min_qty: str = Form(""), de
 
 
 @router.post("/stock/always/order/missing")
-def keep_order(ctx: Ctx = Depends(get_ctx)):
-    """«Заказать недостающее» → черновик закупки на того, кто нажал (на склад), и сразу его страница."""
-    ctx.need("purchases.stock", "purchases.manage")
+def keep_order(ctx: Ctx = Depends(get_ctx), cid: str = Form(""), own: str = Form(""), back: str = Form("/stock/always")):
+    """«Заказать» (одна позиция, cid) или «Заказать недостающее» (весь свой раздел) → черновик закупки на того, кто
+    нажал, и сразу его страница (выбрать поставщика). 25.11.2026 (брат): химию — запчастист, остальное — кладовщик;
+    что уже заказано (черновик или едет) — вычитается, двойной накладной не будет."""
     from ..services import keep as ksvc
-    p = ksvc.order_missing(ctx.db, ctx.branch.id, ctx.user.id)
+    c = ctx.db.get(PartCatalog, _uuid(cid)) if cid else None
+    own = ksvc.owner(c) if c else (own if own in ksvc.OWNER_NAME else ("chem" if not ctx.can("purchases.stock") else "stock"))
+    if not ksvc.can_order(ctx, own):
+        raise Forbidden()
+    back = back if back.startswith("/") and not back.startswith("//") else "/stock/always"
+    p = ksvc.order_missing(ctx.db, ctx.branch.id, ctx.user.id, own, c.id if c else None)
     if not p:
-        flash(ctx.request, "Заказывать нечего — всего хватает (с учётом того, что уже едет)")
-        return _to("/stock/always")
+        flash(ctx.request, "Заказывать нечего — всего хватает с учётом того, что уже заказано и едет")
+        return _to(back)
     ctx.db.commit()
-    flash(ctx.request, "Черновик заказа на склад готов — выберите поставщика, проверьте количество и нажмите «Заказан»")
+    flash(ctx.request, "Черновик заказа готов — выберите поставщика, проверьте количество и нажмите «Заказан»")
     return _to(f"/purchases/{p.id}")
 
 

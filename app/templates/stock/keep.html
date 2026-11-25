@@ -8,9 +8,13 @@
   <div><a class="back" href="/stock">{{ icon("back") }}Склад</a><h1 class="large-title">Всегда в наличии</h1></div>
   <div class="ov-actions">
     <a class="btn btn-sm btn-gray" href="/stock/always/print" target="_blank">🖨 Печать</a>
-    {% if can_order %}<form method="post" action="/stock/always/order/missing" style="margin:0"
-        onsubmit="return confirm('Собрать черновик заказа на склад: всё, чего не хватает до нормы?')">
-      <button class="btn btn-sm" {% if not rows|selectattr("missing")|list %}disabled title="Всего хватает"{% endif %}>🛒 Заказать недостающее</button></form>{% endif %}
+    {# 25.11.2026 (брат): «Заказать недостающее» — только свой раздел (кладовщик — склад, запчастист — химия) #}
+    {% for o in ("stock", "chem") if can_own[o] and rows|selectattr("owner", "equalto", o)|list %}
+    <form method="post" action="/stock/always/order/missing" style="margin:0"
+        onsubmit="return confirm('Собрать черновик заказа: всё, чего не хватает до нормы ({{ 'химия' if o == 'chem' else 'склад' }})?')">
+      <input type="hidden" name="own" value="{{ o }}">
+      <button class="btn btn-sm" {% if not rows|selectattr("owner", "equalto", o)|selectattr("missing")|list %}disabled title="Всего хватает"{% endif %}>🛒 Заказать недостающее{{ " · химия" if o == "chem" }}</button></form>
+    {% endfor %}
   </div>
 </header>
 
@@ -47,7 +51,7 @@
   <div class="tablewrap">
   <table class="table kp-table">
     <thead><tr><th>Запчасть / товар</th><th class="num">Свободно</th><th class="num">Норма</th><th class="num">Едет</th>
-      <th class="num">Не хватает</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+      <th class="num">Не хватает</th><th>Заказ</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for r in rows %}
     <tr class="kp-{{ r.st }}" data-below="{{ 1 if r.below else 0 }}">
@@ -57,14 +61,19 @@
       <td class="num nowrap">{% if can_edit %}<input class="field kp-min" form="kf-{{ r.k.id }}" name="min_qty" value="{{ r.min|num }}" inputmode="decimal" aria-label="Норма, шт">{% else %}{{ r.min|num }}{% endif %}</td>
       <td class="num nowrap">{% if r.transit %}{{ r.transit|num }}{% endif %}{% if r.draft %}<div class="caption">в черновике {{ r.draft|num }}</div>{% endif %}{% if not r.transit and not r.draft %}—{% endif %}</td>
       <td class="num nowrap">{% if r.missing > 0 %}<b class="kp-miss">{{ r.missing|num }}</b>{% elif r.below %}<span class="caption">заказано</span>{% else %}<span class="ok-hint">✓</span>{% endif %}</td>
+      {# 25.11.2026 (брат): «Заказать» — только ответственному за раздел; уже заказано — кто и когда (второй раз не закажется) #}
+      <td class="kp-ord">{% for o_ in r.orders %}<div class="caption">{{ "в черновике" if o_.draft else "заказано" }} {{ o_.qty|num }} шт · {{ o_.who }} · {{ o_.at.astimezone().strftime("%d.%m") }}{% if o_.draft and can_own[r.owner] %} · <a href="/purchases/{{ o_.pid }}">открыть</a>{% endif %}</div>{% endfor %}
+        {% if r.missing > 0 %}{% if can_own[r.owner] %}<form method="post" action="/stock/always/order/missing" style="margin:2px 0 0">
+          <input type="hidden" name="cid" value="{{ r.c.id }}"><button class="btn btn-sm">🛒 Заказать {{ r.missing|num }}</button></form>
+        {% else %}<span class="caption">Заказывает {{ OWNER_NAME[r.owner] }}</span>{% endif %}{% endif %}</td>
       {% if can_edit %}<td class="nowrap"><form id="kf-{{ r.k.id }}" method="post" action="/stock/always/{{ r.k.id }}" style="margin:0;display:inline-flex;gap:4px">
           <button class="btn btn-sm btn-plain">OK</button>
           <button class="btn btn-sm btn-plain danger" name="delete" value="1" onclick="return confirm('Убрать из «Всегда в наличии»?')" title="Убрать из списка">×</button></form></td>{% endif %}
     </tr>
-    {% else %}<tr><td colspan="6" class="footnote">Список пуст. {% if can_edit %}Найдите позицию выше и нажмите «⭐ Добавить» — или в карточке позиции склада «⭐ Всегда в наличии».{% endif %}</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" class="footnote">Список пуст. {% if can_edit %}Найдите позицию выше и нажмите «⭐ Добавить» — или в карточке позиции склада «⭐ Всегда в наличии».{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>
-  <p class="footnote" style="margin:6px 0 0">«Свободно» — без того, что в резерве под наряды. «Едет» — уже заказано у поставщика. «Не хватает» — сколько дозаказать до нормы с учётом того, что едет.</p>
+  <p class="footnote" style="margin:6px 0 0">«Свободно» — без того, что в резерве под наряды. «Едет» — уже заказано у поставщика. «Не хватает» — сколько дозаказать до нормы с учётом того, что едет и что уже в черновике. Заказывает один человек на раздел: склад (ТО, запчасти) — кладовщик, химия для мойки — запчастист.</p>
 </div>
 {% endblock %}

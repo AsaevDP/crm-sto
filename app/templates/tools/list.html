@@ -18,7 +18,7 @@
 
 {# 24.11.2026 (брат): плитки — меню раздела (переключатель «Сотрудники / Шкафы / Запасные / Весь список» убран);
    выбранная плитка темнее (.ptile.on). «Просят / сдают» — в «Запросы на выдачу», «Не сдали» и «Проверки» — к блоку. #}
-{% set sel = view if view in ("staff", "cabinets", "spare", "late") else
+{% set sel = view if view in ("staff", "cabinets", "spare", "late", "reqs") else
    ("out" if (cat == "shared" and holder == "out" and not st and not q) else
    ("bad" if (st == "bad" and not cat and not holder and not q) else "all")) %}
 <div class="pult-tiles tl-tiles" data-menu-base="/tools">
@@ -30,9 +30,9 @@
       ("spare", "Запасные наборы", T.spare_in, "лежат в шкафу", "teal", "/tools?view=spare"),
       ("bad", "Сломан / износ", T.bad, "проверить, починить", "red", "/tools?view=list&st=bad"),
       ("all", "Весь инструмент", n_all, "список с поиском", "gray", "/tools?view=list"),
-      ("", "Просят / сдают", T.reqs + T.ready, ("просят: " ~ T.reqs ~ " · готово: " ~ T.ready) if T.reqs and T.ready
+      ("reqs", "Просят / сдают", T.reqs + T.ready, ("просят: " ~ T.reqs ~ " · готово: " ~ T.ready) if T.reqs and T.ready
         else "готово — не выдано" if T.ready else "ждут кладовщика",
-        "red" if T.reqs else "orange" if T.ready else "purple", "/stock/issues?tab=tools"),
+        "red" if T.reqs else "orange" if T.ready else "purple", "/tools?view=reqs"),
       ("late", "Не сдали после наряда", late|length, "наряд закрыт, инструмент у мастера", "orange" if late else "gray", "/tools?view=late"),
       ("", "Проверки", pending|length, "идут сейчас", "gray", "/tools?view=staff#checks")] %}
   <a class="ptile {{ 'zero' if not n }} {{ 'on' if key and key == sel }}" href="{{ href }}"{% if key and key == sel %} aria-current="page"{% endif %} style="--tc:{{ color_css(color) }}"><span class="ptile-t">{{ title }}</span><b>{{ n }}</b><span class="ptile-s">{{ sub }}</span></a>
@@ -58,6 +58,26 @@
 </section>
 {% endif %}{% endif %}
 
+
+{# 25.11.2026 (брат): «Просят / сдают» — своё окно раздела «Инструмент»: кто просит, кто сдаёт, что уже подготовлено.
+   Только посмотреть; выдают и принимают кладовщики в «Запросах на выдачу» (там всё как было) #}
+{% if view == "reqs" %}
+<section class="card compact tl-reqs" id="reqs">
+  <div class="card-h"><span class="headline">Просят и сдают инструмент · {{ open_reqs|length }}</span>
+    {% if ctx.can("stock.issue") or manage %}<a class="btn btn-sm btn-gray" href="/stock/issues?tab=tools">Выдать / принять → Запросы на выдачу</a>{% endif %}</div>
+  {% if open_reqs %}<table class="table">
+    <thead><tr><th>Что</th><th>Кто</th><th>Наряд</th><th>С какого времени</th><th>Сейчас</th></tr></thead>
+    <tbody>{% for x in open_reqs %}<tr class="tl-req" data-st="{{ x.st }}">
+      <td>{% if x.t %}<a class="mono" href="/tools/{{ x.t.id }}">{{ x.t.inv_no }}</a> {{ x.t.name }}{% else %}—{% endif %}{% if x.r.comment %}<span class="caption" style="display:block">{{ x.r.comment }}</span>{% endif %}</td>
+      <td>{% if x.u %}{{ x.u.full_name }}<span class="caption" style="display:block">{{ x.u.role.name }}</span>{% endif %}</td>
+      <td>{% if x.wo %}<a href="/orders/{{ x.wo.id }}">{{ x.wo.number[-6:] }}</a>{% else %}<span class="caption">без наряда</span>{% endif %}</td>
+      <td class="nowrap">{{ x.r.created_at.astimezone().strftime("%d.%m %H:%M") }}</td>
+      <td>{% if x.st == "ready" %}<span class="chip nowrap" data-s="waiting">подготовлен — ждёт, когда заберут</span>
+        {% elif x.st == "ret" %}<span class="chip nowrap" data-s="approve">сдаёт — ждёт кладовщика</span>
+        {% else %}<span class="chip nowrap" data-s="cancel">просит — ждёт кладовщика</span>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>{% else %}<p class="footnote">Сейчас никто не просит и не сдаёт инструмент.</p>{% endif %}
+</section>
+{% endif %}
 
 {# ===================== По сотрудникам ===================== #}
 {% if view == "staff" %}

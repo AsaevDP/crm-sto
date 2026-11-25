@@ -438,6 +438,7 @@
     const CLS = ['need', 'need-rel', 'need-edge', 'need-edge-add', 'need-btn', 'need-top', 'need-bar', ...ORDER.map(c => 'need-' + c)];
     document.querySelectorAll('.need').forEach(el => { if (!want.has(el)) { el.classList.remove(...CLS); el.style.removeProperty('--edge-c'); } });
     want.forEach((c, el) => {
+      el.classList.remove('need-top', 'need-edge', 'need-edge-add', 'need-btn', 'need-rel');   // вид мог смениться
       ORDER.forEach(o => el.classList.toggle('need-' + o, o === c));
       el.classList.add('need');
       // окошко со своей цветной полоской слева (мойка, срочная деталь) или строка — мигает край, без рамки вокруг
@@ -455,11 +456,16 @@
         // 24.11.2026 (брат): квадратных рамок (прямые углы) нет нигде — у такого окошка / строки мигает полоска слева,
         // как во всей CRM: край скруглённого окошка, концы плавно сужаются (need-edge + need-edge-add)
         el.classList.add('need-edge', 'need-edge-add'); return;
+      } else {
+        // 25.11.2026 (брат): рамки по контуру нет НИГДЕ. Блок / окошко без своей строки или кнопки (например, блок наряда
+        // свёрнут) — мигает его верхняя полоска, как у плиток
+        el.classList.add('need-top'); return;
       }
-      if (getComputedStyle(el).position === 'static') el.classList.add('need-rel');
     });
   }
-  window.crmNeed = apply;
+  let last = null;
+  window.crmNeed = map => { last = map; apply(map); };
+  window.crmNeedAgain = () => { if (last) apply(last); };   // 25.11.2026: свернули / развернули блок — пересчитать
 })();
 
 // ===== 23.11.2026 (брат): левое меню не прыгает наверх при переходе на другую страницу =====

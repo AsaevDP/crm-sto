@@ -149,14 +149,14 @@ def _today_views(ctx: Ctx, staff, grid, now_on, y, mo, lt) -> dict:
     on.sort(key=lambda r: r["since"])
     out.sort(key=lambda r: (r["day"].last_out if r["day"] and r["day"].last_out else now), reverse=True)
     none.sort(key=lambda r: (bool(r["off"] or r["leave"]), r["u"].full_name))
-    open_days = []
-    for s in staff:
-        for d, day in grid.get(s.id, {}).items():
-            if day.open and date(y, mo, d) != today:
-                open_days.append({"u": s, "d": date(y, mo, d), "day": day})
-    open_days.sort(key=lambda r: (r["d"], r["u"].full_name), reverse=True)
+    # 25.11.2026 (брат): «Забыли отметить уход» — по правилам табеля (одна цифра у всех); менеджер напоминает
+    rem = late_svc.reminded(ctx.db, ctx.branch.id)
+    open_days = [{"u": f.user, "d": f.day, "first_in": f.first_in, "rem": rem.get((f.user.id, f.day))}
+                 for f in late_svc.no_out_open(ctx.db, ctx.branch.id)]
+    # Часы всех — только директору, заму, админу, бухгалтеру; остальным — свои
+    see_hours = ctx.can("attendance.alerts", "attendance.decide")
     hours = []
-    for s in staff:
+    for s in (staff if see_hours else [s for s in staff if s.id == ctx.user.id]):
         g = grid.get(s.id, {})
         mins = sum(x.minutes for x in g.values())
         n = sum(1 for x in g.values() if x.minutes)
@@ -172,13 +172,17 @@ def _today_views(ctx: Ctx, staff, grid, now_on, y, mo, lt) -> dict:
     row1[0]["zero"] = not on
     if "info" in lt["lt_boss_t"]:
         row1.append(lt["lt_boss_t"]["info"])
+    can_remind = not see_hours and ctx.can("attendance.view_all")
+    n_wait = sum(1 for r in open_days if not r["rem"]) if can_remind else n_open
     row2 = ([lt["lt_boss_t"]["boss"]] if "boss" in lt["lt_boss_t"] else []) + [
-        item("open", "Забыли отметить уход", n_open, "red", "дни со знаком «?»"),
-        item("hours", "Часов за месяц", round(total / 60), "teal", f"{month_name} · все сотрудники")]
+        item("open", "Забыли отметить уход", n_open, "red" if n_wait else "orange",
+             (f"напомнить: {n_wait}" if n_wait else "всем напомнили") if can_remind else "не отметили уход — вписать время"),
+        item("hours", "Часов за месяц", round(total / 60), "teal",
+             f"{month_name} · все сотрудники" if see_hours else f"{month_name} · ваши")]
     row2[-1]["zero"] = not total
     return {"on": on, "out": out, "none": none, "open": open_days, "hours": hours, "total": total,
             "rows": [row1, row2] + ([lt["lt_own_t"]] if lt["lt_own_t"] else []), "today": today, "now": now,
-            "n_staff": len(active)}
+            "n_staff": len(active), "see_hours": see_hours, "can_remind": can_remind}
 
 
 def _alerts(ctx: Ctx, only: User | None = None, base: str = "/timesheet", view: str = "") -> dict:
@@ -250,6 +254,21 @@ def ack(ctx: Ctx = Depends(get_ctx), user_id: str = Form(...), day: str = Form(.
     ctx.db.commit()
     flash(ctx.request, "Принято к сведению" if side == "boss" else "Принято. Больше не опаздывайте")
     return _back(back, "/timesheet")
+
+
+@router.post("/timesheet/remind")
+def remind(ctx: Ctx = Depends(get_ctx), user_id: str = Form(""), day: str = Form(""), back: str = Form("/timesheet?v=open")):
+    """25.11.2026 (брат): менеджер напоминает «отметьте уход» (одному или всем). Время он не вписывает — это бухгалтер,
+    директор, зам; сотрудник сообщает им сам."""
+    ctx.need("attendance.view_all")
+    fl = late_svc.no_out_open(ctx.db, ctx.branch.id)
+    if user_id:
+        uid = _uuid(user_id)
+        fl = [f for f in fl if f.user.id == uid and f.day.isoformat() == day]
+    n = sum(1 for f in fl if f.user.id != ctx.user.id and late_svc.remind(ctx.db, ctx.branch.id, ctx.user, f))
+    ctx.db.commit()
+    flash(ctx.request, f"Напомнили: {n}" if n else "Уже напомнили")
+    return _back(back, "/timesheet?v=open")
 
 
 @router.post("/timesheet/decide")
@@ -388,6 +407,9 @@ def timesheet(ctx: Ctx = Depends(get_ctx), m: str = "", user: str = "", p: str =
         target = ctx.user
     elif user:
         target = ctx.db.get(User, _uuid(user))
+        # 25.11.2026 (брат): чужие часы — только директору, заму, админу, бухгалтеру; менеджер открывает свой табель
+        if target and target.id != ctx.user.id and not ctx.can("attendance.alerts", "attendance.decide"):
+            target = ctx.user
     if target:
         grid = svc.month_grid(ctx.db, ctx.branch.id, [target], y, mo)[target.id]
         lt = _alerts(ctx, only=target, base=f"/timesheet?user={target.id}&m={y}-{mo:02d}" if see_all else "/timesheet", view=v)

@@ -13,45 +13,52 @@
 {% for r in tv.rows %}{{ tiles(r, "ord-tiles") }}{% endfor %}
 </div>
 {% set mo_q = y ~ "-" ~ "%02d"|format(mo) %}
+{# 25.11.2026 (брат): чужие часы и чужой табель — только директору, заму, админу, бухгалтеру (tv.see_hours) #}
+{% macro nm(u) %}{% if tv.see_hours or u.id == user.id %}<a href="?user={{ u.id }}&m={{ mo_q }}">{{ u.full_name }}</a>{% else %}{{ u.full_name }}{% endif %}{% endmacro %}
 {% if lt_view in ("on", "out", "none", "open", "hours") %}
 <section class="card compact ts-view" id="tsv">
 {% if lt_view == "on" %}
   <div class="card-h"><span class="headline">Сейчас на месте · {{ tv.on|length }}</span><span class="footnote">сегодня, {{ tv.today.strftime("%d.%m") }}</span></div>
   {% if tv.on %}<table class="table">
-    <thead><tr><th>Сотрудник</th><th>Должность</th><th>Пришёл</th><th class="num">На месте</th></tr></thead>
+    <thead><tr><th>Сотрудник</th><th>Должность</th><th>Пришёл</th>{% if tv.see_hours %}<th class="num">На месте</th>{% endif %}</tr></thead>
     <tbody>{% for r in tv.on %}<tr>
-      <td><a href="?user={{ r.u.id }}&m={{ mo_q }}">{{ r.u.full_name }}</a></td><td>{{ r.u.role.name }}</td>
-      <td>{{ r.since.strftime("%H:%M") }}</td><td class="num nowrap">{{ lt_min(r.mins) }}</td></tr>{% endfor %}</tbody>
+      <td>{{ nm(r.u) }}</td><td>{{ r.u.role.name }}</td>
+      <td>{{ r.since.strftime("%H:%M") }}</td>{% if tv.see_hours %}<td class="num nowrap">{{ lt_min(r.mins) }}</td>{% endif %}</tr>{% endfor %}</tbody>
   </table>{% else %}<p class="footnote">Сейчас на месте никого нет.</p>{% endif %}
 {% elif lt_view == "out" %}
   <div class="card-h"><span class="headline">Сегодня уже ушли · {{ tv.out|length }}</span></div>
   {% if tv.out %}<table class="table">
-    <thead><tr><th>Сотрудник</th><th>Должность</th><th>Пришёл</th><th>Ушёл</th><th class="num">Часов</th></tr></thead>
+    <thead><tr><th>Сотрудник</th><th>Должность</th><th>Пришёл</th><th>Ушёл</th>{% if tv.see_hours %}<th class="num">Часов</th>{% endif %}</tr></thead>
     <tbody>{% for r in tv.out %}<tr>
-      <td><a href="?user={{ r.u.id }}&m={{ mo_q }}">{{ r.u.full_name }}</a></td><td>{{ r.u.role.name }}</td>
+      <td>{{ nm(r.u) }}</td><td>{{ r.u.role.name }}</td>
       <td>{{ r.day.first_in.strftime("%H:%M") if r.day and r.day.first_in else "—" }}</td>
       <td>{{ r.day.last_out.strftime("%H:%M") if r.day and r.day.last_out else "—" }}</td>
-      <td class="num">{{ r.day.hours|num if r.day else 0 }}</td></tr>{% endfor %}</tbody>
+      {% if tv.see_hours %}<td class="num">{{ r.day.hours|num if r.day else 0 }}</td>{% endif %}</tr>{% endfor %}</tbody>
   </table>{% else %}<p class="footnote">Сегодня ещё никто не ушёл.</p>{% endif %}
 {% elif lt_view == "none" %}
   <div class="card-h"><span class="headline">Сегодня не отмечались · {{ tv.none|length }}</span></div>
   {% if tv.none %}<table class="table">
     <thead><tr><th>Сотрудник</th><th>Должность</th><th>Почему</th></tr></thead>
     <tbody>{% for r in tv.none %}<tr>
-      <td><a href="?user={{ r.u.id }}&m={{ mo_q }}">{{ r.u.full_name }}</a></td><td>{{ r.u.role.name }}</td>
+      <td>{{ nm(r.u) }}</td><td>{{ r.u.role.name }}</td>
       <td>{% if r.leave %}Отпросился {% for l in r.leave %}{{ l.t_from }}–{{ l.t_to }}{{ ", " if not loop.last }}{% endfor %}{% if r.leave[0].comment %} · {{ r.leave[0].comment }}{% endif %}
         {% elif r.off %}Выходной день{% else %}<span class="ts-why-red">Нет отметки «пришёл»</span>{% endif %}</td></tr>{% endfor %}</tbody>
   </table>{% else %}<p class="footnote">Сегодня отметились все.</p>{% endif %}
 {% elif lt_view == "open" %}
-  <div class="card-h"><span class="headline">Забыли отметить уход · {{ tv.open|length }}</span><span class="footnote">{{ month_name }}</span></div>
-  <p class="footnote" style="margin:0 0 6px">Пришёл, а «ушёл» не отмечено — в таблице день со знаком «?». Время ухода вписывают бухгалтер, директор, зам или админ.</p>
+  <div class="card-h"><span class="headline">Забыли отметить уход · {{ tv.open|length }}</span>
+    {% if tv.can_remind and tv.open|rejectattr("rem")|list %}<form method="post" action="/timesheet/remind"><input type="hidden" name="back" value="{{ lt_base }}{{ '&' if '?' in lt_base else '?' }}v=open"><button class="btn btn-sm" id="btn-remind-all">Напомнить всем</button></form>{% endif %}</div>
+  {% if tv.can_remind %}<p class="footnote" style="margin:0 0 6px">Пришли, а «ушёл» не отмечено. Время вы не вписываете — нажмите «Напомнить»: сотруднику придёт сообщение сообщить бухгалтеру, директору или заму, они впишут время.</p>
+  {% else %}<p class="footnote" style="margin:0 0 6px">Пришёл, а «ушёл» не отмечено — в таблице день со знаком «?». Время ухода вписывают бухгалтер, директор, зам или админ.</p>{% endif %}
   {% if tv.open %}<table class="table">
     <thead><tr><th>День</th><th>Сотрудник</th><th>Должность</th><th>Пришёл</th><th></th></tr></thead>
-    <tbody>{% for r in tv.open %}<tr>
-      <td class="nowrap">{{ r.d.strftime("%d.%m") }}</td><td><a href="?user={{ r.u.id }}&m={{ mo_q }}">{{ r.u.full_name }}</a></td>
-      <td>{{ r.u.role.name }}</td><td>{{ r.day.first_in.strftime("%H:%M") if r.day.first_in else "—" }}</td>
-      <td class="num">{% if ctx.can("attendance.edit") %}<a class="btn btn-sm btn-gray" href="/timesheet?user={{ r.u.id }}&m={{ mo_q }}&fday={{ r.d.isoformat() }}#manual">Вписать время</a>{% endif %}</td></tr>{% endfor %}</tbody>
-  </table>{% else %}<p class="footnote">В этом месяце все отметили уход.</p>{% endif %}
+    <tbody>{% for r in tv.open %}<tr{% if tv.can_remind and not r.rem %} class="ts-open-row" data-open="1"{% endif %}>
+      <td class="nowrap">{{ r.d.strftime("%d.%m") }}</td><td>{{ nm(r.u) }}</td>
+      <td>{{ r.u.role.name }}</td><td>{{ r.first_in.strftime("%H:%M") if r.first_in else "—" }}</td>
+      <td class="num">{% if ctx.can("attendance.edit") %}<a class="btn btn-sm btn-gray" href="/timesheet?user={{ r.u.id }}&m={{ r.d.strftime('%Y-%m') }}&fday={{ r.d.isoformat() }}#manual">Вписать время</a>
+        {% elif tv.can_remind %}{% if r.rem %}<span class="caption">✓ напомнили {{ r.rem.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
+        {% elif r.u.id != user.id %}<form method="post" action="/timesheet/remind"><input type="hidden" name="user_id" value="{{ r.u.id }}"><input type="hidden" name="day" value="{{ r.d.isoformat() }}">
+          <input type="hidden" name="back" value="{{ lt_base }}{{ '&' if '?' in lt_base else '?' }}v=open"><button class="btn btn-sm">Напомнить</button></form>{% endif %}{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>{% else %}<p class="footnote">Все отметили уход.</p>{% endif %}
 {% elif lt_view == "hours" %}
   <div class="card-h"><span class="headline">Часов за месяц · {{ month_name }}</span><span class="footnote">всего {{ (tv.total / 60)|round(1)|num }} ч</span></div>
   <table class="table">
@@ -80,25 +87,25 @@
     <tbody>
     {% for s in staff %}{% set g = grid[s.id] %}
     <tr>
-      <td class="ts-name"><a href="?user={{ s.id }}&m={{ y }}-{{ '%02d'|format(mo) }}">{{ s.full_name }}</a><div class="caption">{{ s.role.name }}{% if not s.active %} · уволен{% endif %}</div>
+      <td class="ts-name">{{ nm(s) }}<div class="caption">{{ s.role.name }}{% if not s.active %} · уволен{% endif %}</div>
         {% if lt_decide and s.active and s.role.code != "admin" and s.id != user.id and (s.role.code != 'director' or user.role.code == 'admin') and (s.role.code != 'deputy' or user.role.code in ('admin', 'director')) %}<button type="button" class="btn btn-sm btn-plain ts-lv" data-uid="{{ s.id }}" data-name="{{ s.full_name }}">Отпросился…</button>{% endif %}</td>
       {% for d in range(1, n_days + 1) %}{% set day = g.get(d) %}
       <td class="ts-d {{ 'we' if d in weekends }} {{ 'open' if day and day.open and not (today.year == y and today.month == mo and today.day == d) }}"
           title="{% if day %}{{ day.first_in.strftime('%H:%M') if day.first_in else '' }}–{{ day.last_out.strftime('%H:%M') if day.last_out else '…' }}{% endif %}">
-        {% if day %}{{ day.hours|num if day.minutes else ("?" if day.open else "") }}{% endif %}
+        {% if day %}{{ (day.hours|num if own_ else "●") if day.minutes else ("?" if day.open else "") }}{% endif %}
         {% set mk = marks.get(s.id, {}).get(d, []) %}{% set lv_ = lvs.get(s.id, {}).get(d) %}
         {% if mk or lv_ %}<div class="ts-marks">{% for m in mk %}<span class="ts-m" data-k="{{ m.k }}" data-d="{{ m.d or 'wait' }}"
           title="{{ lt_kind[m.k] }}{{ ' · ' ~ ATT_DECISIONS[m.d]|lower if m.d else ' · ждёт решения' }}">{{ {"late": "⏱", "absent": "✕", "early": "⇠", "overtime": "＋"}[m.k] }}</span>{% endfor %}
           {% if lv_ %}<span class="ts-m" data-k="leave" title="Отпросился {% for l in lv_ %}{{ l.t_from }}–{{ l.t_to }} {% endfor %}">↗</span>{% endif %}</div>{% endif %}</td>
       {% endfor %}
       <td class="num">{{ g.values()|selectattr("minutes")|list|length }}</td>
-      <td class="num"><b>{{ ((g.values()|sum(attribute="minutes")) / 60)|round(1)|num }}</b></td>
+      <td class="num"><b>{{ ((g.values()|sum(attribute="minutes")) / 60)|round(1)|num if own_ else "—" }}</b></td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
-<p class="hint" style="margin:0">Цифра — часы на месте за день. «?» — пришёл, но не отметил уход (время впишут бухгалтер, директор, зам или админ).
+<p class="hint" style="margin:0">{% if not tv.see_hours %}У других сотрудников «●» — был на работе (часы видят директор, зам, бухгалтер). {% endif %}Цифра — часы на месте за день. «?» — пришёл, но не отметил уход (время впишут бухгалтер, директор, зам или админ).
   Значки: ⏱ опоздание, ✕ неявка, ⇠ ранний уход, ＋ задержался, ↗ отпросился; красный — удержано, серый — без удержания, оранжевый — ждёт решения. Выходные подсвечены.</p>
 {% endif %}
 {% if lt_decide %}

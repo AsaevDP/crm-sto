@@ -245,6 +245,13 @@ def compute(ctx) -> dict:
             # 🟠 проблемы записаны, менеджер пишет работы — скоро подбор (подготовиться)
             _add(out, "/orders", "orange", len(soon), "скоро подбор — менеджер пишет работы", "/orders?tab=approve",
                  wo=soon, blk="#parts", rows=["#parts-wait-works"], tile=['Согласование'])
+            # 25.11.2026 (брат, наряд 39): менеджер согласовал — запчастисту 🟠 и у «Нарядов»: заказать у поставщика
+            # (тот же список, что «Мои заказы → Заказать»; гаснет, когда нажал «✓ Заказал»)
+            if ctx.can("purchases.mine"):
+                from . import stock as _ssvc
+                ids_o = [d["wo"].id for d in _ssvc.draft_waits(db, bid, me.id)]
+                _add(out, "/orders", "orange", len(ids_o), "согласовано — закажите у поставщика", "/orders?tab=parts",
+                     wo=ids_o, blk="#parts", rows=['.part[data-draft="1"]', "#btn-order-wo"], tile=['Запчасти'])
         if ctx.can("orders.approve"):
             ids_ = ids_status("ready", field=None if see_all else WorkOrder.manager_id)
             _add(out, "/orders", "green", len(ids_), "готовы к выдаче клиенту", "/orders?tab=ready", wo=ids_, blk="#money",
@@ -479,8 +486,9 @@ def compute(ctx) -> dict:
         # 🟠 20.11.2026 (брат): химию для мойки заказывает запчастист — заканчивается / черновик закупки химии
         from . import chem as chem_svc
         from ..models import Purchase as _P
-        _add(out, "/wash", "orange", sum(1 for x in chem_svc.items(db, bid) if x["free"] <= 2),
-             "химия заканчивается — заказать", "/wash?tab=chem", tile=['Заканчивается'])
+        from . import keep as _ksvc   # 25.11.2026: по норме «Всегда в наличии» (уже заказанное — не горит)
+        _add(out, "/wash", "orange", sum(1 for x in _ksvc.chem_with_keep(db, bid, chem_svc.items(db, bid)) if x["low"]),
+             "химия заканчивается — заказать", "/wash?tab=chem", sel=[("/wash?tab=chem", "tr.low")], tile=['Заканчивается'])
         _add(out, "/wash", "orange", db.scalar(select(func.count()).select_from(_P).where(
             _P.branch_id == bid, _P.kind == "chem", _P.status == "draft", _P.created_by == me.id)) or 0,
              "черновик закупки химии — нажмите «✓ Заказал»", "/wash?tab=buy", tile=['Закупка для мойки'])
@@ -540,7 +548,9 @@ def compute(ctx) -> dict:
     # 17.11.2026 (брат): «Всегда в наличии» — сколько позиций ниже нормы, сиреневая цифра у «Склада»
     if ctx.can("stock.keep"):
         from . import keep as ksvc
-        _add(out, "/stock", "purple", ksvc.below_count(db, bid), "«Всегда в наличии» — ниже нормы", "/stock/always", info=info_new,
+        # 25.11.2026 (брат): склад (ТО, запчасти) — кладовщику; химия — запчастисту (у него цифра в «Мойке»)
+        _add(out, "/stock", "purple", sum(1 for r in ksvc.rows(db, bid) if r["below"] and r["owner"] == "stock"),
+             "«Всегда в наличии» — ниже нормы", "/stock/always", info=info_new,
              sel=[("/stock/always", 'tr[data-below="1"]')], tile=['Не хватает', 'Заказано', 'Всегда в наличии'])
     # 17.11.2026 (брат): в «Закупках» у кладовщика — только свои заказы на склад; цифра — его черновики («Заказал» не нажат)
     if ctx.can("purchases.stock") and not ctx.can("purchases.manage"):
@@ -708,4 +718,10 @@ def compute(ctx) -> dict:
                      "/timesheet?v=boss", alone=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss[data-k="no_out"]')], tile=['Нужно решить'])
                 _add(out, "/timesheet", "purple", len(wait), "ждёт решения директора (опоздания, неявки, задержки)",
                      "/timesheet?v=boss", alone=True, info=True, tile=['Нужно решить', 'Для сведения'])
+        # 25.11.2026 (брат): менеджер (видит табель, но время не вписывает) — 🔴 «напомните отметить уход», пока не напомнил
+        elif ctx.can("attendance.view_all"):
+            rem = late_svc.reminded(db, bid)
+            todo = [f for f in late_svc.no_out_open(db, bid) if (f.user.id, f.day) not in rem and f.user.id != me.id]
+            _add(out, "/timesheet", "red", len(todo), "не отметили уход — напомните сотрудникам", "/timesheet?v=open",
+                 alone=True, sel=[("/timesheet?v=open", "tr.ts-open-row")], tile=['Забыли отметить уход'])
     return _compact(out)
