@@ -1196,6 +1196,41 @@ def vehicle_edit(vid: str, ctx: Ctx = Depends(get_ctx), make: str = Form(""), mo
     return _to(f"/clients/{v.client_id}")
 
 
+@router.post("/vehicles/{vid}/photo")
+def vehicle_photo_pin(vid: str, ctx: Ctx = Depends(get_ctx), photo_id: str = Form(""), clear: str = Form("")):
+    """25.11.2026 (брат): закрепить фото машины в карте клиента (одно из фото её нарядов) или убрать."""
+    from ..services import car_photo
+    _can_edit_clients(ctx)
+    v = _vehicle(ctx, vid)
+    if clear:
+        car_photo.clear(v)
+        ctx.db.commit()
+        flash(ctx.request, "Фото машины убрано")
+        return _to(f"/clients/{v.client_id}")
+    p = ctx.db.get(WoPhoto, _uuid(photo_id))
+    err = car_photo.pin(ctx.db, v, p) if p else "Фото не найдено"
+    if err:
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, "Фото закреплено в карте клиента")
+    return _to(f"/clients/{v.client_id}")
+
+
+@router.get("/vehicles/{vid}/photo")
+def vehicle_photo_file(vid: str, ctx: Ctx = Depends(get_ctx), t: int = 0):
+    """Закреплённое фото машины — только тем, кто видит клиента."""
+    from ..services import car_photo
+    ctx.need("clients.view")
+    v = ctx.db.get(Vehicle, _uuid(vid))
+    if not v or v.branch_id != ctx.branch.id or not svc.can_see_client(ctx, v.client_id):
+        raise Forbidden()
+    path = car_photo.path(v, bool(t))
+    if path is None:
+        raise Forbidden()
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
+
 @router.post("/vehicles/{vid}/owner")
 def vehicle_owner(vid: str, ctx: Ctx = Depends(get_ctx), phone: str = Form(""), name: str = Form("")):
     """Смена владельца: машина и её история ремонтов переходят к другому клиенту (есть в базе — по телефону, нет — новый)."""
@@ -1308,6 +1343,49 @@ def _card_extra(ctx: Ctx, c: Client, mq: str) -> dict:
     return {"phones": ccsvc.phones(ctx.db, c), "mq": mq, "merge_cand": cand}
 
 
+def _visits(ctx: Ctx, orders: list[WorkOrder], events: list) -> list[dict]:
+    """История визитов: по каждому наряду — работы, запчасти, оплаты, события клиента; новые сверху."""
+    from ..models import Payment, WoPart
+    from ..models.orders import PART_OFF
+    from ..services import money as msvc
+    if not orders:
+        return []
+    ids = [o.id for o in orders]
+    by = lambda rows: {i: [r for r in rows if r.work_order_id == i] for i in ids}   # noqa: E731
+    works = by(ctx.db.scalars(select(WoWork).where(WoWork.work_order_id.in_(ids)).order_by(WoWork.created_at)).all())
+    parts = by(ctx.db.scalars(select(WoPart).where(WoPart.work_order_id.in_(ids), WoPart.status.notin_(PART_OFF))
+                              .order_by(WoPart.created_at)).all())
+    pays = by(ctx.db.scalars(select(Payment).where(Payment.work_order_id.in_(ids)).order_by(Payment.created_at)).all())
+    finds = by(ctx.db.scalars(select(WoFinding).where(WoFinding.work_order_id.in_(ids)).order_by(WoFinding.created_at)).all())
+    evs = {i: [e for e in events if e.work_order_id == i] for i in ids}
+    people = _people(ctx, *[o.manager_id for o in orders], *[o.mechanic_id for o in orders],
+                     *[w.mechanic_id for ws in works.values() for w in ws])
+    vehicles = {v.id: v for v in ctx.db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders])))}
+    show_money = ctx.can("money.view", "prices.view_sale")
+    out = []
+    for o in sorted(orders, key=lambda o: o.created_at, reverse=True):
+        out.append({"o": o, "v": vehicles.get(o.vehicle_id), "works": works[o.id], "parts": parts[o.id],
+                    "pays": pays[o.id], "finds": finds[o.id], "events": evs[o.id],
+                    "t": msvc.totals(ctx.db, o) if show_money else None,
+                    "mgr": people.get(o.manager_id), "mech": people.get(o.mechanic_id), "people": people})
+    return out
+
+
+@router.get("/clients/{client_id}/orders/{order_id}/feed")
+def client_order_feed(client_id: str, order_id: str, ctx: Ctx = Depends(get_ctx)):
+    """«Лента действий» наряда внутри истории клиента — подгружается, когда наряд раскрыли."""
+    ctx.need("clients.view")
+    c = ctx.db.get(Client, _uuid(client_id))
+    if not c or c.branch_id != ctx.branch.id or not svc.can_see_client(ctx, c.id):
+        raise Forbidden()
+    vids = [v.id for v in ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == c.id))]
+    wo = ctx.db.scalar(svc.client_orders_query(ctx, c.id, vids).where(WorkOrder.id == _uuid(order_id)))
+    if wo is None:
+        raise Forbidden()
+    from ..services import order_feed
+    return ctx.render("orders/_feed.html", feed=order_feed.build(ctx.db, wo))
+
+
 @router.get("/clients/{client_id}")
 def client_view(client_id: str, ctx: Ctx = Depends(get_ctx), mq: str = ""):
     ctx.need("clients.view")
@@ -1332,7 +1410,13 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx), mq: str = ""):
     events = [e for e in events if e.kind != "part_refused"]
     numbers ={o.id: o.number for o in ctx.db.scalars(select(WorkOrder).where(WorkOrder.client_id == c.id))}
     from ..services import clients as csvc
+    # 25.11.2026 (брат): история клиента — списком нарядов (раскрываются); в общей ленте остались только заметки и
+    # события без наряда
+    visits = _visits(ctx, orders, events)
+    events = [e for e in events if not e.work_order_id or e.work_order_id not in {o.id for o in orders}]
+    from ..services import car_photo
     return ctx.render("clients/view.html", title=c.full_name, c=c, vehicles=vehicles, cards=_cards(ctx, orders),
+                      visits=visits, WO_ACTIVE=WO_ACTIVE, car_photos={v.id: car_photo.choices(ctx.db, v) for v in vehicles},
                       st=csvc.one(ctx.db, c), REGULAR_VISITS=csvc.REGULAR_VISITS, show_money=ctx.can("money.view"),
                       STATUSES=WO_STATUSES, fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate, events=events,
                       recs=recs, refused=refused, people=_people(ctx, *[e.created_by for e in events + refused]), URGENCY=URGENCY,

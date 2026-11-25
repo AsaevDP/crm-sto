@@ -23,9 +23,35 @@
   <section class="ov-col on">
     <div class="card compact">
       <div class="card-h"><span class="headline">Автомобили</span></div>
-      {% for v in vehicles %}
-      <div class="li">{{ icon("lift") }}<span><b>{{ v.make }} {{ v.model }}</b>{% if v.year %} · {{ v.year }}{% endif %}
-        <span class="caption mono" style="display:block">{{ fmt_plate(v.plate) }}{% if v.vin %} · {{ v.vin }}{% endif %}{% if v.mileage %} · {{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</span></span></div>
+      {% for v in vehicles %}{% set ch = car_photos.get(v.id, []) %}
+      <div class="car-tile">
+        {% if v.photo %}<a class="car-ph" href="/vehicles/{{ v.id }}/photo" target="_blank" title="Открыть фото"><img src="/vehicles/{{ v.id }}/photo?t=1" alt="" loading="lazy"></a>
+        {% else %}<span class="car-ph empty">{{ icon("lift") }}</span>{% endif %}
+        <span class="car-info"><b>{{ v.make }} {{ v.model }}</b>{% if v.year %} · {{ v.year }}{% endif %}
+          <span class="caption mono" style="display:block">{{ fmt_plate(v.plate) }}{% if v.vin %} · {{ v.vin }}{% endif %}{% if v.mileage %} · {{ "{:,}".format(v.mileage).replace(",", " ") }} км{% endif %}</span></span>
+      </div>
+      {# 25.11.2026 (брат): фото машины — одно из фото её нарядов, закреплённое хранится всегда #}
+      {% if can_edit %}
+      <details class="work-edit car-pick">
+        <summary class="caption">📷 {{ "Сменить фото машины" if v.photo else "Выбрать фото машины" }}{% if ch %} · {{ ch|length }}{% endif %}</summary>
+        {% if ch %}
+        <form method="post" action="/vehicles/{{ v.id }}/photo" class="car-pick-f">
+          <div class="car-pick-grid">
+            {% for x in ch %}
+            <label class="car-pick-it" title="{{ x.stage }} · наряд {{ x.wo.number }}">
+              <input type="radio" name="photo_id" value="{{ x.p.id }}" required>
+              <img src="/photos/{{ x.p.id }}?t=1" alt="" loading="lazy">
+              <span class="caption">{{ x.wo.created_at.astimezone().strftime("%d.%m.%y") }} · {{ x.stage }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <button class="btn btn-sm btn-tinted">Закрепить фото</button>
+          <p class="hint" style="margin:0">Закреплённое фото хранится всегда — даже когда фото нарядов удалятся через год.</p>
+        </form>
+        {% else %}<p class="footnote">У этой машины ещё нет фото в нарядах — их делают при приёмке.</p>{% endif %}
+        {% if v.photo %}<form method="post" action="/vehicles/{{ v.id }}/photo"><input type="hidden" name="clear" value="1"><button class="btn btn-plain btn-sm">Убрать фото</button></form>{% endif %}
+      </details>
+      {% endif %}
       {% if can_edit %}
       <details class="work-edit">
         <summary class="caption">Изменить машину / сменить владельца</summary>
@@ -140,40 +166,71 @@
       {% endif %}
     </div>
 
+    {# 25.11.2026 (брат): заметки и события без наряда — отдельно; всё по визитам — в «Истории визитов» справа #}
     <div class="card compact">
-      <div class="card-h"><span class="headline">Наряды</span></div>
-      {% for x in cards %}
-      <a class="li link" href="/orders/{{ x.o.id }}"><span class="chip" data-s="{{ x.o.status }}">{{ STATUS_SHORT.get(x.o.status, STATUSES[x.o.status]) }}</span>
-        <span><span class="mono footnote">{{ x.o.number }}</span> · {{ x.v.make }} {{ x.v.model }}<span class="caption" style="display:block">{{ x.o.created_at.astimezone().strftime("%d.%m.%Y") }}{% if x.o.client_id != c.id %} · при прошлом владельце{% endif %}</span></span></a>
-      {% else %}<p class="footnote">Нарядов нет</p>{% endfor %}
-    </div>
-  </section>
-
-  <section class="ov-col on">
-    <div class="card compact">
-      <div class="card-h"><span class="headline">История клиента</span></div>
-      <div class="segmented cl-hist-f" id="histf" aria-label="Что показать">
-        <button type="button" data-k="" aria-pressed="true">Всё</button>
-        <button type="button" data-k="note" aria-pressed="false">Заметки</button>
-        <button type="button" data-k="recommendation" aria-pressed="false">Рекомендации</button>
-        <button type="button" data-k="order,status,act,finding,approval" aria-pressed="false">Визиты</button>
-        <button type="button" data-k="payment" aria-pressed="false">Оплаты</button>
-      </div>
+      <div class="card-h"><span class="headline">Заметки</span></div>
       <form class="note-form" method="post" action="/clients/{{ c.id }}/note">
         <input class="field" name="text" placeholder="Заметка: «просил звонить после 18:00»" maxlength="1000" required>
         <button class="btn btn-sm">Добавить</button>
       </form>
       <div class="timeline">
-        {% for e in events %}
+        {% for e in events if e.kind != "recommendation" %}
         {% set who = people.get(e.created_by) %}
         <div class="tl ev" data-k="{{ e.kind }}">
-          <span class="ev-kind">{{ KINDS.get(e.kind, e.kind) }}{% if e.urgency and e.kind in ("finding", "recommendation") %} · <span class="urg" data-u="{{ e.urgency }}">{{ URGENCY.get(e.urgency) }}</span>{% endif %}{% if e.kind == "recommendation" and e.resolved %} · <span class="caption">сделано</span>{% endif %}</span>
+          <span class="ev-kind">{{ KINDS.get(e.kind, e.kind) }}</span>
           <span class="ev-text">{{ e.text }}</span>
-          <span class="caption">{{ e.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }} · {{ who.short_name if who else "система" }}{% if e.work_order_id and numbers.get(e.work_order_id) %} · <a href="/orders/{{ e.work_order_id }}">{{ numbers[e.work_order_id] }}</a>{% endif %}</span>
+          <span class="caption">{{ e.created_at.astimezone().strftime("%d.%m.%Y %H:%M") }} · {{ who.short_name if who else "система" }}</span>
         </div>
-        {% else %}<p class="footnote">Пока пусто</p>{% endfor %}
-        <p class="footnote" id="histempty" hidden>Здесь пока пусто</p>
+        {% else %}<p class="footnote">Заметок нет</p>{% endfor %}
       </div>
+    </div>
+  </section>
+
+  <section class="ov-col on">
+    <div class="card compact" id="visits">
+      <div class="card-h"><span class="headline">История визитов · {{ visits|length }}</span></div>
+      {% set vids = visits|map(attribute="o.vehicle_id")|unique|list %}
+      {% if vids|length > 1 %}
+      <div class="vh-cars" id="vhcars" aria-label="Какая машина">
+        <button type="button" class="vh-car" data-v="" aria-pressed="true">Все машины · {{ visits|length }}</button>
+        {% for vid in vids %}{% set vv = (visits|selectattr("o.vehicle_id", "equalto", vid)|first).v %}
+        <button type="button" class="vh-car" data-v="{{ vid }}" aria-pressed="false">{{ vv.make }} {{ vv.model }} · {{ fmt_plate(vv.plate) }} · {{ visits|selectattr("o.vehicle_id", "equalto", vid)|list|length }}</button>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% for x in visits %}{% set o = x.o %}
+      <details class="vh" data-v="{{ o.vehicle_id }}" data-feed="/clients/{{ c.id }}/orders/{{ o.id }}/feed"{% if o.status in WO_ACTIVE %} open{% endif %}>
+        <summary class="vh-sum">
+          <span class="chip" data-s="{{ o.status }}">{{ STATUS_SHORT.get(o.status, STATUSES[o.status]) }}</span>
+          <span class="vh-main"><b>{{ o.created_at.astimezone().strftime("%d.%m.%Y") }}</b> · <span class="mono">{{ o.number }}</span>
+            {% if x.v %}· {{ x.v.make }} {{ x.v.model }} {{ fmt_plate(x.v.plate) }}{% endif %}
+            <span class="caption" style="display:block">{{ o.complaint or "—" }}{% if o.client_id != c.id %} · при прошлом владельце{% endif %}</span></span>
+          {% if x.t %}<span class="vh-sum-r num">{{ x.t.total|money }} ₴</span>{% endif %}
+        </summary>
+        <div class="vh-body">
+          <div class="vh-meta caption">{% if o.mileage_in %}Пробег {{ "{:,}".format(o.mileage_in).replace(",", " ") }} км · {% endif %}{% if x.mgr %}менеджер {{ x.mgr.short_name }}{% endif %}{% if x.mech %} · мастер {{ x.mech.short_name }}{% endif %}
+            · <a href="/orders/{{ o.id }}">Открыть наряд</a></div>
+          {% if x.finds %}<div class="vh-h">Проблемы</div>
+          {% for f in x.finds %}<div class="vh-row"><span>{{ f.text }}</span>{% if f.urgency %}<span class="urg" data-u="{{ f.urgency }}">{{ URGENCY.get(f.urgency, "") }}</span>{% endif %}</div>{% endfor %}{% endif %}
+          <div class="vh-h">Работы · {{ x.works|length }}</div>
+          {% for w in x.works %}{% set m = x.people.get(w.mechanic_id) %}
+          <div class="vh-row"><span>{{ w.name }}{% if m %} <span class="caption">· {{ m.short_name }}</span>{% endif %}{% if w.status == "done" %} <span class="caption">· ✓</span>{% endif %}</span>{% if x.t %}<span class="num">{{ w.price|money }} ₴</span>{% endif %}</div>
+          {% else %}<p class="footnote">Нет</p>{% endfor %}
+          <div class="vh-h">Запчасти · {{ x.parts|length }}</div>
+          {% for p in x.parts %}
+          <div class="vh-row"><span>{{ p.name }} <span class="caption">× {{ p.qty|num }}</span></span>{% if x.t %}<span class="num">{{ (p.price * p.qty)|money }} ₴</span>{% endif %}</div>
+          {% else %}<p class="footnote">Нет</p>{% endfor %}
+          {% if x.t %}<div class="vh-h">Оплаты</div>
+          {% for p in x.pays %}<div class="vh-row"><span>{{ p.created_at.astimezone().strftime("%d.%m.%Y") }}{% if p.purpose == "refund" %} · возврат{% endif %}</span><span class="num">{{ p.amount|money }} ₴</span></div>
+          {% else %}<p class="footnote">Оплат нет</p>{% endfor %}
+          <div class="vh-row vh-total"><span>Итого · оплачено</span><span class="num">{{ x.t.total|money }} · {{ x.t.paid|money }} ₴</span></div>{% endif %}
+          {% if x.events %}<div class="vh-h">События по визиту</div>
+          {% for e in x.events %}<div class="vh-row"><span><span class="caption">{{ KINDS.get(e.kind, e.kind) }} · {{ e.created_at.astimezone().strftime("%d.%m %H:%M") }}</span> {{ e.text }}</span></div>{% endfor %}{% endif %}
+          <div class="vh-h">История наряда</div>
+          <div class="vh-feed"><p class="footnote">Загружаю…</p></div>
+        </div>
+      </details>
+      {% else %}<p class="footnote">Визитов пока нет</p>{% endfor %}
     </div>
   </section>
 </div>
@@ -183,15 +240,21 @@ document.querySelectorAll('.segmented.pick').forEach(seg => seg.addEventListener
   seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
   seg.closest('form').elements[seg.dataset.name].value = b.dataset.v;
 }));
-(function () {  // Фильтр истории: всё / заметки / рекомендации / визиты / оплаты
-  const seg = document.getElementById('histf'), empty = document.getElementById('histempty');
-  seg.addEventListener('click', e => {
+(function () {  // 25.11.2026: история визитов — машина-фильтр и «История наряда» при раскрытии
+  const cars = document.getElementById('vhcars');
+  if (cars) cars.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
-    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
-    const ks = b.dataset.k ? b.dataset.k.split(',') : null; let n = 0;
-    document.querySelectorAll('.timeline .ev').forEach(el => { const on = !ks || ks.includes(el.dataset.k); el.hidden = !on; n += on; });
-    empty.hidden = n > 0;
+    cars.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    document.querySelectorAll('details.vh').forEach(d => { d.hidden = !!b.dataset.v && d.dataset.v !== b.dataset.v; });
   });
+  const load = d => {
+    if (!d.open || d.dataset.loaded) return;
+    d.dataset.loaded = '1';
+    fetch(d.dataset.feed, { credentials: 'same-origin' }).then(r => r.ok ? r.text() : Promise.reject())
+      .then(h => { d.querySelector('.vh-feed').innerHTML = h; })
+      .catch(() => { d.querySelector('.vh-feed').innerHTML = '<p class="footnote">Не удалось загрузить</p>'; });
+  };
+  document.querySelectorAll('details.vh').forEach(d => { d.addEventListener('toggle', () => load(d)); load(d); });
 })();
 </script>
 {% endblock %}

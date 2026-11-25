@@ -3033,3 +3033,33 @@ main .pult-tiles .ptile.zero { opacity: 1; }
 .ap-left ul { margin: 6px 0 4px; padding-left: 18px; }
 .ap-left li { margin: 2px 0; }
 
+
+/* ===== 25.11.2026 (брат): карта клиента — фото машины и «История визитов» по нарядам ===== */
+.car-tile { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: center; padding: 6px 0; }
+.car-ph { width: 96px; height: 72px; border-radius: var(--r-sm); overflow: hidden; background: var(--fill-2); display: grid; place-items: center; }
+.car-ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.car-ph.empty svg { width: 28px; height: 28px; color: var(--text-3); }
+.car-info { min-width: 0; overflow-wrap: anywhere; }
+.car-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin: 8px 0; max-height: 320px; overflow-y: auto; }
+.car-pick-it { display: grid; gap: 2px; cursor: pointer; position: relative; }
+.car-pick-it input { position: absolute; top: 6px; left: 6px; z-index: 1; }
+.car-pick-it img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--r-xs); border: 2px solid transparent; }
+.car-pick-it input:checked ~ img { border-color: var(--accent); }
+.vh-cars { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.vh-car { border: 0; border-radius: 999px; padding: 6px 12px; background: var(--fill); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.vh-car[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+details.vh { border-top: 1px solid var(--separator); }
+details.vh:first-of-type { border-top: 0; }
+.vh-sum { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 0; cursor: pointer; list-style: none; }
+.vh-sum::-webkit-details-marker { display: none; }
+.vh-main { min-width: 0; overflow-wrap: anywhere; }
+.vh-sum-r { white-space: nowrap; font-weight: 600; }
+.vh-body { padding: 0 0 12px 12px; border-left: 3px solid var(--fill); margin-left: 4px; }
+.vh-meta { margin-bottom: 6px; }
+.vh-h { font-weight: 600; font-size: 13px; margin: 10px 0 4px; color: var(--text-2); }
+.vh-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 14px; }
+.vh-row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.vh-row .num { white-space: nowrap; }
+.vh-total { border-top: 1px solid var(--separator); margin-top: 4px; padding-top: 6px; font-weight: 600; }
+.vh-feed .feed { max-height: 360px; overflow-y: auto; }
+@media (max-width: 600px) { .vh-sum { grid-template-columns: 1fr auto; } .vh-sum .chip { grid-column: 1 / -1; justify-self: start; } }

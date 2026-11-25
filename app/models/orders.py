@@ -84,6 +84,10 @@ class Vehicle(Entity):
     vin: Mapped[str] = mapped_column(String(32), default="", index=True)
     plate: Mapped[str] = mapped_column(String(20), default="", index=True)
     mileage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 25.11.2026 (брат): закреплённое фото машины в карте клиента — копия фото приёмки в data/photos/cars,
+    # хранится всегда (фото нарядов удаляются через год, это — нет). Пусто — фото нет.
+    photo: Mapped[str] = mapped_column(String(255), default="")
+    photo_thumb: Mapped[str] = mapped_column(String(255), default="")
 
 
 class WorkOrder(Entity):
