@@ -169,12 +169,25 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         query = query.where(WorkOrder.status.in_(WO_ACTIVE))
     q = q.strip()
     if q:
-        plate, digits = svc.norm_plate(q), "".join(ch for ch in q if ch.isdigit())
-        conds = [WorkOrder.number.contains(q), Vehicle.plate.contains(plate), Client.full_name.ilike(f"%{q}%")]
+        # 25.11.2026 (брат): номер наряда коротко («39», «25-39» — по настройкам), номер клиента («К-12»), телефон в
+        # любом виде (+380 63… / 063…), имя, госномер, VIN
+        from ..services import clients_card as ccsvc
+        from ..services import numbering as nsvc
+        plate = svc.norm_plate(q)
+        wo_ids = [o.id for o in nsvc.find_orders(ctx.db, ctx.branch.id, q, limit=200)]
+        cl_ids = ccsvc.client_ids_by_phone(ctx.db, ctx.branch.id, q)
+        if ccsvc.parse_code(q):
+            c_ = ccsvc.by_number(ctx.db, ctx.branch.id, ccsvc.parse_code(q))
+            cl_ids |= {c_.id} if c_ else set()
+        conds = [WorkOrder.number == q.upper(), Client.full_name.ilike(f"%{q}%")]
+        if wo_ids:
+            conds.append(WorkOrder.id.in_(wo_ids))
+        if cl_ids:
+            conds.append(WorkOrder.client_id.in_(list(cl_ids)))
+        if len(plate) >= 3:
+            conds.append(Vehicle.plate.contains(plate))
         if len(q) >= 4:
             conds.append(Vehicle.vin.contains(q.upper().replace(" ", "")))
-        if len(digits) >= 3:
-            conds.append(Client.phone.contains(digits))
         query = (query.join(Vehicle, Vehicle.id == WorkOrder.vehicle_id).join(Client, Client.id == WorkOrder.client_id)
                  .where(or_(*conds)))
     orders = ctx.db.scalars(query.order_by(svc.FRESH).limit(200)).all()   # 18.11.2026: свежие сверху
@@ -300,6 +313,25 @@ async def order_create(request: Request, ctx: Ctx = Depends(get_ctx)):
 def clients_search(ctx: Ctx = Depends(get_ctx), q: str = ""):
     ctx.need("orders.create", "clients.view")
     return {"items": svc.search_clients(ctx.db, ctx.branch.id, q)}
+
+
+@router.get("/api/intake/owner")
+def intake_owner(ctx: Ctx = Depends(get_ctx), phone: str = "", plate: str = "", vin: str = "", vehicle_id: str = ""):
+    """25.11.2026 (брат): при приёмке — машина (госномер / VIN) уже у клиента, у которого нет этого телефона?
+    Тогда спрашиваем «тот же клиент — добавить номер» или «новый владелец». Имя показываем коротко."""
+    ctx.need("orders.create")
+    from ..services import clients_card as ccsvc
+    ph = svc.norm_phone(phone)
+    if len(ph) < 12 or not (svc.norm_plate(plate) or vin.strip()):
+        return {"conflict": False}
+    v, _ = svc.find_vehicle(ctx.db, ctx.branch.id, svc.IntakeForm(plate=plate, vin=vin, vehicle_id=vehicle_id))
+    if v is None:
+        return {"conflict": False}
+    owner = ccsvc.alive(ctx.db, ctx.db.get(Client, v.client_id))
+    if owner is None or owner.id in ccsvc.client_ids_by_phone(ctx.db, ctx.branch.id, ph, exact=True):
+        return {"conflict": False}
+    short = owner.full_name.split()[0] if owner.full_name else ""
+    return {"conflict": True, "owner": f"{short} ({owner.code}, {svc.fmt_phone(owner.phone)[:-5]}•• ••)"}
 
 
 # ---------- Карточка наряда ----------
@@ -1106,12 +1138,18 @@ def client_edit(client_id: str, ctx: Ctx = Depends(get_ctx), full_name: str = Fo
     if not full_name.strip() or len(ph) < 10:
         flash(ctx.request, "Нужны имя и телефон", "error")
         return _to(f"/clients/{c.id}")
-    other = ctx.db.scalar(select(Client).where(Client.branch_id == ctx.branch.id, Client.phone == ph, Client.id != c.id))
+    from ..services import clients_card as ccsvc   # 25.11.2026: любой номер любой карточки
+    other = ccsvc.by_phone(ctx.db, ctx.branch.id, ph, exclude=c.id)
     if other:
-        flash(ctx.request, f"Этот телефон уже у клиента «{other.full_name}»", "error")
+        flash(ctx.request, f"Этот телефон уже у клиента «{other.full_name}» ({other.code}) — если это один человек, "
+                           "нажмите «Объединить с другой карточкой»", "error")
         return _to(f"/clients/{c.id}")
     if c.phone != ph:
         svc.event(ctx.db, None, "note", f"Телефон изменён: {svc.fmt_phone(c.phone)} → {svc.fmt_phone(ph)}", client_id=c.id)
+        from ..models import ClientPhone   # исправили основной номер — меняем его и в списке (ошибочный не остаётся)
+        row = ctx.db.scalar(select(ClientPhone).where(ClientPhone.client_id == c.id, ClientPhone.phone == c.phone))
+        if row is not None:
+            row.phone = ph
     if c.full_name != full_name.strip():
         svc.event(ctx.db, None, "note", f"Имя изменено: {c.full_name} → {full_name.strip()[:160]}", client_id=c.id)
     c.full_name, c.phone = full_name.strip()[:160], ph
@@ -1168,7 +1206,8 @@ def vehicle_owner(vid: str, ctx: Ctx = Depends(get_ctx), phone: str = Form(""), 
         flash(ctx.request, "Телефон нового владельца", "error")
         return _to(f"/clients/{v.client_id}")
     old = ctx.db.get(Client, v.client_id)
-    new = ctx.db.scalar(select(Client).where(Client.branch_id == ctx.branch.id, Client.phone == ph))
+    from ..services import clients_card as ccsvc   # 25.11.2026: любой номер любой карточки
+    new = ccsvc.by_phone(ctx.db, ctx.branch.id, ph)
     if new is None:
         if not name.strip():
             flash(ctx.request, "Такого телефона в базе нет — впишите имя нового владельца", "error")
@@ -1190,10 +1229,94 @@ def vehicle_owner(vid: str, ctx: Ctx = Depends(get_ctx), phone: str = Form(""), 
     return _to(f"/clients/{new.id}")
 
 
+# ---------- 25.11.2026 (брат): одна карточка — телефоны и «Объединить» ----------
+def _client_edit(ctx: Ctx, client_id: str) -> Client:
+    _can_edit_clients(ctx)
+    c = ctx.db.get(Client, _uuid(client_id))
+    if not c or c.branch_id != ctx.branch.id or c.merged_into or not svc.can_see_client(ctx, c.id):
+        raise Forbidden()
+    return c
+
+
+@router.post("/clients/{client_id}/phones")
+def client_phone_add(client_id: str, ctx: Ctx = Depends(get_ctx), phone: str = Form(""), note: str = Form("")):
+    from ..services import clients_card as ccsvc
+    c = _client_edit(ctx, client_id)
+    err = ccsvc.add_phone(ctx.db, c, phone, note)
+    if err:
+        flash(ctx.request, err, "error")
+        return _to(f"/clients/{c.id}#phones")
+    extra = f" — {note.strip()}" if note.strip() else ""
+    svc.event(ctx.db, None, "note", f"Добавлен телефон {svc.fmt_phone(svc.norm_phone(phone))}{extra}", client_id=c.id)
+    ctx.db.commit()
+    flash(ctx.request, "Телефон добавлен")
+    return _to(f"/clients/{c.id}#phones")
+
+
+@router.post("/clients/{client_id}/phones/{pid}")
+def client_phone_act(client_id: str, pid: str, ctx: Ctx = Depends(get_ctx), action: str = Form("")):
+    """main — сделать основным; delete — убрать (основной — нельзя)."""
+    from ..models import ClientPhone
+    c = _client_edit(ctx, client_id)
+    p = ctx.db.get(ClientPhone, _uuid(pid))
+    if not p or p.client_id != c.id:
+        raise Forbidden()
+    if action == "main":
+        c.phone = p.phone
+        flash(ctx.request, f"Основной телефон: {svc.fmt_phone(p.phone)}")
+    elif action == "delete":
+        if p.phone == c.phone:
+            flash(ctx.request, "Основной номер не убрать — сначала сделайте основным другой", "error")
+            return _to(f"/clients/{c.id}#phones")
+        svc.event(ctx.db, None, "note", f"Убран телефон {svc.fmt_phone(p.phone)}", client_id=c.id)
+        ctx.db.delete(p)
+        flash(ctx.request, "Телефон убран")
+    ctx.db.commit()
+    return _to(f"/clients/{c.id}#phones")
+
+
+@router.post("/clients/{client_id}/merge/{other_id}")
+def client_merge(client_id: str, other_id: str, ctx: Ctx = Depends(get_ctx)):
+    """Объединить две карточки одного человека (менеджер, директор, зам, админ). Остаётся более ранняя карточка (её
+    номер), вторая пустеет и ведёт в неё. Вторую находят только по точным данным (телефон, госномер, VIN, К-номер)."""
+    from ..services import clients_card as ccsvc
+    c = _client_edit(ctx, client_id)
+    o = ctx.db.get(Client, _uuid(other_id))
+    if not o or o.branch_id != ctx.branch.id or o.merged_into or o.id == c.id:
+        raise Forbidden()
+    keep, drop = sorted((c, o), key=lambda x: (x.created_at, x.number or 0))
+    err = ccsvc.merge(ctx.db, keep, drop, ctx.user, why="объединил вручную")
+    if err:
+        flash(ctx.request, err, "error")
+        return _to(f"/clients/{c.id}")
+    ctx.db.commit()
+    flash(ctx.request, f"Карточки объединены: {keep.code} «{keep.full_name}»")
+    return _to(f"/clients/{keep.id}")
+
+
+def _card_extra(ctx: Ctx, c: Client, mq: str) -> dict:
+    """Телефоны карточки и поиск второй карточки для «Объединить» (только точные данные)."""
+    from ..services import clients_card as ccsvc
+    from ..services import decisions as dsvc
+    cand = []
+    if mq.strip():
+        for i in dsvc.exact_clients(ctx.db, ctx.branch.id, mq):
+            o = ctx.db.get(Client, i)
+            if o and o.id != c.id and not o.merged_into:
+                vs = ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == o.id)).all()
+                cand.append({"c": o, "cars": ", ".join(f"{v.make} {v.model} {svc.fmt_plate(v.plate)}".strip() for v in vs)})
+    return {"phones": ccsvc.phones(ctx.db, c), "mq": mq, "merge_cand": cand}
+
+
 @router.get("/clients/{client_id}")
-def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
+def client_view(client_id: str, ctx: Ctx = Depends(get_ctx), mq: str = ""):
     ctx.need("clients.view")
     c = ctx.db.get(Client, _uuid(client_id))
+    if c is not None and c.merged_into:   # 25.11.2026: карточку объединили — ведём в общую
+        from ..services import clients_card as ccsvc
+        c2 = ccsvc.alive(ctx.db, c)
+        if c2 is not None and c2.id != c.id:
+            return _to(f"/clients/{c2.id}")
     if not c or c.branch_id != ctx.branch.id or not svc.can_see_client(ctx, c.id):
         raise Forbidden()
     vehicles = ctx.db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
@@ -1216,7 +1339,8 @@ def client_view(client_id: str, ctx: Ctx = Depends(get_ctx)):
                       vmap={v.id: v for v in vehicles}, numbers=numbers,
                       can_edit=ctx.can("orders.create") or ctx.user.role.code == "admin",
                       grant=_grant_data(ctx, c) if ctx.can("orders.grant_access") else None,
-                      lead=ctx.db.get(User, orders[0].manager_id) if orders and orders[0].manager_id else None)
+                      lead=ctx.db.get(User, orders[0].manager_id) if orders and orders[0].manager_id else None,
+                      **_card_extra(ctx, c, mq))
 
 
 # ======================= Доступ менеджера ко всем нарядам (12.11.2026) =======================

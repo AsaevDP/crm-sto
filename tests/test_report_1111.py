@@ -324,8 +324,9 @@ def test_intake_does_not_rename_or_replate(client):
     r = _create(client, plate="КЕ 1110 КЕ", phone="0501110000", mileage="100")
     assert r.status_code == 400 and "Пробег" in r.text
     # Тот же VIN у нового владельца — та же машина, переходит к нему с историей
+    # 25.11.2026 (брат): по умолчанию «тот же клиент» — новый владелец выбирают явно
     r = _create(client, plate="КЕ 1110 КЕ", phone="0501110999", name="Новый Владелец", vin="WVWZZZ1KZAW000111",
-                mileage="140000")
+                mileage="140000", same_owner="new")
     assert r.status_code == 200
     with SessionLocal() as db:
         v = db.get(Vehicle, wo.vehicle_id)

@@ -114,7 +114,7 @@
     <div>
       <div class="footnote mono">{{ wo.number }} · {% if flow.wash %}🫧 мойка{% if wo.car_class %} · {{ CLASSES.get(wo.car_class, "")|lower }}{% endif %}{% else %}{{ "А · без диагностики" if wo.scenario == "A" else "Б · с диагностикой" }}{% endif %}</div>
       <h1 class="title-1">{{ v.make }} {{ v.model }} <span class="ov-plate">{{ fmt_plate(v.plate) }}</span></h1>
-      <div class="subhead">{% if v.year %}{{ v.year }} · {% endif %}{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км · {% endif %}{{ c.full_name }} · <a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a></div>
+      <div class="subhead">{% if v.year %}{{ v.year }} · {% endif %}{% if wo.mileage_in %}{{ "{:,}".format(wo.mileage_in).replace(",", " ") }} км · {% endif %}{{ c.full_name }}{% if c.code %} <span class="caption mono">{{ c.code }}</span>{% endif %} · <a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a></div>
     </div>
     <div class="ov-actions">
       {{ key_badge(wo) }}

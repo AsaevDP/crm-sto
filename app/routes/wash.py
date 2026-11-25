@@ -304,7 +304,7 @@ async def wash_create(request: Request, ctx: Ctx = Depends(get_ctx)):
     f = osvc.IntakeForm(client_id=g("client_id"), vehicle_id=g("vehicle_id"), phone=g("phone"), name=g("name"),
                         plate=g("plate"), make=g("make"), model=g("model"), vin=g("vin"), mileage=g("mileage"),
                         scenario="A", complaint=g("note").strip()[:1000], mechanic_id=str(washer.id) if washer else "",
-                        fuel_level=g("fuel_level"), intake_note=g("intake_note"))
+                        fuel_level=g("fuel_level"), intake_note=g("intake_note"), same_owner=g("same_owner") or "same")
     errors = []
     if len(osvc.norm_phone(f.phone)) < 10:
         errors.append("Телефон клиента")

@@ -9,7 +9,7 @@ from .payroll import (  # noqa: F401
     PayrollAccrual, PayrollPayout, PayWeek, PayWeekPerson, PayrollAccess,
 )
 from .orders import (  # noqa: F401
-    Client, Vehicle, WorkOrder, WoStatusHistory, WoPhoto, WoFinding,
+    Client, ClientPhone, Vehicle, WorkOrder, WoStatusHistory, WoPhoto, WoFinding,
     WoWork, WoPart, WoWorkSession, ClientEvent, Notification, OrderAccess, OrderReopen, OrderMessage, OrderMaster, OrderHandover, ClientAccess,
 )
 from .stock import (  # noqa: F401

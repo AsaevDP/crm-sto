@@ -324,7 +324,8 @@ def _fill(ctx: Ctx, a: Appointment, f: dict):
     a.note = f["note"].strip()
     # Знакомый клиент — привязываем по телефону / номеру
     if a.phone and not a.client_id:
-        c = ctx.db.scalar(select(Client).where(Client.branch_id == bid, Client.phone == a.phone))
+        from ..services import clients_card as _cc   # 25.11.2026: любой номер карточки
+        c = _cc.by_phone(ctx.db, bid, a.phone)
         a.client_id = c.id if c else None
     if a.plate and not a.vehicle_id:
         v = ctx.db.scalar(select(Vehicle).where(Vehicle.branch_id == bid, Vehicle.plate == a.plate))

@@ -68,9 +68,18 @@ def exact_clients(db: Session, branch_id, q: str) -> list:
     if not q:
         return []
     ids = set()
-    num = db.scalar(select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.number == q.upper()))
-    if num:
-        ids.add(num.client_id)
+    # 25.11.2026 (брат): номер наряда коротко («39» — по настройкам поиска), номер клиента «К-12», телефон любой записи
+    from . import clients_card as ccsvc
+    from . import numbering as nsvc
+    found = nsvc.find_orders(db, branch_id, q, limit=3)
+    if len(found) == 1:   # точно один наряд — иначе это не «точные данные»
+        ids.add(found[0].client_id)
+    n = ccsvc.parse_code(q)
+    if n:
+        c_ = ccsvc.by_number(db, branch_id, n)
+        if c_:
+            ids.add(c_.id)
+    ids |= ccsvc.client_ids_by_phone(db, branch_id, q, exact=True)
     plate = norm_plate(q)
     if plate and len(plate) >= 6:
         for v in db.scalars(select(Vehicle).where(Vehicle.branch_id == branch_id, Vehicle.plate == plate)):
@@ -79,11 +88,7 @@ def exact_clients(db: Session, branch_id, q: str) -> list:
     if len(vin) == 17:
         for v in db.scalars(select(Vehicle).where(Vehicle.branch_id == branch_id, Vehicle.vin == vin)):
             ids.add(v.client_id)
-    phone = norm_phone(q)
-    if len(phone) >= 12 or (len("".join(ch for ch in q if ch.isdigit())) >= 10):
-        for c in db.scalars(select(Client).where(Client.branch_id == branch_id, Client.phone == phone)):
-            ids.add(c.id)
-    return [i for i in ids if i]
+    return [i for i in ccsvc._alive(db, ids) if i]
 
 
 def grant_by_search(db: Session, ctx, client_ids, q: str) -> int:

@@ -60,7 +60,7 @@
     <tbody>
     {% for r in items %}
     <tr onclick="location.href='/clients/{{ r.c.id }}'" style="cursor:pointer">
-      <td><div class="cl-name">{% if r.regular %}<span class="star" title="Постоянный клиент">★</span>{% endif %}<b>{{ r.c.full_name or "Без имени" }}</b></div>
+      <td><div class="cl-name">{% if r.regular %}<span class="star" title="Постоянный клиент">★</span>{% endif %}<b>{{ r.c.full_name or "Без имени" }}</b>{% if r.c.code %} <span class="caption mono">{{ r.c.code }}</span>{% endif %}</div>
         <div class="caption nowrap">{{ fmt_phone(r.c.phone) }}{% if r.active %} · <span class="cl-onsite">на СТО</span>{% endif %}</div></td>
       <td>{% for v in r.vehicles[:3] %}<div class="cl-car"><span class="ov-plate">{{ fmt_plate(v.plate) }}</span> {{ v.make }} {{ v.model }}{% if v.year %} <span class="caption">{{ v.year }}</span>{% endif %}</div>{% endfor %}
         {% if r.vehicles|length > 3 %}<div class="caption">ещё {{ r.vehicles|length - 3 }}</div>{% endif %}</td>

@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import audit  # noqa: F401 — подключает автоматический журнал
+from .services import clients_card  # noqa: F401 — номер клиента и телефоны выдаются сами (25.11.2026)
 from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
 from .routes import (attendance, auth, diagnosis, folders, money, orders, pages, razbor, reports, schedule,
@@ -42,6 +43,8 @@ async def lifespan(_app):
         fill_works_sent(db)     # 23.11.2026: согласование по шагам — наряды на согласовании: шаг «Работы» пройден
         from .services.orders import fill_parts_pending
         fill_parts_pending(db)  # 25.11.2026: запчасти нарядов на согласовании ждут «Да / Нет» клиента (как работы)
+        from .services import clients_card
+        clients_card.fill_once(db)  # 25.11.2026: номера клиентов, все телефоны, точные дубли карточек — объединить
         from .services.stock import split_mixed_open
         split_mixed_open(db)   # 20.11.2026: открытые запросы, где вместе новые и б/у, — на две зоны
         from .services import receipt as receipt_svc

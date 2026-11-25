@@ -5,8 +5,9 @@
 <header class="ov-head">
   <a class="back" href="/clients">{{ icon("back") }}Клиенты</a>
   <div class="ov-title">
-    <div><h1 class="title-1">{% if st.regular %}<span class="star" title="Постоянный клиент">★</span> {% endif %}{{ c.full_name }}</h1>
-      <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a> · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}
+    <div><h1 class="title-1">{% if st.regular %}<span class="star" title="Постоянный клиент">★</span> {% endif %}{{ c.full_name }}
+        {% if c.code %}<span class="tag mono cl-code" title="Номер клиента — по нему тоже ищут">{{ c.code }}</span>{% endif %}</h1>
+      <div class="subhead"><a href="tel:+{{ c.phone }}">{{ fmt_phone(c.phone) }}</a>{% if phones|length > 1 %} <span class="caption">+ ещё {{ phones|length - 1 }} тел.</span>{% endif %} · с нами с {{ c.created_at.astimezone().strftime("%d.%m.%Y") }}
         · визитов: {{ st.visits }}{% if st.last %} · последний {{ st.last_local.strftime("%d.%m.%Y") }}{% endif %}
         {% if show_money %}· оплачено {{ st.spent|money }} ₴{% if st.debt > 0 %} · <b class="cl-debt">долг {{ st.debt|money }} ₴</b>{% endif %}{% endif %}</div>
       {% if lead %}<div class="who-chip" style="margin-top:6px" title="Менеджер последнего наряда"><i style="--uc:{{ color_css(lead.role.color) }}"></i><span class="caption">ведёт</span> <b>{{ lead.full_name }}</b></div>{% endif %}</div>
@@ -73,12 +74,47 @@
     </div>
     {% endif %}
 
+    {# 25.11.2026 (брат): у клиента может быть несколько телефонов — все ищутся, по всем находится эта карточка #}
+    <div class="card compact" id="phones">
+      <div class="card-h"><span class="headline">Телефоны · {{ phones|length }}</span></div>
+      {% for p in phones %}
+      <div class="kv"><span><a href="tel:+{{ p.phone }}">{{ fmt_phone(p.phone) }}</a>{% if p.phone == c.phone %} <span class="tag">основной</span>{% endif %}{% if p.note %} <span class="caption">· {{ p.note }}</span>{% endif %}</span>
+        {% if can_edit and p.phone != c.phone %}<span style="display:inline-flex;gap:4px">
+          <form method="post" action="/clients/{{ c.id }}/phones/{{ p.id }}"><button class="btn btn-plain btn-sm" name="action" value="main">Сделать основным</button></form>
+          <form method="post" action="/clients/{{ c.id }}/phones/{{ p.id }}" onsubmit="return confirm('Убрать этот номер из карточки?')"><button class="btn btn-plain btn-sm danger" name="action" value="delete">Убрать</button></form></span>{% endif %}</div>
+      {% endfor %}
+      {% if can_edit %}
+      <form class="form-row" method="post" action="/clients/{{ c.id }}/phones" style="margin-top:6px">
+        <input class="field" name="phone" inputmode="tel" placeholder="Ещё номер: 067 123 45 67" required>
+        <input class="field" name="note" placeholder="Чей / когда звонить (необязательно)" maxlength="60">
+        <button class="btn btn-sm btn-tinted">＋ Добавить номер</button>
+      </form>
+      {% endif %}
+    </div>
+
     {% if can_edit %}
+    {# 25.11.2026 (брат): две карточки одного человека — объединить (история, машины, телефоны — в одну) #}
+    <details class="card compact" id="merge" {% if mq %}open{% endif %}>
+      <summary class="footnote" style="cursor:pointer">Объединить с другой карточкой…</summary>
+      <form class="form-row" method="get" action="/clients/{{ c.id }}#merge" style="margin-top:8px">
+        <input class="field" name="mq" value="{{ mq }}" placeholder="Телефон, госномер, VIN или номер клиента (К-12) второй карточки" required>
+        <button class="btn btn-sm btn-gray">Найти</button>
+      </form>
+      {% if mq %}{% for x in merge_cand %}
+      <form class="kv" method="post" action="/clients/{{ c.id }}/merge/{{ x.c.id }}"
+            onsubmit="return confirm('Это один и тот же человек? Карточки объединятся: машины, наряды, телефоны и история — в одну.')">
+        <span><b>{{ x.c.full_name }}</b> <span class="tag mono">{{ x.c.code }}</span>
+          <span class="caption" style="display:block">{{ fmt_phone(x.c.phone) }}{% if x.cars %} · {{ x.cars }}{% endif %}</span></span>
+        <button class="btn btn-sm">Объединить</button></form>
+      {% else %}<p class="footnote" style="margin:6px 0 0">Ничего не нашлось — нужны точные данные (полный телефон, госномер, VIN или К-номер).</p>{% endfor %}{% endif %}
+      <p class="hint" style="margin:6px 0 0">Останется более ранняя карточка (её номер). Вторая станет пустой и будет вести сюда.</p>
+    </details>
+
     <details class="card compact">
       <summary class="footnote" style="cursor:pointer">Изменить данные клиента…</summary>
       <form class="form dense" method="post" action="/clients/{{ c.id }}/edit" style="margin-top:8px">
         <div class="form-row"><label>Имя<input class="field" name="full_name" value="{{ c.full_name }}" required></label>
-          <label>Телефон<input class="field" name="phone" inputmode="tel" value="{{ fmt_phone(c.phone) }}" required></label></div>
+          <label>Основной телефон<input class="field" name="phone" inputmode="tel" value="{{ fmt_phone(c.phone) }}" required></label></div>
         <button class="btn btn-sm btn-tinted">Сохранить</button>
       </form>
     </details>

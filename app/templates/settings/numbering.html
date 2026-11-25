@@ -25,6 +25,17 @@
       <div class="row"><span class="grow">Начинать нумерацию заново каждый год</span><input type="checkbox" class="switch" name="reset_yearly" value="1" {% if cfg.reset_yearly %}checked{% endif %}></div>
     </div>
   </div>
+  {# 25.11.2026 (брат): поиск наряда коротким номером — по каким частям номера искать #}
+  <div class="card form">
+    <div class="headline">Поиск по номеру наряда</div>
+    <p class="hint" style="margin:0">Полный номер вводить не нужно. Отметьте, что учитывать при поиске.</p>
+    <div class="group" style="background:var(--surface-2)">
+      <div class="row"><span class="grow">Номер по порядку <span class="caption">— всегда: «39» или «000039»</span></span><input type="checkbox" class="switch" checked disabled></div>
+      <div class="row"><span class="grow">Год <span class="caption">— «39» = наряд этого года; прошлого — «25-39» или «2025-39». Без галочки — наряды 39 всех лет списком</span></span><input type="checkbox" class="switch" name="search_year" value="1" {% if scfg.year %}checked{% endif %}></div>
+      <div class="row"><span class="grow">Код СТО <span class="caption">— если филиалов несколько: «{{ ctx.branch.code }}-39»</span></span><input type="checkbox" class="switch" name="search_code" value="1" {% if scfg.code %}checked{% endif %}></div>
+    </div>
+    <p class="hint ok-hint" style="margin:0">Сейчас: {{ search_hint }}. Номер клиента — «К-12» (или просто 12).</p>
+  </div>
   <button class="btn">Сохранить</button>
 </form>
 

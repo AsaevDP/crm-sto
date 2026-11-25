@@ -56,6 +56,23 @@ class Client(Entity):
     notes: Mapped[str] = mapped_column(Text, default="")
     # «Постоянный» вручную (сам по себе клиент становится постоянным с 3 визитов — см. services/clients.py)
     is_regular: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
+    # 25.11.2026 (брат): номер клиента (К-00001) — по нему тоже ищут; выдаётся сам по порядку (services/clients_card.py)
+    number: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 25.11.2026: карточку объединили с другой — куда (старые ссылки ведут туда); такая карточка в списках не видна
+    merged_into: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+
+    @property
+    def code(self) -> str:
+        return f"К-{self.number:05d}" if self.number else ""
+
+
+class ClientPhone(Entity):
+    """25.11.2026 (брат): у клиента может быть несколько телефонов. Основной дублируется в Client.phone (по нему
+    печатаются документы); поиск и приёмка смотрят все номера."""
+    __tablename__ = "client_phones"
+    client_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    phone: Mapped[str] = mapped_column(String(40), index=True)
+    note: Mapped[str] = mapped_column(String(60), default="")
 
 
 class Vehicle(Entity):

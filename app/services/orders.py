@@ -27,11 +27,9 @@ def norm_plate(s: str) -> str:
 
 
 def norm_phone(s: str) -> str:
-    """Храним только цифры с кодом страны: 0671234567 → 380671234567."""
-    d = re.sub(r"\D", "", s or "")
-    if len(d) == 10 and d.startswith("0"):
-        d = "38" + d
-    return d
+    """Храним только цифры с кодом страны: 0671234567 / 671234567 / +38 (067)… → 380671234567."""
+    from .clients_card import norm_phone as _n
+    return _n(s)
 
 
 def fmt_phone(d: str) -> str:
@@ -397,14 +395,12 @@ def search_clients(db: Session, branch_id, q: str, limit: int = 8) -> list[dict]
     q = (q or "").strip()
     if len(q) < 2:
         return []
-    digits, plate = re.sub(r"\D", "", q), norm_plate(q)
-    conds = [Client.full_name.ilike(f"%{q}%")]
-    if len(digits) >= 3:
-        conds.append(Client.phone.contains(digits))
-    veh_conds = [Vehicle.plate.contains(plate), Vehicle.vin.contains(q.upper())]
-    ids = set(db.scalars(select(Client.id).where(Client.branch_id == branch_id, or_(*conds)).limit(limit)))
-    ids |= set(db.scalars(select(Vehicle.client_id).where(Vehicle.branch_id == branch_id, or_(*veh_conds)).limit(limit)))
-    return _client_items(db, db.scalars(select(Client).where(Client.id.in_(ids)).order_by(Client.full_name).limit(limit)))
+    # 25.11.2026 (брат): номер клиента «К-12», телефон в любом виде (все номера карточки), имя, госномер, VIN
+    from .clients_card import search_ids
+    ids = search_ids(db, branch_id, q)
+    return _client_items(db, db.scalars(select(Client).where(Client.id.in_(list(ids) or [uuid.uuid4()]),
+                                                            Client.merged_into.is_(None))
+                                        .order_by(Client.full_name).limit(limit)))
 
 
 def search_clients_recent(db: Session, branch_id, limit: int = 30) -> list[dict]:
@@ -417,7 +413,7 @@ def _client_items(db: Session, clients) -> list[dict]:
     for c in clients:
         vehicles = db.scalars(select(Vehicle).where(Vehicle.client_id == c.id).order_by(Vehicle.created_at)).all()
         out.append({
-            "id": str(c.id), "name": c.full_name, "phone": c.phone, "phone_fmt": fmt_phone(c.phone),
+            "id": str(c.id), "name": c.full_name, "phone": c.phone, "phone_fmt": fmt_phone(c.phone), "code": c.code,
             "vehicles": [{"id": str(v.id), "plate": v.plate, "plate_fmt": fmt_plate(v.plate), "make": v.make,
                           "model": v.model, "year": v.year, "vin": v.vin, "mileage": v.mileage} for v in vehicles],
         })
@@ -484,6 +480,9 @@ class IntakeForm:
     fuel_level: str = ""
     intake_items: list = field(default_factory=list)
     intake_note: str = ""
+    # 25.11.2026 (брат): машина уже есть у другой карточки, а телефон другой — «same» (тот же клиент, новый номер),
+    # «new» (новый владелец — машина переходит). По умолчанию — тот же клиент
+    same_owner: str = "same"
 
     def errors(self, n_photos: int) -> list[str]:
         e = []
@@ -582,17 +581,31 @@ def create_order(db: Session, ctx, f: IntakeForm) -> WorkOrder:
     bid = ctx.branch.id
     # Клиент: выбран из поиска или новый (если такой телефон уже есть — берём его).
     # Имя существующего клиента при приёмке НЕ меняем — для этого «Изменить» в карточке клиента.
+    # 25.11.2026 (брат): ОДНА карточка на клиента — совпал телефон (любой из его номеров), госномер или VIN — это он.
+    # Машина у другой карточки, а телефон другой — решает менеджер: «тот же клиент» (номер добавляется, карточки
+    # объединяются) или «новый владелец» (машина и её история переходят).
+    from . import clients_card as ccsvc
     phone = norm_phone(f.phone)
-    client = db.get(Client, _uuid(f.client_id)) if f.client_id and _uuid(f.client_id) else None
-    if client is None or client.branch_id != bid or client.phone != phone:
-        client = db.scalar(select(Client).where(Client.branch_id == bid, Client.phone == phone))
+    chosen = db.get(Client, _uuid(f.client_id)) if f.client_id and _uuid(f.client_id) else None
+    chosen = ccsvc.alive(db, chosen) if chosen is not None and chosen.branch_id == bid else None
+    by_ph = ccsvc.by_phone(db, bid, phone)
+    client = by_ph or chosen
+    plate = norm_plate(f.plate)
+    vehicle, replated = find_vehicle(db, bid, f)
+    owner = ccsvc.alive(db, db.get(Client, vehicle.client_id)) if vehicle is not None else None
+    same = (f.same_owner or "same") != "new"
+    if client is None and owner is not None and same:
+        client = owner                       # та же машина — тот же клиент, просто новый номер телефона
     if client is None:
         client = Client(full_name=f.name.strip()[:160], phone=phone)
         db.add(client)
         db.flush()
-
-    plate = norm_plate(f.plate)
-    vehicle, replated = find_vehicle(db, bid, f)
+    elif owner is not None and owner.id != client.id and same:
+        keep, drop = sorted((client, owner), key=lambda c: (c.created_at, c.number or 0))
+        ccsvc.merge(db, keep, drop, ctx.user, why="при приёмке: та же машина, тот же клиент")
+        client = keep
+    if phone and not ccsvc.by_phone(db, bid, phone):
+        ccsvc.add_phone(db, client, phone)   # новый номер — в карточку (основной не меняем)
     if vehicle is not None and vehicle.client_id != client.id:
         # Смена владельца: машина (и вся её история ремонтов) переходит новому владельцу
         old = db.get(Client, vehicle.client_id)

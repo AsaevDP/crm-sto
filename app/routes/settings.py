@@ -100,12 +100,13 @@ def numbering_form(ctx: Ctx = Depends(get_ctx)):
     ctx.need("settings.access")
     cfg = st.get(ctx.db, ctx.branch.id, "order_number")
     return ctx.render("settings/numbering.html", title="Номер наряда", cfg=cfg,
-                      example=numbering.preview(cfg["template"], ctx.branch.code))
+                      example=numbering.preview(cfg["template"], ctx.branch.code),
+                      scfg=numbering.search_cfg(ctx.db, ctx.branch.id), search_hint=numbering.hint(ctx.db, ctx.branch.id))
 
 
 @router.post("/numbering")
 def numbering_save(ctx: Ctx = Depends(get_ctx), template: str = Form(...), code: str = Form(...),
-                   reset_yearly: str = Form("")):
+                   reset_yearly: str = Form(""), search_year: str = Form(""), search_code: str = Form("")):
     ctx.need("settings.access")
     template, code = template.strip(), code.strip()
     if "{номер" not in template:
@@ -115,7 +116,9 @@ def numbering_save(ctx: Ctx = Depends(get_ctx), template: str = Form(...), code:
         flash(ctx.request, "Код СТО: от 1 до 20 символов", "error")
         return _back("/settings/numbering")
     ctx.branch.code = code
-    st.put(ctx.db, ctx.branch.id, "order_number", {"template": template[:80], "reset_yearly": bool(reset_yearly)})
+    # 25.11.2026 (брат): по каким частям искать наряд коротким номером (номер по порядку — всегда)
+    st.put(ctx.db, ctx.branch.id, "order_number", {"template": template[:80], "reset_yearly": bool(reset_yearly),
+                                                    "search": {"year": bool(search_year), "code": bool(search_code)}})
     ctx.db.commit()
     flash(ctx.request, "Сохранено")
     return _back("/settings/numbering")

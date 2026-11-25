@@ -49,8 +49,32 @@
         <label>VIN<input class="field mono" name="vin" maxlength="17" autocapitalize="characters"></label>
       </div>
       <datalist id="makes">{% for m in makes %}<option value="{{ m }}">{% endfor %}</datalist>
+      {# 25.11.2026 (брат): машина уже есть у клиента с другим телефоном — тот же человек или новый владелец? #}
+      <div class="hint warn own-ask" id="own-ask" hidden>
+        <b>Эта машина уже есть у клиента <span id="own-who"></span>.</b>
+        <div class="segmented own-seg" role="radiogroup" style="margin-top:6px">
+          <label><input type="radio" name="same_owner" value="same" checked> Тот же клиент — добавить номер</label>
+          <label><input type="radio" name="same_owner" value="new"> Новый владелец — перенести машину</label>
+        </div>
+        <span class="caption">«Тот же клиент» — новый телефон добавится в его карточку, вся история останется в одной карточке.</span>
+      </div>
     </div>
   </section>
+  <script>
+  (function () {   // 25.11.2026: спросить «тот же клиент / новый владелец», если машина нашлась у другой карточки
+    const f = document.getElementById('intake'), box = document.getElementById('own-ask'), who = document.getElementById('own-who');
+    if (!f || !box) return;
+    let t;
+    const check = () => { clearTimeout(t); t = setTimeout(async () => {
+      const q = new URLSearchParams({ phone: f.phone.value, plate: f.plate.value, vin: f.vin.value,
+        vehicle_id: (f.vehicle_id && f.vehicle_id.value) || '' });
+      try { const j = await (await fetch('/api/intake/owner?' + q)).json();
+        box.hidden = !j.conflict; if (j.conflict) who.textContent = j.owner; } catch (e) {}
+    }, 350); };
+    ['phone', 'plate', 'vin'].forEach(n => f[n] && f[n].addEventListener('input', check));
+    f.addEventListener('change', check);
+  })();
+  </script>
 
   </div>
   <div class="icol" data-step="2">

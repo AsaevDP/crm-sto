@@ -55,7 +55,7 @@ def _local(dt: datetime) -> datetime:
 
 def rows(db: Session, branch_id, client_id=None) -> list[Row]:
     from ..models.orders import WO_ACTIVE
-    qc = select(Client).where(Client.branch_id == branch_id)
+    qc = select(Client).where(Client.branch_id == branch_id, Client.merged_into.is_(None))   # 25.11.2026: объединённые — нет
     qv = select(Vehicle).where(Vehicle.branch_id == branch_id)
     qo = select(WorkOrder).where(WorkOrder.branch_id == branch_id, WorkOrder.status != "cancel")
     if client_id:
