@@ -632,7 +632,10 @@ def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool, flt: str = "", sin
                       prev=(start - timedelta(days=7)).isoformat(), next=(start + timedelta(days=7)).isoformat(),
                       this_week=wsvc.monday(date.today()), open_user=open_user, fmt_plate=osvc.fmt_plate,
                       column_of=psvc.column_of, mask=_mask_account,
-                      flt=flt if flt in ("open", "checked", "approved", "paid") else "", single=single)
+                      flt=flt if flt in ("open", "checked", "approved", "paid") else "", single=single,
+                      # 26.11.2026 (брат): выбор недели по нажатию на дату — следующая, эта и 25 прошлых
+                      week_list=[wsvc.monday(date.today()) + timedelta(days=7 * k) for k in range(1, -26, -1)],
+                      timedelta=timedelta)
 
 
 @router.get("/payroll/weeks/{d}/sheet")

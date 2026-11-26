@@ -28,9 +28,25 @@
     <h1 class="large-title">{% if single %}{{ single.full_name }} · неделя{% else %}{{ "Моя зарплата" if mine else "Зарплата сотрудников" }}{% endif %}</h1></div>
   <div class="ov-actions">
     <div class="pbar">
-      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ wk(prev) }}" aria-label="Прошлая неделя">‹</a>
-      <span class="btn btn-sm btn-gray pcur">📅 {{ start.day }}{% if start.month != end.month %} {{ MON[start.month - 1] }}{% endif %}–{{ end.day }} {{ MON[end.month - 1] }}</span>
-      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ wk(next) }}" aria-label="Следующая неделя">›</a>
+      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ wk(prev) }}" aria-label="Прошлая неделя">{{ icon("back") }}</a>
+      {# 26.11.2026 (брат): нажал на дату — список недель (выбрать любую) и «Перейти к дате»; стрелки остаются #}
+      <details class="pcal pw-weekpick">
+        <summary class="btn btn-sm btn-gray pcur" title="Выбрать неделю">📅 {{ start.day }}{% if start.month != end.month %} {{ MON[start.month - 1] }}{% endif %}–{{ end.day }} {{ MON[end.month - 1] }}</summary>
+        <div class="pcal-pop card compact pw-weeks-pop">
+          <div class="pw-weeks-list">
+            {% for m in week_list %}{% set s = m + timedelta(days=6) %}
+            <a class="pw-wk {{ 'on' if m == start }}" href="{{ wk(m) }}">
+              <span>{{ m.day }}{% if m.month != s.month %} {{ MON[m.month - 1] }}{% endif %}–{{ s.day }} {{ MON[s.month - 1] }}{% if m.year != this_week.year %} {{ m.year }}{% endif %}</span>
+              {% if m == this_week %}<span class="caption">эта неделя</span>{% elif m == start %}<span class="caption">открыта</span>{% endif %}</a>
+            {% endfor %}
+          </div>
+          <form method="get" action="{{ base if not single else '/payroll/weeks/' ~ start ~ '/people/' ~ single.id }}" class="pw-weeks-go">
+            <label class="caption">Другая дата — откроется её неделя
+              <input class="field" type="date" name="d" value="{{ start.isoformat() }}" onchange="{% if single %}location.href='/payroll/weeks/' + this.value + '/people/{{ single.id }}'; return false{% else %}this.form.submit(){% endif %}"></label>
+          </form>
+        </div>
+      </details>
+      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ wk(next) }}" aria-label="Следующая неделя">{{ icon("forward") }}</a>
       {% if start != this_week %}<a class="btn btn-sm btn-plain" href="{{ wk(this_week) }}">Эта неделя</a>{% endif %}
     </div>
   </div>

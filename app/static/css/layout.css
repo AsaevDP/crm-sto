@@ -903,7 +903,17 @@ a.kv { color: inherit; text-decoration: none; }
 body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stretch; }.cat-row .btn { white-space: nowrap; flex: none; }
 /* Панель дат (10.11.2026) */
 .pbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.pbar-arr { min-width: 34px; justify-content: center; font-size: 17px; }
+.pbar-arr { min-width: 34px; justify-content: center; align-items: center; font-size: 17px; }
+/* 26.11.2026 (брат): стрелки — рисованные (буквы ‹ › сидели ниже центра кружка) */
+.pbar-arr svg { width: 16px; height: 16px; display: block; }
+/* 26.11.2026 (брат): «Зарплата сотрудников» — список недель по нажатию на дату */
+.pw-weeks-pop { width: 300px; min-width: 0 !important; display: grid; gap: 8px; }
+@media (min-width: 900px) { .pw-weekpick .pw-weeks-pop { left: 50%; transform: translateX(-50%); } }
+.pw-weeks-list { display: grid; max-height: 320px; overflow-y: auto; }
+.pw-wk { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: var(--r-xs); color: var(--text); text-decoration: none; }
+.pw-wk:hover { background: var(--fill-2); }
+.pw-wk.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); font-weight: 600; }
+.pw-weeks-go .field { width: 100%; }
 .pcal { position: relative; }
 .pcal > summary { list-style: none; white-space: nowrap; }
 .pcal > summary::-webkit-details-marker { display: none; }
@@ -2860,13 +2870,12 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 /* 23.11.2026 (брат): цветная плитка с делом — мигает только её верхняя полоска (вместо рамки по краю). Цвет полоски —
    цвет плитки (--tc); если у плитки цвета нет — цвет кружка. */
 .need-top::after { content: none; }
-/* 26.11.2026 (брат): было — полоска бледнела, на плитке своего цвета (красная на красной) мигания не видно.
-   Теперь полоска пульсирует толще-тоньше (3 ↔ 9 px) и плитка слегка светится своим цветом — заметно на любом цвете. */
-.need-top { animation: need-top-blink 1.2s ease-in-out infinite; }
+/* 26.11.2026 (брат): мигание — как было во всей CRM (полоска плавно бледнеет и возвращается). Попытку «толще-тоньше
+   со свечением» брат отклонил — не трогать. */
+.need-top { animation: need-top-blink 1.3s ease-in-out infinite; }
 @keyframes need-top-blink {
-  0%, 100% { box-shadow: var(--shadow-1), inset 0 3px 0 var(--tc, var(--need-c)); }
-  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tc, var(--need-c)) 28%, transparent),
-                    inset 0 9px 0 var(--tc, var(--need-c)); } }
+  0%, 100% { box-shadow: var(--shadow-1), inset 0 4px 0 var(--tc, var(--need-c)); }
+  50% { box-shadow: var(--shadow-1), inset 0 4px 0 color-mix(in srgb, var(--tc, var(--need-c)) 10%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .need-top { animation: none; } }
 
 /* 23.11.2026 (брат): единый стиль во всей CRM — окошки дел с цветной полоской слева (как на мойке), без рамки по контуру.

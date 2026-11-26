@@ -1,9 +1,10 @@
 {# Единая панель дат. bar — services.periods.Bar. Клавиши: ← → , Т, Д Н М К Г (см. static/js/app.js). #}
+{% from "_icons.html" import icon %}
 {% macro period_bar(bar, compact=false) %}
 {% set per = bar.per %}
 {% set KEYS = {"day": "Д", "week": "Н", "month": "М", "quarter": "К", "year": "Г"} %}
 <div class="pbar {{ 'pbar-compact' if compact }}" data-period-bar>
-  {% if bar.prev %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ bar.prev }}" title="Назад · клавиша ←" aria-label="Предыдущий период">‹</a>{% endif %}
+  {% if bar.prev %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ bar.prev }}" title="Назад · клавиша ←" aria-label="Предыдущий период">{{ icon("back") }}</a>{% endif %}
   <details class="pcal">
     <summary class="btn btn-sm btn-gray pcur" title="Выбрать дату в календаре">📅 {{ per.label }}</summary>
     <form class="pcal-pop card compact" method="get" action="{{ bar.path }}">
@@ -30,7 +31,7 @@
     </form>
     {% endif %}
   </details>
-  {% if bar.next %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ bar.next }}" title="Вперёд · клавиша →" aria-label="Следующий период">›</a>{% endif %}
+  {% if bar.next %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ bar.next }}" title="Вперёд · клавиша →" aria-label="Следующий период">{{ icon("forward") }}</a>{% endif %}
   {% if bar.jump and not per.is_current and per.kind != "all" %}<a class="btn btn-sm btn-plain" data-pkey="today" href="{{ bar.today }}" title="Сегодня · клавиша Т">Сегодня</a>{% endif %}
   {% set q = bar.quick() %}
   {% if q|length > 1 %}
