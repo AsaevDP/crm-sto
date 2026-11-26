@@ -650,14 +650,16 @@ def compute(ctx) -> dict:
         act = [r for r in data["rows"].values() if r["accrued"] > 0 and r["state"] != "paid"]
         link = f"/payroll/weeks?d={start.isoformat()}"
         if ctx.can("payroll.check"):
-            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link,
+            # 26.11.2026 (брат): плитки — фильтр, кружок ведёт сразу в свою плитку (?f=)
+            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link + "&f=open",
                  sel=[("/payroll/weeks", '.pw-user[data-pst="open"]')], tile=["Проверить"])
         if approver:
             states = ("open", "checked") if ctx.can("payroll.edit") and role == "admin" else ("checked",)
-            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] in states), "утвердить к выплате", link,
+            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] in states), "утвердить к выплате",
+                 link + ("&f=checked" if states == ("checked",) else ""),
                  sel=[("/payroll/weeks", f'.pw-user[data-pst="{s}"]') for s in states], tile=['Утвердить'])
         if ctx.can("payroll.pay"):
-            _add(out, "/payroll/weeks", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link,
+            _add(out, "/payroll/weeks", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link + "&f=approved",
                  sel=[("/payroll/weeks", '.pw-user[data-pst="approved"]')], tile=["Выдать"])
     # 🔴 20.11.2026: зам просит доступ к «Зарплате сотрудников» — директору
     if ctx.can("payroll.grant"):

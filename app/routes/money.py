@@ -416,11 +416,31 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
     vehicles = {v.id: v for v in db.scalars(select(Vehicle).where(Vehicle.id.in_([o.vehicle_id for o in orders.values()])))}
     works = {w.id: w for w in db.scalars(select(WoWork).where(WoWork.id.in_([a.wo_work_id for a in rows if a.wo_work_id])))}
     summ = psvc.summary(db, [target], d1, d2)[target.id]
+    # 26.11.2026 (брат): история по неделям — начислено, выдано, не выдано, этап; и работы, которые ждут оплаты наряда
+    from ..services import payweek as wsvc
+    weeks, wk = [], wsvc.monday(d2)
+    while wk >= wsvc.monday(d1) and len(weeks) < 30:
+        r = wsvc.week_data(db, ctx.branch.id, wk, [target])["rows"][target.id]
+        if r["active"]:
+            weeks.append({"start": wk, "end": wk + timedelta(days=6), "r": r})
+        wk -= timedelta(days=7)
+    pend = wsvc._pending(db, [target], d1, d2).get(target.id, [])
+    for _w, wo, _e in pend:
+        orders.setdefault(wo.id, wo)
     return dict(u=target, rows=rows, orders=orders, vehicles=vehicles, works=works, s=summ, d1=d1, d2=d2,
+                weeks=weeks, pend=pend, pend_sum=sum((x[2] for x in pend), Decimal(0)),
                 payouts=psvc.payouts(db, [target.id], d1, d2), COLS=psvc.COLS, column_of=psvc.column_of,
                 today_sum=sum((a.amount for a in rows if a.on_date == date.today()), Decimal(0)),
                 lines=[psvc.describe(l, {}) for l in (psvc.lines_for(db, target) or psvc.default_lines(db, target))],
                 fmt_plate=osvc.fmt_plate, PAY_METHODS=PAY_METHODS)
+
+
+@router.get("/payroll/people/{uid}")
+def payroll_person(uid: str, ctx: Ctx = Depends(get_ctx)):
+    """26.11.2026 (брат): плитка сотрудника в «Зарплате сотрудников» — его история за последние 3 месяца (период меняется)."""
+    ctx.need("payroll.view_all", "payroll.advance")
+    t_ = date.today()
+    return _to(f"/payroll?user={_uuid(uid)}&f={(t_ - timedelta(days=90)).isoformat()}&t={t_.isoformat()}")
 
 
 @router.get("/payroll")
@@ -472,7 +492,7 @@ def payroll_my(ctx: Ctx = Depends(get_ctx), d: str = ""):
 
 
 @router.get("/payroll/weeks")
-def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = ""):
+def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = "", f: str = ""):
     """«Зарплата сотрудников» (20.11.2026, брат): бухгалтер; директор — когда админ дал «payroll.view_all»; зам — когда
     директор открыл доступ на срок. Без доступа — экран «как открыть» (зам — запрос директору)."""
     if not ctx.can("payroll.view_all"):
@@ -495,7 +515,7 @@ def payroll_weeks(ctx: Ctx = Depends(get_ctx), d: str = "", open_user: str = "")
         data = _pw.week_data(ctx.db, ctx.branch.id, prev, staff_for_period(ctx.db, ctx.branch.id, prev))
         if any(r["accrued"] > 0 and r["state"] != "paid" for r in data["rows"].values()):
             return _to(f"/payroll/weeks?d={prev.isoformat()}")
-    return _weeks_page(ctx, d, open_user, mine=False)
+    return _weeks_page(ctx, d, open_user, mine=False, flt=f)
 
 
 @router.post("/payroll/access-request")
@@ -536,7 +556,7 @@ def payroll_access_decide(aid: str, ctx: Ctx = Depends(get_ctx), action: str = F
     return _to("/access-requests#payroll")
 
 
-def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool):
+def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool, flt: str = ""):
     from ..models.payroll import WEEK_STATUS
     from ..services import payweek as wsvc
     db = ctx.db
@@ -571,7 +591,8 @@ def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool):
                       WEEK_STATUS=WEEK_STATUS, COLS=wsvc.COLS, PAY_METHODS=PAY_METHODS, PAY_TO=PAY_TO,
                       prev=(start - timedelta(days=7)).isoformat(), next=(start + timedelta(days=7)).isoformat(),
                       this_week=wsvc.monday(date.today()), open_user=open_user, fmt_plate=osvc.fmt_plate,
-                      column_of=psvc.column_of, mask=_mask_account)
+                      column_of=psvc.column_of, mask=_mask_account,
+                      flt=flt if flt in ("open", "checked", "approved") else "")
 
 
 @router.get("/payroll/weeks/{d}/sheet")

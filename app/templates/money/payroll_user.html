@@ -4,7 +4,7 @@
 {% block content %}
 {% set q = "user=" ~ u.id ~ "&" ~ pq %}
 <header class="page-head">
-  <div>{% if see_all %}<a class="back" href="/payroll?{{ pq }}">{{ icon("back") }}Все сотрудники</a>{% endif %}
+  <div>{% if see_all %}<a class="back" href="/payroll/weeks">{{ icon("back") }}Зарплата сотрудников</a>{% endif %}
     <h1 class="large-title">{{ "Моя зарплата" if u.id == user.id else u.full_name }}</h1></div>
   <div class="ov-actions">
     <a class="btn btn-sm btn-gray" href="/payroll/print?{{ q }}" target="_blank">🖨 Расчётный лист</a>
@@ -22,6 +22,33 @@
 </div>
 {# 14.11.2026 (брат): итоги работ — одной строкой крупных цифр, «Выплаты за период» — рядом наверху,
    таблица работ — на всю ширину (раньше выплаты стояли справа от таблицы и суммы переносились на две строки) #}
+{% if weeks or pend %}
+{# 26.11.2026 (брат): история по неделям — начислено, выдано, не выдано, этап; ниже — работы, которые ждут оплаты наряда #}
+<div class="card compact pay-weeks">
+  <div class="card-h"><span class="headline">По неделям · {{ weeks|length }}</span>
+    {% if pend %}<span class="caption">ждут закрытия нарядов ≈ {{ pend_sum|money(0) }} ₴</span>{% endif %}</div>
+  <div class="tablewrap"><table class="table dense-table">
+    <thead><tr><th>Неделя</th><th class="num">Начислено</th><th class="num">Выдано</th><th class="num">Не выдано</th><th>Этап</th><th></th></tr></thead>
+    <tbody>
+    {% for x in weeks %}{% set r = x.r %}
+    <tr data-st="{{ r.state }}">
+      <td class="nowrap">{{ x.start.strftime("%d.%m") }}–{{ x.end.strftime("%d.%m.%Y") }}</td>
+      <td class="num">{{ r.accrued|money }}</td>
+      <td class="num">{{ r.paid|money }}</td>
+      <td class="num">{% if r.due > 0 %}<b class="late">{{ r.due|money }}</b>{% else %}—{% endif %}</td>
+      <td><span class="chip" data-s="{{ {'open': 'prepay', 'checked': 'diag', 'approved': 'waiting', 'paid': 'paid'}.get(r.state, 'created') }}">{{ {"none": "нет начислений", "open": "ждёт проверки", "checked": "проверено", "approved": "утверждено", "paid": "✓ выдано"}.get(r.state, r.state) }}</span></td>
+      <td>{% if see_all %}<a class="btn btn-sm btn-plain" href="/payroll/weeks?d={{ x.start }}&open_user={{ u.id }}#u-{{ u.id }}">Открыть неделю</a>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="footnote">За период начислений нет</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% if pend %}
+  <div class="group-title" style="margin-top:10px">Ждут закрытия — работы сделаны, наряд ещё не оплачен</div>
+  {% for w, wo, est in pend %}
+  <div class="kv"><span>{{ w.done_at.astimezone().strftime("%d.%m") }} · <a href="/orders/{{ wo.id }}">{{ wo.number[-6:] }}</a> · {{ w.name }}</span><b class="nowrap">≈ {{ est|money }} ₴</b></div>
+  {% endfor %}{% endif %}
+</div>
+{% endif %}
 <div class="pay-top">
   <div class="card compact pay-sum">
     <div class="card-h"><span class="headline">Работы нарядов</span></div>

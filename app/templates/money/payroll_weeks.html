@@ -80,17 +80,37 @@
 {% for u in users %}{% set r = data.rows[u.id] %}{% if r.accrued > 0 and r.state != 'paid' %}
   {% if r.pst == "open" %}{% set ns_.open = ns_.open + 1 %}{% elif r.pst == "checked" %}{% set ns_.checked = ns_.checked + 1 %}{% elif r.pst == "approved" %}{% set ns_.approved = ns_.approved + 1 %}{% endif %}
 {% endif %}{% endfor %}
-<div class="pult-tiles pw-tiles pw-state-tiles">
-  <a class="ptile {{ 'zero' if not ns_.open }}" href="#pw-list" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Проверить</span><b>{{ ns_.open }}</b><span class="ptile-s">ждут проверки бухгалтера</span></a>
-  <a class="ptile {{ 'zero' if not ns_.checked }}" href="#pw-list" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Утвердить</span><b>{{ ns_.checked }}</b><span class="ptile-s">проверено — утверждает директор</span></a>
-  <a class="ptile {{ 'zero' if not ns_.approved }}" href="#pw-list" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдать</span><b>{{ ns_.approved }}</b><span class="ptile-s">утверждено — к выдаче</span></a>
+{# 26.11.2026 (брат): плитки — фильтр списка (?f=): в списке остаются только сотрудники этой плитки; «Все» — весь список #}
+{% set wq = base ~ "?d=" ~ start %}
+{% set n_all = namespace(n=0) %}{% for u in users %}{% if data.rows[u.id].active %}{% set n_all.n = n_all.n + 1 %}{% endif %}{% endfor %}
+<div class="pult-tiles pw-tiles pw-state-tiles" data-menu-base="{{ wq }}">
+  <a class="ptile {{ 'on' if not flt }}" href="{{ wq }}" style="--tc:{{ color_css('blue') }}"><span class="ptile-t">Все</span><b>{{ n_all.n }}</b><span class="ptile-s">весь список недели</span></a>
+  <a class="ptile {{ 'zero' if not ns_.open }} {{ 'on' if flt == 'open' }}" href="{{ wq if flt == 'open' else wq ~ '&f=open' }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Проверить</span><b>{{ ns_.open }}</b><span class="ptile-s">ждут проверки бухгалтера</span></a>
+  <a class="ptile {{ 'zero' if not ns_.checked }} {{ 'on' if flt == 'checked' }}" href="{{ wq if flt == 'checked' else wq ~ '&f=checked' }}" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Утвердить</span><b>{{ ns_.checked }}</b><span class="ptile-s">проверено — утверждает директор</span></a>
+  <a class="ptile {{ 'zero' if not ns_.approved }} {{ 'on' if flt == 'approved' }}" href="{{ wq if flt == 'approved' else wq ~ '&f=approved' }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдать</span><b>{{ ns_.approved }}</b><span class="ptile-s">утверждено — к выдаче</span></a>
 </div>
+{% if all_view %}<a class="btn btn-sm btn-plain pw-people-link" href="#pw-people">👤 История сотрудника — плитки внизу ↓</a>{% endif %}
+{% macro people_tiles() %}
+{# 26.11.2026 (брат): плитка на каждого сотрудника — открывает его историю: работы, начисления, выплаты по неделям #}
+<div class="group-title" id="pw-people">Сотрудники — история выплат и работ</div>
+<div class="pw-people">
+  {% for u in users %}{% set r = data.rows[u.id] %}
+  {% set c = {"open": "orange", "checked": "purple", "approved": "green", "paid": "gray"}.get(r.state, "gray") %}
+  <a class="pw-person" href="/payroll/people/{{ u.id }}" style="--tc:{{ color_css(c) }}">
+    <b>{{ u.full_name }}</b><span class="caption">{{ u.role.name }}</span>
+    <span class="pw-person-n">{% if r.accrued %}{{ r.accrued|money(0) }} ₴{% else %}—{% endif %}</span>
+    <span class="caption">{{ {"none": "за неделю нет начислений", "open": "ждёт проверки", "checked": "проверено", "approved": "утверждено", "paid": "✓ выдано"}.get(r.state, "") }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endmacro %}
 
-{% set ST_CHIP = {"none": ("created", "нечего выдавать"), "open": ("prepay", "ждёт проверки"), "checked": ("diag", "проверено"),
+{% set ST_CHIP ={"none": ("created", "нечего выдавать"), "open": ("prepay", "ждёт проверки"), "checked": ("diag", "проверено"),
                   "approved": ("waiting", "утверждено"), "paid": ("paid", "✓ выдано")} %}
 <div class="pw-list" id="pw-list">
   {% for u in users %}{% set r = data.rows[u.id] %}
-  {% if r.active or users|length == 1 %}
+  {% set in_flt = not flt or (r.accrued > 0 and r.state != 'paid' and r.pst == flt) %}
+  {% if (r.active or users|length == 1) and in_flt %}
   <details class="card compact pw-user" id="u-{{ u.id }}" data-pst="{{ r.pst if r.accrued > 0 and r.state != 'paid' else '' }}" {% if open_user == u.id|string or users|length == 1 %}open{% endif %}>
     <summary class="pw-sum">
       <span class="pw-who"><b>{{ u.full_name }}</b><span class="caption">{{ u.role.name }}{% if r.groups %} · нарядов {{ r.groups|length }}{% endif %}</span></span>
@@ -230,10 +250,15 @@
   </details>
   {% endif %}
   {% endfor %}
+  {% if flt and not {"open": ns_.open, "checked": ns_.checked, "approved": ns_.approved}[flt] %}
+  <div class="card compact"><p class="footnote" style="margin:0">Здесь никого нет. <a href="{{ wq }}">Показать всех</a></p></div>
+  {% endif %}
   {% if not T.accrued and not T.paid and not T.pending_sum and users|length > 1 %}
   <div class="card compact"><p class="footnote" style="margin:0">За эту неделю начислений нет. Начисления появляются, когда наряд закрыт: работа считается в неделю, когда слесарь отметил её «выполнено».</p></div>
   {% endif %}
 </div>
+
+{% if all_view %}{{ people_tiles() }}{% endif %}
 
 {% if hist %}
 <section class="card compact pw-hist">

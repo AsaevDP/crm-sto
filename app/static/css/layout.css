@@ -3104,3 +3104,14 @@ details.vh:first-of-type { border-top: 0; }
 .arrived-flash { border-left: 4px solid var(--red); }
 @media (max-width: 600px) { .zp-win-row { grid-template-columns: 54px minmax(0, 1fr); grid-template-areas: "when who" "st st" "acts acts"; }
   .zp-win-st { justify-items: start; } }
+
+/* ===== 26.11.2026 (брат): «Зарплата сотрудников» — плитки сотрудников и история по неделям ===== */
+.pw-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin: 6px 0 16px; }
+.pw-person { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface);
+  box-shadow: var(--shadow-1), inset 0 4px 0 var(--tc); color: var(--text); text-decoration: none; min-width: 0; }
+.pw-person b { overflow-wrap: anywhere; }
+.pw-person:hover { background: color-mix(in srgb, var(--tc) 8%, var(--surface)); }
+.pw-person-n { font-size: 18px; font-weight: 700; margin-top: 4px; white-space: nowrap; }
+.pay-weeks { margin-bottom: 16px; }
+.pay-weeks .card-h { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 600px) { .pw-people { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
