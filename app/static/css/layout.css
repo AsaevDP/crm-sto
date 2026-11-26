@@ -3115,3 +3115,28 @@ details.vh:first-of-type { border-top: 0; }
 .pay-weeks { margin-bottom: 16px; }
 .pay-weeks .card-h { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 @media (max-width: 600px) { .pw-people { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* 26.11.2026 (брат): карточка сотрудника — «заработал − выдано = осталось», «Из чего сложилось», начисления по дням */
+.pay-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0 16px; }
+.pay-big { flex: 1 1 200px; display: grid; gap: 4px; padding: 14px 16px; border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-1); }
+.pay-big b { font-size: 26px; font-weight: 700; white-space: nowrap; }
+.pay-big.due { box-shadow: var(--shadow-1), inset 0 4px 0 var(--red); } .pay-big.due b { color: var(--red); }
+.pay-big.ok { box-shadow: var(--shadow-1), inset 0 4px 0 var(--green); } .pay-big.ok b { color: var(--green); }
+.pay-big.adv b { color: var(--orange); }
+.pay-op { font-size: 24px; color: var(--text-3); font-weight: 300; }
+.pay-why { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--separator); }
+.pay-why:first-of-type { border-top: 0; }
+.pay-why.neg b { color: var(--red); }
+.pay-why.total { border-top: 2px solid var(--separator); font-weight: 600; margin-top: 4px; }
+.pay-days { margin-top: 16px; }
+.pay-days .card-h { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pay-day { border-top: 1px solid var(--separator); }
+.pay-day-sum { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; cursor: pointer; list-style: none; }
+.pay-day-sum::-webkit-details-marker { display: none; }
+.pay-day-d { display: grid; gap: 2px; }
+.pay-day[open] .pay-day-open { visibility: hidden; }
+.pay-day-body { padding: 0 0 12px 12px; border-left: 3px solid var(--fill); margin-left: 4px; display: grid; gap: 10px; }
+.pay-wo-h { display: flex; justify-content: space-between; gap: 10px; }
+.pay-wl { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0 3px 12px; font-size: 14px; }
+.pay-wl > span:first-child, .pay-wo-h > span { min-width: 0; overflow-wrap: anywhere; }
+.pay-days .neg { color: var(--red); }
+@media (max-width: 600px) { .pay-op { display: none; } .pay-big b { font-size: 22px; } .pay-day-sum { grid-template-columns: minmax(0, 1fr) auto; } .pay-day-open { display: none; } }

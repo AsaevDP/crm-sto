@@ -21,20 +21,23 @@
 {% set can_pay = ctx.can("payroll.pay") %}
 {% set MON = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"] %}
 <header class="page-head">
-  <div><p class="footnote">Выплата — понедельник {{ data.pay_day.day }} {{ MON[data.pay_day.month - 1] }}{% if start == this_week %} · неделя ещё идёт{% endif %}</p>
-    <h1 class="large-title">{{ "Моя зарплата" if mine else "Зарплата сотрудников" }}</h1></div>
+  {# 26.11.2026 (брат): single — неделя одного сотрудника отдельной страницей (из его истории «Открыть неделю») #}
+  {% macro wk(x) %}{{ "/payroll/weeks/" ~ x ~ "/people/" ~ single.id if single else base ~ "?d=" ~ x }}{% endmacro %}
+  <div>{% if single %}<a class="back" href="/payroll/people/{{ single.id }}">{{ icon("back") }}{{ single.full_name }}</a>{% endif %}
+    <p class="footnote">Выплата — понедельник {{ data.pay_day.day }} {{ MON[data.pay_day.month - 1] }}{% if start == this_week %} · неделя ещё идёт{% endif %}</p>
+    <h1 class="large-title">{% if single %}{{ single.full_name }} · неделя{% else %}{{ "Моя зарплата" if mine else "Зарплата сотрудников" }}{% endif %}</h1></div>
   <div class="ov-actions">
     <div class="pbar">
-      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ base }}?d={{ prev }}" aria-label="Прошлая неделя">‹</a>
+      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ wk(prev) }}" aria-label="Прошлая неделя">‹</a>
       <span class="btn btn-sm btn-gray pcur">📅 {{ start.day }}{% if start.month != end.month %} {{ MON[start.month - 1] }}{% endif %}–{{ end.day }} {{ MON[end.month - 1] }}</span>
-      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ base }}?d={{ next }}" aria-label="Следующая неделя">›</a>
-      {% if start != this_week %}<a class="btn btn-sm btn-plain" href="{{ base }}?d={{ this_week }}">Эта неделя</a>{% endif %}
+      <a class="btn btn-sm btn-gray pbar-arr" data-pkey="next" href="{{ wk(next) }}" aria-label="Следующая неделя">›</a>
+      {% if start != this_week %}<a class="btn btn-sm btn-plain" href="{{ wk(this_week) }}">Эта неделя</a>{% endif %}
     </div>
   </div>
 </header>
-{{ payroll_nav("my" if mine else "weeks") }}
+{% if not single %}{{ payroll_nav("my" if mine else "weeks") }}{% endif %}
 
-{% if all_view %}
+{% if all_view and not single %}
 {# 23.11.2026 (брат): шаги недели — такими же плитками, как везде (было — отдельные «шаги» своего размера).
    Пройден — зелёная с ✓, идёт сейчас — синяя, впереди — серая. Цифра — сколько людей прошли шаг. #}
 <div class="pult-tiles pw-steps">
@@ -70,16 +73,17 @@
   <span class="ptile {{ 'zero' if not T.paid }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдано</span><b class="nowrap">{{ T.paid|money(0) }} ₴</b><span class="ptile-s">{{ T.n_paid }} из {{ T.people }} чел.</span></span>
   <span class="ptile {{ 'zero' if T.due <= 0 }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">К выдаче</span><b class="nowrap">{{ T.due|money(0) }} ₴</b><span class="ptile-s">не выдано: {{ T.unpaid_people }} чел.</span></span>
   <span class="ptile {{ 'zero' if not T.pending_sum }}" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Ждут закрытия</span><b class="nowrap">≈ {{ T.pending_sum|money(0) }} ₴</b><span class="ptile-s">работы сделаны, наряд не оплачен</span></span>
-  {% if all_view %}
+  {% if all_view and not single %}
   <a class="ptile {{ 'zero' if not T.tool_charges }}" href="/tools/charges" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Удержано</span><b class="nowrap">{{ T.tool_charges|money(0) }} ₴</b><span class="ptile-s">за инструмент · весь список</span></a>
   {% endif %}
 </div>
 
 {# 23.11.2026 (брат): плитки дел по людям — к ним ведут кружки в меню (мигают, пока есть дело) #}
-{% set ns_ = namespace(open=0, checked=0, approved=0) %}
+{% set ns_ = namespace(open=0, checked=0, approved=0, paid=0) %}
 {% for u in users %}{% set r = data.rows[u.id] %}{% if r.accrued > 0 and r.state != 'paid' %}
   {% if r.pst == "open" %}{% set ns_.open = ns_.open + 1 %}{% elif r.pst == "checked" %}{% set ns_.checked = ns_.checked + 1 %}{% elif r.pst == "approved" %}{% set ns_.approved = ns_.approved + 1 %}{% endif %}
-{% endif %}{% endfor %}
+{% elif r.state == 'paid' %}{% set ns_.paid = ns_.paid + 1 %}{% endif %}{% endfor %}
+{% if not single %}
 {# 26.11.2026 (брат): плитки — фильтр списка (?f=): в списке остаются только сотрудники этой плитки; «Все» — весь список #}
 {% set wq = base ~ "?d=" ~ start %}
 {% set n_all = namespace(n=0) %}{% for u in users %}{% if data.rows[u.id].active %}{% set n_all.n = n_all.n + 1 %}{% endif %}{% endfor %}
@@ -88,8 +92,13 @@
   <a class="ptile {{ 'zero' if not ns_.open }} {{ 'on' if flt == 'open' }}" href="{{ wq if flt == 'open' else wq ~ '&f=open' }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Проверить</span><b>{{ ns_.open }}</b><span class="ptile-s">ждут проверки бухгалтера</span></a>
   <a class="ptile {{ 'zero' if not ns_.checked }} {{ 'on' if flt == 'checked' }}" href="{{ wq if flt == 'checked' else wq ~ '&f=checked' }}" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Утвердить</span><b>{{ ns_.checked }}</b><span class="ptile-s">проверено — утверждает директор</span></a>
   <a class="ptile {{ 'zero' if not ns_.approved }} {{ 'on' if flt == 'approved' }}" href="{{ wq if flt == 'approved' else wq ~ '&f=approved' }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">Выдать</span><b>{{ ns_.approved }}</b><span class="ptile-s">утверждено — к выдаче</span></a>
+  <a class="ptile {{ 'zero' if not ns_.paid }} {{ 'on' if flt == 'paid' }}" href="{{ wq if flt == 'paid' else wq ~ '&f=paid' }}" style="--tc:{{ color_css('gray') }}"><span class="ptile-t">Выданные</span><b>{{ ns_.paid }}</b><span class="ptile-s">неделя закрыта — всё выдано</span></a>
 </div>
 {% if all_view %}<a class="btn btn-sm btn-plain pw-people-link" href="#pw-people">👤 История сотрудника — плитки внизу ↓</a>{% endif %}
+{% if flt %}<script>   // 26.11.2026 (брат): нажали плитку — первый сотрудник этой плитки посередине экрана
+document.addEventListener('DOMContentLoaded', () => { const x = document.querySelector('#pw-list .pw-user') || document.getElementById('pw-list');
+  if (x) setTimeout(() => x.scrollIntoView({ block: 'center' }), 60); });</script>{% endif %}
+{% endif %}{# /not single #}
 {% macro people_tiles() %}
 {# 26.11.2026 (брат): плитка на каждого сотрудника — открывает его историю: работы, начисления, выплаты по неделям #}
 <div class="group-title" id="pw-people">Сотрудники — история выплат и работ</div>
@@ -109,7 +118,7 @@
                   "approved": ("waiting", "утверждено"), "paid": ("paid", "✓ выдано")} %}
 <div class="pw-list" id="pw-list">
   {% for u in users %}{% set r = data.rows[u.id] %}
-  {% set in_flt = not flt or (r.accrued > 0 and r.state != 'paid' and r.pst == flt) %}
+  {% set in_flt = not flt or (flt == 'paid' and r.state == 'paid') or (r.accrued > 0 and r.state != 'paid' and r.pst == flt) %}
   {% if (r.active or users|length == 1) and in_flt %}
   <details class="card compact pw-user" id="u-{{ u.id }}" data-pst="{{ r.pst if r.accrued > 0 and r.state != 'paid' else '' }}" {% if open_user == u.id|string or users|length == 1 %}open{% endif %}>
     <summary class="pw-sum">
@@ -250,7 +259,7 @@
   </details>
   {% endif %}
   {% endfor %}
-  {% if flt and not {"open": ns_.open, "checked": ns_.checked, "approved": ns_.approved}[flt] %}
+  {% if flt and not {"open": ns_.open, "checked": ns_.checked, "approved": ns_.approved, "paid": ns_.paid}[flt] %}
   <div class="card compact"><p class="footnote" style="margin:0">Здесь никого нет. <a href="{{ wq }}">Показать всех</a></p></div>
   {% endif %}
   {% if not T.accrued and not T.paid and not T.pending_sum and users|length > 1 %}
@@ -258,7 +267,7 @@
   {% endif %}
 </div>
 
-{% if all_view %}{{ people_tiles() }}{% endif %}
+{% if all_view and not single %}{{ people_tiles() }}{% endif %}
 
 {% if hist %}
 <section class="card compact pw-hist">

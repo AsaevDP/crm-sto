@@ -424,11 +424,25 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
         if r["active"]:
             weeks.append({"start": wk, "end": wk + timedelta(days=6), "r": r})
         wk -= timedelta(days=7)
+    # 26.11.2026 (брат): начисления по дням → внутри дня по нарядам (новые дни сверху)
+    days: dict = {}
+    for a in rows:
+        dd = days.setdefault(a.on_date, {"day": a.on_date, "sum": Decimal(0), "wos": {}, "other": 0})
+        dd["sum"] += a.amount
+        g = dd["wos"].setdefault(a.work_order_id, {"o": orders.get(a.work_order_id), "lines": [], "sum": Decimal(0)})
+        g["lines"].append(a)
+        g["sum"] += a.amount
+        if not a.work_order_id:
+            dd["other"] += 1
+    day_groups = []
+    for dd in sorted(days.values(), key=lambda x: x["day"], reverse=True):
+        wos = sorted(dd["wos"].values(), key=lambda g: (g["o"] is None, g["o"].number if g["o"] else ""))
+        day_groups.append({**dd, "wos": wos, "n_wo": sum(1 for g in wos if g["o"] is not None)})
     pend = wsvc._pending(db, [target], d1, d2).get(target.id, [])
     for _w, wo, _e in pend:
         orders.setdefault(wo.id, wo)
     return dict(u=target, rows=rows, orders=orders, vehicles=vehicles, works=works, s=summ, d1=d1, d2=d2,
-                weeks=weeks, pend=pend, pend_sum=sum((x[2] for x in pend), Decimal(0)),
+                weeks=weeks, pend=pend, pend_sum=sum((x[2] for x in pend), Decimal(0)), day_groups=day_groups,
                 payouts=psvc.payouts(db, [target.id], d1, d2), COLS=psvc.COLS, column_of=psvc.column_of,
                 today_sum=sum((a.amount for a in rows if a.on_date == date.today()), Decimal(0)),
                 lines=[psvc.describe(l, {}) for l in (psvc.lines_for(db, target) or psvc.default_lines(db, target))],
@@ -556,13 +570,13 @@ def payroll_access_decide(aid: str, ctx: Ctx = Depends(get_ctx), action: str = F
     return _to("/access-requests#payroll")
 
 
-def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool, flt: str = ""):
+def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool, flt: str = "", single: User | None = None):
     from ..models.payroll import WEEK_STATUS
     from ..services import payweek as wsvc
     db = ctx.db
     all_view = ctx.can("payroll.view_all") and not mine
     start = _week_start(d, own=not all_view)
-    users = _week_users(ctx, start, mine)
+    users = [single] if single else _week_users(ctx, start, mine)
     data = wsvc.week_data(db, ctx.branch.id, start, users)
     all_ids = set()
     for r in data["rows"].values():
@@ -573,7 +587,7 @@ def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool, flt: str = ""):
     works = {w.id: w for w in db.scalars(select(WoWork).where(WoWork.id.in_(
         [a.wo_work_id for r in data["rows"].values() for a in r["items"] if a.wo_work_id])))}
     people = {u.id: u for u in db.scalars(select(User).where(User.branch_id == ctx.branch.id))}
-    hist = wsvc.history(db, ctx.branch.id, users, start, 6) if all_view else []
+    hist = wsvc.history(db, ctx.branch.id, users, start, 6) if all_view and not single else []
     from ..models import ToolCheckLine
     from ..models.payroll import PERSON_STATUS
     tl_ids = [a.tool_line_id for r in data["rows"].values() for a in r["items"] if a.tool_line_id]
@@ -592,7 +606,7 @@ def _weeks_page(ctx: Ctx, d: str, open_user: str, mine: bool, flt: str = ""):
                       prev=(start - timedelta(days=7)).isoformat(), next=(start + timedelta(days=7)).isoformat(),
                       this_week=wsvc.monday(date.today()), open_user=open_user, fmt_plate=osvc.fmt_plate,
                       column_of=psvc.column_of, mask=_mask_account,
-                      flt=flt if flt in ("open", "checked", "approved") else "")
+                      flt=flt if flt in ("open", "checked", "approved", "paid") else "", single=single)
 
 
 @router.get("/payroll/weeks/{d}/sheet")
@@ -629,7 +643,13 @@ def _mask_account(v: str | None) -> str:
     return f"•••• {v[-4:]}" if len(v) > 4 else v
 
 
-def _week_back(start: date, uid=None) -> str:
+def _week_back(ctx: Ctx, start: date, uid=None) -> str:
+    """Куда вернуться после действия по неделе. 26.11.2026 (брат): пришли со страницы недели одного сотрудника —
+    туда же (/payroll/weeks/{d}/people/{uid}), иначе — общий список с раскрытым сотрудником."""
+    from urllib.parse import urlparse
+    ref = urlparse(ctx.request.headers.get("referer", "")).path
+    if uid and ref == f"/payroll/weeks/{start.isoformat()}/people/{uid}":
+        return ref
     return f"/payroll/weeks?d={start.isoformat()}" + (f"&open_user={uid}#u-{uid}" if uid else "")
 
 
@@ -666,7 +686,18 @@ def payroll_week_status(d: str, ctx: Ctx = Depends(get_ctx), status: str = Form(
     ctx.db.commit()
     flash(ctx.request, (f"Проверено: {n} чел. — ждут утверждения директора" if n else "Проверять некого — все уже проверены")
           + (f". Не отмечены — в табеле ждёт решения директора: {', '.join(skipped)}" if skipped else ""))
-    return _to(_week_back(start))
+    return _to(_week_back(ctx, start))
+
+
+@router.get("/payroll/weeks/{d}/people/{uid}")
+def payroll_person_week(d: str, uid: str, ctx: Ctx = Depends(get_ctx)):
+    """26.11.2026 (брат): неделя одного сотрудника — отдельная страница (вид как в общем списке, всё раскрыто, все
+    кнопки), «Назад» — в историю сотрудника. Открывается из «По неделям» в карточке сотрудника."""
+    ctx.need("payroll.view_all")
+    u = ctx.db.get(User, _uuid(uid))
+    if not u or u.branch_id != ctx.branch.id:
+        raise Forbidden()
+    return _weeks_page(ctx, d, str(u.id), mine=False, single=u)
 
 
 @router.post("/payroll/weeks/{d}/people/{uid}")
@@ -692,13 +723,13 @@ def payroll_person_status(d: str, uid: str, ctx: Ctx = Depends(get_ctx), status:
         if wait:
             flash(ctx.request, f"{u.short_name}: в табеле ждёт решения директора — "
                   + ", ".join(f"{late_svc.KIND_NAME[f.kind].lower()} {f.day:%d.%m}" for f in wait), "error")
-            return _to(_week_back(start, u.id))
+            return _to(_week_back(ctx, start, u.id))
     wsvc.set_person(ctx.db, w, u.id, status, ctx.user)
     wsvc.refresh_paid(ctx.db, w, users)
     ctx.db.commit()
     flash(ctx.request, {"checked": f"{u.short_name}: проверено — ждёт утверждения", "approved": f"{u.short_name}: утверждено — можно выдавать",
                         "open": f"{u.short_name}: вернули на проверку"}[status])
-    return _to(_week_back(start, u.id))
+    return _to(_week_back(ctx, start, u.id))
 
 
 @router.post("/payroll/weeks/{d}/pay")
@@ -713,7 +744,7 @@ async def payroll_week_pay(d: str, ctx: Ctx = Depends(get_ctx)):
     targets = [u for u in users if str(u.id) == str(form.get("user_id", ""))]
     if targets and data["rows"][targets[0].id]["pst"] != "approved":
         flash(ctx.request, f"{targets[0].short_name}: сначала бухгалтер проверяет, директор утверждает — тогда выдача", "error")
-        return _to(_week_back(start, targets[0].id))
+        return _to(_week_back(ctx, start, targets[0].id))
     n, total = 0, Decimal(0)
     for u in targets:
         due = data["rows"][u.id]["due"]
@@ -730,7 +761,7 @@ async def payroll_week_pay(d: str, ctx: Ctx = Depends(get_ctx)):
     wsvc.refresh_paid(ctx.db, w, users)
     ctx.db.commit()
     flash(ctx.request, f"Выдано: {n} чел. на {msvc.money(total)} ₴" if n else "Выдавать некому — всё уже выдано", "ok" if n else "error")
-    return _to(_week_back(start, targets[0].id if len(targets) == 1 else None))
+    return _to(_week_back(ctx, start, targets[0].id if len(targets) == 1 else None))
 
 
 def _edit_guard(ctx: Ctx):
@@ -751,7 +782,7 @@ def payroll_week_adjust(d: str, ctx: Ctx = Depends(get_ctx), user_id: str = Form
     a = msvc.money(_dec(amount))
     if a == 0 or not note.strip():
         flash(ctx.request, "Нужны сумма и причина", "error")
-        return _to(_week_back(start, u.id))
+        return _to(_week_back(ctx, start, u.id))
     a = -abs(a) if kind == "fine" else abs(a)
     try:
         day = date.fromisoformat(on_date) if on_date else start + timedelta(days=6)
@@ -765,7 +796,7 @@ def payroll_week_adjust(d: str, ctx: Ctx = Depends(get_ctx), user_id: str = Form
     wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, start))
     ctx.db.commit()
     flash(ctx.request, f"{'Штраф' if a < 0 else 'Премия'} {a} ₴ — {u.short_name}")
-    return _to(_week_back(start, u.id))
+    return _to(_week_back(ctx, start, u.id))
 
 
 @router.post("/payroll/accruals/{aid}")
@@ -780,7 +811,7 @@ def payroll_accrual_edit(aid: str, ctx: Ctx = Depends(get_ctx), amount: str = Fo
     start = wsvc.monday(a.on_date)
     if not reason.strip():
         flash(ctx.request, "Напишите причину исправления", "error")
-        return _to(_week_back(start, a.user_id))
+        return _to(_week_back(ctx, start, a.user_id))
     if action == "cancel":
         a.status = "cancelled"
         a.note = f"{a.note} · отменено: {reason.strip()}"[:300]
@@ -796,7 +827,7 @@ def payroll_accrual_edit(aid: str, ctx: Ctx = Depends(get_ctx), amount: str = Fo
         wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, start))
     ctx.db.commit()
     flash(ctx.request, msg)
-    return _to(_week_back(start, a.user_id))
+    return _to(_week_back(ctx, start, a.user_id))
 
 
 @router.post("/payroll/weeks/{d}/salary")
@@ -808,7 +839,7 @@ def payroll_week_salary(d: str, ctx: Ctx = Depends(get_ctx)):
     total = wsvc.accrue_week_salary(ctx.db, ctx.branch.id, start, staff_for_period(ctx.db, ctx.branch.id, start))
     ctx.db.commit()
     flash(ctx.request, f"Оклад за неделю начислен: {msvc.money(total)} ₴" if total else "Начислять нечего: нет дневных окладов или уже начислено")
-    return _to(_week_back(start))
+    return _to(_week_back(ctx, start))
 
 
 @router.post("/payroll/account/{uid}")
@@ -905,7 +936,7 @@ def payroll_payout_delete(pid: str, ctx: Ctx = Depends(get_ctx)):
         wsvc.refresh_paid(ctx.db, w, staff_for_period(ctx.db, ctx.branch.id, w.week_start))
         ctx.db.commit()
         flash(ctx.request, "Выплата удалена — сумма снова «к выдаче»")
-        return _to(_week_back(w.week_start, uid))
+        return _to(_week_back(ctx, w.week_start, uid))
     ctx.db.commit()
     flash(ctx.request, "Выплата удалена")
     return _to(f"/payroll?user={uid}")

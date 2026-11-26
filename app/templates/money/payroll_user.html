@@ -12,13 +12,16 @@
 </header>
 {% if not see_all or u.id == user.id %}{{ payroll_nav("my_period") }}{% endif %}
 {{ period_bar(bar) }}
-<div class="stats">
-  <div class="stat"><span class="footnote">Начислено {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m") }}</span><b>{{ s.accrued|money }} ₴</b></div>
-  <div class="stat"><span class="footnote">Выплачено</span><b>{{ s.paid|money }} ₴</b></div>
+{# 26.11.2026 (брат): верх — понятно и по порядку: заработал → выдано → осталось выдать (было «Начислено / Выплачено /
+   К выплате / Сегодня» одинаковыми плашками, читалось смазанно) #}
+<div class="pay-head">
+  <div class="pay-big"><span class="footnote">Заработал · {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m.%Y") }}</span><b>{{ s.accrued|money }} ₴</b></div>
+  <span class="pay-op" aria-hidden="true">−</span>
+  <div class="pay-big"><span class="footnote">Выдано</span><b>{{ s.paid|money }} ₴</b></div>
+  <span class="pay-op" aria-hidden="true">=</span>
   {# 12.11.2026: минус = выдали больше, чем заработано (аванс) — пишем это словами, а не «−2 271,60» #}
-  {% if s.due < 0 %}<div class="stat"><span class="footnote">Аванс больше заработанного</span><b style="color:var(--orange)">{{ (-s.due)|money }} ₴</b></div>
-  {% else %}<div class="stat"><span class="footnote">К выплате</span><b>{{ s.due|money }} ₴</b></div>{% endif %}
-  <div class="stat"><span class="footnote">Сегодня</span><b>{{ today_sum|money }} ₴</b></div>
+  {% if s.due < 0 %}<div class="pay-big adv"><span class="footnote">Аванс больше заработанного</span><b>{{ (-s.due)|money }} ₴</b></div>
+  {% else %}<div class="pay-big {{ 'due' if s.due > 0 else 'ok' }}"><span class="footnote">{{ "Осталось выдать" if s.due > 0 else "Всё выдано" }}</span><b>{{ s.due|money }} ₴</b></div>{% endif %}
 </div>
 {# 14.11.2026 (брат): итоги работ — одной строкой крупных цифр, «Выплаты за период» — рядом наверху,
    таблица работ — на всю ширину (раньше выплаты стояли справа от таблицы и суммы переносились на две строки) #}
@@ -37,7 +40,7 @@
       <td class="num">{{ r.paid|money }}</td>
       <td class="num">{% if r.due > 0 %}<b class="late">{{ r.due|money }}</b>{% else %}—{% endif %}</td>
       <td><span class="chip" data-s="{{ {'open': 'prepay', 'checked': 'diag', 'approved': 'waiting', 'paid': 'paid'}.get(r.state, 'created') }}">{{ {"none": "нет начислений", "open": "ждёт проверки", "checked": "проверено", "approved": "утверждено", "paid": "✓ выдано"}.get(r.state, r.state) }}</span></td>
-      <td>{% if see_all %}<a class="btn btn-sm btn-plain" href="/payroll/weeks?d={{ x.start }}&open_user={{ u.id }}#u-{{ u.id }}">Открыть неделю</a>{% endif %}</td>
+      <td>{% if see_all %}<a class="btn btn-sm btn-plain" href="/payroll/weeks/{{ x.start }}/people/{{ u.id }}">Открыть неделю</a>{% endif %}</td>
     </tr>
     {% else %}<tr><td colspan="6" class="footnote">За период начислений нет</td></tr>{% endfor %}
     </tbody>
@@ -50,14 +53,17 @@
 </div>
 {% endif %}
 <div class="pay-top">
+  {# 26.11.2026 (брат): «Из чего сложилось» — по строке, словами (было «Работы нарядов» плашками вперемешку) #}
+  {% set WHY = {"works": "Работы в нарядах", "parts": "Запчасти (процент)", "salary": "Оклад", "other": "Премии и прочее",
+                "deduction": "Удержания (инструмент, табель, штрафы)"} %}
   <div class="card compact pay-sum">
-    <div class="card-h"><span class="headline">Работы нарядов</span></div>
-    <div class="pay-kpis">
-      {% for k, v in COLS.items() %}{% if s[k] %}<div><span class="footnote">{{ v }}</span><b class="nowrap">{{ s[k]|money }} ₴</b></div>{% endif %}{% endfor %}
-      <div><span class="footnote">Нарядов</span><b>{{ s.n_orders }}</b></div>
-      {% if s.hours %}<div><span class="footnote">Нормо-часов</span><b>{{ s.hours|num }}</b></div>{% endif %}
-    </div>
-    <p class="footnote" style="margin:8px 0 0">Ставка: {{ lines|join(" · ") or "не задана" }}</p>
+    <div class="card-h"><span class="headline">Из чего сложилось</span></div>
+    {% for k in ["works", "parts", "salary", "other", "deduction"] %}{% if s[k] %}
+    <div class="pay-why {{ 'neg' if s[k] < 0 }}"><span>{{ WHY[k] }}{% if k == "works" %} <span class="caption">· нарядов {{ s.n_orders }}{% if s.hours %} · {{ s.hours|num }} н/ч{% endif %}</span>{% endif %}</span>
+      <b class="nowrap">{{ s[k]|money }} ₴</b></div>
+    {% endif %}{% endfor %}
+    <div class="pay-why total"><span>Заработал</span><b class="nowrap">{{ s.accrued|money }} ₴</b></div>
+    <p class="caption" style="margin:8px 0 0">Ставка: {{ lines|join(" · ") or "не задана" }}</p>
   </div>
   <div class="card compact pay-outs">
       <div class="card-h"><span class="headline">Выплаты за период</span></div>
@@ -82,27 +88,35 @@
       {% endif %}
   </div>
 </div>
-<div class="pay-grid-full">
-  <section>
-    <div class="tablewrap">
-      <table class="table dense-table">
-        <thead><tr><th>Дата</th><th>Наряд · авто</th><th>За что</th><th>Вид</th><th class="num">База</th><th class="num">Ставка</th><th class="num">Сумма</th></tr></thead>
-        <tbody>
-        {% for a in rows %}{% set o = orders.get(a.work_order_id) %}{% set v = vehicles.get(o.vehicle_id) if o else none %}{% set w = works.get(a.wo_work_id) %}
-        <tr>
-          <td class="nowrap">{{ a.on_date.strftime("%d.%m") }}</td>
-          <td class="nowrap">{% if o %}<a href="/orders/{{ o.id }}">{{ o.number[-6:] }}</a>{% if v %}<div class="caption">{{ v.make }} {{ fmt_plate(v.plate) }}</div>{% endif %}{% else %}—{% endif %}</td>
-          <td>{{ a.note }}{% if w and w.hours %}<div class="caption">{{ (w.hours * w.qty)|num }} н/ч</div>{% endif %}</td>
-          <td class="footnote nowrap">{{ COLS[column_of(a)] }}</td>
-          <td class="num">{% if a.kind == "per_unit" %}{{ a.base_amount|num }} шт{% elif a.kind == "salary" %}{{ a.base_amount|num }}{% else %}{{ a.base_amount|money }}{% endif %}</td>
-          <td class="num footnote">{% if a.kind == "percent" %}{{ a.rate|num }} %{% elif a.kind in ("per_unit", "salary") %}{{ a.rate|money }} ₴{% else %}—{% endif %}</td>
-          <td class="num"><b {% if a.amount < 0 %}style="color:var(--red)"{% endif %}>{{ a.amount|money }}</b></td>
-        </tr>
-        {% else %}<tr><td colspan="7" class="footnote">Начислений за период нет. Начисление появляется, когда наряд оплачен.</td></tr>{% endfor %}
-        </tbody>
-        {% if rows %}<tfoot><tr><td colspan="6"><b>Итого начислено</b></td><td class="num"><b>{{ s.accrued|money }}</b></td></tr></tfoot>{% endif %}
-      </table>
+{# 26.11.2026 (брат): начисления — по датам. Полоска дня: день, сколько нарядов, сумма; «Открыть» — наряды этого дня
+   и их работы (раньше — одна длинная таблица, в которой всё смешивалось) #}
+{% set WD = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"] %}
+<div class="card compact pay-days">
+  <div class="card-h"><span class="headline">По дням · что начислено</span><span class="caption">нажмите на день — откроются наряды</span></div>
+  {% for dg in day_groups %}{% set day = dg.day %}
+  <details class="pay-day">
+    <summary class="pay-day-sum">
+      <span class="pay-day-d"><b>{{ WD[day.weekday()] }}, {{ day.strftime("%d.%m.%Y") }}</b>
+        <span class="caption">{% if dg.n_wo %}нарядов {{ dg.n_wo }}{% endif %}{% if dg.other %}{{ " · " if dg.n_wo }}без наряда {{ dg.other }}{% endif %}</span></span>
+      <b class="nowrap {{ 'neg' if dg.sum < 0 }}">{{ dg.sum|money }} ₴</b>
+      <span class="btn btn-sm btn-plain pay-day-open">Открыть</span>
+    </summary>
+    <div class="pay-day-body">
+      {% for g in dg.wos %}{% set o = g.o %}{% set v = vehicles.get(o.vehicle_id) if o else none %}
+      <div class="pay-wo">
+        <div class="pay-wo-h"><span>{% if o %}<a href="/orders/{{ o.id }}"><b>{{ o.number[-6:] }}</b></a>{% if v %} · {{ v.make }} {{ v.model }} <span class="nowrap">{{ fmt_plate(v.plate) }}</span>{% endif %}{% else %}<b>Без наряда</b> <span class="caption">оклад, премии, удержания</span>{% endif %}</span>
+          <b class="nowrap {{ 'neg' if g.sum < 0 }}">{{ g.sum|money }} ₴</b></div>
+        {% for a in g.lines %}{% set w = works.get(a.wo_work_id) %}
+        <div class="pay-wl">
+          <span>{{ a.note }} <span class="caption">· {{ COLS[column_of(a)]|lower }}{% if a.kind == "percent" %} · {{ a.rate|num }} % от {{ a.base_amount|money }} ₴{% elif a.kind == "per_unit" %} · {{ a.base_amount|num }} шт × {{ a.rate|money }} ₴{% endif %}{% if w and w.hours %} · {{ (w.hours * w.qty)|num }} н/ч{% endif %}</span></span>
+          <span class="nowrap {{ 'neg' if a.amount < 0 }}">{{ a.amount|money }} ₴</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
     </div>
-  </section>
+  </details>
+  {% else %}<p class="footnote" style="margin:0">Начислений за период нет. Начисление появляется, когда наряд оплачен.</p>{% endfor %}
+  {% if rows %}<div class="pay-why total"><span>Итого за период</span><b class="nowrap">{{ s.accrued|money }} ₴</b></div>{% endif %}
 </div>
 {% endblock %}
