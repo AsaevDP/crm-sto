@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SIM = ROOT / "data" / "sim"
-DAYS = int(os.getenv("SIM_DAYS", "13"))   # 22.11.2026 (брат): две недели истории (пн–пт), плотнее (для пробы: SIM_DAYS=3)
+DAYS = int(os.getenv("SIM_DAYS", "27"))   # 26.11.2026 (брат): четыре недели истории (пн–пт) — большая история зарплаты (для пробы: SIM_DAYS=3)
 SEED = 1211
 
 sys.path.insert(0, str(ROOT))
@@ -510,7 +510,7 @@ def first_stock():
         r = post("oleg", "/purchases/new", {"supplier_new": "Автотехнікс"}, what="Закупка на склад")
         pid = r.url.path.rsplit("/", 1)[1] if r is not None else None
         # 22.11.2026: история — две недели, склад закупаем на две недели (вдвое больше)
-        k = 2 if DAYS > 7 else 1
+        k = max(1, round(DAYS / 6.5))   # 26.11.2026: на всю историю (4 недели — вчетверо)
         paste = "\n".join(f"{n}; {a}; {b}; {qty * k}; {c}" for n, a, b, qty, c in STOCK)
         post("oleg", f"/purchases/{pid}/lines", {"paste": paste}, what="Строки списком (Excel)")
         post("oleg", f"/purchases/{pid}", {"action": "save", "expected_on": str(d + timedelta(days=1)),
@@ -1560,19 +1560,21 @@ def payroll_week(monday):
         # 12.11.2026: неделя пройдена не до конца — у бухгалтера и директора остаётся работа на сегодня:
         # двое не проверены, двое проверены, но не утверждены, остальные утверждены (выдана часть)
         act = [(u_id, r) for u_id, r in data["rows"].items() if r["accrued"] > 0]
+        # 26.11.2026 (брат): старые недели проходят до конца (проверил → утвердил → выдал); незаконченная — только прошлая
+        last = monday == TODAY - timedelta(days=TODAY.weekday())
         for i, (u_id, r) in enumerate(act):
-            if i < 2:
+            if i < 2 and last:
                 continue   # ждут проверки бухгалтера
             if r["pst"] == "open":
                 post("buh", f"/payroll/weeks/{d}/people/{u_id}", {"status": "checked"}, what="Проверил")
-            if i >= 4:   # 20.11.2026 (брат): утверждает директор (админ дал ему «Зарплату сотрудников»)
+            if i >= 4 or not last:   # 20.11.2026 (брат): утверждает директор (админ дал ему «Зарплату сотрудников»)
                 post("director", f"/payroll/weeks/{d}/people/{u_id}", {"status": "approved"}, what="Утвердил (директор)")
     with at(monday + timedelta(days=1), "17:00"):
         with SessionLocal() as db:
             br = db.scalar(select(M.Branch))
             data = wsvc.week_data(db, br.id, prev, staff_for_period(db, br.id, prev))
         appr = [(u_id, r) for u_id, r in data["rows"].items() if r["pst"] == "approved" and r["due"] > 0]
-        for u_id, r in appr[: max(1, len(appr) - 2)]:   # двоим ещё не выдали
+        for u_id, r in (appr[: max(1, len(appr) - 2)] if last else appr):   # двоим ещё не выдали (прошлая неделя)
             post("buh", f"/payroll/weeks/{d}/pay", {"user_id": str(u_id)}, what="Выдал зарплату")
         with SessionLocal() as db:
             data = wsvc.week_data(db, br.id, prev, staff_for_period(db, br.id, prev))
@@ -1855,7 +1857,7 @@ def leave_for_today(day):
         with at(day, "13:10"):
             for nm in ("Опора амортизатора", "Отбойник амортизатора"):
                 if nm in ps:
-                    post("irina", f"{o.url}/parts/{ps[nm].id}/delete", {"reason": "Клиент поставит свои — купил на разборке"},
+                    post(o.mgr, f"{o.url}/parts/{ps[nm].id}/delete", {"reason": "Клиент поставит свои — купил на разборке"},
                          what="Клиент отказался (уже заказано)")
         lo = one(M.PartLeftover, M.PartLeftover.wo_part_id == ps["Отбойник амортизатора"].id) if "Отбойник амортизатора" in ps else None
         R.check(lo is not None and lo.status == "decide", "отказ от заказанного — решает запчастист", o.wo().number)
@@ -2083,7 +2085,7 @@ def site_history(day):
     with at(day, "11:40"):
         for name, *_ in SITE_PARTS:
             if name in ps:
-                post("irina", f"{o.url}/parts/{ps[name].id}/delete", {"reason": "Клиент передумал — поставит позже сам"},
+                post(o.mgr, f"{o.url}/parts/{ps[name].id}/delete", {"reason": "Клиент передумал — поставит позже сам"},
                      what="Клиент отказался (уже заказано)")
     los = [one(M.PartLeftover, M.PartLeftover.wo_part_id == ps[n].id) for n, *_ in SITE_PARTS if n in ps]
     los = [lo for lo in los if lo]
@@ -2549,10 +2551,16 @@ def cover_extras(day):
         busy = {r.work_order_id for r in q(M.OrderReopen, M.OrderReopen.status == "pending")}
         closed = [w for w in closed if w.id not in busy]
         if len(closed) >= 2:
-            a, b = closed[0], closed[1]
+            # 26.11.2026: «решаю сам» — только наряд, закрытый ≤ суток назад (по настоящим часам: время сдвигается после шага)
+            def _fresh(w):
+                ca = w.closed_at if w.closed_at.tzinfo else w.closed_at.replace(tzinfo=timezone.utc)
+                return datetime.now(timezone.utc) - ca <= timedelta(hours=23)
+            fresh = [w for w in closed if w.closed_at and _fresh(w)]
+            a = fresh[0] if fresh else closed[0]
+            b = next(w for w in closed if w.id != a.id)
             post("irina", f"/orders/{a.id}/reopen-request", {"reason": "Клиент просит добавить работу"}, what="Попросить открыть заново")
             ra = _first(M.OrderReopen, M.OrderReopen.work_order_id == a.id, M.OrderReopen.status == "pending")
-            if ra:
+            if ra and fresh:
                 # сегодня (суббота) директора и зама по табелю нет — менеджер может решить сам (наряд закрыт ≤ суток)
                 post("irina", f"/reopen-requests/{ra.id}/self", what="«Директора нет — решаю сам»")
                 if one(M.OrderReopen, M.OrderReopen.id == ra.id).status == "pending":
@@ -2900,7 +2908,11 @@ def final_checks():
         # 20.11.2026 (брат): машин на СТО 20–30 (машины разбора не считаются)
         cars = db.scalar(select(func.count(func.distinct(M.WorkOrder.vehicle_id))))
         orders = db.scalar(select(func.count()).select_from(M.WorkOrder))
-        R.check(30 <= cars <= 55 and 45 <= orders <= 90, "машин на СТО 30–55 (брат: до 50, +10 %), нарядов 45–90", f"машин {cars}, нарядов {orders}")
+        # 26.11.2026: нарядов больше вместе с историей; машин — как было (клиенты возвращаются)
+        f_ = DAYS / 13
+        lo_c, hi_c, lo_o, hi_o = 30, 55, round(45 * f_), round(90 * f_)
+        R.check(lo_c <= cars <= hi_c and lo_o <= orders <= hi_o, f"машин на СТО {lo_c}–{hi_c}, нарядов {lo_o}–{hi_o}",
+                f"машин {cars}, нарядов {orders}")
         print(f"\nМашин: {cars}, нарядов: {orders}")
     # Каждый экран каждого сотрудника открывается
     menu_pages()

@@ -649,9 +649,12 @@ def compute(ctx) -> dict:
         data = wsvc.week_data(db, bid, start, users)
         act = [r for r in data["rows"].values() if r["accrued"] > 0 and r["state"] != "paid"]
         link = f"/payroll/weeks?d={start.isoformat()}"
+        # 26.11.2026 (брат): у бухгалтера «проверить» и «выдать» — только его дела → кружок в меню 🔴; плитки и строки
+        # мигают своим цветом («Проверить» оранжевая, «Выдать» зелёная — `--tc` / border-left). Админу — как было.
+        own = "red" if role != "admin" else None
         if ctx.can("payroll.check"):
             # 26.11.2026 (брат): плитки — фильтр, кружок ведёт сразу в свою плитку (?f=)
-            _add(out, "/payroll/weeks", "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link + "&f=open",
+            _add(out, "/payroll/weeks", own or "orange", sum(1 for r in act if r["pst"] == "open"), "проверить", link + "&f=open",
                  sel=[("/payroll/weeks", '.pw-user[data-pst="open"]')], tile=["Проверить"])
         if approver:
             states = ("open", "checked") if ctx.can("payroll.edit") and role == "admin" else ("checked",)
@@ -659,7 +662,7 @@ def compute(ctx) -> dict:
                  link + ("&f=checked" if states == ("checked",) else ""),
                  sel=[("/payroll/weeks", f'.pw-user[data-pst="{s}"]') for s in states], tile=['Утвердить'])
         if ctx.can("payroll.pay"):
-            _add(out, "/payroll/weeks", "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link + "&f=approved",
+            _add(out, "/payroll/weeks", own or "green", sum(1 for r in act if r["pst"] == "approved"), "выдать", link + "&f=approved",
                  sel=[("/payroll/weeks", '.pw-user[data-pst="approved"]')], tile=["Выдать"])
     # 🔴 20.11.2026: зам просит доступ к «Зарплате сотрудников» — директору
     if ctx.can("payroll.grant"):

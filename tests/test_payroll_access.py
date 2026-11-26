@@ -54,7 +54,7 @@ def test_accountant_director_deputy(client):
     # Бухгалтер: два пункта, проверяет
     login(client, "buh", "buh123")
     assert "/payroll/my" in _menu(client) and "/payroll/weeks" in _menu(client)
-    assert any(x["c"] == "orange" and "проверить" in x["t"] for x in _badges(client))
+    assert any(x["c"] == "red" and "проверить" in x["t"] for x in _badges(client))
     client.post(f"/payroll/weeks/{d}/people/{uid}", data={"status": "checked"})
     assert _pst(start, uid) == "checked"
     assert client.post(f"/payroll/weeks/{d}/people/{uid}", data={"status": "approved"},
@@ -119,7 +119,7 @@ def test_accountant_director_deputy(client):
 
     # Бухгалтер выдаёт утверждённое
     login(client, "buh", "buh123")
-    assert any(x["c"] == "green" and "выдать" in x["t"] for x in _badges(client))
+    assert any(x["c"] == "red" and "выдать" in x["t"] for x in _badges(client))
     client.post("/logout")
     with SessionLocal() as db:   # убрать галочку директора — база в тестах общая
         for p in db.scalars(select(UserPermission).where(UserPermission.permission == "payroll.view_all")):
