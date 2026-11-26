@@ -203,7 +203,7 @@ def razbor(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "", donor: str = "
                       mk_tree=dict(sorted(mk_tree.items())), ref=ref, tiles=tiles, link=link, FILTERS=RZ_FILTERS,
                       ITEM_STATES=ITEM_STATES, n_sales=n_sales, CONDITIONS=CONDITIONS, DONOR_STATUS=DONOR_STATUS,
                       RAZBOR_CATEGORIES=RAZBOR_CATEGORIES, locations=_locations(ctx), loc_label=ssvc.location_label,
-                      n_site=tiles["site"] if ctx.can("razbor.export") else 0)
+                      n_site=tiles["site"] if ctx.can("razbor.export") else 0, sw=_rz_switch(ctx))
 
 
 # ======================= Справочник: марки, модели, категории =======================
@@ -331,6 +331,21 @@ SALE_TABS = {"reserved": "Резерв · собрать", "ship": "Отправ
              "returned": "Возвраты", "cancelled": "Отменено"}
 
 
+def _rz_switch(ctx: Ctx) -> dict:
+    """26.11.2026 (брат): крупный переключатель «Машины / Все детали / Продажи и отправки» — одинаково у всех ролей."""
+    db, bid = ctx.db, ctx.branch.id
+    parts = db.scalar(select(func.count()).select_from(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id)
+                      .where(StockItem.branch_id == bid, PartCatalog.kind == "used")) or 0
+    todo = 0
+    if ctx.can("razbor.export"):
+        from ..services import site as site_svc
+        todo = len(site_svc.used_to_post(db, bid))
+    return {"cars": db.scalar(select(func.count()).select_from(Donor).where(Donor.branch_id == bid)) or 0, "parts": parts,
+            "sales": db.scalar(select(func.count()).select_from(UsedSale).where(UsedSale.branch_id == bid,
+                                                                                 UsedSale.status.in_(("reserved", "sent")))) or 0,
+            "todo_parts": todo, "show_cars": ctx.can("razbor.manage", "razbor.sell", "reports.finance")}
+
+
 @router.get("/razbor/sales")
 def sales_page(ctx: Ctx = Depends(get_ctx), tab: str = "", q: str = ""):
     ctx.need("razbor.view")
@@ -363,7 +378,7 @@ def sales_page(ctx: Ctx = Depends(get_ctx), tab: str = "", q: str = ""):
     }
     return ctx.render("razbor/sales.html", title="Разбор · продажи", tab=tab, TABS=SALE_TABS, counts=counts, rows=rows,
                       items=items, cats=cats, q=q, sums=sums, DELIVERY=DELIVERY, SALE_STATUS=SALE_STATUS,
-                      PAY_METHODS=PAY_METHODS, CHANNELS=CHANNELS, fmt_phone=osvc.fmt_phone)
+                      PAY_METHODS=PAY_METHODS, CHANNELS=CHANNELS, fmt_phone=osvc.fmt_phone, sw=_rz_switch(ctx))
 
 
 # ======================= Выдача и отправка (12.11.2026) — рабочее место кладовщика разбора =======================

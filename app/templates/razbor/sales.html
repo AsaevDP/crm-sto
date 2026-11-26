@@ -9,6 +9,7 @@
     <input class="field search" name="q" value="{{ q }}" placeholder="Код, деталь, покупатель, телефон, ТТН" autocomplete="off"></form>
   <div class="ov-actions">{% if sell %}<button class="btn btn-sm" type="button" onclick="document.getElementById('snew').showModal()">{{ icon("plus") }}Новая продажа</button>{% endif %}</div>
 </header>
+{% from "razbor/_switch.html" import rz_switch %}{{ rz_switch(sw, "sales") }}
 
 <div class="pult-tiles rz-tiles">
   {% for key, color, sub in [("reserved", "orange", "самовывоз, ждём покупателя"), ("ship", "indigo", "упаковать и отправить"),

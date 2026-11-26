@@ -13,8 +13,7 @@
     <input class="field search" name="q" value="{{ q }}" placeholder="Код Р-0001, деталь, марка, модель, VIN" autocomplete="off">
   </form>
   <div class="ov-actions">
-    <a class="btn btn-sm" href="/razbor/sales">🛒 Продажи и отправки{% if n_sales.reserved + n_sales.sent %} · {{ n_sales.reserved + n_sales.sent }}{% endif %}</a>
-    {# 22.11.2026 (брат): «Выдача и отправка» — пункт меню (там цифры); здесь — только журнал продаж #}
+    {# 26.11.2026 (брат): «Продажи и отправки» — крупной кнопкой в ряд с «Машинами» и «Всеми деталями» (ниже) #}
     {% if ctx.can("razbor.manage") %}<a class="btn btn-sm btn-gray" href="/razbor/refs">Марки и категории</a>{% endif %}
     {% if ctx.can("razbor.stock") and not ctx.can("stock.manage") %}<a class="btn btn-sm btn-gray" href="/stock/locations">Ячейки</a>{% endif %}
     {# 22.11.2026 (брат): всё для сайта (б/у и новые, выгрузка) — в разделе «На сайт» #}
@@ -23,12 +22,7 @@
 </header>
 
 {% set show_cars = ctx.can("razbor.manage", "razbor.sell", "reports.finance") %}
-{% if show_cars %}
-<div class="segmented rz-views" role="tablist">
-  <a role="tab" href="/razbor?v=cars" aria-pressed="{{ 'true' if v == 'cars' else 'false' }}">🚗 Машины · {{ donors|length }}</a>
-  <a role="tab" href="/razbor?v=parts" aria-pressed="{{ 'true' if v == 'parts' else 'false' }}">🔧 Все детали · {{ n_all }}</a>
-</div>
-{% endif %}
+{% from "razbor/_switch.html" import rz_switch %}{{ rz_switch(sw, v) }}
 
 {# Состояния — нажал — «Все детали» с этим фильтром.
    20.11.2026 (брат): плитками как во всех разделах (_tiles.html), с подписью; раньше — маленькие «таблетки» в ряд #}

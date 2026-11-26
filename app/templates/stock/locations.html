@@ -24,7 +24,32 @@
   </form>
 </div>
 {% endif %}
+{# 26.11.2026 (брат): каждая ячейка — кнопка: число позиций в ней; нажал — ниже список, что лежит #}
+{% set SEC = {"to": "ТО", "repair": "Запчасти", "chem": "Химия"} %}
+<p class="footnote" style="margin:10px 0 6px">Нажмите на ячейку — откроется список, что в ней лежит. Серые — пустые.</p>
 <div class="loc-grid">
-  {% for l in rows %}<span class="tag mono">{{ loc_label(l) }}</span>{% else %}<p class="footnote">Ячеек пока нет</p>{% endfor %}
+  {% for l in rows %}{% set n = (inside.get(l.id) or [])|length %}
+  <a class="loc-cell {{ 'empty' if not n }} {{ 'on' if cur and cur.id == l.id }}" href="{{ '/stock/locations' if cur and cur.id == l.id else '/stock/locations?c=' ~ l.id ~ '#cell' }}">
+    <span class="mono">{{ loc_label(l) }}</span>{% if n %}<b>{{ n }}</b>{% endif %}</a>
+  {% else %}<p class="footnote">Ячеек пока нет</p>{% endfor %}
 </div>
+{% if cur %}
+<section class="card compact loc-inside" id="cell">
+  <div class="card-h"><span class="headline">Ячейка <span class="mono">{{ loc_label(cur) }}</span> · {{ cur_rows|length }} {{ "позиция" if cur_rows|length == 1 else "позиций" }}</span>
+    <a class="btn btn-sm btn-gray" href="/stock/locations">Закрыть</a></div>
+  {% if cur_rows %}
+  <table class="table loc-tbl">
+    <thead><tr><th>Код</th><th>Название</th><th>Раздел</th><th class="num">Лежит</th><th class="num">В резерве</th></tr></thead>
+    <tbody>
+    {% for r in cur_rows %}{% set used = r.c and r.c.kind == "used" %}
+      <tr><td class="mono">{{ r.i.code or (r.c.article if r.c else "") }}</td>
+        <td><a href="{{ '/razbor/parts/' ~ r.i.id if used else '/stock/items/' ~ r.i.id }}">{{ r.c.name if r.c else "?" }}</a>{% if r.c and r.c.brand %} <span class="caption">{{ r.c.brand }}</span>{% endif %}</td>
+        <td>{{ "Б/у · разбор" if used else SEC.get(r.c.section if r.c else "", "Склад") }}</td>
+        <td class="num">{{ r.b.on_hand|num }}</td><td class="num">{{ r.b.reserved|num if r.b.reserved else "—" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="footnote" style="margin:0">Ячейка пустая.</p>{% endif %}
+</section>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,15 @@
+{# 26.11.2026 (брат): «Разбор» — крупный переключатель в ряд, как в «На сайт»: Машины / Все детали / Продажи и отправки.
+   Одинаково у всех, у кого есть «Разбор» (кто не видит машины — без «Машин»). cur: cars | parts | sales #}
+{% macro rz_switch(sw, cur) %}
+<nav class="sn-switch rz-switch" aria-label="Разбор">
+  {% if sw.show_cars %}
+  <a href="/razbor?v=cars" class="{{ 'on' if cur == 'cars' }}" aria-pressed="{{ (cur == 'cars')|lower }}">
+    <span class="sn-sw-ic">🚗</span><span class="sn-sw-t"><b>Машины</b><span>{{ sw.cars }} шт · доноры и окупаемость</span></span></a>
+  {% endif %}
+  <a href="/razbor?v=parts" class="{{ 'on' if cur == 'parts' }}" aria-pressed="{{ (cur == 'parts')|lower }}">
+    <span class="sn-sw-ic">🔧</span><span class="sn-sw-t"><b>Все детали</b><span>{{ sw.parts }} шт · по категориям</span></span>
+    {% if sw.todo_parts %}<span class="sn-sw-n" title="Выложить на сайт">{{ sw.todo_parts }}</span>{% endif %}</a>
+  <a href="/razbor/sales" class="{{ 'on' if cur == 'sales' }}" aria-pressed="{{ (cur == 'sales')|lower }}">
+    <span class="sn-sw-ic">🛒</span><span class="sn-sw-t"><b>Продажи и отправки</b><span>{{ sw.sales }} в резерве и в пути</span></span></a>
+</nav>
+{% endmacro %}

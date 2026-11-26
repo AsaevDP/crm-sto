@@ -1970,11 +1970,25 @@ def stock_adjust(item_id: str, ctx: Ctx = Depends(get_ctx), actual: str = Form(.
 
 
 @router.get("/stock/locations")
-def locations(ctx: Ctx = Depends(get_ctx)):
-    ctx.need("stock.view")
-    rows = ctx.db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
-                          .order_by(Location.rack, Location.shelf, Location.place)).all()
-    return ctx.render("stock/locations.html", title="Ячейки склада", rows=rows, loc_label=svc.location_label)
+def locations(ctx: Ctx = Depends(get_ctx), c: str = ""):
+    """26.11.2026 (брат): у каждой ячейки — сколько в ней позиций; нажал — список, что лежит (?c=<id>)."""
+    ctx.need("stock.view", "razbor.stock")
+    db = ctx.db
+    rows = db.scalars(select(Location).where(Location.branch_id == ctx.branch.id)
+                      .order_by(Location.rack, Location.shelf, Location.place)).all()
+    items = db.scalars(select(StockItem).where(StockItem.branch_id == ctx.branch.id, StockItem.location_id.is_not(None))).all()
+    bal = svc.balances(db, ctx.branch.id, [i.id for i in items]) if items else {}
+    cats = {x.id: x for x in db.scalars(select(PartCatalog).where(PartCatalog.id.in_({i.catalog_id for i in items})))} if items else {}
+    inside: dict = {}
+    for i in items:
+        b = bal.get(i.id)
+        if b and b["on_hand"] > 0:
+            inside.setdefault(i.location_id, []).append({"i": i, "c": cats.get(i.catalog_id), "b": b})
+    for lst in inside.values():
+        lst.sort(key=lambda r: (r["c"].name.lower() if r["c"] else ""))
+    cur = next((l for l in rows if str(l.id) == c), None)
+    return ctx.render("stock/locations.html", title="Ячейки склада", rows=rows, loc_label=svc.location_label,
+                      inside=inside, cur=cur, cur_rows=inside.get(cur.id, []) if cur else [])
 
 
 @router.post("/stock/locations")

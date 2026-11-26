@@ -3192,6 +3192,7 @@ details.vh:first-of-type { border-top: 0; }
 
 /* 26.11.2026 (брат): «На сайт» — крупный переключатель «Новые запчасти / Б/у · разбор» */
 .sn-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 16px; max-width: 900px; }
+.sn-switch.rz-switch { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); max-width: 1300px; }
 .sn-switch a { position: relative; display: flex; align-items: center; gap: 12px; padding: 14px 16px; min-height: 72px; border-radius: 16px;
   border: 2px solid var(--separator, #d2d2d7); background: var(--surface, #fff); color: var(--label, #1d1d1f); text-decoration: none;
   box-shadow: var(--shadow-1); transition: border-color .15s, background .15s; }
@@ -3205,3 +3206,15 @@ details.vh:first-of-type { border-top: 0; }
 .sn-sw-n { position: absolute; top: -8px; right: -6px; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--red);
   color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface, #fff); }
 @media (max-width: 600px) { .sn-switch { grid-template-columns: 1fr; } .sn-switch a { min-height: 60px; } }
+
+/* 26.11.2026 (брат): «Ячейки склада» — ячейка-кнопка с числом позиций, нажал — список, что лежит */
+.loc-cell { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: var(--surface, #fff);
+  border: 1.5px solid var(--accent); color: var(--label, #1d1d1f); text-decoration: none; font-size: 13px; box-shadow: var(--shadow-1); }
+.loc-cell b { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--on-accent, #fff);
+  font-size: 12px; display: inline-grid; place-items: center; }
+.loc-cell.empty { border-color: var(--separator, #d2d2d7); color: var(--label-3, #8e8e93); box-shadow: none; }
+.loc-cell:hover { border-color: var(--accent); }
+.loc-cell.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface, #fff)); border-width: 2px; }
+.loc-inside { margin-top: 14px; }
+.loc-tbl { width: 100%; }
+.loc-tbl .num { text-align: right; white-space: nowrap; }
