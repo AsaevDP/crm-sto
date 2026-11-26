@@ -45,3 +45,9 @@ def test_site_block_photos_description_post(client):
     # список «Разбора»: заметная кнопка и что не хватает
     lst = client.get("/razbor?v=parts&f=nosite").text
     assert "📷 Выложить на сайт" in lst and "не хватает: фото: 1 из 2" in lst
+    # кружки у «Разбора»: 🔴 выложить на сайт (+ 🟠 не утверждено / в резерве, когда есть)
+    b = client.get("/api/notify", headers={"X-Requested-With": "fetch"}).json()["badges"].get("/razbor", [])
+    items = [g for x in b for g in x.get("go", [x])]
+    assert any("выложить на сайт" in g["t"] for g in items)
+    # «На сайт» — крупный переключатель
+    assert 'class="sn-switch"' in client.get("/site").text

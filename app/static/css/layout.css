@@ -3189,3 +3189,19 @@ details.vh:first-of-type { border-top: 0; }
 .rz-post { width: 100%; justify-content: center; font-weight: 700; }
 .rz-site .btn.rz-post:disabled { background: var(--fill-2); color: var(--label-3, #8e8e93); cursor: not-allowed; box-shadow: none; }
 .rz-why { margin: 4px 0 0; }
+
+/* 26.11.2026 (брат): «На сайт» — крупный переключатель «Новые запчасти / Б/у · разбор» */
+.sn-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 16px; max-width: 900px; }
+.sn-switch a { position: relative; display: flex; align-items: center; gap: 12px; padding: 14px 16px; min-height: 72px; border-radius: 16px;
+  border: 2px solid var(--separator, #d2d2d7); background: var(--surface, #fff); color: var(--label, #1d1d1f); text-decoration: none;
+  box-shadow: var(--shadow-1); transition: border-color .15s, background .15s; }
+.sn-switch a:hover { border-color: var(--accent); }
+.sn-switch a.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface, #fff)); }
+.sn-switch a.on b { color: var(--accent); }
+.sn-sw-ic { font-size: 26px; line-height: 1; flex: none; }
+.sn-sw-t { display: grid; gap: 2px; min-width: 0; }
+.sn-sw-t b { font-size: 17px; }
+.sn-sw-t span { font-size: 13px; color: var(--label-2, #6e6e73); }
+.sn-sw-n { position: absolute; top: -8px; right: -6px; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--red);
+  color: #fff; font-size: 13px; font-weight: 700; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--surface, #fff); }
+@media (max-width: 600px) { .sn-switch { grid-template-columns: 1fr; } .sn-switch a { min-height: 60px; } }

@@ -243,6 +243,17 @@ def item_states(db: Session, branch_id, items, bal=None) -> dict:
     return out
 
 
+def state_counts(db: Session, branch_id) -> dict:
+    """26.11.2026 (брат): сколько деталей разбора в каждом состоянии (для кружков у «Разбора»)."""
+    from ..models import PartCatalog, StockItem
+    items = db.scalars(select(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id).where(
+        StockItem.branch_id == branch_id, PartCatalog.kind == "used")).all()
+    out: dict = {}
+    for v in (item_states(db, branch_id, items).values() if items else ()):
+        out[v] = out.get(v, 0) + 1
+    return out
+
+
 def nosite_count(db: Session, branch_id) -> int:
     """22.11.2026 (брат): деталей разбора «Нет на сайте» — цена утверждена, есть свободная, галочки «на сайт» нет."""
     from ..models import PartCatalog, StockItem

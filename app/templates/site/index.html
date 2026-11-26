@@ -12,9 +12,17 @@
     <a class="btn btn-sm btn-gray" href="/razbor/export.xlsx">⬇ Excel</a></div>{% endif %}
 </header>
 
-<nav class="segmented st-tabs" aria-label="Что продаём">
-  <a href="/site?t=new" aria-pressed="{{ (t == 'new')|lower }}">Новые · {{ counts.wait + counts.post + counts.site + counts.nostock + counts.declined }}</a>
-  <a href="/site?t=used" aria-pressed="{{ (t == 'used')|lower }}">Б/у · разбор · {{ n_used_post + n_used_site }}</a>
+{# 26.11.2026 (брат): переключатель «Новые / Б/у» — крупный и заметный, у каждой половины — сколько дел внутри #}
+{% set todo_new = counts.post + counts.declined %}
+<nav class="sn-switch" aria-label="Что продаём">
+  <a href="/site?t=new" class="{{ 'on' if t == 'new' }}" aria-pressed="{{ (t == 'new')|lower }}">
+    <span class="sn-sw-ic">🆕</span><span class="sn-sw-t"><b>Новые запчасти</b>
+      <span>{{ counts.wait + counts.post + counts.site + counts.nostock + counts.declined }} шт · отказы клиентов и со склада</span></span>
+    {% if todo_new %}<span class="sn-sw-n">{{ todo_new }}</span>{% endif %}</a>
+  <a href="/site?t=used" class="{{ 'on' if t == 'used' }}" aria-pressed="{{ (t == 'used')|lower }}">
+    <span class="sn-sw-ic">♻️</span><span class="sn-sw-t"><b>Б/у · разбор</b>
+      <span>{{ n_used_post + n_used_site }} шт · детали с машин-доноров</span></span>
+    {% if n_used_post %}<span class="sn-sw-n">{{ n_used_post }}</span>{% endif %}</a>
 </nav>
 
 {% if t == "new" %}

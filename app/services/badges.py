@@ -615,6 +615,17 @@ def compute(ctx) -> dict:
         if ctx.can("razbor.manage"):
             _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?v=parts&f=declined",
                  info=info_rz, tile=['Отказано'])
+            # 26.11.2026 (брат): у «Разбора» — те же дела, что на его плитках: 🔴 выложить на сайт, 🟠 не утверждено (ждёт
+            # директора — подготовить фото и описание), 🟠 в резерве (подготовить к выдаче / отправке)
+            from . import razbor as _rz
+            from . import site as _site
+            stc = _rz.state_counts(db, bid)
+            _add(out, "/razbor", "red", len(_site.used_to_post(db, bid)), "выложить на сайт — фото, описание, «✓ Выложил»",
+                 "/razbor?v=parts&f=nosite", info=info_rz, tile=['Выложить на сайт'], sel=[("/razbor", ".rzp-site")])
+            _add(out, "/razbor", "orange", stc.get("unapproved", 0), "не утверждено — ждёт цены директора, подготовьте фото и описание",
+                 "/razbor?v=parts&f=unapproved", info=info_rz, tile=['Не утверждено'])
+            _add(out, "/razbor", "orange", stc.get("reserved", 0), "в резерве — подготовить к выдаче или отправке",
+                 "/razbor?v=parts&f=reserved", info=info_rz, tile=['В резерве'])
     # ---------- «На сайт» (22.11.2026, брат): новые запчасти на продажу ----------
     # 26.11.2026 (брат): утвердили цену → 🔴 кладовщику разбора «выложить на сайт» (б/у и новые отдельными кружками —
     # разные вкладки), гаснет после «✓ Выложил на сайт». Прежние 🟠 «нет на сайте» / «на сайте без фото» убраны.
