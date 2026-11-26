@@ -908,12 +908,17 @@ body.fit .item-grid.fill { grid-template-rows: minmax(0, 1fr); align-items: stre
 .pbar-arr svg { width: 16px; height: 16px; display: block; }
 /* 26.11.2026 (брат): «Зарплата сотрудников» — список недель по нажатию на дату */
 .pw-weeks-pop { width: 300px; min-width: 0 !important; display: grid; gap: 8px; }
-@media (min-width: 900px) { .pw-weekpick .pw-weeks-pop { left: 50%; transform: translateX(-50%); } }
 .pw-weeks-list { display: grid; max-height: 320px; overflow-y: auto; }
 .pw-wk { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: var(--r-xs); color: var(--text); text-decoration: none; }
 .pw-wk:hover { background: var(--fill-2); }
 .pw-wk.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); font-weight: 600; }
 .pw-weeks-go .field { width: 100%; }
+/* 26.11.2026 (брат): окно выбора периода — список месяцев / недель (не календарь), не вылезает за край экрана */
+.pcal-pop.pcal-list { min-width: 0 !important; width: 280px; display: grid; }
+.pcal-choices { display: grid; max-height: min(340px, 60vh); overflow-y: auto; }
+.pcal-ch { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-radius: var(--r-xs); color: var(--text); text-decoration: none; white-space: nowrap; }
+.pcal-ch:hover { background: var(--fill-2); }
+.pcal-ch.on { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); font-weight: 600; }
 .pcal { position: relative; }
 .pcal > summary { list-style: none; white-space: nowrap; }
 .pcal > summary::-webkit-details-marker { display: none; }

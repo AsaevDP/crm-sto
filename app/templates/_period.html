@@ -7,9 +7,15 @@
   {% if bar.prev %}<a class="btn btn-sm btn-gray pbar-arr" data-pkey="prev" href="{{ bar.prev }}" title="Назад · клавиша ←" aria-label="Предыдущий период">{{ icon("back") }}</a>{% endif %}
   <details class="pcal">
     <summary class="btn btn-sm btn-gray pcur" title="Выбрать дату в календаре">📅 {{ per.label }}</summary>
-    <form class="pcal-pop card compact" method="get" action="{{ bar.path }}">
+    {% set ch = bar.choices() %}
+    <form class="pcal-pop card compact {{ 'pcal-list' if ch }}" method="get" action="{{ bar.path }}">
       {% for k, v in bar.keep.items() if v not in ("", none) %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
-      {% if per.allowed|reject("in", ["custom", "all"])|list %}
+      {# 26.11.2026 (брат): нажали на дату — список месяцев / недель / кварталов / лет (не календарь); календарь — только у дня #}
+      {% if ch %}
+      <div class="pcal-choices">
+        {% for t, href, on, now_ in ch %}<a class="pcal-ch {{ 'on' if on }}" href="{{ href }}"><span>{{ t }}</span>{% if now_ %}<span class="caption">сейчас</span>{% elif on %}<span class="caption">открыт</span>{% endif %}</a>{% endfor %}
+      </div>
+      {% elif per.allowed|reject("in", ["custom", "all"])|list %}
       <label class="caption">Перейти к дате
         <input type="hidden" name="p" value="{{ per.kind if per.kind not in ('custom', 'all') else (per.allowed|reject('in', ['custom', 'all'])|first) }}">
         <input class="field" type="date" name="d" value="{{ per.anchor.isoformat() }}" onchange="this.form.submit()"></label>

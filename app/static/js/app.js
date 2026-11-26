@@ -293,6 +293,18 @@
   document.addEventListener('click', e => {
     document.querySelectorAll('details.pcal[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
   });
+  // 26.11.2026 (брат): окно выбора периода не вылезает за край экрана (раньше — ползунок внизу страницы);
+  // открытый период в списке — сразу виден
+  document.querySelectorAll('details.pcal').forEach(d => d.addEventListener('toggle', () => {
+    const pop = d.querySelector('.pcal-pop');
+    if (!d.open || !pop) return;
+    pop.style.left = ''; pop.style.right = ''; pop.style.transform = '';
+    if (getComputedStyle(pop).position !== 'absolute') return;
+    const r = pop.getBoundingClientRect(), pad = 12;
+    if (r.right > innerWidth - pad) pop.style.left = (parseFloat(getComputedStyle(pop).left) || 0) - (r.right - innerWidth + pad) + 'px';
+    const on = pop.querySelector('.pcal-ch.on, .pw-wk.on'), box = on && on.parentElement;
+    if (on && box) box.scrollTop = on.offsetTop - box.offsetTop - box.clientHeight / 2 + on.offsetHeight / 2;
+  }));
 })();
 // ===== Бренды (11.11.2026): выбор из общего списка, «＋ Новый бренд…» добавляет для всех =====
 (function () {

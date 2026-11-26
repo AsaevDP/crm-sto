@@ -141,6 +141,23 @@ class Bar:
             (x for x in ("month", "week", "day", "year") if x in self.per.allowed), "month")
         return self.url(p=k, d=date.today().isoformat())
 
+    def choices(self) -> list[tuple[str, str, bool, bool]]:
+        """26.11.2026 (брат): нажали на дату — список соседних периодов того же вида (а не календарь):
+        [(подпись, ссылка, открыт, текущий)]. Месяцы — 12 назад и следующий, недели — 25 назад и следующая,
+        кварталы — 8, годы — 5. День и свой период — пусто (там календарь / «с — по»)."""
+        k = self.per.kind
+        n_back = {"week": 25, "month": 12, "quarter": 7, "year": 4}.get(k)
+        if not n_back:
+            return []
+        today = date.today()
+        cur_d1 = bounds(k, today)[0]
+        out = []
+        for i in range(1, -n_back - 1, -1):
+            a = shift(k, cur_d1, i)
+            d1, d2 = bounds(k, a)
+            out.append((label(k, d1, d2), self.url(**self.per.params(d=d1)), d1 == self.per.d1, d1 == cur_d1))
+        return out
+
     def quick(self) -> list[tuple[str, str, str, bool]]:
         """[(вид, подпись, ссылка, выбран)] — быстрые кнопки на текущий период."""
         out = []
