@@ -130,12 +130,12 @@ def decide(db: Session, lo: PartLeftover, user: User, action: str, note: str = "
         lo.status, msg = "returned", "вернул поставщику"
     else:
         return "Это действие сейчас недоступно"
-    lo.decided_by, lo.decided_at, lo.note = user.id, now(), (note or "").strip()[:300]
-    part = db.get(WoPart, lo.wo_part_id)
-    nsvc.send(db, [wo.manager_id], "refused_done", f"Отказ клиента: {part.name if part else ''} — {msg}",
-              f"{nsvc.car(db, wo)} · наряд {wo.number} · {user.short_name}", f"/orders/{wo.id}#parts", wo, skip=user.id)
-    from .orders import event
-    event(db, wo, "status", f"Отказ клиента от «{part.name if part else ''}»: {msg}" + (f" — {lo.note}" if lo.note else ""))
+    # 26.11.2026 (брат): прежнюю заметку не стираем, если новую не вписали
+    lo.decided_by, lo.decided_at = user.id, now()
+    if (note or "").strip():
+        lo.note = note.strip()[:300]
+    # 26.11.2026 (брат): решение склада / запчастиста по лишней детали — НЕ сообщение менеджеру (отказ он оформил сам,
+    # делать ему нечего) и НЕ строка в карточке клиента (это не история клиента). Остаётся в журнале и ленте наряда.
     # 22.11.2026 (брат): «Продать» — сразу в «На сайт → Новые» (цену утверждает директор); передумали — снята с продажи
     from . import site as site_svc
     db.flush()
