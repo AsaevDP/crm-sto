@@ -623,6 +623,10 @@ def compute(ctx) -> dict:
         sc = site_svc.counts(db, bid, sync=False)
         if ctx.can("razbor.price"):
             _add(out, "/site", "red", sc["wait"], "новые на продажу — утвердить цену", "/site?t=new&f=wait", sel=[("/site", '.sn-row[data-stage="wait"]')], tile=['Ждут утверждения'])
+        if ctx.can("razbor.export") and not ctx.can("razbor.price"):
+            # 26.11.2026 (брат): кладовщику разбора 🟠 «ждут утверждения директором» — подготовиться (фото, описание)
+            _add(out, "/site", "orange", sc["wait"], "новые ждут утверждения цены директором — подготовьте фото и описание",
+                 "/site?t=new&f=wait", info=info_rz, sel=[("/site", '.sn-row[data-stage="wait"]')], tile=['Ждут утверждения'])
         if ctx.can("razbor.export"):
             _add(out, "/site", "red", len(site_svc.used_to_post(db, bid)), "б/у — выложить на сайт (фото, описание, «✓ Выложил»)",
                  "/site?t=used&f=post", info=info_rz, sel=[("/site", '.sn-row[data-stage="post"]')], tile=['Выложить на сайт'])

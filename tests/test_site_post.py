@@ -80,7 +80,11 @@ def test_new_part_decline_resubmit_price_and_post(client):
     client.post(f"/stock/leftovers/{lo_id}", data={"action": "sale"})
     with SessionLocal() as db:
         sid = db.scalar(select(SiteNew.id).where(SiteNew.leftover_id == lo_id))
+    # 26.11.2026: пока ждёт директора — у кладовщика разбора 🟠 у «На сайт» (подготовить фото и описание)
+    _as(client, "dmitro")
+    assert any(x["c"] == "orange" and "ждут утверждения" in x["t"] for x in _site_badges(client))
     _as(client, "director")
+    assert not any(x["c"] == "orange" and "ждут утверждения" in x["t"] for x in _site_badges(client))
     client.post(f"/site/new/{sid}/decline", data={"answer": "Дорого"})
     _as(client, "dmitro")
     assert any("отказал" in x["t"] for x in _site_badges(client))
