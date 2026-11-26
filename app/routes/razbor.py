@@ -68,13 +68,16 @@ def _item_rows(ctx: Ctx, items):
     cats = {c.id: c for c in db.scalars(select(PartCatalog).where(PartCatalog.id.in_([i.catalog_id for i in items])))}
     donors = {d.id: d for d in db.scalars(select(Donor).where(Donor.branch_id == ctx.branch.id))}
     locs = {l.id: l for l in _locations(ctx)}
-    first = {}
+    first, nph = {}, {}
     for p in db.scalars(select(StockPhoto).where(StockPhoto.stock_item_id.in_([i.id for i in items])).order_by(StockPhoto.created_at)):
         first.setdefault(p.stock_item_id, p)
+        nph[p.stock_item_id] = nph.get(p.stock_item_id, 0) + 1
+    from ..services import site as site_svc   # 26.11.2026: чего не хватает для сайта (фото ≥ 2, описание)
     rows = []
     for i in items:
         rows.append({"i": i, "c": cats.get(i.catalog_id), "d": donors.get(i.donor_id), "b": bal[i.id], "state": states[i.id],
-                     "loc": ssvc.location_label(locs.get(i.location_id)), "photo": first.get(i.id)})
+                     "loc": ssvc.location_label(locs.get(i.location_id)), "photo": first.get(i.id),
+                     "n_photos": nph.get(i.id, 0), "missing": site_svc.post_missing(nph.get(i.id, 0), i.description)})
     return rows
 
 
@@ -776,7 +779,7 @@ def part_view(iid: str, ctx: Ctx = Depends(get_ctx)):
     from ..services import site as site_svc   # 26.11.2026: блок «На сайт» — что не хватает, кто выложил
     poster = db.get(User, i.site_posted_by) if i.site_posted_by else None
     site = {"missing": site_svc.post_missing(len(photos), i.description), "min": site_svc.MIN_PHOTOS,
-            "poster": poster, "can": ctx.can("razbor.export")}
+            "poster": poster, "can": ctx.can("razbor.export"), "edit": ctx.can("razbor.manage", "razbor.export")}
     return ctx.render("razbor/part.html", title=f"{i.code} {row['c'].name}", r=row, i=i, photos=photos, sales=sales, price=price,
                       site=site,
                       moves=moves, people=people, locations=_locations(ctx), CONDITIONS=CONDITIONS, DELIVERY=DELIVERY,
@@ -808,18 +811,77 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
             req.price = i.sale_price
     if form.get("condition") in CONDITIONS:
         i.condition = str(form.get("condition"))
-    i.description = str(form.get("description", "")).strip()
-    # 26.11.2026: «на сайт» — только кнопкой «✓ Выложил на сайт» (фото ≥ 2, описание); убрали описание — снимаем
-    if i.publish_on_site and not i.description:
-        from ..services import site as site_svc
-        site_svc.unpost_used(i)
-    loc = ctx.db.get(Location, _uuid(str(form.get("location_id")))) if form.get("location_id") else None
-    i.location_id = loc.id if loc else None
+    # 26.11.2026 (брат): описание и фото — в блоке «На сайт»; здесь меняем, только если поле пришло
+    if "description" in form:
+        i.description = str(form.get("description", "")).strip()
+        # «на сайт» — только кнопкой «✓ Выложил на сайт» (фото ≥ 2, описание); убрали описание — снимаем
+        if i.publish_on_site and not i.description:
+            from ..services import site as site_svc
+            site_svc.unpost_used(i)
+    if "location_id" in form:
+        loc = ctx.db.get(Location, _uuid(str(form.get("location_id")))) if form.get("location_id") else None
+        i.location_id = loc.id if loc else None
     for p in await _photos(form):
         ctx.db.add(StockPhoto(stock_item_id=i.id, file=p))
     ctx.db.commit()
     flash(request, "Сохранено")
     return _to(f"/razbor/parts/{iid}")
+
+
+def _site_editor(ctx: Ctx):
+    """Фото и описание для сайта: кладовщик разбора (razbor.manage) или кто выкладывает (razbor.export)."""
+    ctx.need("razbor.manage", "razbor.export")
+
+
+@router.post("/razbor/parts/{iid}/photos")
+async def part_photos(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
+    """26.11.2026 (брат): «📷 Добавить фото» в блоке «На сайт» — выбрал файлы, сразу загрузились."""
+    _site_editor(ctx)
+    i = _item(ctx, iid)
+    form = await request.form(max_files=30)
+    added = await _photos(form)
+    for p in added:
+        ctx.db.add(StockPhoto(stock_item_id=i.id, file=p))
+    ctx.db.commit()
+    flash(request, f"Фото добавлено: {len(added)}" if added else "Фото не добавлено — выберите картинку (jpg, png)",
+          "ok" if added else "error")
+    return _to(f"/razbor/parts/{iid}#site")
+
+
+@router.post("/razbor/parts/{iid}/photos/{pid}/delete")
+def part_photo_delete(iid: str, pid: str, ctx: Ctx = Depends(get_ctx)):
+    """26.11.2026 (брат): «✕» у фото. Фото стало меньше 2 у выложенной — снова «Выложить на сайт»."""
+    _site_editor(ctx)
+    i = _item(ctx, iid)
+    p = ctx.db.get(StockPhoto, _uuid(pid))
+    if not p or p.stock_item_id != i.id:
+        raise Forbidden()
+    ctx.db.delete(p)
+    ctx.db.flush()
+    from ..services import site as site_svc
+    msg = "Фото удалено"
+    if i.publish_on_site and site_svc.used_photo_count(ctx.db, i.id) < site_svc.MIN_PHOTOS:
+        site_svc.unpost_used(i)
+        msg += f" — фото меньше {site_svc.MIN_PHOTOS}, деталь снова в «Выложить на сайт»"
+    ctx.db.commit()
+    flash(ctx.request, msg)
+    return _to(f"/razbor/parts/{iid}#site")
+
+
+@router.post("/razbor/parts/{iid}/description")
+def part_description(iid: str, ctx: Ctx = Depends(get_ctx), description: str = Form("")):
+    """26.11.2026 (брат): «Описание для сайта» в блоке «На сайт»."""
+    _site_editor(ctx)
+    i = _item(ctx, iid)
+    i.description = description.strip()[:2000]
+    msg = "Описание сохранено"
+    if i.publish_on_site and not i.description:
+        from ..services import site as site_svc
+        site_svc.unpost_used(i)
+        msg = "Описание пустое — деталь снова в «Выложить на сайт»"
+    ctx.db.commit()
+    flash(ctx.request, msg)
+    return _to(f"/razbor/parts/{iid}#site")
 
 
 @router.post("/razbor/parts/{iid}/to-site")

@@ -15,11 +15,15 @@
 </header>
 <div class="ov-grid fill donor-grid">
   <section class="ov-col on" data-t="main">
+    {# 26.11.2026 (брат): фото и описание — в блоке «На сайт»; здесь только когда блока нет (продана, в наряде…) #}
+    {% set show_site = r.state in ("stock", "unapproved", "declined") or i.publish_on_site %}
+    {% if not show_site %}
     <div class="card compact">
       {% if photos %}<div class="pgallery sm">{% for p in photos %}<a href="/razbor/files/{{ p.file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""></a>{% endfor %}</div>
-      {% else %}<p class="footnote" style="margin:0">Фото нет — без фото на сайте продаётся хуже</p>{% endif %}
+      {% else %}<p class="footnote" style="margin:0">Фото нет</p>{% endif %}
       {% if i.description %}<p class="ov-text">{{ i.description }}</p>{% endif %}
     </div>
+    {% endif %}
     {# 18.11.2026 (брат): цену утверждает директор / зам. Не утверждена — с деталью ничего делать нельзя #}
     {% if price.state == "pending" %}
     <div class="wo-now" style="--sc:var(--orange)"><div class="grow"><b>Цена ждёт утверждения</b>
@@ -49,34 +53,55 @@
     {% endif %}
     {# 26.11.2026 (брат): «На сайт» — после утверждения цены кладовщик разбора добавляет фото (≥ 2) и описание и жмёт
        «✓ Выложил на сайт». Пока чего-то нет — кнопка не нажимается, написано, чего не хватает. #}
-    {% if not price.blocked and (r.state == "stock" or i.publish_on_site) %}
-    <div class="card compact rz-site rim {{ 'rim-red' if not i.publish_on_site else 'rim-green' }}" id="site">
+    {# 26.11.2026 (брат): ВСЁ для сайта в одном блоке: 1) фото (сразу загружаются, «✕» — удалить) 2) описание 3) «✓ Выложил».
+       Готовить фото и описание можно и пока цена ждёт директора — «Выложил» станет доступна после утверждения. #}
+    {% if show_site %}{% set ed = site.edit %}{% set nph = photos|length %}
+    <div class="card compact rz-site rim {{ 'rim-green' if i.publish_on_site else ('rim-red' if not price.blocked else 'rim-orange') }}" id="site">
       <div class="card-h"><span class="headline">На сайт</span>
-        {% if i.publish_on_site %}<span class="chip" style="--c:var(--green)">Выложена</span>{% else %}<span class="chip" style="--c:var(--red)">Выложить на сайт</span>{% endif %}</div>
+        {% if i.publish_on_site %}<span class="chip" style="--c:var(--green)">Выложена</span>
+        {% elif price.blocked %}<span class="chip" style="--c:var(--orange)">Ждёт цены директора</span>
+        {% else %}<span class="chip" style="--c:var(--red)">Выложить на сайт</span>{% endif %}</div>
       {% if i.publish_on_site %}
-      <p class="footnote" style="margin:0">Выложил{% if site.poster %} {{ site.poster.full_name }}{% endif %}{% if i.site_posted_at %} · {{ i.site_posted_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Деталь идёт в выгрузку для сайта.</p>
-      {% if site.can %}<form method="post" action="/razbor/parts/{{ i.id }}/off-site" style="margin-top:6px"><button class="btn btn-sm btn-plain">Снять с сайта</button></form>{% endif %}
-      {% else %}
-      <ul class="rz-site-req">
-        <li class="{{ 'ok' if photos|length >= site.min else 'no' }}">{{ "✓" if photos|length >= site.min else "✕" }} Фото: {{ photos|length }} из {{ site.min }} (лучше 3)</li>
-        <li class="{{ 'ok' if i.description else 'no' }}">{{ "✓" if i.description else "✕" }} Описание для объявления</li>
-      </ul>
-      {% if site.missing and ctx.can("razbor.manage") %}<p class="footnote" style="margin:4px 0 0">Добавьте ниже в «Изменить» — фото и описание.</p>{% endif %}
-      {% if site.can %}<form method="post" action="/razbor/parts/{{ i.id }}/to-site" style="margin-top:6px">
-        <button class="btn btn-sm" id="btn-to-site" {{ 'disabled' if site.missing }}>✓ Выложил на сайт</button></form>{% endif %}
+      <p class="footnote" style="margin:0 0 6px">Выложил{% if site.poster %} {{ site.poster.full_name }}{% endif %}{% if i.site_posted_at %} · {{ i.site_posted_at.astimezone().strftime("%d.%m %H:%M") }}{% endif %}. Деталь идёт в выгрузку для сайта.</p>
+      {% endif %}
+
+      <div class="rz-st"><span class="rz-st-n {{ 'ok' if nph >= site.min else 'no' }}">{{ "✓" if nph >= site.min else "1" }}</span>
+        <b>Фото · {{ nph }} из {{ site.min }}</b><span class="caption">нужно не меньше {{ site.min }}, лучше 3</span></div>
+      <div class="rz-photos">
+        {% for p in photos %}<div class="rz-ph"><a href="/razbor/files/{{ p.file.split('/')[-1] }}" data-lightbox><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""></a>
+          {% if ed %}<form method="post" action="/razbor/parts/{{ i.id }}/photos/{{ p.id }}/delete" onsubmit="return confirm('Удалить это фото?')"><button class="rz-ph-x" title="Удалить фото" aria-label="Удалить фото">✕</button></form>{% endif %}</div>{% endfor %}
+        {% if ed %}<form method="post" action="/razbor/parts/{{ i.id }}/photos" enctype="multipart/form-data" data-compress class="rz-ph-add-f">
+          <label class="rz-ph-add">📷<span>Добавить фото</span><input type="file" name="photos" accept="image/*" multiple hidden onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"></label></form>{% endif %}
+      </div>
+
+      <div class="rz-st"><span class="rz-st-n {{ 'ok' if i.description else 'no' }}">{{ "✓" if i.description else "2" }}</span>
+        <b>Описание для сайта</b><span class="caption">состояние, что в комплекте, особенности</span></div>
+      {% if ed %}<form method="post" action="/razbor/parts/{{ i.id }}/description" class="form dense rz-desc">
+        <textarea class="field" name="description" rows="3" maxlength="2000" placeholder="Например: снят с машины на ходу, без трещин, все крепления целые">{{ i.description }}</textarea>
+        <button class="btn btn-sm btn-gray">Сохранить описание</button></form>
+      {% elif i.description %}<p class="ov-text">{{ i.description }}</p>{% else %}<p class="footnote" style="margin:0">Описания нет</p>{% endif %}
+
+      <div class="rz-st"><span class="rz-st-n {{ 'ok' if i.publish_on_site else 'no' }}">{{ "✓" if i.publish_on_site else "3" }}</span>
+        <b>{{ "Выложена на сайт" if i.publish_on_site else "Выложить на сайт" }}</b></div>
+      {% if site.can %}
+        {% if i.publish_on_site %}<form method="post" action="/razbor/parts/{{ i.id }}/off-site"><button class="btn btn-sm btn-plain">Снять с сайта</button></form>
+        {% else %}
+        <form method="post" action="/razbor/parts/{{ i.id }}/to-site"><button class="btn rz-post" id="btn-to-site" {{ 'disabled' if site.missing or price.blocked }}>✓ Выложил на сайт</button></form>
+        {% if price.blocked %}<p class="caption rz-why">Станет доступна, когда директор утвердит цену. Фото и описание можно готовить уже сейчас.</p>
+        {% elif site.missing %}<p class="caption rz-why" style="color:var(--red)">Не хватает: {{ site.missing|join(", ") }}</p>
+        {% else %}<p class="caption rz-why" style="color:var(--green)">Всё готово — нажмите, когда выложите деталь на сайт</p>{% endif %}
+        {% endif %}
       {% endif %}
     </div>
     {% endif %}
     {% if ctx.can("razbor.manage") %}
-    <details class="card compact work-edit" {{ 'open' if site.missing and not price.blocked and r.state == "stock" and not i.publish_on_site }}><summary class="caption">Изменить: {{ "цена, " if price.blocked }}состояние, ячейка, фото, описание</summary>
+    <details class="card compact work-edit"><summary class="caption">Изменить: название, категория, {{ "цена, " if price.blocked }}состояние, ячейка</summary>
       <form class="form dense" method="post" action="/razbor/parts/{{ i.id }}" enctype="multipart/form-data" data-compress>
         <input class="field" name="name" value="{{ r.c.name }}" aria-label="Название">
         {{ catsub_select(ref, r.c.category or "", r.c.subcategory or "") }}
         <div class="form-row three">{% if price.blocked %}<input class="field" name="price" value="{{ '%.0f'|format(i.sale_price) }}" inputmode="decimal" aria-label="Цена (ещё не утверждена)">{% else %}<input class="field" value="{{ '%.0f'|format(i.sale_price) }} ₴ · утверждена" disabled aria-label="Цена утверждена">{% endif %}
           <select class="field" name="condition">{% for k, v in CONDITIONS.items() %}<option value="{{ k }}" {% if k == i.condition %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
           <select class="field" name="location_id"><option value="">Без ячейки</option>{% for l in locations %}<option value="{{ l.id }}" {% if l.id == i.location_id %}selected{% endif %}>{{ loc_label(l) }}</option>{% endfor %}</select></div>
-        <textarea class="field" name="description" rows="2" placeholder="Описание для объявления">{{ i.description }}</textarea>
-        <div class="form-row"><label class="btn btn-gray btn-sm pp-add">{{ icon("plus") }}Фото<input type="file" name="photos" accept="image/*" multiple hidden></label></div>
         <button class="btn btn-sm">Сохранить</button>
       </form>
     </details>

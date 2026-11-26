@@ -136,7 +136,7 @@
     <span><span class="caption">в наличии</span><b>{{ r.b.free|num }}</b></span></div>
   <div class="sn-acts">
     {% if can_edit and not i.publish_on_site %}
-      {% if r.missing %}<a class="btn btn-sm btn-tinted" href="/razbor/parts/{{ i.id }}#site">Добавить фото и описание</a>
+      {% if r.missing %}<a class="btn btn-sm rzp-site-btn" style="background:var(--red);color:#fff" href="/razbor/parts/{{ i.id }}#site">📷 Добавить фото и описание</a>
       {% else %}<form method="post" action="/razbor/parts/{{ i.id }}/to-site"><input type="hidden" name="back" value="/site?t=used&f=post"><button class="btn btn-sm btn-post">✓ Выложил на сайт</button></form>{% endif %}
     {% elif can_edit %}
       <form method="post" action="/razbor/parts/{{ i.id }}/off-site"><input type="hidden" name="back" value="/site?t=used&f=site"><button class="btn btn-sm btn-plain">Снять с сайта</button></form>

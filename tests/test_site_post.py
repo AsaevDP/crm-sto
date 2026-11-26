@@ -56,7 +56,7 @@ def test_used_part_approved_notify_post(client):
     page = client.get("/site?t=used&f=post").text
     assert "Фара пост-тест" in page and "Не хватает" in page and "Выложить на сайт" in page
     card = client.get(f"/razbor/parts/{iid}").text
-    assert 'id="site"' in card and "Фото: 0 из 2" in card and "disabled" in card
+    assert 'id="site"' in card and "Фото · 0 из 2" in card and "disabled" in card
     # в выгрузке нет, пока не выложили
     assert "Фара пост-тест" not in client.get("/razbor/export.json").text
     client.post(f"/razbor/parts/{iid}", data={"name": "Фара пост-тест", "description": "Без трещин"}, files=PHOTOS)

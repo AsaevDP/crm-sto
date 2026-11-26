@@ -143,8 +143,9 @@
       {# 26.11.2026 (брат): в наличии, не выложена — «Выложить на сайт» ведёт в карточку (фото ≥ 2, описание, «✓ Выложил») #}
       {% if r.state == "stock" and not r.i.publish_on_site %}
       <div class="rzp-site" data-id="{{ r.i.id }}">
-        <span class="caption" style="color:var(--red)">не выложена на сайт</span>
-        {% if ctx.can("razbor.export") %}<a class="btn btn-sm btn-tinted" href="/razbor/parts/{{ r.i.id }}#site">Выложить на сайт</a>{% endif %}
+        <span class="rzp-site-t"><b>Не выложена на сайт</b>
+          <span class="caption">{% if r.missing %}не хватает: {{ r.missing|join(", ") }}{% else %}фото и описание есть — осталось «✓ Выложил»{% endif %}</span></span>
+        {% if ctx.can("razbor.manage", "razbor.export") %}<a class="btn btn-sm rzp-site-btn" href="/razbor/parts/{{ r.i.id }}#site">📷 Выложить на сайт</a>{% endif %}
       </div>
       {% endif %}
       {% endfor %}{% endfor %}

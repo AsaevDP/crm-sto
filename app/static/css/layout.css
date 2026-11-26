@@ -2933,7 +2933,10 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 .ow-time { width: 92px; min-height: 34px; flex: none; }
 
 /* 22.11.2026 (брат): деталь разбора в наличии, но не на сайте — пометка и «＋ На сайт» под строкой */
-.rzp-site { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: -2px 0 6px; }
+.rzp-site { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: -2px 0 8px; padding: 6px 8px 6px 12px; border-radius: 10px; background: color-mix(in srgb, var(--red) 7%, transparent); box-shadow: inset 4px 0 0 var(--red); }
+.rzp-site-t { display: grid; gap: 1px; min-width: 0; }
+.rzp-site-t b { color: var(--red); font-size: 13px; }
+.rzp-site .btn.rzp-site-btn { background: var(--red); color: #fff; white-space: nowrap; }
 .rzp-site .btn { min-height: 28px; }
 
 /* 22.11.2026 (брат, наряд 21): строка оплаты — описание, под ним сумма справа (сумма не вылезает за рамку) */
@@ -3166,3 +3169,23 @@ details.vh:first-of-type { border-top: 0; }
 .sn-miss { margin-top: 2px; }
 .sn-used a.sn-ph, .sn-used .sn-top a { text-decoration: none; color: inherit; }
 .rz-site .btn:disabled, .sn-acts .btn:disabled { background: var(--fill-2); color: var(--label-3, #8e8e93); cursor: not-allowed; box-shadow: none; }
+
+/* 26.11.2026 (брат): карточка детали разбора — всё для сайта в одном блоке: 1 фото, 2 описание, 3 «✓ Выложил» */
+.rz-site .rz-st { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
+.rz-site .rz-st:first-of-type { margin-top: 4px; }
+.rz-st-n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; background: var(--red); align-self: center; }
+.rz-st-n.ok { background: var(--green); }
+.rz-photos { display: flex; flex-wrap: wrap; gap: 8px; }
+.rz-ph { position: relative; width: 96px; height: 96px; }
+.rz-ph img { width: 96px; height: 96px; object-fit: cover; border-radius: 12px; display: block; }
+.rz-ph form { position: absolute; top: 4px; right: 4px; margin: 0; }
+.rz-ph-x { width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; font-size: 13px; line-height: 24px; cursor: pointer; }
+.rz-ph-add-f { margin: 0; }
+.rz-ph-add { width: 96px; height: 96px; border-radius: 12px; border: 2px dashed var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent);
+  display: grid; place-items: center; align-content: center; gap: 2px; font-size: 26px; cursor: pointer; text-align: center; }
+.rz-ph-add span { font-size: 12px; font-weight: 600; line-height: 1.2; }
+.rz-desc { display: grid; gap: 6px; }
+.rz-desc .btn { justify-self: start; }
+.rz-post { width: 100%; justify-content: center; font-weight: 700; }
+.rz-site .btn.rz-post:disabled { background: var(--fill-2); color: var(--label-3, #8e8e93); cursor: not-allowed; box-shadow: none; }
+.rz-why { margin: 4px 0 0; }
