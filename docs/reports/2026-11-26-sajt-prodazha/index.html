@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Продажа запчастей и выкладка на сайт — кто что делает · 26.11.2026</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; color: #1d1d1f; background: #e9e9ee; }
+  .sheet { background: #fff; width: 210mm; min-height: 297mm; margin: 16px auto; padding: 14mm 13mm; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+  @media print { body { background: #fff; } .sheet { margin: 0; box-shadow: none; width: auto; min-height: 0; padding: 0; page-break-after: always; } .noprint { display: none; } }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 0 0 2px; display: flex; align-items: center; gap: 10px; }
+  h2 .who { font-size: 12px; font-weight: 600; color: #fff; background: var(--c, #0a84ff); border-radius: 20px; padding: 3px 10px; }
+  h3 { font-size: 15px; margin: 14px 0 4px; }
+  .sub { color: #6e6e73; margin: 0 0 10px; }
+  .step { display: grid; grid-template-columns: 26px 1fr; gap: 8px; margin: 10px 0 4px; }
+  .num { width: 26px; height: 26px; border-radius: 50%; background: var(--c, #0a84ff); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 13px; }
+  .step b { display: block; }
+  .shot { margin: 6px 0 2px; border: 1px solid #d2d2d7; border-radius: 8px; overflow: hidden; break-inside: avoid; }
+  .shot img { display: block; width: 100%; }
+  .cap { font-size: 12px; color: #6e6e73; margin: 2px 0 10px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  ul { margin: 4px 0 8px; padding-left: 18px; } li { margin: 2px 0; }
+  .note { background: #fff8e6; border-left: 4px solid #ff9500; border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 13px; }
+  .warn { background: #fdecec; border-left-color: #ff3b30; }
+  .ok { background: #eaf8ee; border-left-color: #34c759; }
+  .dot { display: inline-block; min-width: 18px; height: 18px; border-radius: 9px; color: #fff; font-size: 11px; font-weight: 700; text-align: center; line-height: 18px; padding: 0 5px; vertical-align: 1px; }
+  .r { background: #ff3b30; } .o { background: #ff9500; } .g { background: #34c759; } .p { background: #af52de; } .gr { background: #8e8e93; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 6px 0; }
+  th, td { border: 1px solid #d2d2d7; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f5f5f7; }
+  /* Схема */
+  .flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .box { border: 2px solid var(--c, #0a84ff); border-radius: 10px; padding: 7px 9px; font-size: 12.5px; background: #fff; }
+  .box b { display: block; font-size: 13px; }
+  .box .w { color: var(--c, #0a84ff); font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .02em; }
+  .arrow { text-align: center; font-size: 20px; color: #8e8e93; margin: 2px 0; }
+  .wide { grid-column: 1 / -1; }
+  .side { font-size: 12px; color: #6e6e73; }
+  .toc a { color: #0a84ff; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<!-- ============ Лист 1. Общая схема ============ -->
+<section class="sheet">
+  <h1>Продажа запчастей и выкладка на сайт</h1>
+  <p class="sub">Как это сейчас работает в CRM — по шагам и по каждому сотруднику. Скриншоты сняты 26.11.2026 на копии рабочей базы
+    (живая имитация 4 недель), рабочую базу не трогали.</p>
+
+  <h3>Откуда берётся деталь на продажу — три пути</h3>
+  <div class="flow">
+    <div class="box" style="--c:#8e5a2b"><span class="w">Путь А · б/у</span><b>Деталь с разборки</b>Кладовщик разбора заводит деталь донора с ценой. Код «Р-…».</div>
+    <div class="box" style="--c:#0a84ff"><span class="w">Путь Б · новая</span><b>Клиент отказался</b>Менеджер оформил отказ от заказанной детали → она приехала на склад → запчастист «Продать». Код «Н-…».</div>
+    <div class="box" style="--c:#30b0c7"><span class="w">Путь В · новая</span><b>Решили продать со склада</b>Кладовщик (или директор, зам) в карточке склада — «На продажу». Цена = закупка + наценка. Код «Н-…».</div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="flow">
+    <div class="box wide" style="--c:#ff3b30"><span class="w">Директор или зам</span><b>Утвердить цену</b>
+      Б/у — в «Цены разбора», новые — в «На сайт → Новые → Ждут утверждения». Можно поправить цену или «Отказать» с причиной.
+      <div class="side">Отказали → у кладовщика разбора 🔴 «исправить и отправить ещё раз» → снова к директору.</div></div>
+  </div>
+  <div class="arrow">↓ <span class="side">кладовщику разбора приходит сообщение «Цену утвердили — выложите на сайт» и горит <span class="dot r">N</span></span></div>
+  <div class="flow">
+    <div class="box wide" style="--c:#ff3b30"><span class="w">Кладовщик разбора</span><b>Плитка «Выложить на сайт»</b>
+      Добавить <b style="display:inline">не меньше 2 фото</b> (лучше 3) и <b style="display:inline">описание</b> → «✓ Выложил на сайт». Пока чего-то нет — кнопка серая и не нажимается, написано, чего не хватает.</div>
+  </div>
+  <div class="arrow">↓</div>
+  <div class="flow">
+    <div class="box wide" style="--c:#34c759"><span class="w">На сайте</span><b>Плитка «Выложены на сайт»</b>
+      Только такие детали попадают в «Выгрузку для сайта» (Excel / архив с фото). «Снять с сайта» — деталь снова в «Выложить».
+      <div class="side">Сама уходит с сайта: деталь взяли в наряд (нет на складе), продали, зарезервировали под покупателя.
+        Удалили описание или фото стало меньше 2 — снова «Выложить».</div></div>
+  </div>
+  <div class="arrow">↓ <span class="side">покупатель нашёл деталь</span></div>
+  <div class="flow">
+    <div class="box" style="--c:#ff9500"><span class="w">Кладовщик разбора</span><b>Продажа</b>«Продать» → «В резерв под покупателя» или «Продано сразу». Или «Заявки с сайта» → «✓ Принять» (резерв сам).</div>
+    <div class="box" style="--c:#ff9500"><span class="w">Кладовщик разбора</span><b>Выдача и отправка</b>Упаковать → «Готово к выдаче» (самовывоз) или «Готово к отправке» (ТТН) → «Отправлено».</div>
+    <div class="box" style="--c:#34c759"><span class="w">Итог</span><b>Продано</b>Получено / выдано — деньги в кассе, деталь «Продано». Возврат — отдельной кнопкой.</div>
+  </div>
+
+  <h3>Кто участвует</h3>
+  <ol class="toc">
+    <li><a href="#mgr">Менеджер</a> — оформляет отказ клиента (начало пути Б).</li>
+    <li><a href="#prt">Запчастист</a> — «Лишнее после отказов» → «Продать».</li>
+    <li><a href="#stk">Кладовщик склада</a> — «На продажу» из карточки склада (путь В).</li>
+    <li><a href="#dir">Директор / зам</a> — утверждает цену, правит, отказывает.</li>
+    <li><a href="#rzb">Кладовщик разбора</a> — заводит б/у, фото и описание, «✓ Выложил на сайт», продаёт и отправляет.</li>
+    <li><a href="#gl">Главный кладовщик, админ</a> — видят то же, «для сведения» / всё.</li>
+    <li><a href="#nuance">Нюансы и вопросы для решения</a>.</li>
+  </ol>
+</section>
+
+<!-- ============ Менеджер ============ -->
+<section class="sheet" id="mgr" style="--c:#0a84ff">
+  <h2>1. Менеджер <span class="who">Ирина Коваленко · irina</span></h2>
+  <p class="sub">Начало пути Б. Менеджер говорит с клиентом, поэтому отказ оформляет только он (запчастист — нет).</p>
+  <div class="step"><span class="num">1</span><div><b>Наряд → блок «Запчасти»: деталь заказана у поставщика</b>
+    После «Согласовал с клиентом» у детали кнопка «Оформить отказ клиента…» (серая, не красная — чтобы не нажать случайно).</div></div>
+  <div class="shot"><img src="img/m1_order_parts.png" alt=""></div>
+  <div class="step"><span class="num">2</span><div><b>Нажал — раскрылась форма: причина обязательна</b>
+    Под полем написано, что будет с деталью: заказанное у поставщика уйдёт в «Лишнее после отказов», решает запчастист.</div></div>
+  <div class="shot"><img src="img/m2_refuse_form.png" alt=""></div>
+  <div class="step"><span class="num">3</span><div><b>После отказа — деталь в «Архиве наряда», в сумму не идёт</b>
+    Запчастисту — 🔴 «решить заказ», мастерам — «не ставить», кладовщику (если было в резерве) — «не выдавать».</div></div>
+  <div class="shot"><img src="img/m3_refused.png" alt=""></div>
+</section>
+
+<!-- ============ Запчастист ============ -->
+<section class="sheet" id="prt" style="--c:#5856d6">
+  <h2>2. Запчастист <span class="who" style="--c:#5856d6">Олег Савчук · oleg</span></h2>
+  <p class="sub">«Склад → Лишнее после отказов». Решает, что делать с деталью, от которой отказался клиент.</p>
+  <div class="step"><span class="num">1</span><div><b>«Лишнее после отказов»: две плитки</b>
+    <ul><li><b>Заказ у поставщика</b> <span class="dot r">N</span> — ещё не приехало: «Отменил у поставщика» или «Пусть приедет — на склад».</li>
+      <li><b>На складе — решить</b> <span class="dot o">N</span> — уже лежит: «Оставить на складе», «Вернуть поставщику», <b>«Продать»</b>.</li></ul></div></div>
+  <div class="shot"><img src="img/p1_leftovers.png" alt=""></div>
+  <div class="step"><span class="num">2</span><div><b>«Продать» → деталь сама появляется в «На сайт → Новые» (код Н-…)</b>
+    Цена — та, что была для клиента. Дальше её утверждает директор. Передумал («Оставить на складе») — с продажи снимется сама.</div></div>
+  <div class="shot"><img src="img/p2_after_sale.png" alt=""></div>
+  <div class="note">Запчастист раздел «На сайт» не видит — дальше за деталью следят директор и кладовщик разбора.</div>
+</section>
+
+<!-- ============ Кладовщик склада ============ -->
+<section class="sheet" id="stk" style="--c:#30b0c7">
+  <h2>3. Кладовщик склада <span class="who" style="--c:#30b0c7">Павел Гончаренко · pavel</span></h2>
+  <p class="sub">Путь В: новая запчасть лежит на складе, решили её продавать (то же могут директор и зам).</p>
+  <div class="step"><span class="num">1</span><div><b>Карточка позиции склада → «🌐 На продажу»</b>
+    Сколько выставить (не больше свободного). Цена считается сама: закупка + стандартная наценка.</div></div>
+  <div class="shot"><img src="img/s1_to_site.png" alt=""></div>
+  <div class="step"><span class="num">2</span><div><b>Выставлено — ждёт утверждения директором</b>
+    Вторая такая же позиция не выставится («уже выставлена»). Деталь остаётся обычной позицией склада: её можно взять в наряд.</div></div>
+  <div class="shot"><img src="img/s2_after.png" alt=""></div>
+</section>
+
+<!-- ============ Директор ============ -->
+<section class="sheet" id="dir" style="--c:#ff3b30">
+  <h2>4. Директор / зам <span class="who" style="--c:#ff3b30">Виктор Петренко · director</span></h2>
+  <p class="sub">Утверждает цену любой детали на продажу. Пока цена не утверждена — продать, зарезервировать, выложить нельзя.</p>
+  <div class="step"><span class="num">1</span><div><b>«На сайт → Новые → Ждут утверждения»</b> — 🔴 у «На сайт» в меню, плитка мигает.
+    У каждой детали — поле цены (можно поправить) и «✓ Утвердить цену», рядом «Отказать…».</div></div>
+  <div class="shot"><img src="img/d1_site_wait.png" alt=""></div>
+  <div class="two">
+    <div><div class="step"><span class="num">2</span><div><b>Поправил цену и утвердил</b></div></div>
+      <div class="shot"><img src="img/d4_approve_price.png" alt=""></div>
+      <p class="cap">Новая цена сохраняется, кладовщику разбора — сообщение «выложите на сайт».</p></div>
+    <div><div class="step"><span class="num">3</span><div><b>Или «Отказать» — причина обязательна</b></div></div>
+      <div class="shot"><img src="img/d3_decline_form.png" alt=""></div>
+      <p class="cap">Кладовщик разбора увидит причину у детали.</p></div>
+  </div>
+  <div class="step"><span class="num">4</span><div><b>После утверждения</b> — деталь ушла из «Ждут утверждения» в «Выложить на сайт» (это уже дело кладовщика разбора).</div></div>
+  <div class="shot"><img src="img/d5_after_approve.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff3b30">
+  <h2>4. Директор / зам — б/у детали и повторная отправка</h2>
+  <div class="step"><span class="num">5</span><div><b>«Цены разбора»</b> — б/у детали по машинам: «Утвердить» (цену можно поправить), «Отказать», «Утвердить все по машине».
+    Утвердил — кладовщику разбора сообщение и 🔴 «б/у — выложить на сайт».</div></div>
+  <div class="shot"><img src="img/d2_razbor_prices.png" alt=""></div>
+  <div class="step"><span class="num">6</span><div><b>Кладовщик отправил отказанную деталь ещё раз</b> — она снова в «Ждут утверждения»,
+    видно его комментарий и прежнюю причину отказа.</div></div>
+  <div class="shot"><img src="img/d7_resubmitted.png" alt=""></div>
+</section>
+
+<!-- ============ Кладовщик разбора ============ -->
+<section class="sheet" id="rzb" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора <span class="who" style="--c:#ff9500">Дмитрий Лысенко · dmitro</span></h2>
+  <p class="sub">Главный исполнитель: готовит деталь к сайту, выкладывает, продаёт и отправляет.</p>
+  <div class="step"><span class="num">1</span><div><b>Цену утвердили — сообщения и красные кружки</b>
+    У «На сайт» в меню три кружка: <span class="dot r">7</span> б/у — выложить, <span class="dot r">4</span> новые — выложить,
+    <span class="dot r">1</span> директор отказал. Справа окошки «Цену утвердили — выложите на сайт» по каждой детали.
+    Плитка «Выложить на сайт» мигает.</div></div>
+  <div class="shot"><img src="img/k1_menu_toasts.png" alt=""></div>
+  <div class="step"><span class="num">2</span><div><b>То же в «Разборе»</b> — плитки «Выложить на сайт» (красная) и «Выложены на сайт» (зелёная),
+    у детали «не выложена на сайт» и кнопка «Выложить на сайт» (ведёт в карточку).</div></div>
+  <div class="shot"><img src="img/k2_razbor_tiles.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — б/у: карточка детали</h2>
+  <div class="step"><span class="num">3</span><div><b>Чего-то не хватает — кнопка серая</b>
+    Блок «На сайт» с красной полоской: ✕ Фото 0 из 2, ✕ Описание. Форма «Изменить» сразу раскрыта: «＋ Фото» и «Описание для объявления» → «Сохранить».</div></div>
+  <div class="shot"><img src="img/k3_part_missing.png" alt=""></div>
+  <div class="step"><span class="num">4</span><div><b>Всё есть — кнопка «✓ Выложил на сайт» активна</b> (здесь 3 фото и описание).</div></div>
+  <div class="shot"><img src="img/k4_part_ready.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — б/у: выложено</h2>
+  <div class="step"><span class="num">5</span><div><b>Нажал «✓ Выложил на сайт»</b> — блок зелёный: «Выложена», кто и когда выложил, «Снять с сайта».
+    Деталь пошла в «Выгрузку для сайта».</div></div>
+  <div class="shot"><img src="img/k5_part_posted.png" alt=""></div>
+  <div class="step"><span class="num">6</span><div><b>«На сайт → Б/у · разбор → Выложены на сайт»</b> — всё выложенное, с датой.</div></div>
+  <div class="shot"><img src="img/k7_used_site.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — список «Выложить на сайт» (б/у)</h2>
+  <p class="sub">У каждой детали подписано, чего не хватает. Не хватает — кнопка «Добавить фото и описание» (в карточку), всё есть — «✓ Выложил на сайт» прямо здесь.</p>
+  <div class="shot"><img src="img/k6_used_post_list.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — новые запчасти</h2>
+  <div class="step"><span class="num">7</span><div><b>«На сайт → Новые → Выложить на сайт»</b> — у детали «Фото и описание» (раскрыто, если не хватает),
+    «✓ Выложил на сайт» (серая, пока нет 2 фото и описания), «Снять с продажи». Цену кладовщик не меняет.</div></div>
+  <div class="shot"><img src="img/k8_new_post.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — новые: выложено, отказ</h2>
+  <div class="step"><span class="num">8</span><div><b>Выложил → «Выложены на сайт»</b>: дата выкладки, «Продать», «Снять с сайта».</div></div>
+  <div class="shot"><img src="img/k9_new_site.png" alt=""></div>
+  <div class="step"><span class="num">9</span><div><b>Директор отказал → «Отправить ещё раз»</b> — комментарий обязателен (что исправили / почему утвердить).
+    После отправки деталь снова у директора в «Ждут утверждения».</div></div>
+  <div class="shot"><img src="img/k10_resubmit.png" alt=""></div>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — продажа</h2>
+  <div class="step"><span class="num">10</span><div><b>«Продать» новую деталь</b> — цена утверждена и не меняется. Количество, покупатель, телефон,
+    как забирает (самовывоз / Нова Пошта), оплата, откуда покупатель. «В резерв под покупателя» или «Продано сразу».</div></div>
+  <div class="shot"><img src="img/k11_sell_dialog.png" alt=""></div>
+  <p class="cap">Б/у деталь продаётся из её карточки — блок «Покупатель» справа (видно на скриншоте шага 3).</p>
+</section>
+
+<section class="sheet" style="--c:#ff9500">
+  <h2>5. Кладовщик разбора — выдача, отправка, заявки с сайта</h2>
+  <div class="step"><span class="num">11</span><div><b>«Выдача и отправка»</b> — всё проданное в резерве: упаковать (где лежит) → «Готово к выдаче» → «Выдано»
+    или «Готово к отправке» → ТТН → «Отправлено» → «Получено» / «Возврат». Наклейка на посылку, реестр отправок за день.</div></div>
+  <div class="shot"><img src="img/k12_shipping.png" alt=""></div>
+  <div class="step"><span class="num">12</span><div><b>«Заявки с сайта»</b> — покупатель оформил заказ (пока сайта нет — «＋ Заявка с сайта» руками):
+    «✓ Принять» → резерв под покупателя → «Выдача и отправка». Детали нет — «Убрать» строку или «Отказать» с причиной.</div></div>
+  <div class="shot"><img src="img/k13_site_orders.png" alt=""></div>
+</section>
+
+<!-- ============ Главный кладовщик, админ ============ -->
+<section class="sheet" id="gl" style="--c:#8e8e93">
+  <h2>6. Главный кладовщик и админ <span class="who" style="--c:#8e8e93">Сергей Ковальчук · glav</span></h2>
+  <ul>
+    <li><b>Главный кладовщик</b> может всё то же, что кладовщик разбора (фото, описание, «Выложил», продажа). Пока кладовщик разбора
+      на работе (по табелю), кружки у главного — «для сведения» (с сиреневой обводкой), нет его на работе — обычные красные.</li>
+    <li><b>Админ</b> (владелец) видит и может всё, сообщения «выложите на сайт» ему не приходят.</li>
+  </ul>
+  <div class="shot"><img src="img/g1_headkeeper.png" alt=""></div>
+
+  <h3>Цветные кружки в меню по этой цепочке</h3>
+  <table>
+    <tr><th>Кто</th><th>Пункт меню</th><th>Кружок</th><th>Когда гаснет</th></tr>
+    <tr><td>Запчастист</td><td>Склад → Лишнее после отказов</td><td><span class="dot r">N</span> заказ у поставщика — решить · <span class="dot o">N</span> лежит на складе — решить</td><td>Выбрал действие</td></tr>
+    <tr><td>Директор / зам</td><td>На сайт</td><td><span class="dot r">N</span> новые на продажу — утвердить цену</td><td>Утвердил или отказал</td></tr>
+    <tr><td>Директор / зам</td><td>Цены разбора</td><td><span class="dot r">N</span> новые детали — утвердить цену · <span class="dot o">N</span> просят изменить цену</td><td>Решил</td></tr>
+    <tr><td>Кладовщик разбора</td><td>На сайт</td><td><span class="dot r">N</span> б/у — выложить · <span class="dot r">N</span> новые — выложить · <span class="dot r">N</span> директор отказал</td><td>«✓ Выложил на сайт» / «Отправить ещё раз»</td></tr>
+    <tr><td>Кладовщик разбора</td><td>Разбор</td><td><span class="dot r">N</span> б/у — отказано в утверждении</td><td>Отправил ещё раз</td></tr>
+    <tr><td>Кладовщик разбора</td><td>Выдача и отправка</td><td><span class="dot r">N</span> подготовить · <span class="dot o">N</span> готово — ждёт покупателя</td><td>Упаковал / выдал / отправил</td></tr>
+    <tr><td>Кладовщик разбора</td><td>Заявки с сайта</td><td><span class="dot r">N</span> новые заявки</td><td>Принял или отказал</td></tr>
+  </table>
+</section>
+
+<!-- ============ Нюансы ============ -->
+<section class="sheet" id="nuance" style="--c:#ff9500">
+  <h2>7. Нюансы и вопросы для решения</h2>
+  <p class="sub">Что заметил, пока снимал. Ничего не исправлял — решай, что поправить.</p>
+  <div class="note warn"><b>1. Продать можно и невыложенную деталь.</b> Б/у деталь в «Выложить на сайт» уже можно продать из карточки
+    («Продано сейчас», «В резерв») и новую — через «Продать», если цена утверждена. Логично (покупатель пришёл сам, с OLX, по телефону),
+    но если хочешь, чтобы продавали только выложенное, — скажи.</div>
+  <div class="note"><b>2. Цену б/у кладовщик меняет только запросом.</b> После утверждения — «Запросить изменение цены» → директор.
+    Выложенная деталь при этом остаётся на сайте со старой ценой, пока директор не решит.</div>
+  <div class="note"><b>3. «Снять с продажи» и «Снять с сайта» — разные кнопки у новых деталей.</b> «Снять с сайта» — вернуть в «Выложить»
+    (например, переснять фото). «Снять с продажи» — совсем не продаём (плитка «Сняты»). Может путать — можно оставить одну.</div>
+  <div class="note"><b>4. Пустое место в строках «Б/у → Выложить на сайт».</b> Карточки высокие, справа много пустоты — можно сделать
+    компактнее (поправлю отдельно, если нужно).</div>
+  <div class="note"><b>5. Фото удаляются только у новых.</b> У б/у детали в карточке фото можно добавить, но удалить — нет
+    (так было и раньше). Если нужно — добавлю «✕» у фото, и при фото меньше 2 деталь сама уйдёт в «Выложить».</div>
+  <div class="note ok"><b>Проверено:</b> без 2 фото и описания «Выложил» не проходит (и кнопкой, и напрямую); в выгрузку для сайта
+    идёт только выложенное; утверждение шлёт сообщение кладовщику разбора; «Отправить ещё раз» возвращает деталь директору;
+    имитация 4 недель прошла без ошибок.</div>
+  <h3>Как посмотреть самому</h3>
+  <ul>
+    <li>CRM: войти как <b>dmitro</b> (кладовщик разбора) → «На сайт»; <b>director</b> → «На сайт» и «Цены разбора»; <b>oleg</b> → «Склад → Лишнее после отказов».</li>
+    <li>Пароль у тестовых входов — логин + 123.</li>
+  </ul>
+</section>
+
+</body>
+</html>
