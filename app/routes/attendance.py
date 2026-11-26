@@ -151,8 +151,13 @@ def _today_views(ctx: Ctx, staff, grid, now_on, y, mo, lt) -> dict:
     none.sort(key=lambda r: (bool(r["off"] or r["leave"]), r["u"].full_name))
     # 25.11.2026 (брат): «Забыли отметить уход» — по правилам табеля (одна цифра у всех); менеджер напоминает
     rem = late_svc.reminded(ctx.db, ctx.branch.id)
+    # 26.11.2026 (брат): себя не считаем (своё — в «Нет отметки»); бухгалтеру / руководству — без уже принятых к сведению.
+    # Так плитка, окно и кружок у «Табеля» — одна цифра (раньше 13 на плитке и 12 в кружке).
+    alerts = ctx.can("attendance.alerts", "attendance.decide")
+    acked = late_svc.acks(ctx.db, ctx.branch.id, late_svc._since(ctx.db, ctx.branch.id)) if alerts else set()
     open_days = [{"u": f.user, "d": f.day, "first_in": f.first_in, "rem": rem.get((f.user.id, f.day))}
-                 for f in late_svc.no_out_open(ctx.db, ctx.branch.id)]
+                 for f in late_svc.no_out_open(ctx.db, ctx.branch.id)
+                 if f.user.id != ctx.user.id and (f.user.id, f.day, "no_out", "boss") not in acked]
     # Часы всех — только директору, заму, админу, бухгалтеру; остальным — свои
     see_hours = ctx.can("attendance.alerts", "attendance.decide")
     hours = []
@@ -195,6 +200,11 @@ def _alerts(ctx: Ctx, only: User | None = None, base: str = "/timesheet", view: 
     boss = late_svc.for_boss(ctx.db, ctx.branch.id, me) if ctx.can("attendance.alerts", "attendance.decide") else []
     if only is not None:
         boss = [x for x in boss if x["f"].user.id == only.id]
+    # 26.11.2026 (брат): бухгалтер ничего не решает — «не отметил уход» у него в плитке «Забыли отметить уход»
+    # (вписать время), остальное (решает директор) — в «Для сведения»; плитки «Нужно решить» у него нет
+    decide = ctx.can("attendance.decide")
+    if not decide and boss:
+        boss = [dict(x, level="info") for x in boss if x["f"].kind != "no_out"]
     for x in boss:
         if x["f"].kind == "overtime":
             x["works"] = late_svc.closed_orders_after(ctx.db, x["f"].user, x["f"])
@@ -216,8 +226,11 @@ def _alerts(ctx: Ctx, only: User | None = None, base: str = "/timesheet", view: 
     # 25.11.2026 (брат): в общем табеле у руководства плитки «Нужно решить» и «Для сведения» есть всегда (ноль — серая)
     if boss or (only is None and ctx.can("attendance.alerts", "attendance.decide")):
         n_red = sum(1 for x in boss if x["level"] == "red")
-        boss_t = {"boss": item("boss", "Нужно решить", n_red, "red", "опоздания, неявки, ранний уход"),
-                  "info": item("info", "Для сведения", len(boss) - n_red, "purple", "задержались на 30–59 мин")}
+        if decide:
+            boss_t = {"boss": item("boss", "Нужно решить", n_red, "red", "опоздания, неявки, ранний уход"),
+                      "info": item("info", "Для сведения", len(boss) - n_red, "purple", "задержались на 30–59 мин")}
+        else:
+            boss_t = {"info": item("info", "Для сведения", len(boss), "purple", "ждёт решения директора")}
     tiles_ = own_t + list(boss_t.values())
     return {"lt_me": mine, "lt_boss": boss, "lt_kind": late_svc.KIND_NAME, "lt_min": late_svc.fmt_min,
             "lt_decide": ctx.can("attendance.decide"), "ATT_DECISIONS": ATT_DECISIONS, "ATT_REASONS": ATT_REASONS,

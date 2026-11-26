@@ -15,7 +15,7 @@
 {# 26.11.2026 (брат): верх — понятно и по порядку: заработал → выдано → осталось выдать (было «Начислено / Выплачено /
    К выплате / Сегодня» одинаковыми плашками, читалось смазанно) #}
 <div class="pay-head">
-  <div class="pay-big"><span class="footnote">Заработал · {{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m.%Y") }}</span><b>{{ s.accrued|money }} ₴</b></div>
+  <div class="pay-big"><span class="footnote">Заработал · {% if d1 == d2 %}{{ d1.strftime("%d.%m.%Y") }}{% else %}{{ d1.strftime("%d.%m") }}–{{ d2.strftime("%d.%m.%Y") }}{% endif %}</span><b>{{ s.accrued|money }} ₴</b></div>
   <span class="pay-op" aria-hidden="true">−</span>
   <div class="pay-big"><span class="footnote">Выдано</span><b>{{ s.paid|money }} ₴</b></div>
   <span class="pay-op" aria-hidden="true">=</span>

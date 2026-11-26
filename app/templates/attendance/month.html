@@ -51,10 +51,15 @@
   {% else %}<p class="footnote" style="margin:0 0 6px">Пришёл, а «ушёл» не отмечено — в таблице день со знаком «?». Время ухода вписывают бухгалтер, директор, зам или админ.</p>{% endif %}
   {% if tv.open %}<table class="table">
     <thead><tr><th>День</th><th>Сотрудник</th><th>Должность</th><th>Пришёл</th><th></th></tr></thead>
-    <tbody>{% for r in tv.open %}<tr{% if tv.can_remind and not r.rem %} class="ts-open-row" data-open="1"{% endif %}>
+    <tbody>{% for r in tv.open %}<tr{% if (tv.can_remind and not r.rem) or tv.see_hours %} class="ts-open-row" data-open="1"{% endif %}>
       <td class="nowrap">{{ r.d.strftime("%d.%m") }}</td><td>{{ nm(r.u) }}</td>
       <td>{{ r.u.role.name }}</td><td>{{ r.first_in.strftime("%H:%M") if r.first_in else "—" }}</td>
-      <td class="num">{% if ctx.can("attendance.edit") %}<a class="btn btn-sm btn-gray" href="/timesheet?user={{ r.u.id }}&m={{ r.d.strftime('%Y-%m') }}&fday={{ r.d.isoformat() }}#manual">Вписать время</a>
+      <td class="num">{% if ctx.can("attendance.edit") %}<span class="ts-open-acts">
+        {# 26.11.2026 (брат): бухгалтер / руководство — вписать время или принять к сведению прямо здесь #}
+        <form method="post" action="/timesheet/ack"><input type="hidden" name="user_id" value="{{ r.u.id }}"><input type="hidden" name="day" value="{{ r.d.isoformat() }}">
+          <input type="hidden" name="kind" value="no_out"><input type="hidden" name="side" value="boss"><input type="hidden" name="back" value="{{ lt_base }}{{ '&' if '?' in lt_base else '?' }}v=open">
+          <button class="btn btn-sm btn-plain">✓ Принял к сведению</button></form>
+        <a class="btn btn-sm btn-gray" href="/timesheet?user={{ r.u.id }}&m={{ r.d.strftime('%Y-%m') }}&fday={{ r.d.isoformat() }}#manual">Вписать время</a></span>
         {% elif tv.can_remind %}{% if r.rem %}<span class="caption">✓ напомнили {{ r.rem.created_at.astimezone().strftime("%d.%m %H:%M") }}</span>
         {% elif r.u.id != user.id %}<form method="post" action="/timesheet/remind"><input type="hidden" name="user_id" value="{{ r.u.id }}"><input type="hidden" name="day" value="{{ r.d.isoformat() }}">
           <input type="hidden" name="back" value="{{ lt_base }}{{ '&' if '?' in lt_base else '?' }}v=open"><button class="btn btn-sm">Напомнить</button></form>{% endif %}{% endif %}</td></tr>{% endfor %}</tbody>

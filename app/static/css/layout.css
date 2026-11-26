@@ -2860,10 +2860,13 @@ tr.need-edge > td:first-child { box-shadow: inset 4px 0 0 var(--need-c); animati
 /* 23.11.2026 (брат): цветная плитка с делом — мигает только её верхняя полоска (вместо рамки по краю). Цвет полоски —
    цвет плитки (--tc); если у плитки цвета нет — цвет кружка. */
 .need-top::after { content: none; }
-.need-top { animation: need-top-blink 1.3s ease-in-out infinite; }
+/* 26.11.2026 (брат): было — полоска бледнела, на плитке своего цвета (красная на красной) мигания не видно.
+   Теперь полоска пульсирует толще-тоньше (3 ↔ 9 px) и плитка слегка светится своим цветом — заметно на любом цвете. */
+.need-top { animation: need-top-blink 1.2s ease-in-out infinite; }
 @keyframes need-top-blink {
-  0%, 100% { box-shadow: var(--shadow-1), inset 0 4px 0 var(--tc, var(--need-c)); }
-  50% { box-shadow: var(--shadow-1), inset 0 4px 0 color-mix(in srgb, var(--tc, var(--need-c)) 10%, transparent); } }
+  0%, 100% { box-shadow: var(--shadow-1), inset 0 3px 0 var(--tc, var(--need-c)); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--tc, var(--need-c)) 28%, transparent),
+                    inset 0 9px 0 var(--tc, var(--need-c)); } }
 @media (prefers-reduced-motion: reduce) { .need-top { animation: none; } }
 
 /* 23.11.2026 (брат): единый стиль во всей CRM — окошки дел с цветной полоской слева (как на мойке), без рамки по контуру.

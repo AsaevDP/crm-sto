@@ -21,10 +21,14 @@ def test_timesheet_tiles_all_open(client):
         login(client, who, who + "123")
         page = client.get("/timesheet").text
         rows = _rows(page)
-        assert rows[0] == ROW1 and rows[1] == ROW2, (who, rows)
+        # 26.11.2026 (брат): бухгалтер ничего не решает — без «Нужно решить» (его дело — «Забыли отметить уход»)
+        row2 = ROW2[1:] if who == "buh" else ROW2
+        assert rows[0] == ROW1 and rows[1] == row2, (who, rows)
         assert 'data-menu-base="/timesheet"' in page
         assert 'class="table ts"' in page                       # без плитки — обычная таблица
         for v, head in VIEWS.items():
+            if who == "buh" and v == "boss":
+                continue
             r = client.get(f"/timesheet?v={v}")
             assert r.status_code == 200, (who, v)
             assert 'class="table ts"' not in r.text              # окно вместо таблицы

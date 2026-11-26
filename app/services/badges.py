@@ -722,10 +722,13 @@ def compute(ctx) -> dict:
             else:
                 no_out = [x for x in boss if x["f"].kind == "no_out"]
                 wait = [x for x in boss if x["f"].kind != "no_out"]
-                _add(out, "/timesheet", "red", len(no_out), "не отметил уход — вписать время или принять к сведению",
-                     "/timesheet?v=boss", alone=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss[data-k="no_out"]')], tile=['Нужно решить'])
+                # 26.11.2026 (брат): у бухгалтера — плитка «Забыли отметить уход» (вписать время) и «Для сведения»
+                _add(out, "/timesheet", "red", len(no_out), "не отметили уход — вписать время или принять к сведению",
+                     "/timesheet?v=open", alone=True, sel=[("/timesheet?v=open", "tr.ts-open-row")],
+                     tile=['Забыли отметить уход'])
                 _add(out, "/timesheet", "purple", len(wait), "ждёт решения директора (опоздания, неявки, задержки)",
-                     "/timesheet?v=boss", alone=True, info=True, tile=['Нужно решить', 'Для сведения'])
+                     "/timesheet?v=info", alone=True, info=True, sel=[("/timesheet?v=info", ".lt-card.lt-boss.rim-purple")],
+                     tile=['Для сведения'])
         # 25.11.2026 (брат): менеджер (видит табель, но время не вписывает) — 🔴 «напомните отметить уход», пока не напомнил
         elif ctx.can("attendance.view_all"):
             rem = late_svc.reminded(db, bid)

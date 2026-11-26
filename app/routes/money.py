@@ -387,13 +387,37 @@ def money_view(ctx: Ctx = Depends(get_ctx), day: str = "", p: str = "", d: str =
 
 
 # ======================= Зарплата =======================
-PAY_KINDS = ("week", "month", "quarter", "year", "custom")
+# 26.11.2026 (брат): + «Сегодня» (день) и «Весь период»
+PAY_KINDS = ("day", "week", "month", "quarter", "year", "all", "custom")
+PAY_NAMES = {"day": "Сегодня", "all": "Весь период"}
+ALL_FROM = date(2020, 1, 1)
 
 
 def _per(f: str = "", t: str = "", p: str = "", d: str = ""):
-    """Период для зарплаты — общая панель дат; старые ссылки f=…&t=… — как «свой период»."""
+    """Период для зарплаты — общая панель дат; старые ссылки f=…&t=… — как «свой период». «Весь период» — с начала
+    (у сотрудника — с его первого начисления / выплаты, см. payroll_view) по сегодня."""
     from ..services import periods
-    return periods.parse(p or ("custom" if f and t else ""), d, f, t, default="month", allowed=PAY_KINDS)
+    per = periods.parse(p or ("custom" if f and t else ""), d, f, t, default="month", allowed=PAY_KINDS)
+    if per.kind == "all":
+        per.d1, per.d2 = ALL_FROM, date.today()
+        per.label = "Весь период"
+    elif per.kind == "day" and per.d1 == date.today():
+        per.label = f"Сегодня, {per.d1:%d.%m.%Y}"
+    return per
+
+
+def _pay_bar(per, path: str, keep: dict):
+    from ..services.periods import Bar
+    return Bar(per, path, keep, names=PAY_NAMES, jump=False)
+
+
+def _first_day(db, uid) -> date:
+    """С какого дня у сотрудника есть зарплата: первое начисление или выплата (нет — сегодня)."""
+    from sqlalchemy import func as _f
+    from ..models import PayrollPayout
+    a = db.scalar(select(_f.min(PayrollAccrual.on_date)).where(PayrollAccrual.user_id == uid))
+    b = db.scalar(select(_f.min(PayrollPayout.paid_on)).where(PayrollPayout.user_id == uid))
+    return min([x for x in (a, b) if x] or [date.today()])
 
 
 def _period(f: str, t: str, p: str = "", d: str = ""):
@@ -419,7 +443,9 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
     # 26.11.2026 (брат): история по неделям — начислено, выдано, не выдано, этап; и работы, которые ждут оплаты наряда
     from ..services import payweek as wsvc
     weeks, wk = [], wsvc.monday(d2)
-    while wk >= wsvc.monday(d1) and len(weeks) < 30:
+    n_wk = 0
+    while wk >= wsvc.monday(d1) and n_wk < 260:   # «Весь период» — до 5 лет недель
+        n_wk += 1
         r = wsvc.week_data(db, ctx.branch.id, wk, [target])["rows"][target.id]
         if r["active"]:
             weeks.append({"start": wk, "end": wk + timedelta(days=6), "r": r})
@@ -451,10 +477,9 @@ def _payroll_user_data(ctx: Ctx, target: User, d1: date, d2: date) -> dict:
 
 @router.get("/payroll/people/{uid}")
 def payroll_person(uid: str, ctx: Ctx = Depends(get_ctx)):
-    """26.11.2026 (брат): плитка сотрудника в «Зарплате сотрудников» — его история за последние 3 месяца (период меняется)."""
+    """26.11.2026 (брат): плитка сотрудника в «Зарплате сотрудников» — его история за весь период (период меняется)."""
     ctx.need("payroll.view_all", "payroll.advance")
-    t_ = date.today()
-    return _to(f"/payroll?user={_uuid(uid)}&f={(t_ - timedelta(days=90)).isoformat()}&t={t_.isoformat()}")
+    return _to(f"/payroll?user={_uuid(uid)}&p=all")
 
 
 @router.get("/payroll")
@@ -462,20 +487,21 @@ def payroll_view(ctx: Ctx = Depends(get_ctx), user: str = "", f: str = "", t: st
     ctx.need("payroll.view_own", "payroll.view_all")
     if not (user or f or t or p or d):   # 11.11.2026: главный экран зарплаты — недельные ведомости
         return _to("/payroll/weeks" if ctx.can("payroll.view_all") else "/payroll/my")
-    from ..services.periods import Bar
     db = ctx.db
     per = _per(f, t, p, d)
-    d1, d2 = per.d1, per.d2
     see_all, target = _payroll_target(ctx, user)
+    if target and per.kind == "all":   # весь период сотрудника — с его первого начисления / выплаты
+        per.d1 = _first_day(db, target.id)
+    d1, d2 = per.d1, per.d2
     if target:
-        return ctx.render("money/payroll_user.html", title="Зарплата", see_all=see_all, pq=per.qs,
-                          bar=Bar(per, "/payroll", {"user": str(target.id) if see_all else ""}),
+        return ctx.render("money/payroll_user.html", title="Зарплата", see_all=see_all, pq=per.qs, per=per,
+                          bar=_pay_bar(per, "/payroll", {"user": str(target.id) if see_all else ""}),
                           **_payroll_user_data(ctx, target, d1, d2))
     staff = staff_for_period(db, ctx.branch.id, d1)  # уволенные в периоде — тоже, для расчёта
     summ = psvc.summary(db, staff, d1, d2)
     tot = {k: sum((r[k] for r in summ.values()), Decimal(0)) for k in (*psvc.COLS, "accrued", "paid", "due", "hours")}
     return ctx.render("money/payroll_all.html", title="Зарплата", staff=staff, summ=summ, tot=tot, d1=d1, d2=d2,
-                      COLS=psvc.COLS, pq=per.qs, bar=Bar(per, "/payroll", {}))
+                      COLS=psvc.COLS, pq=per.qs, bar=_pay_bar(per, "/payroll", {}))
 
 
 # ======================= Недельная зарплата (11.11.2026) =======================

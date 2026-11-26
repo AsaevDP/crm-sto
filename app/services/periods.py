@@ -115,6 +115,9 @@ class Bar:
     per: Period
     path: str
     keep: dict = field(default_factory=dict)
+    # 26.11.2026 (брат, зарплата): свои подписи кнопок («День» → «Сегодня») и без ссылки-прыжка «Сегодня»
+    names: dict = field(default_factory=dict)
+    jump: bool = True
 
     def url(self, **params) -> str:
         q = {k: v for k, v in {**self.keep, **params}.items() if v not in ("", None)}
@@ -144,5 +147,5 @@ class Bar:
         for k in ("day", "week", "month", "quarter", "year", "all"):
             if k in self.per.allowed:
                 href = self.url(p="all") if k == "all" else self.url(p=k, d=date.today().isoformat())
-                out.append((k, KINDS[k], href, self.per.kind == k))
+                out.append((k, self.names.get(k, KINDS[k]), href, self.per.kind == k))
         return out

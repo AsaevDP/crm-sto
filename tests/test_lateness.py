@@ -111,8 +111,9 @@ def test_timesheet_rules_money_decisions(client):
 
         # бухгалтер видит, но не решает; «проверено» не поставить, пока не решено
         login(client, "buh", "buh123")
-        assert "Нужно решить" in client.get("/timesheet").text
-        page = client.get("/timesheet?v=boss").text
+        # 26.11.2026 (брат): у бухгалтера дела директора — в «Для сведения» (без кнопок решения)
+        assert "Для сведения" in client.get("/timesheet").text
+        page = client.get("/timesheet?v=info").text
         assert "Решают директор, зам, админ" in page and 'action="/timesheet/decide"' not in page
         assert client.post("/timesheet/decide", data={"user_id": str(uid), "day": D.isoformat(), "kind": "late",
                                                       "decision": "deduct"}).status_code == 403
