@@ -546,6 +546,9 @@ def populate():
                 for rq in db.scalars(select(RazborPrice).where(RazborPrice.stock_item_id == item.id)):
                     rq.status, rq.final_price = "approved", rq.price
                 item.price_state = ""
+                if desc and photo:   # 26.11.2026: давние, с описанием и фото — уже «Выложены на сайт» (остальные — «Выложить»)
+                    from .db import now as _dnow
+                    item.publish_on_site, item.site_posted_at = True, _dnow()
                 if name in sold_plan:
                     bn, bp, dl, ttn, pm = sold_plan[name]
                     rsvc.sell_now(db, branch.id, item, 1, Decimal(price) - 300, bn, bp, dl, pm, ttn)

@@ -51,6 +51,8 @@ async def lifespan(_app):
         receipt_svc.fill_old(db)  # 20.11.2026: выданное раньше — «получено» (один раз), чтобы «Начал» не встал
         from .services import chem as chem_svc
         chem_svc.fill_old(db)     # 23.11.2026: химия, выданная раньше, — «получено» (один раз)
+        from .services import site as _site_svc
+        _site_svc.reset_posted_once(db)   # 26.11.2026: всё «на сайте» — снова «Выложить на сайт» (шаг «✓ Выложил»)
         from sqlalchemy import select
         from .models import Branch
         from .services import brands

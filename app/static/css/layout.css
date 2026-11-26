@@ -3157,3 +3157,12 @@ details.vh:first-of-type { border-top: 0; }
 .pay-wl > span:first-child, .pay-wo-h > span { min-width: 0; overflow-wrap: anywhere; }
 .pay-days .neg { color: var(--red); }
 @media (max-width: 600px) { .pay-op { display: none; } .pay-big b { font-size: 22px; } .pay-day-sum { grid-template-columns: minmax(0, 1fr) auto; } .pay-day-open { display: none; } }
+/* 26.11.2026 (брат): «✓ Выложил на сайт» — что не хватает (фото, описание), цена при утверждении новой детали */
+.rz-site-req { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 2px; font-size: 14px; }
+.rz-site-req .ok { color: var(--green); }
+.rz-site-req .no { color: var(--red); }
+.sn-appr { display: flex; gap: 6px; align-items: center; }
+.sn-appr .field { width: 90px; }
+.sn-miss { margin-top: 2px; }
+.sn-used a.sn-ph, .sn-used .sn-top a { text-decoration: none; color: inherit; }
+.rz-site .btn:disabled, .sn-acts .btn:disabled { background: var(--fill-2); color: var(--label-3, #8e8e93); cursor: not-allowed; box-shadow: none; }

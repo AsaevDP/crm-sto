@@ -64,7 +64,8 @@ def add_part(db: Session, branch_id, donor: Donor | None, name: str, qty, price,
     db.flush()
     item = StockItem(catalog_id=cat.id, location_id=location_id, donor_id=donor.id if donor else None,
                      code=next_part_code(db, branch_id), condition=condition if condition in CONDITIONS else "good",
-                     sale_price=ssvc.money(price), publish_on_site=publish, description=description.strip(),
+                     # 26.11.2026 (брат): на сайт — только «✓ Выложил на сайт» после утверждения цены (publish не берём)
+                     sale_price=ssvc.money(price), publish_on_site=False, description=description.strip(),
                      donor_make=donor.make if donor else "", donor_model=donor.model if donor else "",
                      donor_year=donor.year if donor else None, donor_vin=donor.vin if donor else "")
     db.add(item)

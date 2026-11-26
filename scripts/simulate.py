@@ -1391,6 +1391,40 @@ def razbor_decide(day, hh, d, decline=1, edit=1):
     return reqs[:decline]
 
 
+RZ_DESC = ("Снята с машины на ходу, без трещин и сколов. Проверена, фото реальные.",
+           "Оригинал, состояние хорошее. Подходит по VIN — уточняйте по телефону.",
+           "Целая, все крепления на месте. Отправка Новой Почтой в день оплаты.")
+
+
+def razbor_post(day, hh, leave=2):
+    """26.11.2026 (брат): «✓ Выложил на сайт» — утверждённые б/у детали в наличии: кладовщик разбора добавляет фото (2–3)
+    и описание, жмёт «Выложил». Первую сначала пробует без фото — CRM не пускает. leave — сколько оставить «Выложить»."""
+    from app.services import site as site_svc
+    with SessionLocal() as db:
+        br = db.scalar(select(M.Branch))
+        todo = [i.id for i in site_svc.used_to_post(db, br.id)]
+    todo = todo[: max(0, len(todo) - leave)]
+    for n, iid in enumerate(todo):
+        it = one(M.StockItem, M.StockItem.id == iid)
+        cat = one(M.PartCatalog, M.PartCatalog.id == it.catalog_id)
+        with at(day, _later(hh, n)):
+            if n == 0 and not it.description:
+                post("dmitro", f"/razbor/parts/{iid}/to-site", what="Выложил на сайт — без фото (не пускает)", expect_no=True)
+                R.check(not one(M.StockItem, M.StockItem.id == iid).publish_on_site,
+                        "«Выложил на сайт» без 2 фото и описания — не проходит", it.code)
+            post("dmitro", f"/razbor/parts/{iid}", {"name": cat.name, "condition": it.condition or "good",
+                                                     "description": it.description or rnd.choice(RZ_DESC),
+                                                     "location_id": str(it.location_id or "")},
+                 files=photo(rnd.choice((2, 3))), what="Фото и описание для сайта")
+            post("dmitro", f"/razbor/parts/{iid}/to-site", what="✓ Выложил на сайт")
+        R.check(one(M.StockItem, M.StockItem.id == iid).publish_on_site, "б/у деталь выложена на сайт (фото, описание)", it.code)
+        if n == 0:   # «Снять с сайта» → снова «Выложить» → «Выложил»
+            with at(day, _later(hh, 1)):
+                post("dmitro", f"/razbor/parts/{iid}/off-site", what="Снять с сайта (б/у)")
+                R.check(not one(M.StockItem, M.StockItem.id == iid).publish_on_site, "снятая с сайта б/у — снова «Выложить»", it.code)
+                post("dmitro", f"/razbor/parts/{iid}/to-site", what="✓ Выложил на сайт (снова)")
+
+
 def razbor_start(day):
     # 18–19.11.2026: детали разбора с категориями, цены утверждает директор — до этого их не продать
     for n, spec in enumerate(DONORS[:2]):
@@ -1410,6 +1444,7 @@ def razbor_start(day):
                 if r2:
                     with at(day, f"1{n + 4}:00"):
                         post("deputy", f"/razbor/prices/{r2.id}/approve", {}, what="Зам утвердил повторную")
+    razbor_post(day, "17:00", leave=2)   # 26.11.2026: утверждённое — на сайт; две оставляем «Выложить на сайт»
     # Запрос изменения утверждённой цены → зам утвердил
     it = next((i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None)) if not (i.price_state or "")), None)
     if it:
@@ -1436,6 +1471,9 @@ def razbor_today(day):
             with at(day, "12:00"):
                 post("director", f"/razbor/prices/{reqs[0].id}/decline", {"answer": "Руль с подушкой — только после проверки подушки"},
                      what="Отказать в цене (кладовщику — посмотреть причину)")
+                # 26.11.2026: две утвердил — у кладовщика разбора 🔴 «выложить на сайт» и сообщение (фото, описание)
+                for r in reqs[1:3]:
+                    post("director", f"/razbor/prices/{r.id}/approve", {}, what="Утвердить цену → кладовщику «выложить на сайт»")
     it = next((i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None)) if not (i.price_state or "")
                and not one(M.UsedSale, M.UsedSale.stock_item_id == i.id)), None)
     if it:
@@ -1455,6 +1493,8 @@ def razbor_sale(day, stop=""):
         with SessionLocal() as _db:
             bal = _ss.balances(_db, left[0].branch_id, [i.id for i in left])
         left = [i for i in left if bal.get(i.id, {}).get("free", 0) > 0]
+        # 26.11.2026: продают то, что выложено на сайт (покупатель увидел объявление); «Выложить» ждёт кладовщика
+        left = [i for i in left if i.publish_on_site] or left
     if not left:
         return
     i = rnd.choice(left)
@@ -1908,7 +1948,7 @@ def leave_for_today(day):
     o = next((o for o in ACTIVE if o.wo() and o.wo().status == "work"), None)
     if o:
         with at(day, "17:35"):
-            post("irina", f"{o.url}/masters", {"user_id": str(uid("moyka")), "work": "Мойка кузова после ремонта"},
+            post(o.mgr, f"{o.url}/masters", {"user_id": str(uid("moyka")), "work": "Мойка кузова после ремонта"},
                  what="Добавить мастера: мойщик")
     # 10) 19.11.2026 — одна очередь мойки на сегодня (руками: менеджер, мойщик, детейлер)
     wash_today(day, skip={o.id} if o else set())
@@ -2114,9 +2154,13 @@ def site_history(day):
         for x in (r1, r2, r3):
             post("director", f"/site/new/{x.id}/approve", what="На сайт: утвердить цену")
     with at(day, "16:10"):
+        # 26.11.2026: без фото и описания «Выложил» не пускает; с ними — «Выложены на сайт»
+        post("dmitro", f"/site/new/{r3.id}/post", what="Новая: «Выложил» без фото (не пускает)", expect_no=True)
         for x in (r1, r2):
-            post("dmitro", f"/site/new/{x.id}", {"description": "Новая, в заводской упаковке. Осталась после отказа клиента.",
-                                                 "publish": "1"}, files=photo(2), what="На сайт: фото и описание")
+            post("dmitro", f"/site/new/{x.id}", {"description": "Новая, в заводской упаковке. Осталась после отказа клиента."},
+                 files=photo(rnd.choice((2, 3))), what="На сайт: фото и описание")
+            post("dmitro", f"/site/new/{x.id}/post", what="Новая: ✓ Выложил на сайт")
+            R.check(one(M.SiteNew, M.SiteNew.id == x.id).posted_at is not None, "новая деталь выложена на сайт", x.code)
     with at(day, "16:40"):
         c = rnd.choice(CLIENTS)
         post("dmitro", f"/site/new/{r2.id}/sell", {"qty": "1", "buyer_name": "Покупатель с сайта", "buyer_phone": "0671239090",
@@ -2124,6 +2168,15 @@ def site_history(day):
                                                    "np_address": "Киев, отделение 12", "action": "reserve"},
              what="На сайт: продать (резерв, отправка)")
     R.check(one(M.UsedSale, M.UsedSale.site_new_id == r2.id) is not None, "новая деталь продана через сайт — продажа разбора", r2.code)
+    # 26.11.2026: «Снять с сайта» → снова «Выложить» → «Выложил»; четвёртой отказали → «Отправить ещё раз» → ждёт директора
+    with at(day, "16:50"):
+        post("dmitro", f"/site/new/{r1.id}/unpost", what="Новая: снять с сайта")
+        R.check(one(M.SiteNew, M.SiteNew.id == r1.id).posted_at is None, "снятая с сайта — снова «Выложить на сайт»", r1.code)
+        post("dmitro", f"/site/new/{r1.id}/post", what="Новая: снова ✓ Выложил")
+        post("director", f"/site/new/{_r4.id}/decline", {"answer": "Цена выше рынка"}, what="На сайт: отказать")
+        post("dmitro", f"/site/new/{_r4.id}/resubmit", {"note": "Сверил с рынком — цена нормальная, прошу утвердить"},
+             what="На сайт: отправить ещё раз")
+        R.check(one(M.SiteNew, M.SiteNew.id == _r4.id).state == "pending", "после «Отправить ещё раз» — снова у директора", _r4.code)
     # 23.11.2026: подбор — только когда менеджер записал работы (шаг «Подбор»)
     other = next((x for x in ACTIVE if x is not o and x.wo() and x.wo().status == "approve" and x.wo().works_sent_at
                   and x.wo().partsman_id and not x.wo().picked_at), None)
@@ -2146,11 +2199,16 @@ def site_today(day):
         if it and free_qty(it.catalog_id) >= Decimal(qty):
             with at(day, "10:30"):
                 post("pavel", f"/stock/items/{it.id}/to-site", {"qty": qty}, what=f"На продажу из склада: {name}")
-    x = next((s_ for s_ in q(M.SiteNew, M.SiteNew.source == "manual") if s_.state == "pending"), None)
-    if x:
+    xs = [s_ for s_ in q(M.SiteNew, M.SiteNew.source == "manual") if s_.state == "pending"]
+    if xs:
         with at(day, "12:00"):
-            post("director", f"/site/new/{x.id}/decline", {"answer": "Этот ролик нужен в ремонт — не продаём"},
+            post("director", f"/site/new/{xs[0].id}/decline", {"answer": "Этот ролик нужен в ремонт — не продаём"},
                  what="На сайт: отказать с причиной")
+    if len(xs) > 1:   # 26.11.2026: утвердил с правкой цены → у кладовщика разбора «Выложить на сайт» (фото и описание)
+        with at(day, "12:10"):
+            post("director", f"/site/new/{xs[1].id}/approve", {"price": str((xs[1].price * Decimal("0.95")).quantize(Decimal("1")))},
+                 what="На сайт: утвердить с правкой цены")
+        R.check(one(M.SiteNew, M.SiteNew.id == xs[1].id).state == "approved", "директор утвердил новую с правкой цены", xs[1].code)
 
 
 def schedule_next_week(day):
@@ -2501,6 +2559,7 @@ def cover_extras(day):
                                                       "expenses": str(dn.expenses or 0), "notes": "Двигатель на запчасти"},
                  what="Донор: правка")
         parts = [i for i in q(M.StockItem, M.StockItem.donor_id.is_not(None)) if (i.price_state or "") == "" and free_qty(i.catalog_id) > 0]
+        parts = [i for i in parts if i.publish_on_site] + [i for i in parts if not i.publish_on_site]   # 26.11.2026: «Выложить» не трогаем
         if len(parts) >= 3:
             post("dmitro", f"/razbor/parts/{parts[0].id}/move", {"catsub": "", "back": "/razbor"}, what="Деталь разбора: перенести")
             post("dmitro", f"/razbor/parts/{parts[1].id}/writeoff", {"qty": "1", "reason": "Треснула при снятии"}, what="Деталь разбора: списать")

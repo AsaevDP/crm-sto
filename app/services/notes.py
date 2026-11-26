@@ -14,7 +14,7 @@ GROUPS = {
     "parts": ("Запчасти", {"parts_in", "parts_ready", "picked", "to_order", "new_problem", "diag_to_mgr", "order_cancel", "refused", "refused_done",
                            "refused_info", "urgent_in", "urgent_ask", "works_todo", "works_sent"}),
     "stock": ("Склад и выдача", {"prepare", "held_info", "issue_ready", "issued", "part_go", "part_ask", "part_ask_info", "part_ok", "part_no",
-                                 "tool_ready", "tool_issued", "chem_ask", "chem_ready", "chem_ok", "chem_no"}),
+                                 "tool_ready", "tool_issued", "chem_ask", "chem_ready", "chem_ok", "chem_no", "site_post"}),
     "msg": ("Переписка", {"msg"}),
     "people": ("Передачи и доступы", {"handover", "access_req", "access_ok", "access_no", "client_req", "client_ok",
                                       "client_no", "reopen_req", "reopen_no", "self_decided", "payroll_req", "payroll_ok",
@@ -113,6 +113,9 @@ def is_done(db: Session, n: Notification, user) -> bool:
         from ..models import WashQueueRequest
         return not _count(db, select(WashQueueRequest.id).where(WashQueueRequest.work_order_id == wid,
                                                                 WashQueueRequest.status == "new"))
+    if k == "site_post":   # 26.11.2026: цену утвердили — пока есть что выложить на сайт
+        from . import site as _site
+        return not _site.to_post_total(db, bid)
     if k == "payroll_req":
         from ..models.payroll import PayrollAccess
         return not _count(db, select(PayrollAccess.id).where(PayrollAccess.branch_id == bid, PayrollAccess.status == "pending"))

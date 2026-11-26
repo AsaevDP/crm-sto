@@ -161,7 +161,11 @@ class StockItem(Entity):
     donor_vin: Mapped[str] = mapped_column(String(32), default="")
     condition: Mapped[str] = mapped_column(String(120), default="")
     sale_price: Mapped[Decimal] = mapped_column(MONEY, default=0)
+    # 26.11.2026 (брат): publish_on_site = «✓ Выложил на сайт» нажали (кладовщик разбора: фото ≥ 2 и описание) —
+    # только тогда деталь «Выложена» и идёт в выгрузку; кто и когда — site_posted_at / site_posted_by
     publish_on_site: Mapped[bool] = mapped_column(Boolean, default=False)
+    site_posted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    site_posted_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     # Разбор (б/у): донор, код для бирки и сайта, описание для объявления
     donor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("donors.id"), nullable=True, index=True)
     code: Mapped[str] = mapped_column(String(20), default="", index=True)   # Р-0001

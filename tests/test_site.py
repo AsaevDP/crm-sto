@@ -61,6 +61,16 @@ def test_refused_part_to_site_approve_and_sell(client):
     client.post(f"/site/new/{sid}/approve")
     client.post("/logout")
     login(client, "dmitro", "dmitro123")
+    # 26.11.2026: утвердили → «Выложить на сайт»; без 2 фото и описания «Выложил» не проходит, в выгрузке нет
+    assert "Рычаг тест-сайт" in client.get("/site?t=new&f=post").text
+    assert "Рычаг тест-сайт" not in client.get("/site?t=new&f=site").text
+    client.post(f"/site/new/{sid}/post")
+    with SessionLocal() as db:
+        assert db.get(SiteNew, sid).posted_at is None
+    JPEG = b"\xff\xd8\xff\xe0" + b"0" * 200
+    client.post(f"/site/new/{sid}", data={"description": "Новый, в упаковке"},
+                files=[("photos", ("a.jpg", JPEG, "image/jpeg")), ("photos", ("b.jpg", JPEG, "image/jpeg"))])
+    client.post(f"/site/new/{sid}/post")
     assert "Рычаг тест-сайт" in client.get("/site?t=new&f=site").text
     # в выгрузке для сайта — новая деталь с типом «Новая»
     z = zipfile.ZipFile(io.BytesIO(client.get("/razbor/export.zip").content))

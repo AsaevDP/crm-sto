@@ -45,34 +45,87 @@ def site_page(ctx: Ctx = Depends(get_ctx), t: str = "", f: str = ""):
     db.commit()
     new_rows = svc.rows(db, bid)
     counts = {k: sum(1 for r in new_rows if r["stage"] == k) for k in svc.STAGES}
-    # Б/у · разбор — то, что уходит на сайт из разбора (как плитка «На сайте» в «Разборе»)
+    # Б/у · разбор (26.11.2026): «Выложить на сайт» — утверждено, в наличии, «Выложил» не нажимали; «Выложены на сайт»
+    from ..models import StockPhoto
+    from sqlalchemy import func
     from .razbor import _item_rows
     used = db.scalars(select(StockItem).join(PartCatalog, PartCatalog.id == StockItem.catalog_id).where(
-        StockItem.branch_id == bid, PartCatalog.kind == "used", StockItem.publish_on_site.is_(True))
-        .order_by(StockItem.code.desc())).all()
-    used_rows = [r for r in _item_rows(ctx, used) if r["state"] == "stock"]
-    t = t if t in ("new", "used") else ("new" if (counts["wait"] and ctx.can("razbor.price")) or not used_rows else "new")
-    if f not in svc.STAGES:
-        f = next((k for k in ("wait", "declined", "site", "nostock") if counts[k]), "site") if t == "new" else ""
+        StockItem.branch_id == bid, PartCatalog.kind == "used").order_by(StockItem.code.desc())).all()
+    all_used = [r for r in _item_rows(ctx, used) if r["state"] == "stock"]
+    nph = dict(db.execute(select(StockPhoto.stock_item_id, func.count()).where(
+        StockPhoto.stock_item_id.in_([r["i"].id for r in all_used])).group_by(StockPhoto.stock_item_id)).all()) if all_used else {}
+    for r in all_used:
+        r["missing"] = svc.post_missing(nph.get(r["i"].id, 0), r["i"].description)
+        r["n_photos"] = nph.get(r["i"].id, 0)
+    used_post = [r for r in all_used if not r["i"].publish_on_site]
+    used_site = [r for r in all_used if r["i"].publish_on_site]
+    if t not in ("new", "used"):   # открываем вкладку, где есть дело
+        t = "used" if used_post and not counts["post"] and ctx.can("razbor.export") else "new"
+    if t == "new" and f not in svc.STAGES:
+        f = next((k for k in (("wait", "post", "declined") if ctx.can("razbor.price") else ("post", "declined", "wait"))
+                  if counts[k]), "site")
+    if t == "used" and f not in ("post", "site"):
+        f = "post" if used_post else "site"
     shown = [r for r in new_rows if r["stage"] == f] if t == "new" else []
+    used_rows = (used_post if f == "post" else used_site) if t == "used" else []
     return ctx.render("site/index.html", title="На сайт", t=t, f=f, rows=shown, counts=counts, STAGES=svc.STAGES,
-                      used_rows=used_rows, n_new_site=counts["site"], n_used=len(used_rows),
+                      used_rows=used_rows, n_used_post=len(used_post), n_used_site=len(used_site), MIN_PHOTOS=svc.MIN_PHOTOS,
+                      n_new_site=counts["site"], n_used=len(used_site),
                       can_price=ctx.can("razbor.price"), can_edit=ctx.can("razbor.export"),
                       can_sell=ctx.can("razbor.sell"), can_export=ctx.can("razbor.export"),
                       CHANNELS=CHANNELS, PAY_METHODS=PAY_METHODS, fmt_phone=osvc.fmt_phone)
 
 
 @router.post("/site/new/{sid}/approve")
-def approve(sid: str, ctx: Ctx = Depends(get_ctx)):
+def approve(sid: str, ctx: Ctx = Depends(get_ctx), price: str = Form("")):
     ctx.need("razbor.price")
     s = _sn(ctx, sid)
-    err = svc.approve(ctx.db, s, ctx.user)
+    err = svc.approve(ctx.db, s, ctx.user, _dec(price) if price.strip() else None)
     if err:
         flash(ctx.request, err, "error")
     else:
         ctx.db.commit()
-        flash(ctx.request, f"{s.code}: цена {s.price:.2f} ₴ утверждена — деталь на сайте")
+        flash(ctx.request, f"{s.code}: цена {s.price:.2f} ₴ утверждена — кладовщик разбора выложит деталь на сайт")
     return _to("/site?t=new&f=wait")
+
+
+@router.post("/site/new/{sid}/resubmit")
+def resubmit(sid: str, ctx: Ctx = Depends(get_ctx), note: str = Form("")):
+    """26.11.2026: отказано → «Отправить ещё раз» с комментарием (кладовщик разбора)."""
+    ctx.need("razbor.export")
+    s = _sn(ctx, sid)
+    err = svc.resubmit(ctx.db, s, note)
+    if err:
+        flash(ctx.request, err, "error")
+    else:
+        ctx.db.commit()
+        flash(ctx.request, f"{s.code}: снова отправлено директору на утверждение")
+    return _to("/site?t=new&f=declined")
+
+
+@router.post("/site/new/{sid}/post")
+def post(sid: str, ctx: Ctx = Depends(get_ctx)):
+    """26.11.2026: «✓ Выложил на сайт» — фото ≥ 2 и описание."""
+    ctx.need("razbor.export")
+    s = _sn(ctx, sid)
+    err = svc.post_new(ctx.db, s, ctx.user)
+    if err:
+        flash(ctx.request, err, "error")
+        return _to(f"/site?t=new&f=post#sn{s.id}")
+    ctx.db.commit()
+    flash(ctx.request, f"{s.code}: выложена на сайт")
+    return _to("/site?t=new&f=post")
+
+
+@router.post("/site/new/{sid}/unpost")
+def unpost(sid: str, ctx: Ctx = Depends(get_ctx)):
+    """26.11.2026: «Снять с сайта» — снова «Выложить на сайт»."""
+    ctx.need("razbor.export")
+    s = _sn(ctx, sid)
+    s.posted_at, s.posted_by = None, None
+    ctx.db.commit()
+    flash(ctx.request, f"{s.code}: снята с сайта, снова в «Выложить на сайт»")
+    return _to("/site?t=new&f=site")
 
 
 @router.post("/site/new/{sid}/decline")
@@ -105,10 +158,18 @@ async def edit(sid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
         p = ctx.db.get(SiteNewPhoto, _uuid(str(form.get("photo", ""))))
         if p and p.site_new_id == s.id:
             ctx.db.delete(p)
-            flash(ctx.request, "Фото удалено")
+            ctx.db.flush()
+            from sqlalchemy import func
+            n = ctx.db.scalar(select(func.count()).select_from(SiteNewPhoto).where(SiteNewPhoto.site_new_id == s.id)) or 0
+            if s.posted_at and n < svc.MIN_PHOTOS:   # 26.11.2026: фото меньше нормы — снова «Выложить на сайт»
+                s.posted_at, s.posted_by = None, None
+                flash(ctx.request, f"Фото удалено — фото меньше {svc.MIN_PHOTOS}, деталь снова в «Выложить на сайт»")
+            else:
+                flash(ctx.request, "Фото удалено")
     else:
         s.description = str(form.get("description", "")).strip()[:2000]
-        s.publish = form.get("publish") == "1"
+        if s.posted_at and not s.description:   # 26.11.2026: без описания на сайте не держим
+            s.posted_at, s.posted_by = None, None
         n = 0
         for up in form.getlist("photos"):
             if hasattr(up, "read"):

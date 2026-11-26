@@ -37,11 +37,13 @@
    2) Нет на сайте, Нет в наличии, Отправлено, Продано, В наряды СТО. Цвета и подписи — прежние. #}
 {% set DEF = {"stock": ("В наличии", "green", "можно продать"), "reserved": ("В резерве", "yellow", "отложено покупателю"),
               "unapproved": ("Не утверждено", "orange", "ждёт цены директора"), "declined": ("Отказано", "red", "цену не утвердили"),
-              "nosite": ("Нет на сайте", "orange" if tiles.nosite else "gray", "в наличии, не выложено"),
+              "nosite": ("Выложить на сайт", "red" if tiles.nosite else "gray", "фото, описание и «✓ Выложил»"),
+              "site": ("Выложены на сайт", "green" if tiles.site else "gray", "уже на сайте, в наличии"),
               "out": ("Нет в наличии", "gray", "продано, в наряде, списано"), "sent": ("Отправлено", "purple", "в пути к покупателю"),
               "sold": ("Продано", "blue", "деньги получены"), "service": ("В наряды СТО", "teal", "ушло в ремонт")} %}
 <div class="ord-rows rz-state-rows">
-{% for row in [["stock", "reserved", "unapproved", "declined"], ["nosite", "out", "sent", "sold", "service"]] %}
+{# 26.11.2026 (брат): «Нет на сайте» → «Выложить на сайт» (красная, дело кладовщика разбора) и «Выложены на сайт» #}
+{% for row in [["stock", "reserved", "unapproved", "declined"], ["nosite", "site", "out", "sent", "sold", "service"]] %}
 {% set ST = [] %}
 {% for key in row %}{% set title, color, sub = DEF[key] %}
 {% set n = tiles[key] if key != "out" else tiles.sold + tiles.service + tiles.writeoff + tiles.out %}
@@ -138,12 +140,12 @@
         <b class="nowrap rzp-price">{{ r.i.sale_price|money(0) }} ₴</b>
         <span class="chip" data-rs="{{ r.state }}">{{ ITEM_STATES[r.state] }}</span>
       </a>
-      {# 22.11.2026 (брат): в наличии, но не на сайте — пометка и «＋ На сайт» одним нажатием #}
+      {# 26.11.2026 (брат): в наличии, не выложена — «Выложить на сайт» ведёт в карточку (фото ≥ 2, описание, «✓ Выложил») #}
       {% if r.state == "stock" and not r.i.publish_on_site %}
-      <form class="rzp-site" method="post" action="/razbor/parts/{{ r.i.id }}/to-site" data-id="{{ r.i.id }}">
-        <span class="caption" style="color:var(--orange)">нет на сайте</span>
-        {% if ctx.can("razbor.manage", "razbor.export") %}<input type="hidden" name="back" value="{{ link() }}"><button class="btn btn-sm btn-tinted">＋ На сайт</button>{% endif %}
-      </form>
+      <div class="rzp-site" data-id="{{ r.i.id }}">
+        <span class="caption" style="color:var(--red)">не выложена на сайт</span>
+        {% if ctx.can("razbor.export") %}<a class="btn btn-sm btn-tinted" href="/razbor/parts/{{ r.i.id }}#site">Выложить на сайт</a>{% endif %}
+      </div>
       {% endif %}
       {% endfor %}{% endfor %}
     </div>

@@ -158,7 +158,12 @@ class SiteNew(Entity):
     work_order_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     reason: Mapped[str] = mapped_column(Text, default="")                       # почему клиент отказался
     description: Mapped[str] = mapped_column(Text, default="")                  # для объявления на сайте
-    publish: Mapped[bool] = mapped_column(Boolean, default=True)                # показывать на сайте
+    publish: Mapped[bool] = mapped_column(Boolean, default=True)                # (не используется с 26.11.2026)
+    # 26.11.2026 (брат): утвердили цену → «Выложить на сайт»; кладовщик разбора (фото ≥ 2, описание) «✓ Выложил» →
+    # «Выложены на сайт» и в выгрузку. note — что исправили, когда «Отправить ещё раз» после отказа директора
+    posted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    posted_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    note: Mapped[str] = mapped_column(Text, default="")
 
 
 class SiteNewPhoto(Entity):

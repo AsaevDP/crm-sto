@@ -79,7 +79,7 @@ def _item_rows(ctx: Ctx, items):
 
 
 RZ_FILTERS = {"": "Все", "stock": "В наличии", "reserved": "Резерв", "sent": "Отправлено", "sold": "Продано",
-              "service": "В наряды СТО", "out": "Нет в наличии", "site": "На сайте", "nosite": "Нет на сайте"}
+              "service": "В наряды СТО", "out": "Нет в наличии", "site": "Выложены на сайт", "nosite": "Выложить на сайт"}
 
 
 # ======================= Склад разбора: марка → модель → категория =======================
@@ -773,7 +773,12 @@ def part_view(iid: str, ctx: Ctx = Depends(get_ctx)):
                             .order_by(RazborPrice.created_at.desc()).limit(1))
     price = {"blocked": rp.blocked(i), "state": i.price_state or "", "wait_new": rp.pending(db, i.id, "new"),
              "decline": rp.last_decline(db, i.id) if i.price_state == "declined" else None, "change": last_change}
+    from ..services import site as site_svc   # 26.11.2026: блок «На сайт» — что не хватает, кто выложил
+    poster = db.get(User, i.site_posted_by) if i.site_posted_by else None
+    site = {"missing": site_svc.post_missing(len(photos), i.description), "min": site_svc.MIN_PHOTOS,
+            "poster": poster, "can": ctx.can("razbor.export")}
     return ctx.render("razbor/part.html", title=f"{i.code} {row['c'].name}", r=row, i=i, photos=photos, sales=sales, price=price,
+                      site=site,
                       moves=moves, people=people, locations=_locations(ctx), CONDITIONS=CONDITIONS, DELIVERY=DELIVERY,
                       SALE_STATUS=SALE_STATUS, PAY_METHODS=PAY_METHODS, MOVEMENT_TYPES=MOVEMENT_TYPES,
                       loc_label=ssvc.location_label, fmt_phone=osvc.fmt_phone, ref=svc.tree(db, ctx.branch.id),
@@ -804,7 +809,10 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
     if form.get("condition") in CONDITIONS:
         i.condition = str(form.get("condition"))
     i.description = str(form.get("description", "")).strip()
-    i.publish_on_site = form.get("publish") == "1"
+    # 26.11.2026: «на сайт» — только кнопкой «✓ Выложил на сайт» (фото ≥ 2, описание); убрали описание — снимаем
+    if i.publish_on_site and not i.description:
+        from ..services import site as site_svc
+        site_svc.unpost_used(i)
     loc = ctx.db.get(Location, _uuid(str(form.get("location_id")))) if form.get("location_id") else None
     i.location_id = loc.id if loc else None
     for p in await _photos(form):
@@ -816,17 +824,29 @@ async def part_save(iid: str, request: Request, ctx: Ctx = Depends(get_ctx)):
 
 @router.post("/razbor/parts/{iid}/to-site")
 def part_to_site(iid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
-    """22.11.2026 (брат): «＋ На сайт» одним нажатием — у детали, которой нет на сайте («Нет на сайте»)."""
-    ctx.need("razbor.manage", "razbor.export")
-    from ..services import razbor_price as rp
+    """26.11.2026 (брат): «✓ Выложил на сайт» — кладовщик разбора добавил фото (≥ 2) и описание и выложил деталь."""
+    ctx.need("razbor.export")
+    from ..services import site as site_svc
     i = _item(ctx, iid)
-    if rp.blocked(i):
-        flash(ctx.request, "Цена ещё не утверждена директором — на сайт пока нельзя", "error")
-    else:
-        i.publish_on_site = True
-        ctx.db.commit()
-        flash(ctx.request, f"{i.code} — на сайте")
-    return _to(back if back.startswith("/razbor") else f"/razbor/parts/{iid}")
+    err = site_svc.post_used(ctx.db, i, ctx.user)
+    if err:
+        flash(ctx.request, err, "error")
+        return _to(f"/razbor/parts/{iid}#site")
+    ctx.db.commit()
+    flash(ctx.request, f"{i.code} — выложена на сайт")
+    return _to(back if back.startswith(("/razbor", "/site")) else f"/razbor/parts/{iid}")
+
+
+@router.post("/razbor/parts/{iid}/off-site")
+def part_off_site(iid: str, ctx: Ctx = Depends(get_ctx), back: str = Form("")):
+    """26.11.2026: «Снять с сайта» — деталь снова в «Выложить на сайт»."""
+    ctx.need("razbor.export")
+    from ..services import site as site_svc
+    i = _item(ctx, iid)
+    site_svc.unpost_used(i)
+    ctx.db.commit()
+    flash(ctx.request, f"{i.code} — снята с сайта, снова в «Выложить на сайт»")
+    return _to(back if back.startswith(("/razbor", "/site")) else f"/razbor/parts/{iid}")
 
 
 # ======================= Утверждение цен разбора (18.11.2026, брат) =======================
@@ -923,9 +943,14 @@ def razbor_price_approve(rid: str, ctx: Ctx = Depends(get_ctx), price: str = For
     if err:
         flash(ctx.request, err, "error")
     else:
-        ctx.db.commit()
         i = ctx.db.get(StockItem, r.stock_item_id)
-        flash(ctx.request, f"{i.code} — цена {r.final_price} ₴ утверждена" + (" — деталь в наличии" if r.kind == "new" else ""))
+        if r.kind == "new":   # 26.11.2026: кладовщику разбора — подготовить и «✓ Выложил на сайт»
+            from ..services import site as site_svc
+            c = ctx.db.get(PartCatalog, i.catalog_id)
+            site_svc.notify_post(ctx.db, ctx.branch.id, f"{i.code} {c.name if c else ''} · {r.final_price:.0f} ₴",
+                                 f"/razbor/parts/{i.id}#site", skip=ctx.user.id)
+        ctx.db.commit()
+        flash(ctx.request, f"{i.code} — цена {r.final_price} ₴ утверждена" + (" — деталь в наличии, кладовщик разбора выложит её на сайт" if r.kind == "new" else ""))
     return _to(_prices_back(ctx, r, back))
 
 
@@ -955,6 +980,10 @@ def razbor_price_approve_all(did: str, ctx: Ctx = Depends(get_ctx)):
             StockItem.donor_id == d.id, RazborPrice.status == "pending", RazborPrice.kind == "new")):
         if not rp.approve(ctx.db, r, ctx.user):
             n += 1
+    if n:   # 26.11.2026: одно сообщение на машину
+        from ..services import site as site_svc
+        site_svc.notify_post(ctx.db, ctx.branch.id, f"{d.code} {d.make} {d.model}: утверждено деталей — {n}",
+                             "/razbor?v=parts&f=nosite", skip=ctx.user.id)
     ctx.db.commit()
     flash(ctx.request, f"{d.code} {d.make} {d.model}: утверждено деталей — {n}")
     return _to(f"/razbor/prices?tab=new")

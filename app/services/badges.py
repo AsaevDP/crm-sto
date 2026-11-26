@@ -615,21 +615,20 @@ def compute(ctx) -> dict:
         if ctx.can("razbor.manage"):
             _add(out, "/razbor", "red", rc["declined"], "отказано в утверждении — посмотреть причину", "/razbor?v=parts&f=declined",
                  info=info_rz, tile=['Отказано'])
-    # 🟠 22.11.2026 (брат): в наличии, но не выложено на сайт — «＋ На сайт»
-    if ctx.can("razbor.manage"):
-        from . import razbor as rz_svc
-        _add(out, "/razbor", "orange", rz_svc.nosite_count(db, bid), "нет на сайте — выложить («＋ На сайт»)",
-             "/razbor?v=parts&f=nosite", info=info_rz, tile=['Нет на сайте'], sel=[("/razbor", ".rzp-site")])
-
     # ---------- «На сайт» (22.11.2026, брат): новые запчасти на продажу ----------
+    # 26.11.2026 (брат): утвердили цену → 🔴 кладовщику разбора «выложить на сайт» (б/у и новые отдельными кружками —
+    # разные вкладки), гаснет после «✓ Выложил на сайт». Прежние 🟠 «нет на сайте» / «на сайте без фото» убраны.
     if ctx.can("razbor.price") or ctx.can("razbor.export"):
         from . import site as site_svc
         sc = site_svc.counts(db, bid, sync=False)
         if ctx.can("razbor.price"):
             _add(out, "/site", "red", sc["wait"], "новые на продажу — утвердить цену", "/site?t=new&f=wait", sel=[("/site", '.sn-row[data-stage="wait"]')], tile=['Ждут утверждения'])
         if ctx.can("razbor.export"):
-            _add(out, "/site", "red", sc["declined"], "директор отказал — посмотреть причину", "/site?t=new&f=declined", sel=[("/site", '.sn-row[data-stage="declined"]')], tile=['Отказано'])
-            _add(out, "/site", "orange", sc["nophoto"], "на сайте без фото — добавить фото", "/site?t=new&f=site", sel=[("/site", '.sn-row[data-nophoto="1"]')], tile=['На сайте'])
+            _add(out, "/site", "red", len(site_svc.used_to_post(db, bid)), "б/у — выложить на сайт (фото, описание, «✓ Выложил»)",
+                 "/site?t=used&f=post", info=info_rz, sel=[("/site", '.sn-row[data-stage="post"]')], tile=['Выложить на сайт'])
+            _add(out, "/site", "red", sc["post"], "новые — выложить на сайт (фото, описание, «✓ Выложил»)",
+                 "/site?t=new&f=post", info=info_rz, sel=[("/site", '.sn-row[data-stage="post"]')], tile=['Выложить на сайт'])
+            _add(out, "/site", "red", sc["declined"], "директор отказал — исправить и отправить ещё раз", "/site?t=new&f=declined", sel=[("/site", '.sn-row[data-stage="declined"]')], tile=['Отказано'])
 
     # 🔴 22.11.2026 (брат): «Заявки с сайта» — новые, принять или отказать
     if ctx.can("site.orders"):

@@ -13,15 +13,17 @@
 </header>
 
 <nav class="segmented st-tabs" aria-label="Что продаём">
-  <a href="/site?t=new" aria-pressed="{{ (t == 'new')|lower }}">Новые · {{ counts.wait + counts.site + counts.nostock + counts.declined }}</a>
-  <a href="/site?t=used" aria-pressed="{{ (t == 'used')|lower }}">Б/у · разбор · {{ n_used }}</a>
+  <a href="/site?t=new" aria-pressed="{{ (t == 'new')|lower }}">Новые · {{ counts.wait + counts.post + counts.site + counts.nostock + counts.declined }}</a>
+  <a href="/site?t=used" aria-pressed="{{ (t == 'used')|lower }}">Б/у · разбор · {{ n_used_post + n_used_site }}</a>
 </nav>
 
 {% if t == "new" %}
-{# 23.11.2026 (брат): порядок — Нет на складе, На сайте, Ждут утверждения, Отказано, Продано, Сняты #}
+{# 23.11.2026 (брат): порядок — Нет на складе, На сайте, Ждут утверждения, Отказано, Продано, Сняты.
+   26.11.2026 (брат): «На сайте» → «Выложить на сайт» (утверждено, ждёт фото, описание и «✓ Выложил») и «Выложены на сайт» #}
 {{ tiles([
   {"t": "Нет на складе", "n": counts.nostock, "s": "взяли в наряд", "c": "gray", "href": "/site?t=new&f=nostock", "on": f == "nostock"},
-  {"t": "На сайте", "n": counts.site, "s": "утверждено, есть на складе", "c": "green", "href": "/site?t=new&f=site", "on": f == "site"},
+  {"t": "Выложить на сайт", "n": counts.post, "s": "фото, описание и «✓ Выложил»", "c": "red" if can_edit else "orange", "href": "/site?t=new&f=post", "on": f == "post"},
+  {"t": "Выложены на сайт", "n": counts.site, "s": "на сайте, есть на складе", "c": "green", "href": "/site?t=new&f=site", "on": f == "site"},
   {"t": "Ждут утверждения", "n": counts.wait, "s": "цену утверждает директор", "c": "red" if can_price else "orange", "href": "/site?t=new&f=wait", "on": f == "wait"},
   {"t": "Отказано", "n": counts.declined, "s": "директор не утвердил", "c": "red", "href": "/site?t=new&f=declined", "on": f == "declined"},
   {"t": "Продано", "n": counts.sold, "s": "всё продали", "c": "teal", "href": "/site?t=new&f=sold", "on": f == "sold"},
@@ -30,7 +32,8 @@
 
 <div class="sn-list">
 {% for r in rows %}{% set s = r.s %}{% set c = r.c %}{% set stg = STAGES[r.stage] %}
-<section class="card compact sn-row" id="sn{{ s.id }}" data-stage="{{ r.stage }}" data-nophoto="{{ 1 if r.stage == 'site' and not r.photos else 0 }}" style="--tc:var(--{{ stg[1] }})">
+{% set miss = [] %}{% if r.photos|length < MIN_PHOTOS %}{% set _ = miss.append("фото " ~ r.photos|length ~ " из " ~ MIN_PHOTOS) %}{% endif %}{% if not s.description %}{% set _ = miss.append("описание") %}{% endif %}
+<section class="card compact sn-row" id="sn{{ s.id }}" data-stage="{{ r.stage }}" style="--tc:var(--{{ stg[1] }})">
   <div class="sn-ph">{% if r.photos %}<img src="/razbor/files/{{ r.photos[0].file.split('/')[-1] }}" alt="">{% else %}<span class="caption">нет фото</span>{% endif %}</div>
   <div class="sn-main">
     <div class="sn-top"><b class="sn-code">{{ s.code }}</b> <b>{{ c.name if c else "?" }}</b>
@@ -39,6 +42,9 @@
     <div class="caption">{% if c and c.article %}<span class="mono">{{ c.article }}</span> · {% endif %}{% if s.source == "refused" %}отказ клиента{% if r.wo %} · <a href="/orders/{{ r.wo.id }}">наряд {{ r.wo.number[-6:] }}</a>{% endif %}{% if s.reason %} · «{{ s.reason }}»{% endif %}{% else %}выставлено со склада{% endif %}</div>
     {% if s.description %}<div class="sn-desc">{{ s.description }}</div>{% endif %}
     {% if s.state == "declined" and s.answer %}<div class="hint warn" style="margin:4px 0 0">Отказано: {{ s.answer }}</div>{% endif %}
+    {% if s.state == "pending" and s.note %}<div class="hint" style="margin:4px 0 0">Отправлено ещё раз: {{ s.note }}{% if s.answer %} · прежний отказ: {{ s.answer }}{% endif %}</div>{% endif %}
+    {% if r.stage == "post" %}<div class="caption sn-miss">{% if miss %}<span style="color:var(--red)">Не хватает: {{ miss|join(", ") }}</span>{% else %}Всё готово — нажмите «✓ Выложил на сайт»{% endif %}</div>{% endif %}
+    {% if r.stage == "site" and s.posted_at %}<div class="caption">Выложено {{ s.posted_at.astimezone().strftime("%d.%m %H:%M") }}</div>{% endif %}
   </div>
   <div class="sn-nums">
     <span><span class="caption">цена за шт</span><b class="nowrap">{{ s.price|money }} ₴</b></span>
@@ -47,21 +53,33 @@
   </div>
   <div class="sn-acts">
     {% if can_price and s.state != "approved" and s.status == "on" %}
-    <form method="post" action="/site/new/{{ s.id }}/approve"><button class="btn btn-sm">✓ Утвердить цену</button></form>
+    {# 26.11.2026: цену можно поправить при утверждении #}
+    <form method="post" action="/site/new/{{ s.id }}/approve" class="sn-appr"><input class="field" name="price" value="{{ '%.0f'|format(s.price) }}" inputmode="decimal" aria-label="Цена за шт, ₴" title="Цена за шт — можно поправить">
+      <button class="btn btn-sm" id="btn-approve-{{ s.id }}">✓ Утвердить цену</button></form>
     {% if s.state == "pending" %}<details class="sn-more"><summary class="btn btn-sm btn-gray">Отказать…</summary>
       <form method="post" action="/site/new/{{ s.id }}/decline" class="form dense"><input class="field" name="answer" required maxlength="300" placeholder="Причина — кладовщик увидит">
         <button class="btn btn-sm btn-danger">Отказать</button></form></details>{% endif %}
+    {% endif %}
+    {% if can_edit and r.stage == "post" %}
+    <form method="post" action="/site/new/{{ s.id }}/post"><button class="btn btn-sm btn-post" {{ 'disabled' if miss }} title="{{ 'Не хватает: ' ~ miss|join(', ') if miss else '' }}">✓ Выложил на сайт</button></form>
+    {% endif %}
+    {% if can_edit and r.stage == "site" %}
+    <form method="post" action="/site/new/{{ s.id }}/unpost"><button class="btn btn-sm btn-plain">Снять с сайта</button></form>
+    {% endif %}
+    {% if can_edit and s.state == "declined" and s.status == "on" %}
+    <details class="sn-more"><summary class="btn btn-sm">Отправить ещё раз</summary>
+      <form method="post" action="/site/new/{{ s.id }}/resubmit" class="form dense"><input class="field" name="note" required maxlength="300" placeholder="Что исправили / почему утвердить — директор увидит">
+        <button class="btn btn-sm">Отправить директору</button></form></details>
     {% endif %}
     {% if can_sell and r.stage == "site" %}
     <button class="btn btn-sm btn-tinted" type="button" onclick="document.getElementById('sell{{ s.id }}').showModal()">Продать</button>
     {% endif %}
     {% if can_edit %}
-    <details class="sn-more"><summary class="btn btn-sm btn-gray">Фото и описание</summary>
+    <details class="sn-more" {{ 'open' if r.stage == 'post' and miss }}><summary class="btn btn-sm btn-gray">Фото и описание</summary>
       <form method="post" action="/site/new/{{ s.id }}" enctype="multipart/form-data" class="form dense">
         <input type="hidden" name="back" value="/site?t=new&f={{ f }}">
         <label class="caption">Описание для сайта<textarea class="field" name="description" rows="3" placeholder="Новая, в упаковке. Подходит: …">{{ s.description }}</textarea></label>
-        <label class="row caption"><input type="checkbox" name="publish" value="1" {% if s.publish %}checked{% endif %}> показывать на сайте</label>
-        <label class="caption">Добавить фото<input class="field" type="file" name="photos" accept="image/*" multiple></label>
+        <label class="caption">Добавить фото (нужно не меньше {{ MIN_PHOTOS }}, лучше 3)<input class="field" type="file" name="photos" accept="image/*" multiple></label>
         <button class="btn btn-sm">Сохранить</button>
       </form>
       {% if r.photos %}<div class="sn-photos">{% for p in r.photos %}<form method="post" action="/site/new/{{ s.id }}"><input type="hidden" name="action" value="photo_del"><input type="hidden" name="photo" value="{{ p.id }}"><img src="/razbor/files/{{ p.file.split('/')[-1] }}" alt=""><button class="btn btn-plain btn-sm" title="Удалить фото">✕</button></form>{% endfor %}</div>{% endif %}
@@ -95,22 +113,37 @@
 </dialog>
 {% endif %}
 {% else %}
-<div class="card compact"><p class="footnote" style="margin:0">{% if f == "wait" %}Ничего не ждёт утверждения.{% elif f == "site" %}Новых запчастей на сайте пока нет. Они появятся, когда запчастист в «Лишнем после отказов» нажмёт «Продать» (или выставят из карточки склада «На продажу») и директор утвердит цену.{% else %}Здесь пусто.{% endif %}</p></div>
+<div class="card compact"><p class="footnote" style="margin:0">{% if f == "wait" %}Ничего не ждёт утверждения.{% elif f == "post" %}Выкладывать нечего — всё утверждённое уже на сайте.{% elif f == "site" %}Выложенных новых запчастей пока нет. Путь: запчастист «Продать» в «Лишнем после отказов» (или «На продажу» из карточки склада) → директор утверждает цену → кладовщик разбора добавляет фото и описание и жмёт «✓ Выложил на сайт».{% else %}Здесь пусто.{% endif %}</p></div>
 {% endfor %}
 </div>
 
 {% else %}
-<p class="footnote">Детали разбора с галочкой «на сайт», утверждённой ценой и в наличии. Править — в карточке детали «Разбора».</p>
+{# 26.11.2026 (брат): «Выложить на сайт» — цена утверждена, в наличии; кладовщик разбора: фото ≥ 2, описание, «✓ Выложил» #}
+{{ tiles([
+  {"t": "Выложить на сайт", "n": n_used_post, "s": "фото, описание и «✓ Выложил»", "c": "red" if can_edit else "orange", "href": "/site?t=used&f=post", "on": f == "post"},
+  {"t": "Выложены на сайт", "n": n_used_site, "s": "на сайте, в наличии", "c": "green", "href": "/site?t=used&f=site", "on": f == "site"},
+], "sn-tiles") }}
+<p class="footnote">Детали разбора с утверждённой ценой и в наличии. Фото и описание — в карточке детали «Разбора».</p>
 <div class="sn-list">
 {% for r in used_rows %}{% set i = r.i %}
-<a class="card compact sn-row sn-used" href="/razbor/parts/{{ i.id }}">
-  <div class="sn-ph">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="">{% else %}<span class="caption">нет фото</span>{% endif %}</div>
-  <div class="sn-main"><div class="sn-top"><b class="sn-code">{{ i.code }}</b> <b>{{ r.c.name if r.c else "" }}</b></div>
-    <div class="caption">{{ i.donor_make }} {{ i.donor_model }} {{ i.donor_year or "" }}{% if r.loc %} · ячейка {{ r.loc }}{% endif %}</div></div>
+<section class="card compact sn-row sn-used" id="rz{{ i.id }}" data-stage="{{ 'post' if not i.publish_on_site else 'site' }}" style="--tc:var(--{{ 'red' if not i.publish_on_site else 'green' }})">
+  <a class="sn-ph" href="/razbor/parts/{{ i.id }}">{% if r.photo %}<img src="/razbor/files/{{ r.photo.file.split('/')[-1] }}" alt="">{% else %}<span class="caption">нет фото</span>{% endif %}</a>
+  <div class="sn-main"><div class="sn-top"><a href="/razbor/parts/{{ i.id }}"><b class="sn-code">{{ i.code }}</b> <b>{{ r.c.name if r.c else "" }}</b></a></div>
+    <div class="caption">{{ i.donor_make }} {{ i.donor_model }} {{ i.donor_year or "" }}{% if r.loc %} · ячейка {{ r.loc }}{% endif %} · фото {{ r.n_photos }}</div>
+    {% if not i.publish_on_site %}<div class="caption sn-miss">{% if r.missing %}<span style="color:var(--red)">Не хватает: {{ r.missing|join(", ") }}</span>{% else %}Всё готово — нажмите «✓ Выложил на сайт»{% endif %}</div>
+    {% elif i.site_posted_at %}<div class="caption">Выложено {{ i.site_posted_at.astimezone().strftime("%d.%m %H:%M") }}</div>{% endif %}</div>
   <div class="sn-nums"><span><span class="caption">цена</span><b class="nowrap">{{ i.sale_price|money }} ₴</b></span>
     <span><span class="caption">в наличии</span><b>{{ r.b.free|num }}</b></span></div>
-</a>
-{% else %}<div class="card compact"><p class="footnote" style="margin:0">Б/у деталей на сайте пока нет — поставьте галочку «на сайт» в карточке детали «Разбора».</p></div>{% endfor %}
+  <div class="sn-acts">
+    {% if can_edit and not i.publish_on_site %}
+      {% if r.missing %}<a class="btn btn-sm btn-tinted" href="/razbor/parts/{{ i.id }}#site">Добавить фото и описание</a>
+      {% else %}<form method="post" action="/razbor/parts/{{ i.id }}/to-site"><input type="hidden" name="back" value="/site?t=used&f=post"><button class="btn btn-sm btn-post">✓ Выложил на сайт</button></form>{% endif %}
+    {% elif can_edit %}
+      <form method="post" action="/razbor/parts/{{ i.id }}/off-site"><input type="hidden" name="back" value="/site?t=used&f=site"><button class="btn btn-sm btn-plain">Снять с сайта</button></form>
+    {% endif %}
+  </div>
+</section>
+{% else %}<div class="card compact"><p class="footnote" style="margin:0">{% if f == "post" %}Выкладывать нечего — всё утверждённое уже на сайте.{% else %}Выложенных б/у деталей пока нет.{% endif %}</p></div>{% endfor %}
 </div>
 {% endif %}
 {% endblock %}

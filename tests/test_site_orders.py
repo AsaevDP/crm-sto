@@ -28,20 +28,29 @@ def _used_parts(client, make):
 
 
 def test_nosite_tile_badge_and_button(client):
+    """26.11.2026: «Нет на сайте» → «Выложить на сайт»: 🔴 у «На сайт», «Выложил» — только с 2 фото и описанием."""
     items = _used_parts(client, "VW-нетсайт")
     left = items["Фара левая (VW-нетсайт)"]
-    with SessionLocal() as db:   # списком заводятся сразу «на сайт» — снимаем галочку (забыли / сняли с сайта)
-        for i in items.values():
-            db.get(StockItem, i.id).publish_on_site = False
-        db.commit()
     page = client.get("/razbor?v=parts&f=nosite").text
-    assert "Нет на сайте" in page and "Фара левая (VW-нетсайт)" in page and "＋ На сайт" in page
-    b = client.get("/api/notify").json()["badges"].get("/razbor", [])
-    assert any(x["c"] == "orange" and x["n"] >= 2 for x in b)
+    assert "Выложить на сайт" in page and "Фара левая (VW-нетсайт)" in page
+    b = client.get("/api/notify").json()["badges"].get("/site", [])
+    assert any(x["c"] == "red" and x["n"] >= 2 and "б/у" in x["t"] for x in b)
     client.post(f"/razbor/parts/{left.id}/to-site", data={"back": "/razbor?v=parts&f=nosite"})
     with SessionLocal() as db:
-        assert db.get(StockItem, left.id).publish_on_site
+        assert not db.get(StockItem, left.id).publish_on_site   # нет фото и описания
+    JPEG = b"\xff\xd8\xff\xe0" + b"0" * 200
+    client.post(f"/razbor/parts/{left.id}", data={"name": "Фара левая (VW-нетсайт)", "description": "Целая, без сколов"},
+                files=[("photos", ("a.jpg", JPEG, "image/jpeg")), ("photos", ("b.jpg", JPEG, "image/jpeg"))])
+    client.post(f"/razbor/parts/{left.id}/to-site", data={"back": "/razbor?v=parts&f=nosite"})
+    with SessionLocal() as db:
+        i = db.get(StockItem, left.id)
+        assert i.publish_on_site and i.site_posted_at and i.site_posted_by
     assert "Фара левая (VW-нетсайт)" not in client.get("/razbor?v=parts&f=nosite").text
+    assert "Фара левая (VW-нетсайт)" in client.get("/site?t=used&f=site").text
+    # «Снять с сайта» — снова «Выложить»
+    client.post(f"/razbor/parts/{left.id}/off-site")
+    with SessionLocal() as db:
+        assert not db.get(StockItem, left.id).publish_on_site
 
 
 def test_site_order_manual_accept_and_decline(client):

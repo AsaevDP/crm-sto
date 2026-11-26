@@ -47,8 +47,12 @@ def test_donor_parts_sale_and_export(client):
         codes = [i.code for i in items]
     assert all(c.startswith("Р-") for c in codes) and len(codes) == 2
     lamp, mirror = codes
+    # 26.11.2026: в выгрузку — только «✓ Выложил на сайт» (фара: 2 фото и описание; зеркало без фото — не пускает)
+    client.post(f"/razbor/parts/{_item(lamp).id}/to-site")
+    client.post(f"/razbor/parts/{_item(mirror).id}/to-site")
+    assert _item(lamp).publish_on_site and not _item(mirror).publish_on_site
 
-    # Экспорт: обе детали, Excel открывается, фото в архиве
+    # Экспорт: выложенная деталь, Excel открывается, фото в архиве
     r = client.get("/razbor/export.zip")
     z = zipfile.ZipFile(io.BytesIO(r.content))
     names = z.namelist()
@@ -57,7 +61,7 @@ def test_donor_parts_sale_and_export(client):
     ws = load_workbook(io.BytesIO(z.read("razbor.xlsx"))).active
     rows = list(ws.iter_rows(values_only=True))
     assert rows[0][:3] == ("Тип", "Код", "Название")   # 22.11.2026: «Тип» — новая / б/у (раздел «На сайт»)
-    assert {row[1] for row in rows[1:]} >= {lamp, mirror}
+    assert lamp in {row[1] for row in rows[1:]} and mirror not in {row[1] for row in rows[1:]}
     lamp_row = next(row for row in rows if row[1] == lamp)
     assert lamp_row[0] == "Б/у" and lamp_row[2] == "Фара передняя левая (тест)" and lamp_row[10] == 6500 and f"{lamp}_1.jpg" in lamp_row[14]
     assert z.read("razbor.csv")[:3] == b"\xef\xbb\xbf"  # BOM — Excel понимает кириллицу
