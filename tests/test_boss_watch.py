@@ -96,6 +96,38 @@ def test_hide_info_badges(client):
         db.commit()
 
 
+def test_keeper_badges_on_by_partsman(client):
+    """У кладовщика у «Заказов запчастистов»: 🟠 «Ждём» и 🔴 «Опаздывают» — как на плитках."""
+    from datetime import date, timedelta
+    from decimal import Decimal
+    from sqlalchemy import delete
+    from app.models import Purchase, PurchaseLine
+    with SessionLocal() as db:
+        u = db.scalar(select(User).where(User.login == "pavel"))
+        current_branch_id.set(u.branch_id)
+        c = PartCatalog(name="Тест-ждём кладовщик")
+        db.add(c)
+        db.flush()
+        p = Purchase(status="ordered", ordered_on=date.today() - timedelta(days=5),
+                     expected_on=date.today() - timedelta(days=2))
+        db.add(p)
+        db.flush()
+        db.add_all([PurchaseLine(purchase_id=p.id, catalog_id=c.id, qty=Decimal(1)),
+                    PurchaseLine(purchase_id=p.id, catalog_id=c.id, qty=Decimal(2))])
+        db.commit()
+        pid = p.id
+    _as(client, "pavel")
+    lst = _badges(client).get("/purchases/by-partsman", [])
+    late = [x for x in lst if x["c"] == "red" and "опаздывают" in x["t"]]
+    wait = [x for x in lst if x["c"] == "orange" and "ждём" in x["t"]]
+    assert late and late[0]["n"] >= 2 and "Опаздывают" in late[0]["tile"]
+    assert wait and wait[0]["n"] >= late[0]["n"] and "Ждём" in wait[0]["tile"]
+    with SessionLocal() as db:
+        db.execute(delete(PurchaseLine).where(PurchaseLine.purchase_id == pid))
+        db.execute(delete(Purchase).where(Purchase.id == pid))
+        db.commit()
+
+
 def test_keep_tiles_filter(client):
     _as(client, "director")
     page = client.get("/stock/always").text

@@ -686,6 +686,21 @@ def _compute(ctx, out: "_Out") -> "_Out":
              sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Опаздывают', 'Приход'])
         _add(out, "/stock", "orange", (db.scalar(wait_q) or 0) - late, "ждём приход — подготовиться принять", "/stock/receive?tab=wait",
              info=info_new, sel=[("/stock/receive", ".rc-group:not(.rc-inv-group)")], tile=['Ждём', 'Приход'])
+    # 27.11.2026 (брат): кладовщику — и у «Заказов запчастистов»: 🟠 «Ждём» (заказано, едет) и 🔴 «Опаздывают», цифры как
+    # на плитках этого экрана (строки закупок без химии; «Ждём» — все неполученные, в т. ч. опаздывающие)
+    if ctx.can("stock.receive") and ctx.can("purchases.by_partsman") and role != "content":
+        from . import stock as _st2
+        n_wait = n_late = 0
+        for p in db.scalars(select(Purchase).where(Purchase.branch_id == bid, Purchase.status.in_(_st2.OPEN),
+                                                   Purchase.kind != "chem")):
+            left = db.scalar(select(func.count()).select_from(PurchaseLine).where(
+                PurchaseLine.purchase_id == p.id, PurchaseLine.received.is_(False))) or 0
+            n_wait += left
+            n_late += left if _st2.is_late(p) else 0
+        _add(out, "/purchases/by-partsman", "red", n_late, "опаздывают — позвонить поставщику", "/purchases/by-partsman?st=late",
+             info=info_new, sel=[("/purchases/by-partsman", ".bp-group")], tile=['Опаздывают'])
+        _add(out, "/purchases/by-partsman", "orange", n_wait, "ждём — заказано, едет", "/purchases/by-partsman?st=wait",
+             info=info_new, sel=[("/purchases/by-partsman", ".bp-group")], tile=['Ждём'])
     # 23.11.2026 (брат): кладовщику по нарядам (своя зона склада) — 🟠 «согласовано — подготовить к выдаче» (гаснет, когда
     # мастер запросил выдачу или выдали) и 🟣 для сведения «отложено со склада под наряд» (гаснет после «Получил» мастера)
     if ctx.can("stock.issue", "razbor.issue"):

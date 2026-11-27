@@ -78,8 +78,11 @@
     const fl = document.querySelector('main .flash[role=status]');
     if (fl) {
       fl.classList.add('float'); document.body.appendChild(fl);
-      setTimeout(() => fl.classList.add('gone'), fl.classList.contains('error') ? 6000 : 3000);
-      setTimeout(() => fl.remove(), 7000);
+      // 27.11.2026 (брат): на 3 секунды дольше — успеть прочитать (зелёная 5,5 с, красная 9 с). Перешли на другую
+      // страницу — плашки там нет (она приходит только со страницей после действия)
+      const ms = fl.classList.contains('error') ? 9000 : 5500;
+      setTimeout(() => fl.classList.add('gone'), ms);
+      setTimeout(() => fl.remove(), ms + 500);
       fl.addEventListener('click', () => fl.remove());
     }
     const go = () => {
@@ -134,8 +137,11 @@
   document.querySelectorAll('.colors input[type=radio]').forEach(r => r.addEventListener('change', () => preview(r.value)));
 
   // Сообщение «Сохранено» исчезает само
-  const fl = document.querySelector('.flash:not(.error)');
-  if (fl) setTimeout(() => { fl.style.transition = 'opacity .4s'; fl.style.opacity = '0'; setTimeout(() => fl.remove(), 400); }, 2500);
+  // Ушли со страницы — плашку убрать, чтобы при «Назад» браузер не показал её снова
+  window.addEventListener('pagehide', () => document.querySelectorAll('.flash[role=status]').forEach(x => x.remove()));
+  // (плавающую — .float — прячет свой таймер выше; раньше этот срабатывал первым и убирал её через 2,5 с)
+  const fl = document.querySelector('.flash:not(.error):not(.float)');
+  if (fl) setTimeout(() => { fl.style.transition = 'opacity .4s'; fl.style.opacity = '0'; setTimeout(() => fl.remove(), 400); }, 5500);
 
   // Кнопка «Копировать» (VIN и т.п., 12.11.2026). По Wi-Fi (http) буфер обмена браузер не даёт — запасной способ
   document.addEventListener('click', e => {
