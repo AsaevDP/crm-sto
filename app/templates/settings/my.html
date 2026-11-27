@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{# Мои настройки (27.11.2026, брат): директор, зам, админ — включить / выключить кружки «для сведения» (дела сотрудников,
+   сиреневая обводка). Свои дела (без обводки) не выключаются. Выключил админ (право badges.hide_info) — сам не включить. #}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/settings">{{ icon("back") }}Настройки</a><h1 class="large-title">Мои настройки</h1></div>
+</header>
+<div class="card compact rb-list">
+  <form class="rb-row" method="post" action="/settings/my/info-badges">
+    <span class="rb-who"><b>Кружки «для сведения»</b>
+      <span class="caption">Дела сотрудников в меню — кружок с сиреневой обводкой. Выключите — останутся только ваши дела
+        (кружки без обводки), и мигать будут только их плитки. Ваши дела не выключаются.</span></span>
+    {% if info_admin %}<span class="chip" data-s="created">выключено админом</span>
+      <button class="btn btn-sm btn-gray" disabled title="Включить может только админ">Включить</button>
+    {% elif info_self %}<span class="chip" data-s="created">выключено</span>
+      <input type="hidden" name="show" value="1"><button class="btn btn-sm">Включить</button>
+    {% else %}<span class="chip" data-s="ready">✓ показываются</span>
+      <button class="btn btn-sm btn-gray">Выключить</button>{% endif %}
+  </form>
+</div>
+{% endblock %}

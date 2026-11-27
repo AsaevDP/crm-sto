@@ -154,6 +154,8 @@ _LINK_NEED = {"/stock/receive": ("stock.receive",), "/razbor/shipping": ("razbor
               "/stock/leftovers": ("parts.pick", "stock.manage", "purchases.by_partsman"),
               "/stock/issues": ("stock.issue", "razbor.issue", "stock.view", "tools.manage"),
               "/wash/queue": ("chem.ask", "wash.view"), "/purchases": ("purchases.view",)}
+# Пункт меню есть, но экран закрыт без права (директору «Зарплату сотрудников» открывает админ)
+_CLOSED_FOR = {"/payroll/weeks": ("payroll.view_all",)}
 _CACHE: dict = {}
 CACHE_SEC = 20
 
@@ -219,6 +221,8 @@ def _add_watch(ctx, out: "_Out", items: list[dict]) -> None:
         need = _LINK_NEED.get(link.split("?")[0].split("#")[0])
         if need and not ctx.can(*need):
             link, tile = href, []   # экран сотрудника закрыт — ведём в пункт меню, его плиток там нет
+        if href in _CLOSED_FOR and not ctx.can(*_CLOSED_FOR[href]):
+            continue   # сам раздел у руководителя закрыт («Зарплата сотрудников» без доступа) — кружок некуда вести
         wo = a["wo_set"]
         blk = a["blk"]
         if len(wo) == 1 and blk:
@@ -240,6 +244,14 @@ def compute(ctx) -> dict:
     _compute(ctx, out)
     if items:
         _add_watch(ctx, out, items)
+    # 27.11.2026 (брат): «для сведения» выключено (сам или админ) — остаются только дела самого руководителя,
+    # мигают только их плитки
+    from .info_badges import hidden
+    if hidden(ctx):
+        for href in list(out):
+            out[href] = [x for x in out[href] if not x.get("info")]
+            if not out[href]:
+                del out[href]
     return _compact(out)
 
 

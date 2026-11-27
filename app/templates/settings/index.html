@@ -34,6 +34,14 @@
 </div>
 {% endif %}
 
+{# 27.11.2026 (брат): директор, зам, админ — свои настройки (кружки «для сведения») #}
+{% if ctx.user.role.code in ("director", "deputy", "admin") %}
+<div class="group-title">Мои настройки</div>
+<div class="set-tiles">
+  {{ tile("/settings/my", "Кружки «для сведения»", "дела сотрудников в меню — показывать или нет", "purple", "gear") }}
+</div>
+{% endif %}
+
 {# 25.11.2026 (брат): внутреннее — только владелец #}
 {% if ctx.can("data.archive") %}
 <div class="group-title">Данные — только владелец</div>

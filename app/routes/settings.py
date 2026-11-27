@@ -48,6 +48,30 @@ def index(ctx: Ctx = Depends(get_ctx)):
     return ctx.render("settings/index.html", title="Настройки", n_users=n_users)
 
 
+# ---------- Мои настройки (27.11.2026, брат): кружки «для сведения» у директора, зама, админа ----------
+BOSSES = ("director", "deputy", "admin")
+
+
+@router.get("/my")
+def my_settings(ctx: Ctx = Depends(get_ctx)):
+    from ..services import info_badges as ib
+    if ctx.user.role.code not in BOSSES:
+        raise Forbidden()
+    return ctx.render("settings/my.html", title="Мои настройки", info_admin=ib.by_admin(ctx),
+                      info_self=ib.by_self(ctx.db, ctx.branch.id, ctx.user.id))
+
+
+@router.post("/my/info-badges")
+def my_info_badges(ctx: Ctx = Depends(get_ctx), show: str = Form("")):
+    from ..services import info_badges as ib
+    if ctx.user.role.code not in BOSSES or ib.by_admin(ctx):   # выключил админ — сам не включает
+        raise Forbidden()
+    ib.set_self(ctx.db, ctx.branch.id, ctx.user.id, off=not show)
+    ctx.db.commit()
+    flash(ctx.request, "Кружки «для сведения» " + ("включены" if show else "выключены"))
+    return _back("/settings/my")
+
+
 # ---------- Бренд ----------
 @router.get("/branding")
 def branding_form(ctx: Ctx = Depends(get_ctx)):
