@@ -5,6 +5,6 @@
   <a href="/orders" class="{{ 'on' if cur == 'orders' }}" aria-pressed="{{ (cur == 'orders')|lower }}">
     <span class="sn-sw-ic">📋</span><span class="sn-sw-t"><b>Наряды</b><span>{{ n_orders or "этапы и поиск" }}</span></span></a>
   <a href="/orders/queue" class="{{ 'on' if cur == 'queue' }}" aria-pressed="{{ (cur == 'queue')|lower }}">
-    <span class="sn-sw-ic">🧰</span><span class="sn-sw-t"><b>Очередь мастеров</b><span>{{ n_queue or "кто что делает, когда готово" }}</span></span></a>
+    <span class="sn-sw-ic">🧰</span><span class="sn-sw-t"><b>Очередь мастеров</b><span>{{ n_queue or "кто, что и когда" }}</span></span></a>
 </nav>
 {% endmacro %}

@@ -3223,6 +3223,12 @@ details.vh:first-of-type { border-top: 0; }
 /* компактный: кнопка шириной с плитку наряда (та же сетка .ocards), вдвое ниже обычного переключателя */
 .sn-switch.mq-switch { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); max-width: none; gap: 12px; margin: 4px 0 12px; }
 .sn-switch.mq-switch a { min-height: 40px; padding: 6px 14px; gap: 10px; border-radius: 12px; border-width: 1.5px; }
+/* 27.11.2026 (брат): полоска слева с сужающимися концами, как у плиток CRM (не мигает): серая, выбранная — зелёная */
+.sn-switch.mq-switch a { border-left: 5px solid var(--gray); }
+.sn-switch.mq-switch a:hover { border-color: var(--separator, #d2d2d7); border-left-color: var(--green); }
+.sn-switch.mq-switch a.on { border-color: color-mix(in srgb, var(--green) 45%, transparent); border-left-color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, var(--surface, #fff)); }
+.sn-switch.mq-switch a.on b { color: var(--green); }
 .mq-switch .sn-sw-ic { font-size: 18px; }
 .mq-switch .sn-sw-t { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .mq-switch .sn-sw-t b { font-size: 15px; white-space: nowrap; }
