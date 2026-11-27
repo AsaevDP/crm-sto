@@ -463,7 +463,8 @@ def _compute(ctx, out: "_Out") -> "_Out":
                 if can_start_work(db, wo_, w) and not start_blocked(db, wo_, w):   # 20.11: сначала «Получил»
                     ok_works.append(w)
             _add(out, "/orders", "orange", len(ok_works), "ваши работы — можно делать", "/orders?tab=active",
-                 wo=[w.work_order_id for w in ok_works], blk="#works", rows=[f'.work[data-id="{w.id}"]' for w in ok_works], tile=['На СТО'])
+                 wo=[w.work_order_id for w in ok_works], blk="#works", rows=[f'.work[data-id="{w.id}"]' for w in ok_works], tile=['На СТО'],
+                 sel=[("/orders", "#myq .mq-next")])   # 27.11.2026: в «Моей очереди» мигает «Следующая»
         if role in MASTERS and role not in ("washer", "detailer"):   # «можно начинать» — только наряды, где ничего не заказывали (пришедшее уже посчитано выше)
             qi = select(WorkOrder.id).where(
                 WorkOrder.branch_id == bid, WorkOrder.status == "instock", WorkOrder.mechanic_id == me.id)
@@ -472,6 +473,15 @@ def _compute(ctx, out: "_Out") -> "_Out":
             ids_ = db.scalars(qi).all()
             _add(out, "/orders", "green", len(ids_), "запчасти на складе — можно начинать", "/orders?tab=parts",
                  wo=ids_, blk="#parts", rows=["#btn-request-issue"], tile=['Запчасти'], btn="blue")
+
+    # 🔴 27.11.2026 (брат): мастер (очередь «Обязательная») просит взять машину первой — менеджеру, директору, заму, админу
+    if ctx.can("schedule.queue") and ctx.can("orders.view_all", "orders.view_own"):
+        from . import master_queue as _mq
+        asks_ = _mq.open_asks(db, bid)
+        if role == "manager":
+            asks_ = [r for r in asks_ if (db.get(WorkOrder, r.work_order_id).manager_id in (me.id, None))]
+        _add(out, "/orders", "red", len(asks_), "мастер просит взять машину первой — решите", "/orders/queue#asks",
+             sel=[("/orders/queue", ".mq-ask")])
 
     # 🔴 менеджер просит доступ ко всем нарядам — админу / директору / заму
     if ctx.can("orders.grant_access"):

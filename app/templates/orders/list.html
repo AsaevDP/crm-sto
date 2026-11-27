@@ -18,6 +18,35 @@
   {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
 </header>
 
+{# 27.11.2026 (брат): «Наряды | Очередь мастеров»; мастеру — «Моя очередь» со «Следующей» #}
+{% if show_queue %}{% from "orders/_qswitch.html" import q_switch %}{{ q_switch("orders") }}{% endif %}
+{% if myq %}{% from "orders/_card.html" import key_tag %}
+<section class="myq" id="myq">
+  <h2 class="headline">Моя очередь{% if myq.strict %} <span class="chip" data-s="approve">обязательная — начинать только первую</span>{% endif %}</h2>
+  {% set items = myq.col.doing + myq.col.queue + myq.col.wait %}
+  {% if items %}
+  <div class="myq-list">
+    {% for b in items %}{% set is_next = myq.next and myq.next.wo.id == b.wo.id %}
+    <div class="mq-card{{ ' mq-doing' if b.pos == 0 }}{{ ' mq-waiting' if b.wo.status == 'waiting' }}{{ ' mq-next' if is_next }}">
+      <span class="mq-pos">{% if b.pos == 0 %}▶{% else %}{{ b.pos }}{% endif %}</span>
+      <div class="mq-main">
+        <div class="caption">{% if b.pos == 0 %}Сейчас делаю{% elif is_next %}<b>Следующая</b>{% elif b.wo.status == "waiting" %}ждём запчасти{% else %}в очереди{% endif %}</div>
+        <a class="mq-car" href="/orders/{{ b.wo.id }}#works">{{ b.car }}</a>
+        <div class="caption">{{ fmt_plate(b.plate) }} {{ key_tag(b.wo) }} · <span class="mono">{{ b.wo.number[-6:] }}</span></div>
+        <div class="mq-time"><span>≈ {{ mq_fmt(b.minutes) }}</span>{% if b.end %}<span class="mq-eta">готово {{ mq_when(b.end) }}</span>{% endif %}</div>
+        {% if myq.strict and b.pos and not is_next %}
+        <details class="myq-ask"><summary>Попросить первой</summary>
+          <form method="post" action="/orders/queue/{{ b.wo.id }}/ask"><input class="field" name="reason" placeholder="Почему раньше?" required>
+            <button class="btn btn-sm">Отправить</button></form></details>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}<p class="footnote" style="margin:0">В очереди пока нет машин, которые можно делать.</p>{% endif %}
+  <a class="footnote" href="/orders/queue">Вся очередь мастеров →</a>
+</section>
+{% endif %}
+
 {# 12.11.2026: менеджер видит только свои наряды; ко всем — по запросу (админ / директор / зам разрешают на срок) #}
 {% if acc %}
 <div class="acc-bar {{ 'on' if acc.until }}">

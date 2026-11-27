@@ -61,7 +61,11 @@ def _cards(ctx: Ctx, orders: list[WorkOrder]) -> list[dict]:
     from ..models import WoPart
     urgent = set(ctx.db.scalars(select(WoPart.work_order_id).where(   # слесарь просит срочно — видно на карточке
         WoPart.work_order_id.in_(ids), WoPart.urgent.is_(True), WoPart.status.in_(("need", "ordered", "arrived", "reserved")))))
+    # 27.11.2026 (брат): место в очереди мастера и «≈ готово к …» — на плитке под полосками
+    from ..services import master_queue as mq
+    fc = mq.info_for(ctx.db, ctx.branch.id, [o.id for o in orders if o.status in mq.wl.SOLID + mq.wl.TENTATIVE + ("waiting",)])
     return [{
+        "fc": fc.get(o.id),
         "urgent": o.id in urgent,
         "o": o, "v": vehicles.get(o.vehicle_id), "prog": prog.get(o.id), "pprog": pprog.get(o.id), "c": clients.get(o.client_id), "lift": lifts.get(o.lift_id),
         "mechanic": people.get(o.mechanic_id), "partsman": people.get(o.partsman_id),
@@ -204,7 +208,16 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         from ..services import decisions as dsvc
         pend = ctx.db.scalar(select(OrderAccess.id).where(OrderAccess.user_id == ctx.user.id, OrderAccess.status == "pending"))
         acc = {"until": svc.access_until(ctx.db, ctx.user.id), "pending": pend}
+    # 27.11.2026 (брат): «Очередь мастеров» и «Моя очередь» (слесарь, электрик, моторист)
+    from ..services import master_queue as mq
+    from .mqueue import can_see as _q_see
+    myq = None
+    if is_master(ctx.user) and ctx.user.role.code in mq.ROLES:
+        col = mq.build(ctx.db, ctx.branch.id, ms=[ctx.user])["cols"].get(ctx.user.id)
+        if col:
+            myq = {"col": col, "next": mq.next_for(ctx.db, ctx.branch.id, ctx.user, col), "strict": col["strict"]}
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
+                      show_queue=_q_see(ctx), myq=myq, mq_fmt=mq.fmt_min, mq_when=mq.when_word,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
                       STAGES=ORDER_STAGES, stage_counts=stage_counts, show_handed=show_handed, is_mech=is_master(ctx.user),
@@ -527,8 +540,9 @@ def order_view(order_id: str, ctx: Ctx = Depends(get_ctx)):
     managers = svc.staff_by_role(db, ctx.branch.id, "manager") if can_assign else []
     if can_assign and mg and mg not in managers:
         managers = [mg, *managers]
+    from ..services import master_queue as mq   # 27.11.2026: «№2 у Тараса · ≈ готово сегодня к 16:30» в шапке
     return ctx.render(
-        "orders/view.html", title=wo.number, wo=wo, v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
+        "orders/view.html", title=wo.number, wo=wo, fc=mq.info_for(db, ctx.branch.id, [wo.id]).get(wo.id), v=db.get(Vehicle, wo.vehicle_id), c=db.get(Client, wo.client_id),
         lift=db.get(Lift, wo.lift_id) if wo.lift_id else None, photos=[p for p in photos if not p.finding_id], works=works, history=history, findings=findings,
         finding_photos={f.id: [p for p in photos if p.finding_id == f.id] for f in findings}, URGENCY=URGENCY,
         # 23.11.2026 (брат): проблему можно записать и после согласования до выдачи — правила в diagnosis.may_add_finding

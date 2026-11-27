@@ -18,6 +18,11 @@
 {% else %}<div class="key-badge none" title="Когда принимали машину, все крючки были заняты"><span class="key-badge-l">🔑 Ключи</span><b class="key-badge-t">Без ячейки</b></div>{% endif %}
 {% endif %}
 {%- endmacro %}
+{# 27.11.2026 (брат): «№2 у Тараса · ≈ готово сегодня к 16:30» — плитка наряда, шапка наряда, «Пульт» #}
+{% macro eta_line(fc, cls) -%}
+<div class="{{ cls }}{{ ' wait' if fc.off }}{{ ' maybe' if fc.tent and not fc.off }}">
+  {%- if fc.where %}<span class="mq-where">{{ fc.where }}</span>{% if fc.label %} · {% endif %}{% endif %}{{ fc.label }}</div>
+{%- endmacro %}
 {# Карточка наряда в списке #}
 {% macro order_card(x, STATUSES, fmt_plate) -%}
 <a class="ocard" href="/orders/{{ x.o.id }}">
@@ -38,6 +43,8 @@
     {# 23.11.2026 (брат): обе строки всегда — нет деталей / работ — серая пустая «0/0» #}
     {% if x.pprog %}<div class="wprog-l">Запчасти</div>{{ progress(x.pprog, "Запчасти у нас") }}{% endif %}
     {% if x.prog %}<div class="wprog-l">Работы</div>{{ progress(x.prog) }}{% endif %}
+    {# 27.11.2026 (брат): очередь мастера и прогноз готовности (по «Время на выполнение») #}
+    {% if x.fc and (x.fc.label or x.fc.where) %}{{ eta_line(x.fc, "ocard-eta") }}{% endif %}
     {% if x.act %}<span class="ocard-act">{{ x.act }}</span>{% endif %}
   </div>
 </a>

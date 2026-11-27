@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{# Очередь мастеров (27.11.2026, брат): колонка на мастера. Сверху вниз: сейчас делает → очередь (№1, №2…) → ждут
+   запчасти → без даты привоза → «возможно» (диагностика, согласование, подбор — серые). Двигают менеджер, директор,
+   зам, админ (↑ ↓ «Первым» «В конец»); режим мастера «Подсказка / Обязательная» — директор, зам, админ. #}
+{% from "orders/_qswitch.html" import q_switch %}
+{% from "orders/_card.html" import key_tag %}
+{% block content %}
+<header class="page-head">
+  <div><a class="back" href="/orders">{{ icon("back") }}Наряды</a><h1 class="large-title">Очередь мастеров</h1>
+    <p class="footnote" style="margin:2px 0 0">{% if edit %}Порядок ставите вы — мастер берёт машины по нему. «≈ готово» считается по «Время на выполнение» работ.{% else %}Порядок ставит менеджер. «≈ готово» — по времени работ.{% endif %}</p></div>
+</header>
+{{ q_switch("queue") }}
+
+<nav class="segmented mq-kinds" aria-label="Мастера">
+  {% for key, t in KINDS.items() if key == "all" or key in present %}
+  <a href="/orders/queue{{ '' if key == 'all' else '?k=' ~ key }}" aria-pressed="{{ (k == key)|lower }}">{{ t }}</a>
+  {% endfor %}
+</nav>
+
+{% if asks %}
+<section id="asks" class="mq-asks">
+  <h2 class="headline">Мастер просит взять машину первой · {{ asks|length }}</h2>
+  {% for a in asks %}
+  <div class="card compact rim rim-red mq-ask">
+    <div><b>{{ a.m.short_name if a.m else "" }}</b> — <a href="/orders/{{ a.wo.id }}">{{ a.v.make }} {{ a.v.model }} · {{ fmt_plate(a.v.plate) }}</a>
+      <span class="caption mono">{{ a.wo.number }}</span>
+      <div class="subhead">{{ a.r.reason }}</div></div>
+    <div class="mq-ask-btns">
+      <form method="post" action="/orders/queue/asks/{{ a.r.id }}" class="one-shot"><input type="hidden" name="action" value="ok">
+        <button class="btn btn-sm">✓ Согласен — первой</button></form>
+      <form method="post" action="/orders/queue/asks/{{ a.r.id }}" class="mq-no"><input type="hidden" name="action" value="no">
+        <input class="field" name="answer" placeholder="Причина отказа" required><button class="btn btn-sm btn-gray">Отказать</button></form>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% macro qcard(b, m, col, movable) %}
+<div class="mq-card mq-{{ 'doing' if b.pos == 0 else b.kind }}{{ ' mq-waiting' if b.wo.status == 'waiting' }}" data-wo="{{ b.wo.id }}">
+  <span class="mq-pos">{% if b.pos == 0 %}▶{% elif b.pos %}{{ b.pos }}{% else %}·{% endif %}</span>
+  <div class="mq-main">
+    <a class="mq-car" href="/orders/{{ b.wo.id }}">{{ b.car }}</a>
+    <div class="caption">{{ fmt_plate(b.plate) }} {{ key_tag(b.wo) }} · <span class="mono">{{ b.wo.number[-6:] }}</span> · {{ b.word }}</div>
+    <div class="mq-time">
+      <span class="nowrap">≈ {{ fmt_min(b.minutes) }}</span>
+      {% if b.kind == "off" %}<span class="mq-eta mq-eta-wait">после привоза запчастей{% if b.expected %} (~{{ b.expected.strftime("%d.%m") }}){% endif %}</span>
+      {% elif b.kind == "solid" and b.end %}<span class="mq-eta">готово {{ when_word(b.end) }}</span>
+      {% elif b.kind == "tentative" %}<span class="mq-eta mq-eta-maybe">после согласования</span>{% endif %}
+    </div>
+    {% if not b.exact and edit %}<div class="mq-noexact">≈ время работ не вписано — считаем по нормо-часам</div>{% endif %}
+  </div>
+  {% if movable and edit %}
+  <div class="mq-btns">
+    {% for w, ic, t in [("first", "⤒", "Первым"), ("up", "↑", "Выше"), ("down", "↓", "Ниже"), ("last", "⤓", "В конец")] %}
+    <form method="post" action="/orders/queue/{{ b.wo.id }}/move"><input type="hidden" name="mech" value="{{ m.id }}">
+      <input type="hidden" name="where" value="{{ w }}"><input type="hidden" name="back" value="/orders/queue{{ '?k=' ~ k if k != 'all' }}">
+      <button class="mq-mv" title="{{ t }}" aria-label="{{ t }}">{{ ic }}</button></form>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endmacro %}
+
+<div class="mq-cols">
+  {% for m in data.masters %}{% set col = data.cols[m.id] %}
+  <section class="card compact mq-col" id="m-{{ m.id }}">
+    <header class="mq-head">
+      <div><b>{{ m.full_name }}</b><div class="caption">{{ m.role.name }} · в очереди {{ col.queue|length + col.wait|length }}</div></div>
+      {% if boss %}
+      <form method="post" action="/orders/queue/mode" class="mq-mode">
+        <input type="hidden" name="mech" value="{{ m.id }}"><input type="hidden" name="back" value="/orders/queue{{ '?k=' ~ k if k != 'all' }}">
+        <div class="segmented segmented-sm">
+          <button name="strict" value="" aria-pressed="{{ (not col.strict)|lower }}" title="Мастер видит «Следующую», но может начать любую">Подсказка</button>
+          <button name="strict" value="1" aria-pressed="{{ col.strict|lower }}" title="Начать можно только первую машину">Обязательная</button>
+        </div></form>
+      {% elif col.strict %}<span class="chip" data-s="approve">обязательная</span>{% endif %}
+    </header>
+    {% if col.doing %}<div class="mq-sec">Сейчас делает</div>{% for b in col.doing %}{{ qcard(b, m, col, false) }}{% endfor %}{% endif %}
+    <div class="mq-sec">Очередь</div>
+    {% for b in col.queue %}{{ qcard(b, m, col, true) }}{% else %}<p class="footnote mq-empty">Машин, которые можно делать, нет</p>{% endfor %}
+    {% if col.wait %}<div class="mq-sec">Ждут запчасти</div>{% for b in col.wait %}{{ qcard(b, m, col, true) }}{% endfor %}{% endif %}
+    {% if col.off %}<div class="mq-sec">Запчасти без даты или не скоро</div>{% for b in col.off %}{{ qcard(b, m, col, false) }}{% endfor %}{% endif %}
+    {% if col.maybe %}<div class="mq-sec">Возможно · диагностика, согласование</div>{% for b in col.maybe %}{{ qcard(b, m, col, false) }}{% endfor %}{% endif %}
+  </section>
+  {% else %}<p class="footnote">Мастеров нет.</p>{% endfor %}
+</div>
+{% endblock %}

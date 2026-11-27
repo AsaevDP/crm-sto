@@ -308,6 +308,12 @@
 <dialog id="zp-new" class="sheet sheet-wide">
   <form class="form" method="post" action="/schedule" id="appt-form">
     <h2 class="title-2">Новая запись</h2>
+    {# 27.11.2026 (брат): ближайшее свободное окно у каждого мастера — нажали, подставились мастер, день и время #}
+    {% if nearest %}
+    <div class="zp-near"><span class="caption">Ближайшее свободное:</span>
+      {% for x in nearest %}<button type="button" class="chip zp-near-chip" data-near data-day="{{ x.d }}" data-time="{{ x.t }}"
+        data-mech="{{ x.m.id }}" style="--mc:{{ color_css(colors.get(x.m.id, 'gray')) }}"><i class="zp-dot"></i>{{ x.m.short_name }} — {{ x.w }} {{ x.t }}</button>{% endfor %}
+    </div>{% endif %}
     {{ appt_fields(none, new_day) }}
     <div class="form-row"><button class="btn">Записать</button><button class="btn btn-gray" type="button" onclick="this.closest('dialog').close()">Отмена</button></div>
   </form>
@@ -393,6 +399,12 @@
     }
     const fr = document.getElementById('zp-free'); if (fr && fr.open) fr.close();
     dlg.showModal(); f.elements.phone.focus();
+  });
+  // 27.11.2026: «Ближайшее свободное» — подставить мастера, день и время, не стирая то, что уже вписано
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-near]'); if (!b || !f) return;
+    f.elements.day.value = b.dataset.day; f.elements.time.value = b.dataset.time; f.elements.mechanic_id.value = b.dataset.mech;
+    f.querySelectorAll('.zp-near-chip').forEach(x => x.classList.toggle('on', x === b));
   });
   {% endif %}
   // Открытая запись (?edit=) и окна (?free=1) — окошком сразу; закрыли — адрес без них

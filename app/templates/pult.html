@@ -45,6 +45,8 @@
           {% if mc %}<span class="plift-mech"><i></i>{{ mc.short_name }}</span>{% endif %}</span>
         {% if l.id in away %}<span class="caption">работает с машиной · {{ wo.number[-6:] }}</span>{% endif %}
         {% if st == "pause" %}<span class="caption pause-why">{{ paused[wo.id] }}</span>{% endif %}
+        {# 27.11.2026 (брат): прогноз готовности по времени работ #}
+        {% if fc.get(wo.id) and fc[wo.id].label %}<span class="ocard-eta{{ ' wait' if fc[wo.id].off }}">{{ fc[wo.id].label }}</span>{% endif %}
         {# 23.11.2026 (брат): полоску выполненных работ у рабочего места убрали — машина, кто, этап; этого достаточно #}
       </a>
       {% else %}

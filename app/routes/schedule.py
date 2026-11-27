@@ -103,6 +103,11 @@ def schedule(ctx: Ctx = Depends(get_ctx), d: str = "", view: str = "day", edit: 
     return _board(ctx, d, view, edit, p, f, t, m, fd, free, mv, v)
 
 
+def days_off_cfg(db, bid) -> set:
+    from ..services import settings as st_
+    return set(st_.get(db, bid, "schedule").get("days_off", [5, 6]) or [])
+
+
 def _mark_queue(items: list, wl: dict, mid) -> list:
     """Наряды в столбике мастера: где стоят в его очереди (первый / последний своего вида) — для стрелок ↑ ↓."""
     from ..services import workload as wl_svc
@@ -161,6 +166,27 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv="", v=""):
         return svc.day_load(db, bid, dd, cols, aa, min_gap=30,
                             extra={k: [x for x in v if x[2].kind == "solid"] for k, v in segs.items()})
     fl = free_cols(fday, shown) if can_manage else {}
+    # 27.11.2026 (брат): «Ближайшее свободное окно» в «Новой записи» — у каждого мастера первый свободный час (от 1 ч)
+    # начиная с сейчас, с учётом нарядов в очереди; ищем на 14 дней вперёд, выходные пропускаем
+    nearest = []
+    if can_manage:
+        from datetime import datetime as _dt
+        now_hm = svc.local(_dt.now().astimezone()).strftime("%H:%M")
+        left = {x.id: x for x in all_masters}
+        for i in range(14):
+            dd = today + timedelta(days=i)
+            if not left:
+                break
+            if dd.weekday() in days_off_cfg(db, bid):
+                continue
+            fr_ = free_cols(dd, list(left.values()))
+            for mid in list(left):
+                hrs = [h for h in _hourly(fr_.get(mid, {}).get("free", [])) if h[2] >= 60 and (dd > today or h[0] >= now_hm)]
+                if hrs:
+                    nearest.append({"m": left.pop(mid), "d": dd, "t": hrs[0][0],
+                                    "w": "сегодня" if dd == today else "завтра" if dd == today + timedelta(days=1)
+                                    else f"{WEEKDAYS[dd.weekday()]} {dd:%d.%m}"})
+        nearest.sort(key=lambda x: (x["d"], x["t"]))
     free_rows = [{"m": x, "free": _hourly(fl.get(x.id, {}).get("free", []))} for x in shown] if can_manage else []
     base = dict(view=view, day=day, per=per, bar=bar, today=today, masters=masters, shown=shown, pick=pick, own=own,
                 all_masters=all_masters, colors=colors, own_lift=own_lift, lifts=lifts, editing=editing,
@@ -171,7 +197,7 @@ def _board(ctx: Ctx, d, view, edit, p, f, t, m, fd, free, mv="", v=""):
                 open_free=bool(free) and can_manage, level=_level,
                 load_ok=ctx.can("dashboard.view"), people={x.id: x for x in all_masters},
                 new_day=day if view == "day" and day >= today else max(today, d1),
-                can_queue=ctx.can("schedule.queue"), moving=bool(mv) and ctx.can("schedule.manage"),
+                can_queue=ctx.can("schedule.queue"), moving=bool(mv) and ctx.can("schedule.manage"), nearest=nearest,
                 wo_off=[b for b in wl["off"] if b.mech_id in ids])
     # 21.11.2026 (брат): у мастера плитки — сигналы «что нового у меня» (🟣 новые, 🟠 ждём, 🟢 приехали, 🔴 не приехали)
     sig = svc.master_signals(db, bid, ctx.user.id) if own and ctx.user.role and ctx.user.role.code in MASTERS else None

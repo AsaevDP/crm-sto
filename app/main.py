@@ -10,8 +10,8 @@ from . import audit  # noqa: F401 — подключает автоматиче�
 from .services import clients_card  # noqa: F401 — номер клиента и телефоны выдаются сами (25.11.2026)
 from .config import COOKIE_SECURE, DEMO, MEDIA_DIR, ROOT, SECRET_KEY
 from .db import Base, add_missing_columns, engine
-from .routes import (attendance, auth, data_admin, diagnosis, folders, money, orders, pages, razbor, reports, schedule,
-                     settings, site, stock, tools, wash)
+from .routes import (attendance, auth, data_admin, diagnosis, folders, money, mqueue, orders, pages, razbor, reports,
+                     schedule, settings, site, stock, tools, wash)
 from .seed import seed
 from .web import Forbidden, NotLoggedIn, ViewOnly, flash, templates
 
@@ -93,6 +93,7 @@ app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
 app.include_router(auth.router)
 app.include_router(pages.router)
+app.include_router(mqueue.router)   # 27.11.2026: «Очередь мастеров» — до orders, иначе /orders/queue = наряд «queue»
 app.include_router(orders.router)
 app.include_router(diagnosis.router)
 app.include_router(stock.router)

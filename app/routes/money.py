@@ -146,6 +146,13 @@ def work_state(order_id: str, work_id: str, ctx: Ctx = Depends(get_ctx), action:
         if err:
             flash(ctx.request, err, "error")
             return _to(f"/orders/{order_id}")
+    # 27.11.2026 (брат): у мастера «Обязательная» очередь — «Начал» только у первой машины (другую — «Попросить первой»)
+    if action == "start" and w.status == "todo" and is_master(ctx.user):
+        from ..services import master_queue as mq
+        err = mq.start_error(ctx.db, ctx.branch.id, wo, ctx.user)
+        if err:
+            flash(ctx.request, err, "error")
+            return _to(f"/orders/{order_id}")
     # 20.11.2026 (брат): запчасти выданы, а мастер не нажал «Получил» — начинать нельзя
     from ..services import receipt as rsvc
     if action in ("start", "done") and rsvc.start_blocked(ctx.db, wo, w):

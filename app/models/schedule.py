@@ -43,3 +43,17 @@ class MasterQueue(Entity):
     mechanic_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
     work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"), index=True)
     rank: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class MasterQueueRequest(Entity):
+    """Мастер в режиме «Обязательная очередь» просит взять машину раньше (27.11.2026, брат) — как мойщик: причина →
+    менеджер / директор / зам / админ «Согласен» (машина встаёт первой у этого мастера) или «Отказать» с причиной.
+    status: new / ok / declined / cancelled."""
+    __tablename__ = "master_queue_requests"
+    work_order_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("work_orders.id"), index=True)
+    mechanic_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), index=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(10), default="new", index=True)
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    answer: Mapped[str] = mapped_column(Text, default="")

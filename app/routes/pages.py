@@ -163,6 +163,11 @@ def load_board(ctx: Ctx = Depends(get_ctx), p: str = "", d: str = "", f: str = "
                       WEEKDAYS=["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"])
 
 
+def _mq_info(db, bid, ids):
+    from ..services import master_queue as mq
+    return mq.info_for(db, bid, ids)
+
+
 @router.get("/pult")
 def pult(ctx: Ctx = Depends(get_ctx)):
     ctx.need("dashboard.view")
@@ -240,6 +245,7 @@ def pult(ctx: Ctx = Depends(get_ctx)):
                       presence=presence, tiles=tiles, colors=colors, place_groups=place_groups, away=away, money_today=money_today, staff_groups=staff_groups,
                       issue_new=issue_new, local=ssvc.local, today=_date.today(),
                       counts=counts, busy=busy, fmt_plate=fmt_plate, labels=labels,
+                      fc=_mq_info(db, bid, [wo.id for _, wo in lifts if wo]),   # 27.11.2026: «≈ готово к …»
                       lt_p=late_params(db, ctx.branch.id))   # 24.11.2026: окошко «Отпросился» — начало и конец дня
 
 
