@@ -3220,7 +3220,15 @@ details.vh:first-of-type { border-top: 0; }
 .loc-tbl .num { text-align: right; white-space: nowrap; }
 
 /* 27.11.2026 (брат): «Очередь мастеров» — колонка на мастера (как мойка), прогноз «≈ готово к …» */
-.mq-switch { max-width: 700px; }
+/* компактный: кнопка шириной с плитку наряда (та же сетка .ocards), вдвое ниже обычного переключателя */
+.sn-switch.mq-switch { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); max-width: none; gap: 12px; margin: 4px 0 12px; }
+.sn-switch.mq-switch a { min-height: 40px; padding: 6px 14px; gap: 10px; border-radius: 12px; border-width: 1.5px; }
+.mq-switch .sn-sw-ic { font-size: 18px; }
+.mq-switch .sn-sw-t { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mq-switch .sn-sw-t b { font-size: 15px; white-space: nowrap; }
+.mq-switch .sn-sw-t span { font-size: 12px; white-space: nowrap; }
+@media (max-width: 700px) { .mq-switch .sn-sw-t span { display: none; } }
+@media (max-width: 600px) { .sn-switch.mq-switch a { min-height: 40px; } }
 .mq-kinds { margin: 0 0 14px; flex-wrap: wrap; }
 .mq-kinds a { padding: 5px 14px; border-radius: 7px; color: var(--text); text-decoration: none; font-size: 14px; }
 .mq-kinds a[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }

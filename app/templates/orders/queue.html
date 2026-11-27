@@ -9,7 +9,7 @@
   <div><a class="back" href="/orders">{{ icon("back") }}Наряды</a><h1 class="large-title">Очередь мастеров</h1>
     <p class="footnote" style="margin:2px 0 0">{% if edit %}Порядок ставите вы — мастер берёт машины по нему. «≈ готово» считается по «Время на выполнение» работ.{% else %}Порядок ставит менеджер. «≈ готово» — по времени работ.{% endif %}</p></div>
 </header>
-{{ q_switch("queue") }}
+{% if edit %}{{ q_switch("queue") }}{% endif %}{# мастеру переключателя нет — назад по «‹ Назад» #}
 
 <nav class="segmented mq-kinds" aria-label="Мастера">
   {% for key, t in KINDS.items() if key == "all" or key in present %}

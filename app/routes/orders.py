@@ -210,14 +210,14 @@ def orders_list(ctx: Ctx = Depends(get_ctx), tab: str = "active", q: str = "", s
         acc = {"until": svc.access_until(ctx.db, ctx.user.id), "pending": pend}
     # 27.11.2026 (брат): «Очередь мастеров» и «Моя очередь» (слесарь, электрик, моторист)
     from ..services import master_queue as mq
-    from .mqueue import can_see as _q_see
     myq = None
     if is_master(ctx.user) and ctx.user.role.code in mq.ROLES:
         col = mq.build(ctx.db, ctx.branch.id, ms=[ctx.user])["cols"].get(ctx.user.id)
         if col:
             myq = {"col": col, "next": mq.next_for(ctx.db, ctx.branch.id, ctx.user, col), "strict": col["strict"]}
     return ctx.render("orders/list.html", title="Наряды", cards=_cards(ctx, orders), tab=tab, q=q, acc=acc,
-                      show_queue=_q_see(ctx), myq=myq, mq_fmt=mq.fmt_min, mq_when=mq.when_word,
+                      # мастерам переключателя нет — у них «Моя очередь»
+                      show_queue=ctx.can("schedule.queue"), myq=myq, mq_fmt=mq.fmt_min, mq_when=mq.when_word,
                       STATUSES=WO_STATUSES, fmt_plate=svc.fmt_plate, status=status, my_lifts=lifts,
                       lift_people=_people(ctx, *[l.mechanic_id for l in lifts]), per=per,
                       STAGES=ORDER_STAGES, stage_counts=stage_counts, show_handed=show_handed, is_mech=is_master(ctx.user),

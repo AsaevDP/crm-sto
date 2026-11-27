@@ -131,15 +131,24 @@ def ready_label(i: dict) -> str:
     return ""
 
 
+ORDINAL = ("", "первая", "вторая", "третья", "четвёртая", "пятая", "шестая", "седьмая", "восьмая", "девятая", "десятая")
+
+
+def ordinal(n: int) -> str:
+    """27.11.2026 (брат): место словами — «первая», «вторая»…, дальше «11-я»."""
+    return ORDINAL[n] if 0 < n < len(ORDINAL) else f"{n}-я"
+
+
 def where_label(i: dict) -> str:
-    """«№2 у Тараса» / «сейчас у Тараса», несколько мастеров — через запятую."""
+    """«первая в очереди у Демченко» / «сейчас в работе у Тараса», несколько мастеров — через запятую."""
     parts = []
     for m, pos in i["pos"]:
         if pos == 0:
-            parts.append(f"сейчас у {m.short_name}")
+            parts.append(f"сейчас в работе у {m.short_name}")
         elif pos:
-            parts.append(f"№{pos} у {m.short_name}")
-    return ", ".join(parts)
+            parts.append(f"{ordinal(pos)} в очереди у {m.short_name}")
+    out = ", ".join(parts)
+    return out[:1].upper() + out[1:]
 
 
 def info_for(db: Session, bid, wo_ids) -> dict:

@@ -18,12 +18,11 @@
   {% if ctx.can("orders.create") %}<a class="btn btn-sm" href="/orders/new">{{ icon("plus") }}Приёмка</a>{% endif %}
 </header>
 
-{# 27.11.2026 (брат): «Наряды | Очередь мастеров»; мастеру — «Моя очередь» со «Следующей» #}
-{% if show_queue %}{% from "orders/_qswitch.html" import q_switch %}{{ q_switch("orders") }}{% endif %}
+{# 27.11.2026 (брат): мастеру — «Моя очередь» со «Следующей» (до 3 машин; остальное — «Вся очередь мастеров») #}
 {% if myq %}{% from "orders/_card.html" import key_tag %}
 <section class="myq" id="myq">
   <h2 class="headline">Моя очередь{% if myq.strict %} <span class="chip" data-s="approve">обязательная — начинать только первую</span>{% endif %}</h2>
-  {% set items = myq.col.doing + myq.col.queue + myq.col.wait %}
+  {% set all_items = myq.col.doing + myq.col.queue + myq.col.wait %}{% set items = all_items[:3] %}
   {% if items %}
   <div class="myq-list">
     {% for b in items %}{% set is_next = myq.next and myq.next.wo.id == b.wo.id %}
@@ -43,7 +42,7 @@
     {% endfor %}
   </div>
   {% else %}<p class="footnote" style="margin:0">В очереди пока нет машин, которые можно делать.</p>{% endif %}
-  <a class="footnote" href="/orders/queue">Вся очередь мастеров →</a>
+  <a class="footnote" href="/orders/queue">Вся очередь мастеров{% if all_items|length > 3 %} · у вас ещё {{ all_items|length - 3 }}{% endif %} →</a>
 </section>
 {% endif %}
 
@@ -101,6 +100,9 @@
 {{ tiles(row2, "ord-tiles ord-tiles-2") }}
 </div>
 
+{# 27.11.2026 (брат): «Наряды | Очередь мастеров» — между плитками этапов и нарядами, кнопка шириной с наряд,
+   вдвое ниже. Мастерам не показываем (у них «Моя очередь») #}
+{% if show_queue %}{% from "orders/_qswitch.html" import q_switch %}{{ q_switch("orders") }}{% endif %}
 {% if cards %}
 <div class="ocards fill scroll">
   {% for x in cards %}{{ order_card(x, STATUSES, fmt_plate) }}{% endfor %}
