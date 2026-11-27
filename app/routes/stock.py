@@ -1671,15 +1671,22 @@ def _keep_owner_names():
     return ksvc.OWNER_NAME
 
 
+KEEP_F = {"all": None, "red": ("red",), "ordered": ("ordered",), "ok": ("ok", "near")}
+
+
 @router.get("/stock/always")
-def keep_page(ctx: Ctx = Depends(get_ctx), q: str = ""):
+def keep_page(ctx: Ctx = Depends(get_ctx), q: str = "", f: str = "all"):
     """«Всегда в наличии»: что должно быть на складе всегда и в достаточном объёме. Ниже нормы — красная строка,
-    едет или почти на норме — жёлтая. Сверху «Заказать недостающее» → черновик закупки на кладовщика."""
+    едет или почти на норме — жёлтая. Сверху «Заказать недостающее» → черновик закупки на кладовщика.
+    27.11.2026 (брат): плитки — фильтр списка: Все · Не хватает · Заказано · В порядке («Почти на норме» убрана —
+    это «В порядке»)."""
     ctx.need("stock.view", "stock.keep")
     rows, cnt = _keep_data(ctx)
+    f = f if f in KEEP_F else "all"
     found = svc.search_catalog(ctx.db, ctx.branch.id, q) if q and ctx.can("stock.keep") else []
     kept = {r["c"].id for r in rows if r["c"]}
-    return ctx.render("stock/keep.html", title="Всегда в наличии", rows=rows, cnt=cnt, q=q,
+    shown = rows if KEEP_F[f] is None else [r for r in rows if r["st"] in KEEP_F[f]]
+    return ctx.render("stock/keep.html", title="Всегда в наличии", rows=rows, shown=shown, f=f, cnt=cnt, q=q,
                       found=[f for f in found if not f["used"] and _uuid(str(f["id"])) not in kept],
                       can_edit=ctx.can("stock.keep"), can_own={o: ksvc_can(ctx, o) for o in ("stock", "chem")},
                       OWNER_NAME=_keep_owner_names())

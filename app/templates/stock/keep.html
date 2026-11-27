@@ -18,12 +18,16 @@
   </div>
 </header>
 
-<div class="pult-tiles pu-tiles kp-tiles">
-  <span class="ptile {{ 'zero' if not cnt.red }}" style="--tc:{{ color_css('red') }}"><span class="ptile-t">Не хватает</span><b>{{ cnt.red }}</b><span class="ptile-s">ниже нормы, не заказано</span></span>
-  <span class="ptile {{ 'zero' if not cnt.ordered }}" style="--tc:{{ color_css('orange') }}"><span class="ptile-t">Заказано</span><b>{{ cnt.ordered }}</b><span class="ptile-s">ниже нормы, но уже едет</span></span>
-  <span class="ptile {{ 'zero' if not cnt.near }}" style="--tc:{{ color_css('yellow') }}"><span class="ptile-t">Почти на норме</span><b>{{ cnt.near }}</b><span class="ptile-s">запас меньше нормы + 20 %</span></span>
-  <span class="ptile {{ 'zero' if not cnt.ok }}" style="--tc:{{ color_css('green') }}"><span class="ptile-t">В порядке</span><b>{{ cnt.ok }}</b><span class="ptile-s">не меньше нормы</span></span>
-  <span class="ptile" style="--tc:{{ color_css('purple') }}"><span class="ptile-t">Всего в списке</span><b>{{ rows|length }}</b><span class="ptile-s">ниже нормы: {{ cnt.below }}</span></span>
+{# 27.11.2026 (брат): плитки — фильтр списка; «Все» первой, «Почти на норме» убрана (она в «В порядке») #}
+{% set KT = [("all", "Все", rows|length, "blue", "ниже нормы: " ~ cnt.below),
+             ("red", "Не хватает", cnt.red, "red", "ниже нормы, не заказано"),
+             ("ordered", "Заказано", cnt.ordered, "orange", "ниже нормы, но уже едет"),
+             ("ok", "В порядке", cnt.ok + cnt.near, "green", "не меньше нормы")] %}
+<div class="pult-tiles pu-tiles kp-tiles" data-menu-base="/stock/always">
+  {% for k, t, n, c, s in KT %}
+  <a class="ptile {{ 'zero' if not n }} {{ 'on' if f == k and k != 'all' }}" href="/stock/always{{ '' if k == 'all' or f == k else '?f=' ~ k }}"
+     style="--tc:{{ color_css(c) }}"><span class="ptile-t">{{ t }}</span><b>{{ n }}</b><span class="ptile-s">{{ s }}</span></a>
+  {% endfor %}
 </div>
 
 {% if can_edit %}
@@ -53,7 +57,7 @@
     <thead><tr><th>Запчасть / товар</th><th class="num">Свободно</th><th class="num">Норма</th><th class="num">Едет</th>
       <th class="num">Не хватает</th><th>Заказ</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
     <tbody>
-    {% for r in rows %}
+    {% for r in shown %}
     <tr class="kp-{{ r.st }}" data-below="{{ 1 if r.below else 0 }}">
       <td><b>{{ r.c.name if r.c else "" }}</b><div class="caption mono">{{ r.c.brand if r.c }} {{ r.c.article if r.c }}</div>
         {% if r.on_hand != r.free %}<div class="caption">на складе {{ r.on_hand|num }}, в резерве под наряды {{ (r.on_hand - r.free)|num }}</div>{% endif %}</td>
@@ -68,9 +72,9 @@
         {% else %}<span class="caption">Заказывает {{ OWNER_NAME[r.owner] }}</span>{% endif %}{% endif %}</td>
       {% if can_edit %}<td class="nowrap"><form id="kf-{{ r.k.id }}" method="post" action="/stock/always/{{ r.k.id }}" style="margin:0;display:inline-flex;gap:4px">
           <button class="btn btn-sm btn-plain">OK</button>
-          <button class="btn btn-sm btn-plain danger" name="delete" value="1" onclick="return confirm('Убрать из «Всегда в наличии»?')" title="Убрать из списка">×</button></form></td>{% endif %}
+          <button class="btn btn-sm btn-plain danger" name="delete" value="1" onclick="return confirm('Убрать из «Всегда в наличии»?')" title="Убрать из списка">✕ Убрать</button></form></td>{% endif %}
     </tr>
-    {% else %}<tr><td colspan="7" class="footnote">Список пуст. {% if can_edit %}Найдите позицию выше и нажмите «⭐ Добавить» — или в карточке позиции склада «⭐ Всегда в наличии».{% endif %}</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" class="footnote">{% if rows %}В этой плитке пусто. <a href="/stock/always">Показать все</a>{% else %}Список пуст.{% endif %} {% if can_edit and not rows %}Найдите позицию выше и нажмите «⭐ Добавить» — или в карточке позиции склада «⭐ Всегда в наличии».{% endif %}</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>

@@ -30,6 +30,17 @@ def _add(out: dict, href: str, color: str, n: int, title: str, link: str = "", a
     для дел не в наряде."""
     if not n:
         return
+    raw = getattr(out, "raw", None)
+    if raw is not None:   # 27.11.2026: считаем за сотрудника — запоминаем дело как есть (для руководства)
+        raw.append({"href": href, "c": color, "n": int(n), "t": title, "link": link, "info": info, "owner": owner,
+                    "wo": [str(i) for i in (wo or [])], "blk": blk, "rows": list(rows or []),
+                    "sel": [list(s) for s in (sel or [])], "tile": list(tile or []), "btn": btn})
+    watch = getattr(out, "watch", None)
+    if watch and title in watch and not owner:
+        # 27.11.2026 (брат): у директора / зама / админа то же дело есть у сотрудника — оно его, руководству для сведения
+        info = True
+        out.seen.add(title)
+        color = BOSS_COLOR.get(title, color)
     wo = [str(i) for i in dict.fromkeys(wo or [])]
     if len(wo) == 1 and blk:
         link = f"/orders/{wo[0]}{blk}"
@@ -107,10 +118,134 @@ def _zone_keeper_on_site(db, bid, role_code: str) -> bool:
     return any(last.get(u.id) is not None and last[u.id].direction == "in" for u in people)
 
 
+class _Out(dict):
+    """Кружки по пунктам меню. raw — каждое дело как есть (когда считаем за сотрудника); watch — дела сотрудников
+    (для руководства: такое дело у руководителя — «для сведения»); seen — какие из них у руководителя уже есть."""
+    raw = None
+    watch = None
+
+    def __init__(self):
+        super().__init__()
+        self.seen = set()
+
+
+# 27.11.2026 (брат): дела сотрудников — у директора, зама и админа тоже, с сиреневой обводкой («для сведения»).
+# Цвет — как у сотрудника; исключения по просьбе брата:
+BOSS_COLOR = {
+    "б/у — выложить на сайт (фото, описание, «✓ Выложил»)": "orange",   # «На сайт» — жёлтым (оранжевым)
+    "новые — выложить на сайт (фото, описание, «✓ Выложил»)": "orange",
+    "химия заканчивается — заказать": "purple",                          # «Мойка» — сиреневым
+}
+# Личное сотрудника (его табель, его зарплата, его запросы, «вам передали»…) руководству не дублируем
+_PERSONAL_HREF = ("/my-requests", "/payroll/my", "/timesheet")
+_PERSONAL_T = ("вы ", "вам ", "ваш", "я мою", "ждут мойки — ваши", "к вам записали", "клиент не приехал — отметьте",
+               "сегодня ждём клиентов", "клиент приехал — начните", "наряд закрыт — сдайте", "инструмент сдаёте",
+               "ждут кладовщика или менеджера", "готово — забрать у окошка кладовщика", "инструмент готов — забрать",
+               "химия готова", "опозданий на этой неделе")
+# Сотрудник ждёт решения руководителя — у руководителя это его собственное дело (утвердить цену), не дублируем
+_WAITS_BOSS = ("ждут утверждения цены директором", "ждёт цены директора")
+# Пункт меню сотрудника, которого у руководителя нет → куда повесить кружок
+_MENU_ALT = {"/stock/issues": ("/stock",), "/razbor/shipping": ("/razbor",),
+             "/my-orders": ("/purchases/by-partsman", "/purchases"), "/ready": ("/orders",)}
+# Экран, который руководитель открыть не может → ссылка на пункт меню
+_LINK_NEED = {"/stock/receive": ("stock.receive",), "/razbor/shipping": ("razbor.manage", "razbor.sell"),
+              "/ready": ("stock.pickup", "stock.issue"), "/my-orders": ("purchases.mine",),
+              "/my-requests": ("stock.request_issue", "chem.ask"),
+              "/stock/leftovers": ("parts.pick", "stock.manage", "purchases.by_partsman"),
+              "/stock/issues": ("stock.issue", "razbor.issue", "stock.view", "tools.manage"),
+              "/wash/queue": ("chem.ask", "wash.view"), "/purchases": ("purchases.view",)}
+_CACHE: dict = {}
+CACHE_SEC = 20
+
+
+def _workers(ctx) -> list[dict]:
+    """Дела всех сотрудников (кроме руководства) — посчитаны «их глазами», одно дело — одна строка.
+    Кэш на 20 секунд на филиал (меню опрашивается раз в 15 с у каждого руководителя)."""
+    import logging
+    import time
+    from ..models import Role, User
+    from ..permissions import effective_permissions, menu_for
+    bid = ctx.branch.id
+    hit = _CACHE.get(bid)
+    if hit and time.time() - hit[0] < CACHE_SEC:
+        return hit[1]
+    agg: dict = {}
+    people = ctx.db.scalars(select(User).join(Role, Role.id == User.role_id).where(
+        User.branch_id == bid, User.active.is_(True), Role.code.not_in(ALL_ROLES))).all()
+    for u in people:
+        perms = effective_permissions(ctx.db, u)
+        wctx = type(ctx)(request=ctx.request, db=ctx.db, user=u, branch=ctx.branch, perms=perms,
+                         branding=ctx.branding, menu=menu_for(perms))
+        o = _Out()
+        o.raw = []
+        try:
+            _compute(wctx, o)
+        except Exception:   # дело одного сотрудника не должно ломать меню руководителю
+            logging.getLogger(__name__).exception("badges: сотрудник %s", u.id)
+            continue
+        for x in o.raw:
+            if (x["info"] or x["owner"] or x["href"] in _PERSONAL_HREF or x["t"].lower().startswith(_PERSONAL_T)
+                    or any(w in x["t"] for w in _WAITS_BOSS)):
+                continue
+            key = (x["t"], x["link"] or x["href"])
+            a = agg.get(key)
+            if not a:
+                a = agg[key] = dict(x, roles=[], wo_set=[], n_max=0)
+            a["n_max"] = max(a["n_max"], x["n"])
+            a["wo_set"] = list(dict.fromkeys(a["wo_set"] + x["wo"]))
+            a["rows"] = list(dict.fromkeys(a["rows"] + x["rows"]))
+            a["tile"] = list(dict.fromkeys(a["tile"] + x["tile"]))
+            if u.role.name not in a["roles"]:
+                a["roles"].append(u.role.name)
+    res = []
+    for a in agg.values():
+        a["n"] = len(a["wo_set"]) if a["wo_set"] else a["n_max"]
+        res.append(a)
+    _CACHE[bid] = (time.time(), res)
+    return res
+
+
+def _add_watch(ctx, out: "_Out", items: list[dict]) -> None:
+    """Дела сотрудников, которых у руководителя своих нет, — кружком с сиреневой обводкой на его пункте меню."""
+    menu = {m["href"] for m in (ctx.menu or [])}
+    for a in items:
+        if a["t"] in out.seen:
+            continue
+        href = next((h for h in (a["href"], *_MENU_ALT.get(a["href"], ())) if h in menu), None)
+        if not href:
+            continue
+        link = a["link"] or a["href"]
+        tile = a["tile"]
+        need = _LINK_NEED.get(link.split("?")[0].split("#")[0])
+        if need and not ctx.can(*need):
+            link, tile = href, []   # экран сотрудника закрыт — ведём в пункт меню, его плиток там нет
+        wo = a["wo_set"]
+        blk = a["blk"]
+        if len(wo) == 1 and blk:
+            link = f"/orders/{wo[0]}{blk}"
+        title = ", ".join(a["roles"]) + ": " + a["t"]
+        _add(out, href, BOSS_COLOR.get(a["t"], a["c"]), a["n"], title, link, info=True, wo=wo, blk=blk,
+             rows=a["rows"], sel=[s for s in a["sel"] if not (_LINK_NEED.get(s[0].split("?")[0]) and not ctx.can(*_LINK_NEED[s[0].split("?")[0]]))],
+             tile=tile)
+
+
 def compute(ctx) -> dict:
+    """Кружки текущего сотрудника. 27.11.2026 (брат): директору, заму, админу — ещё и дела всех сотрудников
+    («для сведения» — сиреневая обводка; то, что решают они сами, — без обводки)."""
+    out = _Out()
+    items = []
+    if ctx.user.role and ctx.user.role.code in ALL_ROLES:
+        items = _workers(ctx)
+        out.watch = {a["t"] for a in items}
+    _compute(ctx, out)
+    if items:
+        _add_watch(ctx, out, items)
+    return _compact(out)
+
+
+def _compute(ctx, out: "_Out") -> "_Out":
     db, me, bid = ctx.db, ctx.user, ctx.branch.id
     role = me.role.code
-    out: dict = {}
     see_all = role in ALL_ROLES
     # 20.11.2026 (брат): главный кладовщик — обе зоны склада. Кладовщик зоны сегодня на работе (по табелю) — у главного
     # цифры этой зоны «для сведения» (сиреневая обводка); его нет (не пришёл, ушёл, должности нет) — обычные, подменяет
@@ -339,7 +474,8 @@ def compute(ctx) -> dict:
             OrderAccess.branch_id == bid, OrderAccess.status == "pending")) or 0,
              "просят доступ ко всем нарядам и клиентам", "/access-requests#all", sel=[("/access-requests", ".ac-card.now")], tile=['Ко всем нарядам', 'Просят доступ'])
         from ..models import OrderReopen   # 11.11.2026: просят открыть закрытый наряд заново
-        _add(out, "/orders", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
+        # 27.11.2026 (брат): кружок у «Клиентов» — экран «Доступы и запросы» открывается оттуда (у «Нарядов» его не было видно)
+        _add(out, "/clients", "red", db.scalar(select(func.count()).select_from(OrderReopen).where(
             OrderReopen.branch_id == bid, OrderReopen.status == "pending")) or 0, "просят открыть наряд заново",
              "/access-requests#reopen", sel=[("/access-requests", ".ac-card.now")], tile=['Открыть заново'])
 
@@ -726,9 +862,19 @@ def compute(ctx) -> dict:
             boss = late_svc.for_boss(db, bid, me)
             if ctx.can("attendance.decide"):
                 # 25.11.2026 (брат): только то, что этот руководитель может решить (о директоре — только админ)
-                red = [x for x in boss if x["level"] == "red" and x["can"] and not x["owner"]]
+                # 27.11.2026 (брат): «не отметили уход» — свой кружок и своя плитка «Забыли отметить уход» (раньше сидел
+                # внутри «Нужно решить», плитка не мигала); что решает не он (о директоре, о заме) — 🔴 с сиреневой
+                # обводкой «для сведения», чтобы цифры совпали с плиткой «Нужно решить»
+                no_out = [x for x in boss if x["f"].kind == "no_out"]
+                red = [x for x in boss if x["level"] == "red" and x["can"] and not x["owner"] and x["f"].kind != "no_out"]
                 own = [x for x in boss if x["level"] == "red" and x["can"] and x["owner"]]
                 info = [x for x in boss if x["level"] == "info" and x["can"]]
+                other = [x for x in boss if x["level"] == "red" and not x["can"]]
+                _add(out, "/timesheet", "red", len(no_out), "не отметили уход — вписать время или принять к сведению",
+                     "/timesheet?v=open", alone=True, sel=[("/timesheet?v=open", "tr.ts-open-row")],
+                     tile=['Забыли отметить уход', 'Нужно решить'])
+                _add(out, "/timesheet", "red", len(other), "решает директор или админ — опоздания, неявки руководства",
+                     "/timesheet?v=boss", alone=True, info=True, tile=['Нужно решить'])
                 _add(out, "/timesheet", "red", len(own), "опоздание / неявка директора — решает только админ",
                      "/timesheet?v=boss", alone=True, owner=True, sel=[("/timesheet?v=boss", '.lt-card.lt-boss.rim-red')],
                      tile=['Нужно решить'])
@@ -752,4 +898,4 @@ def compute(ctx) -> dict:
             todo = [f for f in late_svc.no_out_open(db, bid) if (f.user.id, f.day) not in rem and f.user.id != me.id]
             _add(out, "/timesheet", "red", len(todo), "не отметили уход — напомните сотрудникам", "/timesheet?v=open",
                  alone=True, sel=[("/timesheet?v=open", "tr.ts-open-row")], tile=['Забыли отметить уход'])
-    return _compact(out)
+    return out

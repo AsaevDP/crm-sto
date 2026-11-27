@@ -1074,6 +1074,10 @@ def clients_list(ctx: Ctx = Depends(get_ctx), q: str = "", tab: str = "all", sor
                     ClientAccess.branch_id == ctx.branch.id, ClientAccess.status == "pending")) or 0,
                 "all": ctx.db.scalar(select(func.count()).select_from(OrderAccess).where(
                     OrderAccess.branch_id == ctx.branch.id, OrderAccess.status == "pending")) or 0}
+        # 27.11.2026 (брат): и «Открыть заново» (и по гарантии) — тот же экран «Доступы и запросы»
+        from ..models import OrderReopen
+        asks["reopen"] = ctx.db.scalar(select(func.count()).select_from(OrderReopen).where(
+            OrderReopen.branch_id == ctx.branch.id, OrderReopen.status == "pending")) or 0
     return ctx.render("clients/list.html", title="Клиенты", items=items, q=q, tab=tab, sort=sort, make=make, asks=asks,
                       tabs=csvc.TABS, sorts=csvc.SORTS, counts=csvc.counts(base), makes=csvc.makes(allrows), link=link,
                       show_money=ctx.can("money.view"), fmt_phone=svc.fmt_phone, fmt_plate=svc.fmt_plate,

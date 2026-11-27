@@ -85,6 +85,10 @@ def _before_flush(session: Session, flush_context, instances):
     bid = current_branch_id.get()
     logs = []
     _touch_orders(session)
+    if session.new or session.dirty or session.deleted:
+        # 27.11.2026: что-то изменилось — дела сотрудников у руководства пересчитать (кэш кружков)
+        from .services import badges as _bd
+        _bd._CACHE.clear()
 
     for obj in list(session.new):
         if not isinstance(obj, Entity):
